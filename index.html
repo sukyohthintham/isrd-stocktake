@@ -1,0 +1,1719 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="version" content="1.0.0">
+<meta name="theme-color" content="#0f766e">
+<title>ISRD Stocktake v1.0.0</title>
+
+<style>
+:root{
+  --brand:#0f766e; --brand-dark:#115e59; --brand-light:#ccfbf1;
+  --bg:#f1f5f9; --card:#ffffff; --line:#cbd5e1; --line-soft:#e2e8f0;
+  --text:#0f172a; --muted:#64748b;
+  --over:#15803d; --over-bg:#dcfce7;
+  --short:#b91c1c; --short-bg:#fee2e2;
+  --warn:#b45309; --warn-bg:#fef3c7;
+  --tap:56px;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  font-family:"Noto Sans Thai","Sarabun","Segoe UI",Tahoma,sans-serif;
+  background:var(--bg); color:var(--text);
+  font-size:16px; line-height:1.5;
+  overflow-x:hidden;
+  /* กันไม่ให้เนื้อหาท้ายหน้าไปอยู่ใต้แถบนำทางล่างที่ลอยทับอยู่ */
+  padding-bottom:calc(96px + env(safe-area-inset-bottom));
+}
+h1,h2,h3{margin:0 0 8px}
+h2{font-size:20px}
+h3{font-size:17px}
+
+/* ---------- layout ---------- */
+.topbar{
+  position:sticky; top:0; z-index:30;
+  background:var(--brand); color:#fff;
+  padding:12px 16px calc(12px + env(safe-area-inset-top));
+  padding-top:calc(12px + env(safe-area-inset-top));
+  box-shadow:0 2px 8px rgba(0,0,0,.15);
+}
+.topbar .t-title{font-size:18px;font-weight:700}
+.topbar .t-sub{font-size:13px;opacity:.9;margin-top:2px;word-break:break-word}
+.wrap{padding:16px;max-width:760px;margin:0 auto}
+.page{display:none}
+.page.active{display:block}
+
+.card{
+  background:var(--card); border:1px solid var(--line-soft); border-radius:14px;
+  padding:16px; margin-bottom:14px;
+}
+/* เวลาเบราว์เซอร์เลื่อนอะไรเข้ามาในจอ ต้องไม่ไปหยุดใต้แถบนำทางล่าง */
+.card,.btn,.pick,input,section{scroll-margin-bottom:110px;scroll-margin-top:84px}
+.card > h3{display:flex;align-items:center;gap:8px}
+
+/* ---------- form controls ---------- */
+label.fld{display:block;margin-bottom:14px}
+label.fld > span{display:block;font-size:14px;font-weight:600;color:var(--muted);margin-bottom:6px}
+input[type=text],select,textarea{
+  width:100%; min-height:var(--tap); padding:12px 14px;
+  font-size:17px; font-family:inherit; color:var(--text);
+  background:#fff; border:2px solid var(--line); border-radius:12px;
+}
+input[type=text]:focus,select:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-light)}
+input.qty{font-size:26px;font-weight:700;text-align:center;letter-spacing:1px;min-height:64px}
+select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);background-position:calc(100% - 20px) 50%,calc(100% - 14px) 50%;background-size:6px 6px,6px 6px;background-repeat:no-repeat;padding-right:44px}
+
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  min-height:var(--tap); padding:12px 20px;
+  font-size:17px;font-weight:700;font-family:inherit;
+  border:2px solid transparent;border-radius:12px;cursor:pointer;
+  background:var(--brand);color:#fff;
+}
+.btn:active{transform:scale(.985)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.block{display:flex;width:100%}
+.btn.big{min-height:64px;font-size:19px}
+.btn.ghost{background:#fff;color:var(--brand);border-color:var(--brand)}
+.btn.grey{background:#fff;color:var(--muted);border-color:var(--line)}
+.btn.sm{min-height:40px;padding:6px 14px;font-size:14px;border-radius:9px}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+.row > *{flex:1 1 140px}
+
+/* ---------- bottom nav ---------- */
+.nav{
+  position:fixed;left:0;right:0;bottom:0;z-index:40;
+  display:flex;background:#fff;border-top:1px solid var(--line);
+  padding-bottom:env(safe-area-inset-bottom);
+}
+.nav button{
+  flex:1;border:0;background:none;font-family:inherit;cursor:pointer;
+  padding:10px 4px;min-height:66px;color:var(--muted);font-size:13px;font-weight:600;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+}
+.nav button .ic{font-size:22px;line-height:1}
+.nav button.on{color:var(--brand)}
+.nav button:disabled{opacity:.35;cursor:not-allowed}
+
+/* ---------- banners / chips ---------- */
+.banner{
+  padding:11px 14px;border-radius:11px;font-size:14px;margin-bottom:14px;
+  background:var(--warn-bg);color:#78350f;border:1px solid #fcd34d;
+}
+.banner.info{background:#e0f2fe;color:#075985;border-color:#7dd3fc}
+.chip{
+  display:inline-block;padding:3px 10px;border-radius:999px;
+  font-size:12px;font-weight:700;background:var(--line-soft);color:var(--muted);
+}
+.chip.over{background:var(--over-bg);color:var(--over)}
+.chip.short{background:var(--short-bg);color:var(--short)}
+.chip.warn{background:var(--warn-bg);color:var(--warn)}
+.chip.ok{background:var(--brand-light);color:var(--brand-dark)}
+.muted{color:var(--muted);font-size:14px}
+.empty{text-align:center;color:var(--muted);padding:26px 10px;font-size:15px}
+
+/* ---------- pick list (rounds / zones / search) ---------- */
+.picklist{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
+.pick{
+  text-align:left;width:100%;font-family:inherit;font-size:16px;cursor:pointer;
+  background:#fff;border:2px solid var(--line);border-radius:12px;
+  padding:12px 14px;min-height:var(--tap);color:var(--text);
+}
+.pick .pick-title{font-weight:700}
+.pick .pick-meta{font-size:13px;color:var(--muted);margin-top:2px}
+.pick.sel{border-color:var(--brand);background:var(--brand-light)}
+.pick.sel .pick-meta{color:var(--brand-dark)}
+
+/* ---------- counted list ---------- */
+.clist{display:flex;flex-direction:column;gap:10px}
+.crec{border:1px solid var(--line-soft);border-radius:12px;padding:12px;background:#fff}
+.crec .c-top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.crec .c-name{font-weight:700;word-break:break-word}
+.crec .c-code{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.crec .c-qty{font-size:24px;font-weight:800;white-space:nowrap;color:var(--brand-dark)}
+.crec .c-meta{font-size:13px;color:var(--muted);margin-top:6px;display:flex;flex-wrap:wrap;gap:4px 12px}
+.crec .c-act{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}
+.hist{margin-top:10px;border-top:1px dashed var(--line);padding-top:8px;display:flex;flex-direction:column;gap:6px}
+.hist .h-item{font-size:13px;color:var(--muted);background:#f8fafc;border-radius:8px;padding:7px 10px}
+
+/* ---------- summary ---------- */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:8px;margin-bottom:14px}
+.stat{background:#fff;border:1px solid var(--line-soft);border-radius:12px;padding:10px;text-align:center}
+.stat .s-num{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
+.stat .s-lab{font-size:12px;color:var(--muted);margin-top:2px}
+.filters{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;margin-bottom:10px}
+.filters .btn{flex:0 0 auto}
+/* หน้าสรุปใช้การ์ดแทนตาราง เพื่อให้ "ผลต่าง" กับ "สถานะ" อยู่ในจอมือถือเสมอ
+   ไม่ต้องเลื่อนซ้ายขวาหา ซึ่งเป็นตัวเลขที่ทีมคลังต้องเห็นเป็นอันดับแรก */
+.srow{background:#fff;border:1px solid var(--line-soft);border-radius:12px;padding:12px;cursor:pointer}
+.srow:active{background:#f8fafc}
+.s-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.s-code{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.s-name{font-weight:700;word-break:break-word}
+.s-nums{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:10px;text-align:center}
+.s-nums > div{background:#f8fafc;border-radius:9px;padding:7px 4px}
+.s-cap{display:block;font-size:12px;color:var(--muted)}
+.s-val{font-size:19px;font-weight:800;font-variant-numeric:tabular-nums}
+.s-val.over{color:var(--over)}
+.s-val.short{color:var(--short)}
+.s-zones{margin-top:10px;border-top:1px dashed var(--line);padding-top:8px;display:flex;flex-direction:column;gap:6px}
+.s-zones .z-item{font-size:13px;color:var(--muted);background:#f8fafc;border-radius:8px;padding:7px 10px}
+
+/* ---------- modal + toast ---------- */
+.modal-bg{
+  position:fixed;inset:0;z-index:60;background:rgba(15,23,42,.55);
+  display:none;align-items:flex-end;justify-content:center;padding:0;
+}
+.modal-bg.show{display:flex}
+.modal{
+  background:#fff;width:100%;max-width:520px;border-radius:18px 18px 0 0;
+  padding:20px 18px calc(20px + env(safe-area-inset-bottom));
+}
+.modal h3{margin-bottom:10px}
+.modal p{margin:0 0 16px;font-size:15px;color:#334155;white-space:pre-line}
+.modal .m-act{display:flex;flex-direction:column;gap:10px}
+.toast{
+  position:fixed;left:50%;transform:translateX(-50%);
+  bottom:calc(86px + env(safe-area-inset-bottom));z-index:70;
+  background:#0f172a;color:#fff;padding:12px 18px;border-radius:12px;
+  font-size:15px;font-weight:600;max-width:90vw;text-align:center;
+  opacity:0;pointer-events:none;transition:opacity .18s;
+}
+.toast.show{opacity:.96}
+.toast.bad{background:#991b1b}
+.foot{text-align:center;color:var(--muted);font-size:13px;padding:6px 0 10px}
+</style>
+
+<div class="topbar">
+  <div class="t-title">ISRD ระบบนับสต๊อก</div>
+  <div class="t-sub" id="topSub">ยังไม่ได้เลือกรอบนับ</div>
+</div>
+
+<div class="wrap">
+
+<!-- ============ PAGE 1 : START ============ -->
+<section class="page active" id="pageStart">
+  <div id="modeBanner"></div>
+
+  <div class="card">
+    <h3>1. เลือกรอบนับ</h3>
+    <div class="picklist" id="roundList"></div>
+    <div class="row">
+      <input type="text" id="newRoundName" placeholder="ชื่อรอบนับใหม่ เช่น รอบนับ ก.ค. 2569">
+      <button class="btn ghost" id="btnAddRound" style="flex:0 0 auto">+ สร้างรอบ</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>2. เลือกโซนในคลัง</h3>
+    <div class="picklist" id="zoneList"></div>
+    <div class="row">
+      <input type="text" id="newZoneName" placeholder="ชื่อโซนใหม่ เช่น โซน A ชั้น 1">
+      <button class="btn ghost" id="btnAddZone" style="flex:0 0 auto">+ เพิ่มโซน</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>3. ชื่อผู้นับ</h3>
+    <label class="fld">
+      <span>ใส่ชื่อของคุณ เพื่อบันทึกว่าใครเป็นคนนับ</span>
+      <input type="text" id="counterName" placeholder="เช่น สมชาย" autocomplete="name">
+    </label>
+  </div>
+
+  <div class="card">
+    <h3>4. ยอดในระบบ</h3>
+    <div id="importStatus" class="muted" style="margin-bottom:12px">ยังไม่ได้นำเข้ายอดระบบของรอบนี้</div>
+    <input type="file" id="fileInput" accept=".csv,.xlsx" style="display:none">
+    <button class="btn ghost block" id="btnImport">📄 นำเข้ายอดระบบ (Excel / CSV)</button>
+    <p class="muted" style="margin:12px 0 0">
+      ไฟล์ต้องมีหัวตารางแถวแรก และมีคอลัมน์ <b>รหัสสินค้า</b> กับ <b>ยอดระบบ</b> เป็นอย่างน้อย<br>
+      ตัวอย่าง: รหัสสินค้า | ชื่อสินค้า | หน่วย | ยอดระบบ
+    </p>
+  </div>
+
+  <button class="btn big block" id="btnStart" disabled>เริ่มนับ</button>
+  <div class="foot">เวอร์ชัน <span id="verText"></span></div>
+</section>
+
+<!-- ============ PAGE 2 : COUNT ============ -->
+<section class="page" id="pageCount">
+  <div class="banner info" id="sessionBar" style="display:flex;justify-content:space-between;gap:10px;align-items:center">
+    <span id="sessionText"></span>
+    <button class="btn sm grey" id="btnChangeSession" style="flex:0 0 auto">เปลี่ยน</button>
+  </div>
+
+  <div class="card">
+    <h3>ค้นหาสินค้า</h3>
+    <label class="fld" style="margin-bottom:8px">
+      <span>พิมพ์รหัสสินค้า หรือ ชื่อสินค้า</span>
+      <input type="text" id="searchBox" placeholder="เช่น A001 หรือ น้ำตาล" autocomplete="off">
+    </label>
+    <div class="picklist" id="searchResults"></div>
+    <div id="searchHint" class="muted"></div>
+  </div>
+
+  <div class="card" id="countForm" style="display:none">
+    <h3 id="cfTitle"></h3>
+    <div id="cfInfo" class="muted" style="margin-bottom:12px"></div>
+    <label class="fld">
+      <span>จำนวนที่นับได้</span>
+      <input class="qty" type="text" id="qtyInput" inputmode="numeric" pattern="[0-9]*" placeholder="0" autocomplete="off">
+    </label>
+    <button class="btn big block" id="btnSave">บันทึกการนับ</button>
+    <button class="btn grey block" id="btnCancel" style="margin-top:10px">ยกเลิก</button>
+  </div>
+
+  <div class="card">
+    <h3>รายการที่นับแล้วในรอบนี้ <span class="chip" id="countedTotal">0</span></h3>
+    <div class="clist" id="countedList"></div>
+  </div>
+</section>
+
+<!-- ============ PAGE 3 : SUMMARY ============ -->
+<section class="page" id="pageSummary">
+  <div class="banner info" id="sumHead"></div>
+  <div class="stats" id="sumStats"></div>
+  <div class="filters">
+    <button class="btn sm grey" data-filter="all">ทั้งหมด</button>
+    <button class="btn sm grey" data-filter="diff">เฉพาะที่มีผลต่าง</button>
+    <button class="btn sm grey" data-filter="none">ยังไม่นับ</button>
+  </div>
+  <div class="clist" id="sumList"></div>
+  <p class="muted" style="margin:12px 0 14px">แตะรายการเพื่อดูว่านับได้เท่าไหร่ในแต่ละโซน</p>
+  <button class="btn big block" id="btnExport">⬇ ดาวน์โหลด Excel</button>
+</section>
+
+</div>
+
+<nav class="nav">
+  <button id="navStart" class="on"><span class="ic">📋</span>เริ่มนับ</button>
+  <button id="navCount" disabled><span class="ic">🔢</span>นับ</button>
+  <button id="navSummary" disabled><span class="ic">📊</span>สรุปผล</button>
+</nav>
+
+<div class="modal-bg" id="modalBg">
+  <div class="modal">
+    <h3 id="modalTitle"></h3>
+    <p id="modalMsg"></p>
+    <div class="m-act">
+      <button class="btn big" id="modalOk"></button>
+      <button class="btn grey" id="modalCancel">ยกเลิก</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+
+/* ============================================================
+   ISRD Stocktake — single-file warehouse stocktake tool
+   Everything (HTML + CSS + JS) lives in this one file on purpose.
+   No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
+   ============================================================ */
+
+var APP_VERSION = '1.0.0';
+
+/* ------------------------------------------------------------
+   FIREBASE CONFIG
+   ใส่ค่าจริงจาก Firebase Console ตรงนี้ที่เดียว แล้วแอปจะสลับไป
+   ใช้ฐานข้อมูลจริงทันที ถ้ายังไม่ใส่ แอปจะทำงานในโหมดทดสอบ
+   (เก็บข้อมูลไว้ในเครื่องนี้เท่านั้น)
+   ------------------------------------------------------------ */
+var FIREBASE_CONFIG = {
+  apiKey:      'PASTE_YOUR_API_KEY_HERE',
+  databaseURL: 'PASTE_YOUR_DATABASE_URL_HERE'   // https://xxx-default-rtdb.asia-southeast1.firebasedatabase.app
+};
+
+/* ============================================================
+   1. STORAGE ADAPTER
+   Two interchangeable backends behind one tiny API:
+     db.get(path)              -> Promise<value|null>
+     db.update(path, patchObj) -> Promise   (never overwrites siblings)
+     db.newKey()               -> chronologically sortable push id
+     db.subscribe(path, cb)    -> unsubscribe fn
+   Remote backend talks to the Realtime Database REST API with
+   PATCH only, which is exactly what .update() does in the SDK.
+   ============================================================ */
+
+var PUSH_CHARS = '-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz';
+var lastPushTime = 0;
+var lastRandChars = [];
+
+function generatePushId() {
+  var now = Date.now();
+  var duplicate = (now === lastPushTime);
+  lastPushTime = now;
+  var stamp = new Array(8);
+  for (var i = 7; i >= 0; i--) { stamp[i] = PUSH_CHARS.charAt(now % 64); now = Math.floor(now / 64); }
+  var id = stamp.join('');
+  if (!duplicate) {
+    for (var j = 0; j < 12; j++) lastRandChars[j] = Math.floor(Math.random() * 64);
+  } else {
+    var k = 11;
+    while (k >= 0 && lastRandChars[k] === 63) { lastRandChars[k] = 0; k--; }
+    if (k >= 0) lastRandChars[k]++;
+  }
+  for (var m = 0; m < 12; m++) id += PUSH_CHARS.charAt(lastRandChars[m]);
+  return id;
+}
+
+function deepGet(tree, path) {
+  var parts = String(path).split('/').filter(Boolean);
+  var node = tree;
+  for (var i = 0; i < parts.length; i++) {
+    if (node === null || typeof node !== 'object') return null;
+    node = node[parts[i]];
+    if (node === undefined) return null;
+  }
+  return node === undefined ? null : node;
+}
+
+function deepSet(tree, path, value) {
+  var parts = String(path).split('/').filter(Boolean);
+  if (!parts.length) return value;
+  var node = tree;
+  for (var i = 0; i < parts.length - 1; i++) {
+    if (node[parts[i]] === null || typeof node[parts[i]] !== 'object') node[parts[i]] = {};
+    node = node[parts[i]];
+  }
+  if (value === null) delete node[parts[parts.length - 1]];
+  else node[parts[parts.length - 1]] = value;
+  return tree;
+}
+
+var REMOTE_MODE = /^https?:\/\//.test(FIREBASE_CONFIG.databaseURL || '');
+
+var db = (function () {
+  var listeners = [];   // {path, cb}
+
+  /* a listener fires when the changed path is itself, an ancestor, or a descendant */
+  function pathTouches(listenerPath, changedPath) {
+    if (changedPath === null) return true;
+    if (listenerPath === changedPath) return true;
+    return listenerPath.indexOf(changedPath + '/') === 0 || changedPath.indexOf(listenerPath + '/') === 0;
+  }
+
+  function fire(changedPath) {
+    listeners.slice().forEach(function (l) {
+      if (pathTouches(l.path, changedPath)) Promise.resolve(readLocal(l.path)).then(l.cb);
+    });
+  }
+
+  /* ---------- local backend (test mode) ---------- */
+  var LS_KEY = 'isrd_stocktake_v1';
+  var channel = (typeof BroadcastChannel !== 'undefined') ? new BroadcastChannel('isrd_stocktake') : null;
+
+  function loadTree() {
+    try { return JSON.parse(localStorage.getItem(LS_KEY) || '{}') || {}; }
+    catch (e) { return {}; }
+  }
+  function saveTree(tree) { localStorage.setItem(LS_KEY, JSON.stringify(tree)); }
+  function readLocal(path) { return deepGet(loadTree(), path); }
+
+  if (channel) channel.onmessage = function () { fire(null); };
+  window.addEventListener('storage', function (e) { if (e.key === LS_KEY) fire(null); });
+
+  /* ---------- remote backend (Firebase REST) ---------- */
+  var base = String(FIREBASE_CONFIG.databaseURL || '').replace(/\/+$/, '');
+  var authQS = '';
+  function url(path) { return base + '/' + String(path).replace(/^\/+/, '') + '.json' + authQS; }
+
+  var remoteCache = {};   // mirror of every subscribed subtree, kept fresh by SSE
+
+  function remoteGet(path) {
+    return fetch(url(path)).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    });
+  }
+
+  function remoteUpdate(path, patch) {
+    return fetch(url(path), {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch)
+    }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    });
+  }
+
+  function remoteSubscribe(path, cb) {
+    var es = new EventSource(url(path));
+    var alive = true;
+    function apply(kind, msg) {
+      var sub = (msg.path === '/' ? '' : msg.path);
+      var full = (path + sub).replace(/\/+$/, '');
+      if (kind === 'put') {
+        if (sub === '') remoteCache[path] = msg.data;
+        else deepSet(remoteCache, full, msg.data);
+      } else {
+        var target = sub === '' ? path : full;
+        var cur = deepGet(remoteCache, target) || {};
+        Object.keys(msg.data || {}).forEach(function (k) { cur[k] = msg.data[k]; });
+        deepSet(remoteCache, target, cur);
+      }
+      if (alive) cb(deepGet(remoteCache, path));
+    }
+    ['put', 'patch'].forEach(function (evt) {
+      es.addEventListener(evt, function (e) {
+        try { apply(evt, JSON.parse(e.data)); } catch (err) { /* ignore malformed frame */ }
+      });
+    });
+    es.onerror = function () { /* EventSource reconnects on its own */ };
+    return function () { alive = false; es.close(); };
+  }
+
+  /* ---------- public API ---------- */
+  return {
+    remote: REMOTE_MODE,
+    newKey: generatePushId,
+
+    get: function (path) {
+      if (REMOTE_MODE) return remoteGet(path);
+      return Promise.resolve(readLocal(path));
+    },
+
+    /* patch keys may contain slashes, e.g. {'counts/abc': {...}} */
+    update: function (path, patch) {
+      if (REMOTE_MODE) return remoteUpdate(path, patch);
+      var tree = loadTree();
+      Object.keys(patch).forEach(function (k) {
+        deepSet(tree, path + '/' + k, patch[k]);
+      });
+      saveTree(tree);
+      if (channel) channel.postMessage(1);
+      fire(path);
+      return Promise.resolve(patch);
+    },
+
+    subscribe: function (path, cb) {
+      if (REMOTE_MODE) return remoteSubscribe(path, cb);
+      var entry = { path: path, cb: cb };
+      listeners.push(entry);
+      Promise.resolve(readLocal(path)).then(cb);
+      return function () {
+        var i = listeners.indexOf(entry);
+        if (i >= 0) listeners.splice(i, 1);
+      };
+    }
+  };
+})();
+
+/* ============================================================
+   2. XLSX WRITER  (no library — store-only ZIP + SpreadsheetML)
+   ============================================================ */
+
+var CRC_TABLE = (function () {
+  var t = new Uint32Array(256);
+  for (var n = 0; n < 256; n++) {
+    var c = n;
+    for (var k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+
+function crc32(bytes) {
+  var c = 0xFFFFFFFF;
+  for (var i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+
+function utf8(str) { return new TextEncoder().encode(str); }
+
+/* Build an uncompressed (stored) ZIP. Excel opens these fine. */
+function zipStore(files) {
+  var chunks = [], central = [], offset = 0;
+  var d = new Date();
+  var dosTime = ((d.getHours() << 11) | (d.getMinutes() << 5) | (Math.floor(d.getSeconds() / 2))) & 0xFFFF;
+  var dosDate = (((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate()) & 0xFFFF;
+
+  function u16(v) { return [v & 0xFF, (v >>> 8) & 0xFF]; }
+  function u32(v) { return [v & 0xFF, (v >>> 8) & 0xFF, (v >>> 16) & 0xFF, (v >>> 24) & 0xFF]; }
+
+  files.forEach(function (f) {
+    var nameBytes = utf8(f.name);
+    var data = f.data;
+    var crc = crc32(data);
+    var head = [].concat(
+      u32(0x04034b50), u16(20), u16(0x0800), u16(0),  // flag 0x0800 = UTF-8 names
+      u16(dosTime), u16(dosDate),
+      u32(crc), u32(data.length), u32(data.length),
+      u16(nameBytes.length), u16(0)
+    );
+    chunks.push(new Uint8Array(head), nameBytes, data);
+
+    central.push(new Uint8Array([].concat(
+      u32(0x02014b50), u16(20), u16(20), u16(0x0800), u16(0),
+      u16(dosTime), u16(dosDate),
+      u32(crc), u32(data.length), u32(data.length),
+      u16(nameBytes.length), u16(0), u16(0), u16(0), u16(0),
+      u32(0), u32(offset)
+    )), nameBytes);
+
+    offset += head.length + nameBytes.length + data.length;
+  });
+
+  var centralSize = central.reduce(function (s, c) { return s + c.length; }, 0);
+  var eocd = new Uint8Array([].concat(
+    u32(0x06054b50), u16(0), u16(0),
+    u16(files.length), u16(files.length),
+    u32(centralSize), u32(offset), u16(0)
+  ));
+
+  return new Blob(chunks.concat(central, [eocd]), { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+}
+
+function escXml(s) {
+  return String(s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[c];
+  }).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
+}
+
+function colLetter(idx) {
+  var s = '', n = idx + 1;
+  while (n > 0) { var m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); }
+  return s;
+}
+
+/* rows: array of arrays. Strings become inline strings so Thai text
+   survives without a sharedStrings table. Row 0 is styled bold. */
+function sheetXml(rows, widths) {
+  var out = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">';
+  if (widths && widths.length) {
+    out += '<cols>';
+    widths.forEach(function (w, i) { out += '<col min="' + (i + 1) + '" max="' + (i + 1) + '" width="' + w + '" customWidth="1"/>'; });
+    out += '</cols>';
+  }
+  out += '<sheetData>';
+  rows.forEach(function (row, r) {
+    out += '<row r="' + (r + 1) + '">';
+    row.forEach(function (val, c) {
+      var ref = colLetter(c) + (r + 1);
+      var style = (r === 0) ? ' s="1"' : '';
+      if (typeof val === 'number' && isFinite(val)) {
+        out += '<c r="' + ref + '"' + style + '><v>' + val + '</v></c>';
+      } else {
+        var text = (val === null || val === undefined) ? '' : String(val);
+        out += '<c r="' + ref + '"' + style + ' t="inlineStr"><is><t xml:space="preserve">' + escXml(text) + '</t></is></c>';
+      }
+    });
+    out += '</row>';
+  });
+  return out + '</sheetData></worksheet>';
+}
+
+/* sheets: [{name, rows, widths}] */
+function buildXlsx(sheets) {
+  var files = [];
+
+  var ct = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+    '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+    '<Default Extension="xml" ContentType="application/xml"/>' +
+    '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
+    '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>';
+  sheets.forEach(function (s, i) {
+    ct += '<Override PartName="/xl/worksheets/sheet' + (i + 1) + '.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>';
+  });
+  ct += '</Types>';
+  files.push({ name: '[Content_Types].xml', data: utf8(ct) });
+
+  files.push({ name: '_rels/.rels', data: utf8(
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>' +
+    '</Relationships>') });
+
+  var wb = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
+    'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>';
+  sheets.forEach(function (s, i) {
+    wb += '<sheet name="' + escXml(s.name) + '" sheetId="' + (i + 1) + '" r:id="rId' + (i + 1) + '"/>';
+  });
+  wb += '</sheets></workbook>';
+  files.push({ name: 'xl/workbook.xml', data: utf8(wb) });
+
+  var rels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">';
+  sheets.forEach(function (s, i) {
+    rels += '<Relationship Id="rId' + (i + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet' + (i + 1) + '.xml"/>';
+  });
+  rels += '<Relationship Id="rId' + (sheets.length + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>';
+  files.push({ name: 'xl/_rels/workbook.xml.rels', data: utf8(rels) });
+
+  files.push({ name: 'xl/styles.xml', data: utf8(
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+    '<fonts count="2"><font><sz val="11"/><name val="Tahoma"/></font><font><b/><sz val="11"/><name val="Tahoma"/></font></fonts>' +
+    '<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>' +
+    '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>' +
+    '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
+    '<cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
+    '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs>' +
+    '</styleSheet>') });
+
+  sheets.forEach(function (s, i) {
+    files.push({ name: 'xl/worksheets/sheet' + (i + 1) + '.xml', data: utf8(sheetXml(s.rows, s.widths)) });
+  });
+
+  return zipStore(files);
+}
+
+/* ============================================================
+   3. FILE IMPORT  (CSV + XLSX, no library)
+   ============================================================ */
+
+function decodeTextFile(buffer) {
+  var bytes = new Uint8Array(buffer);
+  if (bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) {
+    return new TextDecoder('utf-8').decode(bytes.subarray(3));
+  }
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch (e) {
+    // Excel ภาษาไทยมักบันทึก CSV เป็น Windows-874 ไม่ใช่ UTF-8
+    return new TextDecoder('windows-874').decode(bytes);
+  }
+}
+
+function parseCsv(text) {
+  var firstLine = text.split(/\r?\n/)[0] || '';
+  var delim = ',';
+  [';', '\t'].forEach(function (d) {
+    if (firstLine.split(d).length > firstLine.split(delim).length) delim = d;
+  });
+
+  var rows = [], row = [], field = '', inQuotes = false;
+  for (var i = 0; i < text.length; i++) {
+    var ch = text[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; }
+        else inQuotes = false;
+      } else field += ch;
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === delim) {
+      row.push(field); field = '';
+    } else if (ch === '\n') {
+      row.push(field); rows.push(row); row = []; field = '';
+    } else if (ch !== '\r') {
+      field += ch;
+    }
+  }
+  if (field.length || row.length) { row.push(field); rows.push(row); }
+  return rows.filter(function (r) { return r.some(function (c) { return String(c).trim() !== ''; }); });
+}
+
+function inflateRaw(bytes) {
+  if (typeof DecompressionStream === 'undefined') {
+    return Promise.reject(new Error('NO_INFLATE'));
+  }
+  var stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  return new Response(stream).arrayBuffer().then(function (buf) { return new Uint8Array(buf); });
+}
+
+/* Read a ZIP central directory and return {filename: Promise<Uint8Array>} */
+function unzip(buffer) {
+  var b = new Uint8Array(buffer);
+  var dv = new DataView(buffer);
+
+  var eocd = -1;
+  for (var i = b.length - 22; i >= 0 && i > b.length - 66000; i--) {
+    if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error('BAD_ZIP');
+
+  var count = dv.getUint16(eocd + 10, true);
+  var cdOffset = dv.getUint32(eocd + 16, true);
+  var entries = {};
+  var p = cdOffset;
+
+  for (var n = 0; n < count; n++) {
+    if (dv.getUint32(p, true) !== 0x02014b50) break;
+    var method = dv.getUint16(p + 10, true);
+    var compSize = dv.getUint32(p + 20, true);
+    var nameLen = dv.getUint16(p + 28, true);
+    var extraLen = dv.getUint16(p + 30, true);
+    var commentLen = dv.getUint16(p + 32, true);
+    var localOff = dv.getUint32(p + 42, true);
+    var name = new TextDecoder('utf-8').decode(b.subarray(p + 46, p + 46 + nameLen));
+
+    var lNameLen = dv.getUint16(localOff + 26, true);
+    var lExtraLen = dv.getUint16(localOff + 28, true);
+    var dataStart = localOff + 30 + lNameLen + lExtraLen;
+    entries[name] = { method: method, data: b.subarray(dataStart, dataStart + compSize) };
+
+    p += 46 + nameLen + extraLen + commentLen;
+  }
+
+  return {
+    has: function (name) { return !!entries[name]; },
+    read: function (name) {
+      var e = entries[name];
+      if (!e) return Promise.resolve(null);
+      if (e.method === 0) return Promise.resolve(e.data);
+      if (e.method === 8) return inflateRaw(e.data);
+      return Promise.reject(new Error('BAD_ZIP'));
+    }
+  };
+}
+
+function decodeXmlEntities(s) {
+  return s.replace(/&#(\d+);/g, function (_, d) { return String.fromCharCode(+d); })
+          .replace(/&#x([0-9a-fA-F]+);/g, function (_, h) { return String.fromCharCode(parseInt(h, 16)); })
+          .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+          .replace(/&amp;/g, '&');
+}
+
+function textOfNode(xml) {
+  var out = '', re = /<t[^>]*>([\s\S]*?)<\/t>/g, m;
+  while ((m = re.exec(xml)) !== null) out += decodeXmlEntities(m[1]);
+  return out;
+}
+
+function parseXlsx(buffer) {
+  var zip;
+  try { zip = unzip(buffer); }
+  catch (e) { return Promise.reject(e); }
+
+  return zip.read('xl/sharedStrings.xml').then(function (ssBytes) {
+    var shared = [];
+    if (ssBytes) {
+      var ssXml = new TextDecoder('utf-8').decode(ssBytes);
+      var re = /<si>([\s\S]*?)<\/si>/g, m;
+      while ((m = re.exec(ssXml)) !== null) shared.push(textOfNode(m[1]));
+    }
+    // ชีตแรกของไฟล์คือชีตที่นำเข้า
+    var sheetName = zip.has('xl/worksheets/sheet1.xml') ? 'xl/worksheets/sheet1.xml' : null;
+    if (!sheetName) throw new Error('NO_SHEET');
+
+    return zip.read(sheetName).then(function (sheetBytes) {
+      var xml = new TextDecoder('utf-8').decode(sheetBytes);
+      var rows = [];
+      var rowRe = /<row[^>]*>([\s\S]*?)<\/row>/g, rm;
+      while ((rm = rowRe.exec(xml)) !== null) {
+        var cells = [];
+        var cellRe = /<c([^>]*)\/>|<c([^>]*)>([\s\S]*?)<\/c>/g, cm;
+        while ((cm = cellRe.exec(rm[1])) !== null) {
+          var attrs = cm[1] || cm[2] || '';
+          var body = cm[3] || '';
+          var refM = /r="([A-Z]+)\d+"/.exec(attrs);
+          var col = 0;
+          if (refM) {
+            var letters = refM[1];
+            for (var i = 0; i < letters.length; i++) col = col * 26 + (letters.charCodeAt(i) - 64);
+            col -= 1;
+          } else col = cells.length;
+
+          var type = (/t="([^"]+)"/.exec(attrs) || [])[1];
+          var value = '';
+          if (type === 's') {
+            var vm = /<v>([\s\S]*?)<\/v>/.exec(body);
+            value = vm ? (shared[+vm[1]] || '') : '';
+          } else if (type === 'inlineStr') {
+            value = textOfNode(body);
+          } else {
+            var vv = /<v>([\s\S]*?)<\/v>/.exec(body);
+            value = vv ? decodeXmlEntities(vv[1]) : '';
+          }
+          while (cells.length < col) cells.push('');
+          cells[col] = value;
+        }
+        rows.push(cells);
+      }
+      return rows.filter(function (r) { return r.some(function (c) { return String(c).trim() !== ''; }); });
+    });
+  });
+}
+
+/* header aliases — รับได้ทั้งหัวตารางไทยและอังกฤษ */
+var HEADER_MAP = {
+  code:      ['รหัสสินค้า', 'รหัส', 'รหัสของ', 'code', 'itemcode', 'item_code', 'sku', 'barcode'],
+  name:      ['ชื่อสินค้า', 'ชื่อ', 'รายการ', 'name', 'itemname', 'item_name', 'description', 'desc'],
+  unit:      ['หน่วย', 'หน่วยนับ', 'unit', 'uom'],
+  systemQty: ['ยอดระบบ', 'ยอดในระบบ', 'จำนวนระบบ', 'จำนวนในระบบ', 'คงเหลือ', 'systemqty', 'system_qty', 'qty', 'quantity', 'stock']
+};
+
+function normHeader(s) { return String(s == null ? '' : s).replace(/\s|_/g, '').trim().toLowerCase(); }
+
+function rowsToItems(rows) {
+  if (!rows.length) throw new Error('EMPTY_FILE');
+  var header = rows[0].map(normHeader);
+  var idx = {};
+  Object.keys(HEADER_MAP).forEach(function (field) {
+    var aliases = HEADER_MAP[field].map(normHeader);
+    for (var c = 0; c < header.length; c++) {
+      if (aliases.indexOf(header[c]) >= 0) { idx[field] = c; return; }
+    }
+  });
+  if (idx.code === undefined) throw new Error('NO_CODE_COLUMN');
+
+  var items = {}, added = 0, skipped = 0;
+  for (var r = 1; r < rows.length; r++) {
+    var row = rows[r];
+    var code = String(row[idx.code] == null ? '' : row[idx.code]).trim();
+    if (!code) { skipped++; continue; }
+    var qtyRaw = idx.systemQty === undefined ? '0' : String(row[idx.systemQty] == null ? '' : row[idx.systemQty]);
+    var qty = parseFloat(qtyRaw.replace(/,/g, '').trim());
+    items[safeKey(code)] = {
+      code: code,
+      name: idx.name === undefined ? code : String(row[idx.name] == null ? '' : row[idx.name]).trim() || code,
+      unit: idx.unit === undefined ? '' : String(row[idx.unit] == null ? '' : row[idx.unit]).trim(),
+      systemQty: isFinite(qty) ? qty : 0
+    };
+    added++;
+  }
+  if (!added) throw new Error('NO_ROWS');
+  return { items: items, added: added, skipped: skipped, hasQtyColumn: idx.systemQty !== undefined };
+}
+
+/* Firebase keys cannot contain . $ # [ ] / or control chars */
+function safeKey(code) {
+  return String(code).replace(/[.$#\[\]\/\x00-\x1F\x7F]/g, '_');
+}
+
+/* ============================================================
+   4. APP STATE
+   ============================================================ */
+
+var state = {
+  roundIndex: {},    // {roundId: {name, createdAt, createdBy, status}}
+  roundId: null,
+  zoneId: null,
+  counter: '',
+  round: { zones: {}, items: {}, counts: {} },
+  selectedItem: null,
+  editing: null,     // count record being replaced
+  filter: 'all',
+  page: 'start',
+  openRows: {},
+  unsubRound: null
+};
+
+var $ = function (id) { return document.getElementById(id); };
+
+function toast(msg, bad) {
+  var t = $('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (bad ? ' bad' : '');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(function () { t.className = 'toast'; }, 3200);
+}
+
+function ask(title, message, okLabel) {
+  return new Promise(function (resolve) {
+    $('modalTitle').textContent = title;
+    $('modalMsg').textContent = message;
+    $('modalOk').textContent = okLabel || 'ตกลง';
+    $('modalBg').classList.add('show');
+    function done(v) {
+      $('modalBg').classList.remove('show');
+      $('modalOk').onclick = null;
+      $('modalCancel').onclick = null;
+      resolve(v);
+    }
+    $('modalOk').onclick = function () { done(true); };
+    $('modalCancel').onclick = function () { done(false); };
+  });
+}
+
+function fmtTime(ms) {
+  if (!ms) return '-';
+  var d = new Date(ms);
+  return d.toLocaleString('th-TH', {
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit'
+  });
+}
+
+function fmtNum(n) {
+  if (n === null || n === undefined || !isFinite(n)) return '-';
+  return Number(n).toLocaleString('th-TH', { maximumFractionDigits: 3 });
+}
+
+/* ผู้ใช้ตั้งชื่อโซนว่า "โซน A" อยู่แล้วบ่อย ๆ — อย่าเติมคำนำหน้าซ้ำเป็น "โซน โซน A" */
+function zoneLabel(name) {
+  var n = String(name == null ? '' : name).trim() || '-';
+  return /^โซน/.test(n) ? n : 'โซน ' + n;
+}
+function roundLabel(name) {
+  var n = String(name == null ? '' : name).trim() || '-';
+  return /^รอบ/.test(n) ? n : 'รอบ ' + n;
+}
+
+/* ============================================================
+   5. COUNT LOGIC
+   Records are append-only. Superseded records stay forever so the
+   history is always auditable — nothing is ever deleted or edited.
+   ============================================================ */
+
+function liveCounts() {
+  var counts = state.round.counts || {};
+  var superseded = {};
+  Object.keys(counts).forEach(function (id) {
+    if (counts[id] && counts[id].supersedes) superseded[counts[id].supersedes] = true;
+  });
+  return Object.keys(counts)
+    .filter(function (id) { return counts[id] && !superseded[id]; })
+    .map(function (id) {
+      var rec = counts[id];
+      return {
+        id: id, itemCode: rec.itemCode, itemName: rec.itemName, unit: rec.unit || '',
+        zoneId: rec.zoneId, zoneName: rec.zoneName, qty: Number(rec.qty) || 0,
+        counter: rec.counter, countedAt: Number(rec.countedAt) || 0, supersedes: rec.supersedes || null
+      };
+    })
+    .sort(function (a, b) { return b.countedAt - a.countedAt; });
+}
+
+/* Effective value per (item, zone) = newest live record for that pair.
+   Extra live records on the same pair mean two people counted the same
+   spot — surfaced as "นับซ้ำ" instead of silently dropped. */
+function effectiveByItem() {
+  var byPair = {}, dupes = {};
+  liveCounts().forEach(function (rec) {
+    var key = rec.itemCode + '||' + rec.zoneId;
+    if (!byPair[key]) byPair[key] = rec;
+    else {
+      dupes[rec.itemCode] = true;
+      if (rec.countedAt > byPair[key].countedAt) byPair[key] = rec;
+    }
+  });
+  var result = {};
+  Object.keys(byPair).forEach(function (key) {
+    var rec = byPair[key];
+    if (!result[rec.itemCode]) result[rec.itemCode] = { total: 0, zones: [], duplicated: false };
+    result[rec.itemCode].total += rec.qty;
+    result[rec.itemCode].zones.push(rec);
+    result[rec.itemCode].duplicated = !!dupes[rec.itemCode];
+  });
+  return result;
+}
+
+function findLiveRecord(itemCode, zoneId) {
+  var found = null;
+  liveCounts().forEach(function (rec) {
+    if (rec.itemCode === itemCode && rec.zoneId === zoneId) {
+      if (!found || rec.countedAt > found.countedAt) found = rec;
+    }
+  });
+  return found;
+}
+
+function historyOf(recordId) {
+  var counts = state.round.counts || {};
+  var chain = [], cur = counts[recordId];
+  var guard = 0;
+  while (cur && cur.supersedes && guard++ < 50) {
+    var prev = counts[cur.supersedes];
+    if (!prev) break;
+    chain.push({ id: cur.supersedes, qty: Number(prev.qty) || 0, counter: prev.counter, countedAt: Number(prev.countedAt) || 0, zoneName: prev.zoneName });
+    cur = prev;
+  }
+  return chain;
+}
+
+/* ============================================================
+   6. DATA WRITES  (always .update() / PATCH on a single record)
+   ============================================================ */
+
+function createRound(name) {
+  var id = db.newKey();
+  var meta = { name: name, createdAt: Date.now(), createdBy: state.counter || 'ไม่ระบุ', status: 'open' };
+  var patch = {};
+  patch[id] = meta;
+  return db.update('roundIndex', patch).then(function () { return id; });
+}
+
+function createZone(roundId, name) {
+  var id = db.newKey();
+  var patch = {};
+  patch['zones/' + id] = { name: name, createdAt: Date.now() };
+  return db.update('rounds/' + roundId, patch).then(function () { return id; });
+}
+
+function saveCount(item, qty, supersedesId) {
+  var id = db.newKey();
+  var zone = (state.round.zones || {})[state.zoneId] || { name: '-' };
+  var patch = {};
+  patch['counts/' + id] = {
+    itemCode: item.code,
+    itemName: item.name,
+    unit: item.unit || '',
+    zoneId: state.zoneId,
+    zoneName: zone.name,
+    qty: qty,
+    counter: state.counter,
+    countedAt: Date.now(),
+    supersedes: supersedesId || null
+  };
+  return db.update('rounds/' + state.roundId, patch);
+}
+
+function saveItems(roundId, items) {
+  var patch = {};
+  Object.keys(items).forEach(function (k) { patch['items/' + k] = items[k]; });
+  return db.update('rounds/' + roundId, patch);
+}
+
+/* ============================================================
+   7. RENDERING
+   ============================================================ */
+
+function showPage(name) {
+  state.page = name;
+  ['start', 'count', 'summary'].forEach(function (p) {
+    $('page' + p.charAt(0).toUpperCase() + p.slice(1)).classList.toggle('active', p === name);
+    $('nav' + p.charAt(0).toUpperCase() + p.slice(1)).classList.toggle('on', p === name);
+  });
+  window.scrollTo(0, 0);
+  if (name === 'summary') renderSummary();
+  if (name === 'count') renderCountPage();
+}
+
+function sessionReady() {
+  return !!(state.roundId && state.zoneId && state.counter);
+}
+
+function refreshNav() {
+  var ready = sessionReady();
+  $('navCount').disabled = !ready;
+  $('navSummary').disabled = !state.roundId;
+  $('btnStart').disabled = !ready;
+
+  var round = state.roundIndex[state.roundId];
+  var zone = (state.round.zones || {})[state.zoneId];
+  $('topSub').textContent = round
+    ? (round.name + (zone ? ' · ' + zone.name : '') + (state.counter ? ' · ' + state.counter : ''))
+    : 'ยังไม่ได้เลือกรอบนับ';
+}
+
+function renderStart() {
+  /* rounds */
+  var wrap = $('roundList');
+  var ids = Object.keys(state.roundIndex).sort(function (a, b) {
+    return (state.roundIndex[b].createdAt || 0) - (state.roundIndex[a].createdAt || 0);
+  });
+  wrap.innerHTML = '';
+  if (!ids.length) {
+    wrap.innerHTML = '<div class="empty">ยังไม่มีรอบนับ — พิมพ์ชื่อแล้วกด "+ สร้างรอบ" ด้านล่าง</div>';
+  }
+  ids.forEach(function (id) {
+    var r = state.roundIndex[id];
+    var b = document.createElement('button');
+    b.className = 'pick' + (id === state.roundId ? ' sel' : '');
+    b.setAttribute('data-round', id);
+    b.innerHTML = '<div class="pick-title"></div><div class="pick-meta"></div>';
+    b.querySelector('.pick-title').textContent = r.name;
+    b.querySelector('.pick-meta').textContent = 'สร้างเมื่อ ' + fmtTime(r.createdAt) + ' โดย ' + (r.createdBy || 'ไม่ระบุ');
+    b.onclick = function () { selectRound(id); };
+    wrap.appendChild(b);
+  });
+
+  /* zones */
+  var zw = $('zoneList');
+  zw.innerHTML = '';
+  if (!state.roundId) {
+    zw.innerHTML = '<div class="empty">เลือกรอบนับก่อน แล้วจึงเลือกโซน</div>';
+  } else {
+    var zones = state.round.zones || {};
+    var zids = Object.keys(zones).sort(function (a, b) { return (zones[a].createdAt || 0) - (zones[b].createdAt || 0); });
+    if (!zids.length) {
+      zw.innerHTML = '<div class="empty">รอบนี้ยังไม่มีโซน — พิมพ์ชื่อแล้วกด "+ เพิ่มโซน"</div>';
+    }
+    zids.forEach(function (id) {
+      var b = document.createElement('button');
+      b.className = 'pick' + (id === state.zoneId ? ' sel' : '');
+      b.setAttribute('data-zone', id);
+      b.innerHTML = '<div class="pick-title"></div>';
+      b.querySelector('.pick-title').textContent = zones[id].name;
+      b.onclick = function () {
+        state.zoneId = id;
+        localStorage.setItem('isrd_zone_' + state.roundId, id);
+        renderStart(); refreshNav();
+      };
+      zw.appendChild(b);
+    });
+  }
+
+  /* import status */
+  var itemCount = Object.keys(state.round.items || {}).length;
+  $('importStatus').textContent = !state.roundId
+    ? 'เลือกรอบนับก่อน แล้วจึงนำเข้ายอดระบบ'
+    : (itemCount ? 'รอบนี้มีสินค้าในระบบแล้ว ' + fmtNum(itemCount) + ' รายการ' : 'ยังไม่ได้นำเข้ายอดระบบของรอบนี้');
+  $('btnImport').disabled = !state.roundId;
+  $('btnAddZone').disabled = !state.roundId;
+
+  refreshNav();
+}
+
+function renderCountPage() {
+  var round = state.roundIndex[state.roundId] || { name: '-' };
+  var zone = (state.round.zones || {})[state.zoneId] || { name: '-' };
+  $('sessionText').textContent = roundLabel(round.name) + ' · ' + zoneLabel(zone.name) + ' · ผู้นับ ' + state.counter;
+  renderSearch();
+  renderCountedList();
+}
+
+function searchItems(term) {
+  var items = state.round.items || {};
+  var q = String(term || '').trim().toLowerCase();
+  if (!q) return [];
+  var hits = [];
+  Object.keys(items).forEach(function (k) {
+    var it = items[k];
+    if (!it) return;
+    var code = String(it.code || '').toLowerCase();
+    var name = String(it.name || '').toLowerCase();
+    var score = -1;
+    if (code === q) score = 0;
+    else if (code.indexOf(q) === 0) score = 1;
+    else if (name.indexOf(q) === 0) score = 2;
+    else if (code.indexOf(q) >= 0) score = 3;
+    else if (name.indexOf(q) >= 0) score = 4;
+    if (score >= 0) hits.push({ item: it, score: score });
+  });
+  hits.sort(function (a, b) { return a.score - b.score || String(a.item.code).localeCompare(String(b.item.code)); });
+  return hits.slice(0, 20).map(function (h) { return h.item; });
+}
+
+function renderSearch() {
+  var term = $('searchBox').value;
+  var box = $('searchResults');
+  var hint = $('searchHint');
+  box.innerHTML = '';
+
+  var total = Object.keys(state.round.items || {}).length;
+  if (!total) {
+    hint.textContent = 'รอบนี้ยังไม่มียอดระบบ — กลับไปหน้า "เริ่มนับ" แล้วนำเข้าไฟล์ก่อน';
+    return;
+  }
+  if (!String(term).trim()) {
+    hint.textContent = 'มีสินค้าในรอบนี้ ' + fmtNum(total) + ' รายการ — พิมพ์เพื่อค้นหา';
+    return;
+  }
+
+  var results = searchItems(term);
+  if (!results.length) {
+    hint.textContent = 'ไม่พบสินค้าที่ตรงกับ "' + term + '" — ลองพิมพ์รหัสหรือชื่อบางส่วน';
+    return;
+  }
+  hint.textContent = '';
+
+  results.forEach(function (it) {
+    var existing = findLiveRecord(it.code, state.zoneId);
+    var b = document.createElement('button');
+    b.className = 'pick';
+    b.setAttribute('data-code', it.code);
+    b.innerHTML = '<div class="pick-title"></div><div class="pick-meta"></div>';
+    b.querySelector('.pick-title').textContent = it.code + ' · ' + it.name;
+    b.querySelector('.pick-meta').textContent =
+      'ยอดระบบ ' + fmtNum(it.systemQty) + (it.unit ? ' ' + it.unit : '') +
+      (existing ? ' · โซนนี้นับแล้ว ' + fmtNum(existing.qty) : ' · โซนนี้ยังไม่นับ');
+    b.onclick = function () { openCountForm(it, null); };
+    box.appendChild(b);
+  });
+}
+
+function openCountForm(item, editRecord) {
+  state.selectedItem = item;
+  state.editing = editRecord || null;
+  $('countForm').style.display = 'block';
+  $('cfTitle').textContent = item.code + ' · ' + item.name;
+
+  var zone = (state.round.zones || {})[state.zoneId] || { name: '-' };
+  var info = 'ยอดระบบ ' + fmtNum(item.systemQty) + (item.unit ? ' ' + item.unit : '') + ' · ' + zoneLabel(zone.name);
+  if (editRecord) {
+    info = 'กำลังแก้ไขยอดที่นับไว้ใน' + zoneLabel(editRecord.zoneName) + ' (เดิม ' + fmtNum(editRecord.qty) +
+           ' โดย ' + editRecord.counter + ')\nยอดเดิมจะถูกเก็บไว้เป็นประวัติ ไม่หายไปไหน';
+  }
+  $('cfInfo').textContent = info;
+  $('qtyInput').value = editRecord ? String(editRecord.qty) : '';
+  $('qtyInput').focus();
+  $('countForm').scrollIntoView({ block: 'center' });
+}
+
+function closeCountForm() {
+  state.selectedItem = null;
+  state.editing = null;
+  $('countForm').style.display = 'none';
+  $('qtyInput').value = '';
+}
+
+function renderCountedList() {
+  var list = $('countedList');
+  var records = liveCounts();
+  $('countedTotal').textContent = fmtNum(records.length);
+  list.innerHTML = '';
+
+  if (!records.length) {
+    list.innerHTML = '<div class="empty">ยังไม่มีการนับในรอบนี้</div>';
+    return;
+  }
+
+  records.forEach(function (rec) {
+    var card = document.createElement('div');
+    card.className = 'crec';
+    card.setAttribute('data-rec', rec.id);
+
+    var top = document.createElement('div');
+    top.className = 'c-top';
+    var left = document.createElement('div');
+    var nm = document.createElement('div'); nm.className = 'c-name'; nm.textContent = rec.itemName;
+    var cd = document.createElement('div'); cd.className = 'c-code'; cd.textContent = rec.itemCode;
+    left.appendChild(nm); left.appendChild(cd);
+    var qty = document.createElement('div');
+    qty.className = 'c-qty';
+    qty.textContent = fmtNum(rec.qty) + (rec.unit ? ' ' + rec.unit : '');
+    top.appendChild(left); top.appendChild(qty);
+
+    var meta = document.createElement('div');
+    meta.className = 'c-meta';
+    [zoneLabel(rec.zoneName), 'ผู้นับ ' + rec.counter, fmtTime(rec.countedAt)].forEach(function (txt) {
+      var s = document.createElement('span'); s.textContent = txt; meta.appendChild(s);
+    });
+
+    var act = document.createElement('div');
+    act.className = 'c-act';
+    var edit = document.createElement('button');
+    edit.className = 'btn sm ghost';
+    edit.textContent = 'แก้ไข';
+    edit.onclick = function () {
+      var item = (state.round.items || {})[safeKey(rec.itemCode)] ||
+                 { code: rec.itemCode, name: rec.itemName, unit: rec.unit, systemQty: 0 };
+      openCountForm(item, rec);
+    };
+    act.appendChild(edit);
+
+    var chain = historyOf(rec.id);
+    if (chain.length) {
+      var hbtn = document.createElement('button');
+      hbtn.className = 'btn sm grey';
+      hbtn.textContent = 'ดูประวัติ (' + chain.length + ')';
+      var hbox = document.createElement('div');
+      hbox.className = 'hist';
+      hbox.style.display = 'none';
+      chain.forEach(function (h) {
+        var d = document.createElement('div');
+        d.className = 'h-item';
+        d.textContent = 'เดิม ' + fmtNum(h.qty) + ' · ' + zoneLabel(h.zoneName) + ' · ' + h.counter + ' · ' + fmtTime(h.countedAt) + ' (ถูกแก้ไข)';
+        hbox.appendChild(d);
+      });
+      hbtn.onclick = function () {
+        hbox.style.display = hbox.style.display === 'none' ? 'flex' : 'none';
+      };
+      act.appendChild(hbtn);
+      card.appendChild(top); card.appendChild(meta); card.appendChild(act); card.appendChild(hbox);
+      list.appendChild(card);
+      return;
+    }
+
+    card.appendChild(top); card.appendChild(meta); card.appendChild(act);
+    list.appendChild(card);
+  });
+}
+
+function summaryRows() {
+  var items = state.round.items || {};
+  var eff = effectiveByItem();
+  return Object.keys(items).map(function (k) {
+    var it = items[k];
+    var e = eff[it.code];
+    var counted = e ? e.total : null;
+    var variance = (counted === null) ? null : counted - (Number(it.systemQty) || 0);
+    var status = (counted === null) ? 'none' : (variance === 0 ? 'ok' : (variance > 0 ? 'over' : 'short'));
+    return {
+      key: k, code: it.code, name: it.name, unit: it.unit || '',
+      systemQty: Number(it.systemQty) || 0,
+      counted: counted, variance: variance, status: status,
+      zones: e ? e.zones : [], duplicated: e ? e.duplicated : false
+    };
+  }).sort(function (a, b) { return String(a.code).localeCompare(String(b.code), 'th'); });
+}
+
+var STATUS_TEXT = { none: 'ยังไม่นับ', ok: 'ตรงกัน', over: 'เกิน', short: 'ขาด' };
+var STATUS_CHIP = { none: '', ok: 'ok', over: 'over', short: 'short' };
+
+function renderSummary() {
+  var round = state.roundIndex[state.roundId] || { name: '-' };
+  $('sumHead').textContent = roundLabel(round.name) + ' · สร้างเมื่อ ' + fmtTime(round.createdAt);
+
+  var rows = summaryRows();
+  var stats = { total: rows.length, counted: 0, none: 0, ok: 0, diff: 0 };
+  rows.forEach(function (r) {
+    if (r.status === 'none') stats.none++; else stats.counted++;
+    if (r.status === 'ok') stats.ok++;
+    if (r.status === 'over' || r.status === 'short') stats.diff++;
+  });
+
+  $('sumStats').innerHTML = '';
+  [['ทั้งหมด', stats.total], ['นับแล้ว', stats.counted], ['ยังไม่นับ', stats.none],
+   ['ตรงกัน', stats.ok], ['มีผลต่าง', stats.diff]].forEach(function (pair) {
+    var d = document.createElement('div');
+    d.className = 'stat';
+    d.innerHTML = '<div class="s-num"></div><div class="s-lab"></div>';
+    d.querySelector('.s-num').textContent = fmtNum(pair[1]);
+    d.querySelector('.s-lab').textContent = pair[0];
+    $('sumStats').appendChild(d);
+  });
+
+  document.querySelectorAll('.filters .btn').forEach(function (b) {
+    b.className = 'btn sm ' + (b.getAttribute('data-filter') === state.filter ? '' : 'grey');
+  });
+
+  var list = $('sumList');
+  list.innerHTML = '';
+  var shown = rows.filter(function (r) {
+    if (state.filter === 'diff') return r.status === 'over' || r.status === 'short';
+    if (state.filter === 'none') return r.status === 'none';
+    return true;
+  });
+
+  if (!shown.length) {
+    var empty = document.createElement('div');
+    empty.className = 'empty';
+    empty.textContent = rows.length
+      ? 'ไม่มีรายการในตัวกรองนี้'
+      : 'รอบนี้ยังไม่มียอดระบบ — นำเข้าไฟล์ที่หน้า "เริ่มนับ" ก่อน';
+    list.appendChild(empty);
+    return;
+  }
+
+  shown.forEach(function (r) {
+    var card = document.createElement('div');
+    card.className = 'srow';
+    card.setAttribute('data-code', r.code);
+
+    var head = document.createElement('div');
+    head.className = 's-head';
+    var left = document.createElement('div');
+    var code = document.createElement('div'); code.className = 's-code'; code.textContent = r.code;
+    var name = document.createElement('div'); name.className = 's-name'; name.textContent = r.name;
+    left.appendChild(code); left.appendChild(name);
+    if (r.duplicated) {
+      var w = document.createElement('span');
+      w.className = 'chip warn';
+      w.textContent = 'นับซ้ำ';
+      left.appendChild(w);
+    }
+    var chip = document.createElement('span');
+    chip.className = 'chip ' + STATUS_CHIP[r.status];
+    chip.setAttribute('data-status', r.status);
+    chip.textContent = STATUS_TEXT[r.status];
+    head.appendChild(left); head.appendChild(chip);
+
+    var nums = document.createElement('div');
+    nums.className = 's-nums';
+    [
+      ['ยอดระบบ', fmtNum(r.systemQty), '', 'system'],
+      ['นับจริง', r.counted === null ? '-' : fmtNum(r.counted), '', 'counted'],
+      ['ผลต่าง',
+        r.variance === null ? '-' : (r.variance > 0 ? '+' : '') + fmtNum(r.variance),
+        r.status === 'over' ? ' over' : (r.status === 'short' ? ' short' : ''), 'variance']
+    ].forEach(function (col) {
+      var box = document.createElement('div');
+      var cap = document.createElement('span'); cap.className = 's-cap'; cap.textContent = col[0];
+      var val = document.createElement('span');
+      val.className = 's-val' + col[2];
+      val.setAttribute('data-field', col[3]);
+      val.textContent = col[1];
+      box.appendChild(cap); box.appendChild(val);
+      nums.appendChild(box);
+    });
+
+    card.appendChild(head); card.appendChild(nums);
+
+    if (state.openRows[r.code]) {
+      var zbox = document.createElement('div');
+      zbox.className = 's-zones';
+      if (!r.zones.length) {
+        var z0 = document.createElement('div');
+        z0.className = 'z-item';
+        z0.textContent = 'ยังไม่มีการนับสินค้ารายการนี้';
+        zbox.appendChild(z0);
+      }
+      r.zones.slice().sort(function (a, b) { return b.countedAt - a.countedAt; }).forEach(function (z) {
+        var zi = document.createElement('div');
+        zi.className = 'z-item';
+        zi.textContent = zoneLabel(z.zoneName) + ' : ' + fmtNum(z.qty) + (r.unit ? ' ' + r.unit : '') +
+                         ' · ผู้นับ ' + z.counter + ' · ' + fmtTime(z.countedAt);
+        zbox.appendChild(zi);
+      });
+      card.appendChild(zbox);
+    }
+
+    card.onclick = function () {
+      state.openRows[r.code] = !state.openRows[r.code];
+      renderSummary();
+    };
+    list.appendChild(card);
+  });
+}
+
+/* ============================================================
+   8. EXPORT
+   ============================================================ */
+
+function exportExcel() {
+  var round = state.roundIndex[state.roundId] || { name: 'stocktake' };
+  var rows = summaryRows();
+
+  var sheet1 = [['รหัสสินค้า', 'ชื่อสินค้า', 'หน่วย', 'ยอดระบบ', 'ยอดนับจริง', 'ผลต่าง', 'สถานะ']];
+  rows.forEach(function (r) {
+    sheet1.push([
+      r.code, r.name, r.unit, r.systemQty,
+      r.counted === null ? '' : r.counted,
+      r.variance === null ? '' : r.variance,
+      STATUS_TEXT[r.status] + (r.duplicated ? ' (นับซ้ำ)' : '')
+    ]);
+  });
+
+  /* ประวัติเต็ม รวมรายการที่ถูกแก้ไขทับไปแล้ว — audit trail */
+  var counts = state.round.counts || {};
+  var superseded = {};
+  Object.keys(counts).forEach(function (id) {
+    if (counts[id] && counts[id].supersedes) superseded[counts[id].supersedes] = true;
+  });
+  var sheet2 = [['วันเวลา', 'รหัสสินค้า', 'ชื่อสินค้า', 'โซน', 'จำนวน', 'ผู้นับ', 'สถานะรายการ', 'รหัสรายการ', 'ทับรายการ']];
+  Object.keys(counts).sort(function (a, b) {
+    return (Number(counts[b].countedAt) || 0) - (Number(counts[a].countedAt) || 0);
+  }).forEach(function (id) {
+    var c = counts[id];
+    if (!c) return;
+    sheet2.push([
+      fmtTime(Number(c.countedAt) || 0), c.itemCode, c.itemName, c.zoneName,
+      Number(c.qty) || 0, c.counter,
+      superseded[id] ? 'ถูกแก้ไข' : 'ใช้งาน',
+      id, c.supersedes || ''
+    ]);
+  });
+
+  var blob = buildXlsx([
+    { name: 'สรุปผลต่าง', rows: sheet1, widths: [16, 34, 10, 12, 12, 12, 14] },
+    { name: 'ประวัติการนับ', rows: sheet2, widths: [22, 16, 34, 18, 10, 16, 14, 24, 24] }
+  ]);
+
+  var safeName = String(round.name).replace(/[\\\/:*?"<>|]/g, '_').slice(0, 40);
+  var d = new Date();
+  var stamp = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'stocktake_' + safeName + '_' + stamp + '.xlsx';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+  toast('ดาวน์โหลดไฟล์ Excel แล้ว');
+}
+
+/* ============================================================
+   9. WIRING
+   ============================================================ */
+
+function selectRound(id) {
+  state.roundId = id;
+  localStorage.setItem('isrd_round', id);
+  state.zoneId = localStorage.getItem('isrd_zone_' + id) || null;
+  state.round = { zones: {}, items: {}, counts: {} };
+  state.openRows = {};
+
+  if (state.unsubRound) { state.unsubRound(); state.unsubRound = null; }
+  state.unsubRound = db.subscribe('rounds/' + id, function (data) {
+    state.round = {
+      zones: (data && data.zones) || {},
+      items: (data && data.items) || {},
+      counts: (data && data.counts) || {}
+    };
+    if (state.zoneId && !state.round.zones[state.zoneId]) state.zoneId = null;
+    renderStart();
+    if (state.page === 'count') renderCountPage();
+    if (state.page === 'summary') renderSummary();
+  });
+  renderStart();
+}
+
+function handleImport(file) {
+  if (!state.roundId) { toast('เลือกรอบนับก่อนนำเข้ายอดระบบ', true); return; }
+
+  var isXlsx = /\.xlsx$/i.test(file.name);
+  file.arrayBuffer().then(function (buf) {
+    return isXlsx ? parseXlsx(buf) : Promise.resolve(parseCsv(decodeTextFile(buf)));
+  }).then(function (rows) {
+    var parsed = rowsToItems(rows);
+    return saveItems(state.roundId, parsed.items).then(function () {
+      var msg = 'นำเข้าสำเร็จ ' + fmtNum(parsed.added) + ' รายการ';
+      if (parsed.skipped) msg += ' (ข้าม ' + fmtNum(parsed.skipped) + ' แถวที่ไม่มีรหัสสินค้า)';
+      toast(msg);
+      if (!parsed.hasQtyColumn) {
+        ask('ไม่พบคอลัมน์ยอดระบบ',
+            'นำเข้ารายการสินค้าเรียบร้อย แต่ไฟล์ไม่มีคอลัมน์ "ยอดระบบ"\nระบบตั้งยอดระบบให้เป็น 0 ทุกรายการ\nถ้าต้องการเทียบผลต่าง ให้เพิ่มคอลัมน์ "ยอดระบบ" แล้วนำเข้าไฟล์ใหม่อีกครั้ง',
+            'รับทราบ');
+      }
+    });
+  }).catch(function (err) {
+    var messages = {
+      EMPTY_FILE: 'ไฟล์นี้ว่างเปล่า กรุณาตรวจไฟล์แล้วอัปโหลดใหม่',
+      NO_CODE_COLUMN: 'ไฟล์นี้ไม่มีคอลัมน์ "รหัสสินค้า" กรุณาตรวจหัวตารางแถวแรก แล้วอัปโหลดใหม่',
+      NO_ROWS: 'ไม่พบข้อมูลสินค้าในไฟล์ กรุณาตรวจว่าแถวแรกเป็นหัวตาราง และมีข้อมูลตั้งแต่แถวที่ 2 ลงไป',
+      NO_SHEET: 'อ่านไฟล์ Excel นี้ไม่ได้ กรุณาบันทึกเป็น .xlsx หรือ CSV แล้วอัปโหลดใหม่',
+      BAD_ZIP: 'ไฟล์ Excel นี้เสียหรือไม่ใช่ไฟล์ .xlsx กรุณาบันทึกไฟล์เป็น CSV แล้วอัปโหลดใหม่',
+      NO_INFLATE: 'เครื่องนี้อ่านไฟล์ .xlsx ไม่ได้ กรุณาเปิดไฟล์ใน Excel แล้วบันทึกเป็น CSV จากนั้นอัปโหลดใหม่'
+    };
+    toast(messages[err && err.message] || 'นำเข้าไฟล์ไม่สำเร็จ กรุณาตรวจไฟล์แล้วลองใหม่อีกครั้ง', true);
+  });
+}
+
+function doSave() {
+  var item = state.selectedItem;
+  if (!item) return;
+
+  var raw = String($('qtyInput').value).trim().replace(/,/g, '');
+  if (raw === '') { toast('กรุณาใส่จำนวนที่นับได้', true); $('qtyInput').focus(); return; }
+  var qty = Number(raw);
+  if (!isFinite(qty) || qty < 0) { toast('จำนวนต้องเป็นตัวเลขไม่ติดลบ', true); $('qtyInput').focus(); return; }
+
+  var editing = state.editing;
+
+  function write(supersedesId) {
+    saveCount(item, qty, supersedesId).then(function () {
+      toast('บันทึกแล้ว ' + item.code + ' = ' + fmtNum(qty));
+      closeCountForm();
+      $('searchBox').value = '';
+      renderSearch();
+      $('searchBox').focus();
+    }).catch(function () {
+      toast('บันทึกไม่สำเร็จ กรุณาตรวจสัญญาณอินเทอร์เน็ตแล้วกดบันทึกอีกครั้ง', true);
+    });
+  }
+
+  if (editing) { write(editing.id); return; }
+
+  var existing = findLiveRecord(item.code, state.zoneId);
+  if (existing) {
+    ask('รายการนี้เคยนับแล้ว',
+        'โซนนี้เคยนับ ' + item.code + ' ไว้ ' + fmtNum(existing.qty) + ' โดย ' + existing.counter +
+        ' เมื่อ ' + fmtTime(existing.countedAt) + '\n\nบันทึกใหม่จะใช้ยอด ' + fmtNum(qty) +
+        ' แทน ส่วนยอดเดิมยังเก็บไว้ดูย้อนหลังได้',
+        'บันทึกทับ').then(function (ok) { if (ok) write(existing.id); });
+  } else {
+    write(null);
+  }
+}
+
+function init() {
+  $('verText').textContent = APP_VERSION;
+
+  $('modeBanner').innerHTML = '';
+  if (!db.remote) {
+    var b = document.createElement('div');
+    b.className = 'banner';
+    b.textContent = 'โหมดทดสอบ — ยังไม่ได้ตั้งค่า Firebase ข้อมูลจะเก็บอยู่ในเครื่องนี้เท่านั้น ' +
+                    'คนอื่นจะยังไม่เห็นยอดที่คุณนับ';
+    $('modeBanner').appendChild(b);
+  }
+
+  state.counter = localStorage.getItem('isrd_counter') || '';
+  $('counterName').value = state.counter;
+
+  $('counterName').addEventListener('input', function () {
+    state.counter = this.value.trim();
+    localStorage.setItem('isrd_counter', state.counter);
+    refreshNav();
+  });
+
+  $('btnAddRound').onclick = function () {
+    var name = $('newRoundName').value.trim();
+    if (!name) { toast('กรุณาตั้งชื่อรอบนับก่อน', true); return; }
+    createRound(name).then(function (id) {
+      $('newRoundName').value = '';
+      selectRound(id);
+      toast('สร้างรอบนับ "' + name + '" แล้ว');
+    }).catch(function () { toast('สร้างรอบนับไม่สำเร็จ กรุณาตรวจสัญญาณอินเทอร์เน็ตแล้วลองใหม่', true); });
+  };
+
+  $('btnAddZone').onclick = function () {
+    if (!state.roundId) { toast('เลือกรอบนับก่อนเพิ่มโซน', true); return; }
+    var name = $('newZoneName').value.trim();
+    if (!name) { toast('กรุณาตั้งชื่อโซนก่อน', true); return; }
+    createZone(state.roundId, name).then(function (id) {
+      $('newZoneName').value = '';
+      state.zoneId = id;
+      localStorage.setItem('isrd_zone_' + state.roundId, id);
+      renderStart();
+      toast('เพิ่มโซน "' + name + '" แล้ว');
+    }).catch(function () { toast('เพิ่มโซนไม่สำเร็จ กรุณาตรวจสัญญาณอินเทอร์เน็ตแล้วลองใหม่', true); });
+  };
+
+  $('btnImport').onclick = function () { $('fileInput').click(); };
+  $('fileInput').addEventListener('change', function () {
+    if (this.files && this.files[0]) handleImport(this.files[0]);
+    this.value = '';
+  });
+
+  $('btnStart').onclick = function () {
+    if (!sessionReady()) return;
+    if (!Object.keys(state.round.items || {}).length) {
+      toast('รอบนี้ยังไม่มียอดระบบ นำเข้าไฟล์ก่อนจึงจะค้นหาสินค้าได้', true);
+    }
+    showPage('count');
+  };
+
+  $('btnChangeSession').onclick = function () { showPage('start'); };
+  $('navStart').onclick = function () { showPage('start'); };
+  $('navCount').onclick = function () { if (sessionReady()) showPage('count'); };
+  $('navSummary').onclick = function () { if (state.roundId) showPage('summary'); };
+
+  $('searchBox').addEventListener('input', renderSearch);
+  $('btnSave').onclick = doSave;
+  $('btnCancel').onclick = closeCountForm;
+  $('qtyInput').addEventListener('keydown', function (e) { if (e.key === 'Enter') doSave(); });
+
+  document.querySelectorAll('.filters .btn').forEach(function (b) {
+    b.onclick = function () { state.filter = b.getAttribute('data-filter'); renderSummary(); };
+  });
+  $('btnExport').onclick = exportExcel;
+
+  db.subscribe('roundIndex', function (data) {
+    state.roundIndex = data || {};
+    renderStart();
+  });
+
+  var saved = localStorage.getItem('isrd_round');
+  if (saved) {
+    db.get('roundIndex/' + saved).then(function (r) { if (r) selectRound(saved); });
+  }
+}
+
+init();
+</script>
+
+<!--
+  ตัวอย่าง Firebase Realtime Database Rules ที่ตรงกับกฎของโปรเจกต์นี้
+  (คัดลอกไปวางใน Firebase Console > Realtime Database > Rules)
+
+  {
+    "rules": {
+      "roundIndex": { ".read": true, ".write": true },
+      "rounds": {
+        "$roundId": {
+          ".read": true,
+          "zones": { ".write": true },
+          "items": { ".write": true },
+          "counts": {
+            "$countId": {
+              // เขียนได้เฉพาะตอนสร้างใหม่ — ห้ามแก้ ห้ามลบยอดที่นับไปแล้ว
+              ".write": "!data.exists() && newData.exists()",
+              ".validate": "newData.hasChildren(['itemCode','zoneId','qty','counter','countedAt'])"
+            }
+          }
+        }
+      }
+    }
+  }
+-->
