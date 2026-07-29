@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="1.4.0">
+<meta name="version" content="1.4.1">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v1.4.0</title>
+<title>ISRD Stocktake v1.4.1</title>
 
 <style>
 :root{
@@ -294,16 +294,20 @@ table.grid td.neg{color:var(--short);font-weight:700}
 .jobcard .j-bar > i{display:block;height:100%;background:var(--brand);border-radius:99px}
 
 /* ---------- หน้าเอกสาร A4 ---------- */
-.docwrap{overflow-x:auto;-webkit-overflow-scrolling:touch;background:#e2e8f0;padding:10px;border-radius:12px}
+/* พื้นหลังเทา + กระดาษสีขาวตรงกลาง ให้ดูเหมือนเปิดไฟล์ PDF
+   ความกว้างล็อกตายตัวที่ A4 ไม่ยืดตามหน้าจอ */
+.docwrap{overflow-x:auto;-webkit-overflow-scrolling:touch;background:#94a3b8;padding:14px 10px;border-radius:12px}
 .doc{
-  width:210mm;min-height:297mm;background:#fff;color:#111827;
-  padding:14mm 12mm;margin:0 auto;box-shadow:0 2px 12px rgba(0,0,0,.18);
-  font-size:11pt;line-height:1.45;
+  width:210mm;                 /* A4 · เนื้อหาจริง 190mm หลังหักขอบซ้ายขวา 10mm */
+  min-height:297mm;
+  background:#fff;color:#111827;
+  padding:12mm 10mm 14mm;margin:0 auto;box-shadow:0 3px 16px rgba(0,0,0,.28);
+  font-size:9pt;line-height:1.45;
 }
 .doc h1,.doc h2,.doc h3{margin:0}
-.doc .co-name{font-size:16pt;font-weight:800;letter-spacing:.3px}
-.doc .co-date{text-align:right;font-size:11pt;margin-top:-22px}
-.doc hr{border:0;border-top:2px solid #111827;margin:10px 0 14px}
+.doc .co-name{font-size:15pt;font-weight:800;letter-spacing:.3px}
+.doc .co-date{text-align:right;font-size:9pt;margin-top:-20px}
+.doc hr{border:0;border-top:1pt solid #64748b;margin:9px 0 13px}
 .doc-sec{margin-bottom:14px}
 .doc-lab{font-weight:700}
 .doc .to-list{margin:2px 0 0 24px;padding:0}
@@ -314,30 +318,48 @@ table.grid td.neg{color:var(--short);font-weight:700}
   display:inline-block;min-width:220px;border-bottom:1.5px dotted #111827;
   padding:1px 6px;font-weight:700;
 }
-.doc table{border-collapse:collapse;width:100%;font-size:9.5pt}
+/* ทุกตารางกว้างเต็มเนื้อที่กระดาษ (190mm) เส้นขอบบางสีเทา ไม่ใช่เส้นดำหนา */
+.doc table{border-collapse:collapse;width:100%;font-size:9pt}
 /* ตารางรายการมี 14 คอลัมน์ ถ้าปล่อยให้เบราว์เซอร์จัดเอง คอลัมน์ Reason จะถูกดันตกขอบ A4
-   จึงล็อกความกว้างเป็นเปอร์เซ็นต์ด้วย table-layout:fixed ให้พอดีหน้ากระดาษเสมอ */
-.doc table.items{table-layout:fixed;font-size:8pt}
+   จึงล็อกความกว้างเป็นเปอร์เซ็นต์ด้วย table-layout:fixed ให้พอดีหน้ากระดาษเสมอ
+   (ตาราง Dashboard ใช้ auto เพราะหัวตารางมี colspan/rowspan ซ้อนกัน) */
+.doc table.items{font-size:8pt;table-layout:fixed}
 /* ภาษาไทยไม่มีช่องว่างระหว่างคำ ต้องใช้ overflow-wrap:anywhere ถึงจะตัดบรรทัดได้
    ไม่งั้นข้อความยาวจะล้นออกนอกช่องแล้วถูกตัดหายตอนพิมพ์ */
-.doc table.items td,.doc table.items th{padding:3px 4px;overflow-wrap:anywhere;word-break:normal}
-.doc table th,.doc table td{border:1px solid #94a3b8;padding:4px 5px;vertical-align:middle}
-.doc table th{background:#e2e8f0;font-weight:700;text-align:center}
+/* หัวตารางรายการสินค้าใช้ 8pt เท่าเนื้อตาราง ไม่งั้นคำไทยสั้น ๆ อย่าง "จำนวน"
+   จะถูกตัดกลางคำในคอลัมน์แคบ */
+.doc table.items td,.doc table.items th{padding:3px 4px;font-size:8pt}
+.doc table th,.doc table td{
+  border:0.5pt solid #cbd5e1;padding:4px 5px;vertical-align:middle;
+  text-align:left;overflow-wrap:break-word;word-break:normal;
+}
+/* ช่อง Reason: บนจอเป็นช่องกรอก ตอนพิมพ์เปลี่ยนเป็นข้อความ
+   เพราะ <input> ไม่ตัดบรรทัด ข้อความยาวจะถูกตัดหายตอนพิมพ์ */
+.reason-print{display:none;font-size:8pt;line-height:1.3;overflow-wrap:break-word}
+.doc table th{background:#eef2f7;font-weight:700;font-size:9pt;text-align:center}
 .doc table td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .doc table td.mid{text-align:center}
-.doc tr.total-row td{background:#f1f5f9;font-weight:800}
+/* แถวสลับสีอ่อนมาก ให้ไล่สายตาตามแถวได้แม้พิมพ์ขาวดำ */
+.doc table tbody tr:nth-child(even) td{background:#f7f9fb}
+.doc tr.total-row td,.doc table tbody tr.total-row:nth-child(even) td{background:#e8eef5;font-weight:800}
 .doc .pos{color:#15803d;font-weight:700}
 .doc .neg{color:#b91c1c;font-weight:700}
-.doc .tbl-title{font-weight:800;font-size:11.5pt;margin:16px 0 6px}
-.doc .img-box{width:24px;height:24px;border:1px solid #94a3b8;border-radius:3px;margin:0 auto;background:#fff}
+.doc .tbl-title{font-weight:800;font-size:10.5pt;margin:14px 0 6px}
+.doc .img-box{width:24px;height:24px;border:0.5pt solid #cbd5e1;border-radius:3px;margin:0 auto;background:#fff}
 .doc .reason-in{
   width:100%;min-height:0;border:0;border-bottom:1px dotted #94a3b8;border-radius:0;
   font-size:9pt;padding:2px 3px;background:transparent;font-family:inherit;
 }
 .doc .reason-in:focus{outline:none;background:#fef9c3}
-.donut-wrap{display:flex;align-items:center;gap:18px;margin:8px 0 4px}
-.donut-legend{font-size:10pt}
-.donut-legend .k{display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+/* กราฟโดนัท — ทั้งบล็อกอยู่กึ่งกลางหน้ากระดาษ และห้ามถูกตัดข้ามหน้า */
+.donut-block{text-align:center;margin:14px 0 6px;page-break-inside:avoid;break-inside:avoid}
+.donut-block .tbl-title{text-align:center;margin:0 0 8px}
+.donut-svg{width:45mm;height:45mm;display:block;margin:0 auto}
+.donut-legend{
+  margin-top:8px;display:flex;justify-content:center;align-items:center;
+  gap:20px;flex-wrap:wrap;font-size:9pt;
+}
+.donut-legend .k{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
 .sign-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px 14px;margin-top:10px}
 .sign-box{border:1px solid #94a3b8;border-radius:4px;padding:8px 10px 6px;font-size:9.5pt}
 .sign-box .s-role{font-weight:700;margin-bottom:26px}
@@ -349,21 +371,28 @@ table.grid td.neg{color:var(--short);font-weight:700}
 }
 
 @media print {
-  @page { size: A4 portrait; margin: 12mm 10mm; }
+  @page { size: A4 portrait; margin: 12mm 10mm 14mm 10mm; }
   html,body{background:#fff !important;padding:0 !important;margin:0 !important}
-  .topbar,.nav,.toast,.modal-bg,.no-print{display:none !important}
+  /* .jobbar กับ #reopenBanner เป็นแถบของแอป ไม่ใช่เนื้อเอกสาร
+     คำเตือนเรื่องเปิดแก้ในเอกสารใช้ #docReopen ซึ่งอยู่ในกระดาษอยู่แล้ว */
+  .topbar,.nav,.toast,.modal-bg,.no-print,.jobbar,#reopenBanner{display:none !important}
   .wrap{padding:0 !important;max-width:none !important}
   .page{display:none !important}
   #pageDoc{display:block !important}
   .docwrap{overflow:visible !important;background:none !important;padding:0 !important;border-radius:0}
-  .doc{width:auto !important;min-height:0 !important;box-shadow:none !important;padding:0 !important;margin:0 !important}
+  /* @page ให้ขอบกระดาษมาแล้ว ตัวเอกสารจึงกว้าง 190mm พอดีเนื้อที่พิมพ์ */
+  .doc{
+    width:190mm !important;min-height:0 !important;box-shadow:none !important;
+    padding:0 !important;margin:0 auto !important;
+  }
   /* หัวตารางต้องซ้ำทุกหน้า และห้ามตัดกลางแถว */
   table{page-break-inside:auto}
   thead{display:table-header-group}
   tfoot{display:table-footer-group}
   tr{page-break-inside:avoid;page-break-after:auto}
   .doc-sec,.sign-grid,.sign-box,.donut-wrap,.doc-foot{page-break-inside:avoid}
-  .doc .reason-in{border-bottom:0;background:transparent !important}
+  .doc .reason-in{display:none !important}
+  .doc .reason-print{display:block !important}
   .doc table th{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 }
 </style>
@@ -594,7 +623,11 @@ table.grid td.neg{color:var(--short);font-weight:700}
     <button class="btn ghost block" id="btnDocExcel" style="margin-top:10px">⬇ ดาวน์โหลด Excel</button>
     <p class="muted" style="margin:12px 0 0">
       กดพิมพ์แล้วเลือก "บันทึกเป็น PDF" ในหน้าต่างพิมพ์ของเบราว์เซอร์ได้เลย<br>
-      ตั้งกระดาษ A4 แนวตั้ง · ช่อง Reason ที่พิมพ์ไว้จะติดไปในเอกสารด้วย
+      <b>สำคัญ:</b> ในหน้าต่างพิมพ์ ให้เอาเครื่องหมายถูกออกจาก
+      <b>"หัวกระดาษและท้ายกระดาษ"</b> (Headers and footers)
+      ไม่งั้นเบราว์เซอร์จะพิมพ์ชื่อเรื่องกับวันที่ของตัวเองทับขอบบนกระดาษ
+      ซึ่งเป็นของเบราว์เซอร์ หน้าเว็บสั่งปิดให้ไม่ได้<br>
+      ขนาดกระดาษ A4 แนวตั้งถูกกำหนดมาให้แล้ว · ช่อง Reason ที่พิมพ์ไว้จะติดไปในเอกสารด้วย
     </p>
   </div>
 
@@ -636,18 +669,18 @@ table.grid td.neg{color:var(--short);font-weight:700}
         </table>
       </div>
 
-      <div class="doc-sec">
+      <div class="doc-sec donut-block">
         <div class="tbl-title">Stock Counting Accuracy</div>
-        <div class="donut-wrap">
-          <svg viewBox="0 0 120 120" width="140" height="140" role="img" aria-label="Stock Counting Accuracy">
-            <circle cx="60" cy="60" r="52" fill="none" stroke="#e2e8f0" stroke-width="16"></circle>
-            <circle id="donutArc" cx="60" cy="60" r="52" fill="none" stroke="#0f766e" stroke-width="16"
-                    stroke-dasharray="0 999" transform="rotate(-90 60 60)"></circle>
-            <text x="60" y="60" text-anchor="middle" font-size="19" font-weight="800" fill="#0f172a" id="donutPct">0%</text>
-            <text x="60" y="76" text-anchor="middle" font-size="8" fill="#64748b">Success</text>
-          </svg>
-          <div class="donut-legend" id="donutLegend"></div>
-        </div>
+        <svg class="donut-svg" viewBox="0 0 120 120" role="img" aria-label="Stock Counting Accuracy">
+          <circle cx="60" cy="60" r="50" fill="none" stroke="#e2e8f0" stroke-width="17"></circle>
+          <circle id="donutArc" cx="60" cy="60" r="50" fill="none" stroke="#0f766e" stroke-width="17"
+                  stroke-dasharray="0 999" transform="rotate(-90 60 60)"></circle>
+          <text x="60" y="57" text-anchor="middle" dominant-baseline="central"
+                font-size="23" font-weight="800" fill="#0f172a" id="donutPct">0%</text>
+          <text x="60" y="79" text-anchor="middle" dominant-baseline="central"
+                font-size="8.5" fill="#64748b">Success</text>
+        </svg>
+        <div class="donut-legend" id="donutLegend"></div>
       </div>
 
       <div class="doc-sec" id="docItemTables"></div>
@@ -697,7 +730,7 @@ table.grid td.neg{color:var(--short);font-weight:700}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '1.4.0';
+var APP_VERSION = '1.4.1';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -2773,7 +2806,7 @@ function renderDocDashboard(data) {
 
 /* วาดโดนัทด้วย SVG ตรง ๆ — stroke-dasharray บนวงกลม ไม่ต้องพึ่งไลบรารีกราฟ */
 function renderDonut(pct) {
-  var r = 52;
+  var r = 50;                              // ต้องตรงกับ r ของวงกลมใน SVG
   var circumference = 2 * Math.PI * r;
   var value = (pct === null || !isFinite(pct)) ? 0 : Math.max(0, Math.min(100, pct));
   var arc = circumference * value / 100;
@@ -2819,7 +2852,8 @@ function buildDocItemTable(title, rows) {
   table.setAttribute('data-doc-table', title);
 
   /* กว้างรวม 100% พอดีหน้ากระดาษเสมอ ไม่ว่าชื่อสินค้าจะยาวแค่ไหน */
-  var widths = [3, 5, 11, 15, 8, 6, 6, 5, 5, 6, 7, 7, 7, 9];
+  /* # รูป รหัส ชื่อ หมวด Type ระบบ ยิงจริง Dift ราคา มูลค่าระบบ มูลค่าจริง ผลต่าง Reason */
+  var widths = [3, 4, 11, 14, 8, 7, 6, 5, 5, 6, 7, 7, 7, 10];
   var colgroup = document.createElement('colgroup');
   widths.forEach(function (w) {
     var col = document.createElement('col');
@@ -2872,8 +2906,14 @@ function buildDocItemTable(title, rows) {
     input.className = 'reason-in';
     input.setAttribute('data-reason', r.key);
     input.value = state.reasons[r.key] || '';
+    var printed = document.createElement('span');
+    printed.className = 'reason-print';
+    printed.setAttribute('data-reason-print', r.key);
+    printed.textContent = input.value;
+    input.oninput = function () { printed.textContent = input.value; };
     input.onchange = function () { saveReason(r.key, input.value.trim()); };
     rtd.appendChild(input);
+    rtd.appendChild(printed);
     tr.appendChild(rtd);
 
     tbody.appendChild(tr);
@@ -3930,6 +3970,22 @@ init();
   ====================================================================
   สรุปการเปลี่ยนแปลง
   ====================================================================
+
+  v1.4.1 — จัดหน้าเอกสารให้เป็น A4 จริง
+    - @page A4 portrait ขอบ 12/10/14/10mm · ตัวเอกสารกว้าง 190mm ตายตัว
+      จัดกึ่งกลางด้วย margin auto ไม่ยืดตามหน้าจอ
+      บนจอเห็นเป็นกระดาษ A4 วางบนพื้นหลังเทาเหมือนเปิดไฟล์ PDF
+    - กราฟโดนัทอยู่กึ่งกลางหน้า ขนาด 45mm · หัวข้ออยู่กึ่งกลางเหนือกราฟ
+      ตัวเลข %Success อยู่กลางวงพอดี ใต้ตัวเลขมีคำว่า Success
+      legend ย้ายมาอยู่ใต้กราฟและจัดกึ่งกลาง · ทั้งบล็อกห้ามถูกตัดข้ามหน้า
+    - เนื้อหา 9pt · หัวตาราง 9pt ตัวหนา · ตารางรายการสินค้า 8pt
+      ทุกตารางกว้างเต็ม 190mm เส้นขอบบาง 0.5pt สีเทา
+      ตัวเลขชิดขวา ข้อความชิดซ้าย หัวตารางกึ่งกลาง แถวสลับสีอ่อนมาก
+      เพื่อให้ไล่สายตาตามแถวได้แม้พิมพ์ขาวดำ
+    - ที่อยู่บริษัทอยู่ท้ายเอกสารหน้าเดียว ไม่ซ้ำทุกหน้า
+    * หัวกระดาษที่ขึ้นชื่อเรื่องกับวันที่ตอนพิมพ์เป็นของเบราว์เซอร์เอง
+      หน้าเว็บสั่งปิดไม่ได้ ต้องเอาเครื่องหมายถูกออกจาก
+      "หัวกระดาษและท้ายกระดาษ" ในหน้าต่างพิมพ์ — มีบอกไว้ใต้ปุ่มพิมพ์แล้ว
 
   v1.4.0 — ระบบ Job หลายสาขาพร้อมกัน
     - roundIndex/{roundId} เก็บ jobCode, branch, createdBy, createdAt,
