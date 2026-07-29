@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="1.3.0">
+<meta name="version" content="1.4.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v1.3.0</title>
+<title>ISRD Stocktake v1.4.0</title>
 
 <style>
 :root{
@@ -91,7 +91,8 @@ select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,va
   padding:10px 2px;min-height:66px;color:var(--muted);font-size:12px;font-weight:600;
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
 }
-.nav button .ic{font-size:22px;line-height:1}
+.nav button .ic{font-size:19px;line-height:1}
+.nav button{font-size:11px}
 .nav button.on{color:var(--brand)}
 .nav button:disabled{opacity:.35;cursor:not-allowed}
 
@@ -253,6 +254,45 @@ table.grid td.neg{color:var(--short);font-weight:700}
 .toast.bad{background:#991b1b}
 .foot{text-align:center;color:var(--muted);font-size:13px;padding:6px 0 10px}
 
+/* ---------- แถบสถานะ Job (เห็นทุกหน้า) ---------- */
+.jobbar{
+  display:none;align-items:center;gap:10px;flex-wrap:wrap;
+  padding:10px 14px;border-radius:12px;margin-bottom:14px;font-size:14px;
+  border:2px solid var(--line);background:#fff;
+}
+.jobbar.show{display:flex}
+.jobbar .jb-code{font-weight:800;font-size:16px;letter-spacing:.3px}
+.jobbar.counting{border-color:var(--over);background:var(--over-bg);color:#14532d}
+.jobbar.reviewing{border-color:var(--warn);background:var(--warn-bg);color:#78350f}
+.jobbar.closed{border-color:var(--line);background:#e2e8f0;color:#334155}
+.reopen-banner{
+  background:var(--warn-bg);border:2px solid var(--warn);color:#78350f;
+  border-radius:12px;padding:11px 14px;margin-bottom:14px;font-size:14px;
+}
+.reopen-banner b{display:block;margin-bottom:4px}
+.reopen-banner ul{margin:4px 0 0;padding-left:20px}
+
+/* ---------- หน้ารายการ Job ---------- */
+.jobcard{
+  background:#fff;border:1px solid var(--line-soft);border-left:6px solid var(--line);
+  border-radius:12px;padding:13px;cursor:pointer;
+}
+.jobcard:active{background:#f8fafc}
+.jobcard.sel{border-color:var(--brand);background:var(--brand-light)}
+.jobcard.st-counting{border-left-color:var(--over)}
+.jobcard.st-reviewing{border-left-color:var(--warn)}
+.jobcard.st-closed{border-left-color:#94a3b8}
+.jobcard .j-top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.jobcard .j-code{font-size:17px;font-weight:800;letter-spacing:.3px;font-variant-numeric:tabular-nums}
+.jobcard .j-branch{font-size:14px;color:var(--muted);word-break:break-word}
+.jobcard .j-meta{font-size:12.5px;color:var(--muted);margin-top:6px;display:flex;flex-wrap:wrap;gap:3px 12px}
+.jobcard .j-prog{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:10px;text-align:center}
+.jobcard .j-prog > div{background:#f8fafc;border-radius:9px;padding:6px 3px}
+.jobcard .j-prog .p-lab{display:block;font-size:11px;color:var(--muted)}
+.jobcard .j-prog .p-val{font-size:16px;font-weight:800;font-variant-numeric:tabular-nums}
+.jobcard .j-bar{height:6px;border-radius:99px;background:var(--line-soft);margin-top:9px;overflow:hidden}
+.jobcard .j-bar > i{display:block;height:100%;background:var(--brand);border-radius:99px}
+
 /* ---------- หน้าเอกสาร A4 ---------- */
 .docwrap{overflow-x:auto;-webkit-overflow-scrolling:touch;background:#e2e8f0;padding:10px;border-radius:12px}
 .doc{
@@ -329,32 +369,57 @@ table.grid td.neg{color:var(--short);font-weight:700}
 </style>
 
 <div class="topbar">
-  <div class="t-title">ISRD ระบบนับสต๊อก</div>
+  <div class="t-title" id="topTitle">ISRD ระบบนับสต๊อก</div>
   <div class="t-sub" id="topSub">ยังไม่ได้เลือกรอบนับ</div>
 </div>
 
 <div class="wrap">
 
-<!-- ============ PAGE 1 : START ============ -->
-<section class="page active" id="pageStart">
+<div class="jobbar" id="jobBar"></div>
+<div id="reopenBanner"></div>
+
+<!-- ============ PAGE 0 : JOB LIST ============ -->
+<section class="page active" id="pageJobs">
   <div id="modeBanner"></div>
 
   <div class="card">
-    <h3>1. เลือกรอบนับ</h3>
-    <div class="picklist" id="roundList"></div>
-    <label class="fld" style="margin-bottom:8px">
-      <span>ชื่อรอบนับใหม่</span>
-      <input type="text" id="newRoundName" placeholder="เช่น รอบนับ ก.ค. 2569">
+    <h3>รายการ Job</h3>
+    <div class="filters" id="jobStatusFilters">
+      <button class="btn sm" data-jstatus="all">ทั้งหมด</button>
+      <button class="btn sm grey" data-jstatus="counting">กำลังนับ</button>
+      <button class="btn sm grey" data-jstatus="reviewing">รอตรวจสอบ</button>
+      <button class="btn sm grey" data-jstatus="closed">ปิดแล้ว</button>
+    </div>
+    <label class="fld" style="margin-bottom:0">
+      <span>กรองตามสาขา</span>
+      <select id="jobBranchFilter"><option value="all">ทุกสาขา</option></select>
     </label>
-    <label class="fld" style="margin-bottom:10px">
-      <span>สาขา — ใช้ตรวจว่าไฟล์ที่นำเข้าเป็นของสาขานี้จริง</span>
-      <input type="text" id="newRoundBranch" placeholder="เช่น NTDS Central Festival Chiangmai FL.4">
-    </label>
-    <button class="btn ghost block" id="btnAddRound">+ สร้างรอบ</button>
   </div>
 
+  <div class="clist" id="jobList" style="margin-bottom:14px"></div>
+
+  <!-- ฟอร์มสร้างอยู่ล่างรายการ เพราะเปิดแอปมาส่วนใหญ่คือมาเลือกงานที่ค้างอยู่ ไม่ใช่สร้างใหม่ -->
   <div class="card">
-    <h3>2. เลือกโซนในคลัง</h3>
+    <h3>สร้าง Job ใหม่</h3>
+    <label class="fld" style="margin-bottom:8px">
+      <span>สาขา</span>
+      <input type="text" id="newRoundBranch" placeholder="เช่น NTDS Central Festival Chiangmai FL.4">
+    </label>
+    <div class="row" style="margin-bottom:8px">
+      <input type="text" id="newJobAbbr" placeholder="อักษรย่อสาขา เช่น CFCM">
+      <input type="text" id="newRoundName" placeholder="ชื่อรอบ เช่น รอบนับ ก.ค. 2569">
+    </div>
+    <button class="btn ghost block" id="btnAddRound">+ สร้าง Job</button>
+    <div class="hint" id="jobCodePreview" style="display:none"></div>
+  </div>
+
+  <div class="foot">เวอร์ชัน <span id="verText"></span></div>
+</section>
+
+<!-- ============ PAGE 1 : START ============ -->
+<section class="page" id="pageStart">
+  <div class="card">
+    <h3>1. เลือกโซนในคลัง</h3>
     <div class="picklist" id="zoneList"></div>
     <div class="row">
       <input type="text" id="newZoneName" placeholder="ชื่อโซนใหม่ เช่น โซน A ชั้น 1">
@@ -364,7 +429,7 @@ table.grid td.neg{color:var(--short);font-weight:700}
   </div>
 
   <div class="card">
-    <h3>3. ชื่อผู้นับ</h3>
+    <h3>2. ชื่อผู้นับ</h3>
     <label class="fld">
       <span>ใส่ชื่อของคุณ เพื่อบันทึกว่าใครเป็นคนนับ</span>
       <input type="text" id="counterName" placeholder="เช่น สมชาย" autocomplete="name">
@@ -372,7 +437,7 @@ table.grid td.neg{color:var(--short);font-weight:700}
   </div>
 
   <div class="card">
-    <h3>4. ยอดในระบบ</h3>
+    <h3>3. ยอดในระบบ</h3>
     <div id="importStatus" class="muted" style="margin-bottom:12px">ยังไม่ได้นำเข้ายอดระบบของรอบนี้</div>
     <button class="btn ghost sm block" id="btnImportReport" style="display:none;margin-bottom:12px">ดูรายละเอียดการนำเข้าล่าสุด</button>
     <input type="file" id="fileInput" accept=".csv,.xlsx" style="display:none">
@@ -386,7 +451,6 @@ table.grid td.neg{color:var(--short);font-weight:700}
 
   <button class="btn big block" id="btnStart" disabled>เริ่มนับ</button>
   <div class="hint list" id="startBlockers" style="display:none"></div>
-  <div class="foot">เวอร์ชัน <span id="verText"></span></div>
 </section>
 
 <!-- ============ PAGE 2 : SCAN ============ -->
@@ -499,6 +563,15 @@ table.grid td.neg{color:var(--short);font-weight:700}
   </div>
 
   <button class="btn big block" id="btnExport">⬇ ดาวน์โหลด Excel (ฉบับเต็ม)</button>
+
+  <div class="card" style="margin-top:14px">
+    <h3>จัดการรอบนับ</h3>
+    <div id="closeHint" class="muted" style="margin-bottom:10px"></div>
+    <button class="btn ghost block" id="btnReview">→ ส่งเข้าขั้นตรวจสอบ</button>
+    <button class="btn block" id="btnClose" style="margin-top:10px">🔒 ปิดรอบนับ</button>
+    <button class="btn grey block" id="btnReopen" style="margin-top:10px;display:none">🔓 เปิดรอบนับกลับมาแก้ (Admin)</button>
+    <button class="btn grey block" id="btnDeleteJob" style="margin-top:10px">🗑 ลบ Job นี้ (Admin)</button>
+  </div>
 </section>
 
 <!-- ============ PAGE 5 : DOCUMENT ============ -->
@@ -592,12 +665,14 @@ table.grid td.neg{color:var(--short);font-weight:700}
 </div>
 
 <nav class="nav">
-  <button id="navStart" class="on"><span class="ic">📋</span>เริ่มนับ</button>
+  <button id="navJobs" class="on"><span class="ic">🗒</span>Job</button>
+  <button id="navStart" disabled><span class="ic">📋</span>ตั้งค่า</button>
   <button id="navScan" disabled><span class="ic">📷</span>ยิง</button>
   <button id="navMaster"><span class="ic">🗂</span>Master</button>
   <button id="navSummary" disabled><span class="ic">📊</span>สรุป</button>
   <button id="navDoc" disabled><span class="ic">📄</span>เอกสาร</button>
 </nav>
+<div id="modeBannerHost" style="display:none"></div>
 
 <div class="modal-bg" id="modalBg">
   <div class="modal">
@@ -622,7 +697,7 @@ table.grid td.neg{color:var(--short);font-weight:700}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '1.3.0';
+var APP_VERSION = '1.4.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -634,6 +709,17 @@ var FIREBASE_CONFIG = {
   apiKey:      'PASTE_YOUR_API_KEY_HERE',
   databaseURL: 'PASTE_YOUR_DATABASE_URL_HERE'   // https://xxx-default-rtdb.asia-southeast1.firebasedatabase.app
 };
+
+/* ------------------------------------------------------------
+   PIN ของแอดมิน — ใช้กับการเปิด Job ที่ปิดแล้ว และการลบ Job
+
+   ข้อจำกัดที่ต้องรู้: PIN ตัวนี้อยู่ในไฟล์ฝั่งเบราว์เซอร์ ใครกด View Source
+   ก็เห็น มันกันได้แค่ "การเผลอกด" ของคนหน้างานเท่านั้น ไม่ใช่ระบบความปลอดภัย
+   ตอนย้ายไป dashboard จริง ต้องเปลี่ยนไปบังคับด้วย Firebase Auth
+   แล้วเขียน Database Rules ให้เช็ค auth.uid / custom claim ที่ฝั่งเซิร์ฟเวอร์
+   ไม่ใช่เช็คในโค้ดหน้าเว็บแบบนี้
+   ------------------------------------------------------------ */
+var ADMIN_PIN = '2569';
 
 /* ============================================================
    1. STORAGE ADAPTER
@@ -1539,7 +1625,11 @@ var state = {
   unsub: [],
   manualPicked: null,
   modalOpen: false,
-  manualOpen: false
+  manualOpen: false,
+  jobFilter: 'all',        // ตัวกรองสถานะในหน้ารายการ Job
+  jobBranch: 'all',
+  jobStats: {},            // roundId -> ความคืบหน้า (คำนวณครั้งเดียวแล้วเก็บไว้)
+  jobConfirmed: false      // ยืนยัน Job แล้วหรือยังก่อนเริ่มยิง
 };
 
 var $ = function (id) { return document.getElementById(id); };
@@ -1552,6 +1642,9 @@ function toast(msg, bad) {
   toast._t = setTimeout(function () { t.className = 'toast'; }, 3200);
 }
 
+/* opts.fields = [{key,label,type:'text'|'pin',placeholder}]
+   ถ้ามี fields จะคืนค่าเป็น object ของค่าที่กรอก หรือ null เมื่อกดยกเลิก
+   ถ้าไม่มี fields จะคืน true/false เหมือนเดิม */
 function ask(title, message, okLabel, opts) {
   opts = opts || {};
   state.modalOpen = true;
@@ -1559,18 +1652,45 @@ function ask(title, message, okLabel, opts) {
     $('modalTitle').textContent = title;
     $('modalMsg').textContent = message;
     $('modalDetail').innerHTML = '';
+
+    var inputs = {};
+    (opts.fields || []).forEach(function (f) {
+      var lab = document.createElement('label');
+      lab.className = 'fld';
+      var sp = document.createElement('span');
+      sp.textContent = f.label;
+      var inp = document.createElement('input');
+      inp.type = f.type === 'pin' ? 'password' : 'text';
+      if (f.type === 'pin') { inp.setAttribute('inputmode', 'numeric'); }
+      inp.setAttribute('autocomplete', 'off');
+      inp.setAttribute('data-field', f.key);
+      inp.placeholder = f.placeholder || '';
+      lab.appendChild(sp); lab.appendChild(inp);
+      $('modalDetail').appendChild(lab);
+      inputs[f.key] = inp;
+    });
     if (opts.detail) $('modalDetail').appendChild(opts.detail);
+
     $('modalCancel').style.display = opts.hideCancel ? 'none' : '';
     $('modalCancel').textContent = opts.cancelLabel || 'ยกเลิก';
     $('modalOk').textContent = okLabel || 'ตกลง';
     $('modalOk').className = 'btn big' + (opts.danger ? ' danger' : '');
     $('modalBg').classList.add('show');
-    function done(v) {
+    var first = Object.keys(inputs)[0];
+    if (first) setTimeout(function () { inputs[first].focus(); }, 30);
+
+    function done(ok) {
+      var values = null;
+      if (ok && opts.fields) {
+        values = {};
+        Object.keys(inputs).forEach(function (k) { values[k] = inputs[k].value.trim(); });
+      }
       $('modalBg').classList.remove('show');
+      $('modalDetail').innerHTML = '';
       $('modalOk').onclick = null;
       $('modalCancel').onclick = null;
       state.modalOpen = false;
-      resolve(v);
+      resolve(opts.fields ? values : ok);
       if (state.page === 'scan') focusScan();
     }
     $('modalOk').onclick = function () { done(true); };
@@ -1636,6 +1756,7 @@ function applyScanRecord(id, rec) {
     state.scanQty[key] = (state.scanQty[key] || 0) + delta;
   }
   state.scanLog.push({ id: id, rec: rec });
+  delete state.jobStats[state.roundId];   // ความคืบหน้าที่แคชไว้เก่าแล้ว
   return true;
 }
 
@@ -1713,14 +1834,59 @@ function flushQueue() {
    8. เขียนข้อมูล
    ============================================================ */
 
-function createRound(name, branch) {
+/* jobCode ต้องอ่านออกด้วยตา เพราะเวลามีหลายสาขานับพร้อมกัน
+   คนหน้างานต้องเห็นแล้วรู้ทันทีว่ากำลังยิงเข้า Job ไหน */
+function suggestAbbr(branch) {
+  var words = String(branch || '').split(/[\s_\-.]+/).filter(Boolean);
+  var letters = words.map(function (w) { return w.charAt(0); })
+    .filter(function (c) { return /[A-Za-z0-9]/.test(c); })
+    .join('').toUpperCase();
+  return letters.slice(0, 4) || 'JOB';
+}
+
+function makeJobCode(abbr, when) {
+  var d = new Date(when || Date.now());
+  var day = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+  var prefix = String(abbr || 'JOB').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6) || 'JOB';
+  var base = prefix + '-' + day + '-';
+  var used = Object.keys(state.roundIndex)
+    .map(function (id) { return (state.roundIndex[id] || {}).jobCode || ''; })
+    .filter(function (c) { return c.indexOf(base) === 0; });
+  var next = used.length + 1;
+  while (used.indexOf(base + String(next).padStart(2, '0')) >= 0) next++;   // กันชนถ้ามีคนลบ Job กลางทาง
+  return base + String(next).padStart(2, '0');
+}
+
+function createRound(name, branch, abbr) {
   var id = db.newKey();
   var patch = {};
   patch[id] = {
+    jobCode: makeJobCode(abbr || suggestAbbr(branch)),
     name: name, branch: branch || '',
-    createdAt: Date.now(), createdBy: state.counter || 'ไม่ระบุ', status: 'open'
+    createdAt: Date.now(), createdBy: state.counter || 'ไม่ระบุ',
+    status: 'counting'
   };
   return db.update('roundIndex', patch).then(function () { return id; });
+}
+
+/* ---------- สถานะ Job ----------
+   counting  ยิงได้ กรอกมือได้ ยกเลิกได้ นำเข้าไฟล์ได้
+   reviewing ยิงไม่ได้ แต่แก้ Reason / Master และออกเอกสารได้
+   closed    อ่านอย่างเดียว ดูและพิมพ์เอกสารได้เท่านั้น              */
+var JOB_STATUS_TEXT = { counting: 'กำลังนับ', reviewing: 'รอตรวจสอบ', closed: 'ปิดแล้ว' };
+
+function currentJob() { return state.roundIndex[state.roundId] || null; }
+function jobStatus() {
+  var j = currentJob();
+  return (j && j.status) || 'counting';
+}
+function canScan() { return !!state.roundId && jobStatus() === 'counting'; }
+function canEdit() { return !!state.roundId && jobStatus() !== 'closed'; }
+
+function blockedMessage() {
+  return jobStatus() === 'closed'
+    ? 'รอบนี้ปิดแล้ว แก้ไขไม่ได้'
+    : 'รอบนี้อยู่ขั้นตรวจสอบ ยิงเพิ่มไม่ได้แล้ว';
 }
 
 function createZone(roundId, name) {
@@ -1943,6 +2109,13 @@ function focusScan() {
 function handleScanValue(raw) {
   var value = String(raw || '').trim();
   if (!value) return;
+  /* ด่านสุดท้ายฝั่งหน้าจอ — ตัวจริงบังคับที่ Database Rules อีกชั้น */
+  if (!canScan()) {
+    flashStage('miss');
+    beep(180, 260, 'sawtooth');
+    toast(blockedMessage(), true);
+    return;
+  }
   if (!state.scanIndex) buildScanIndex();
 
   var key = state.scanIndex.get(value.toUpperCase());
@@ -2040,6 +2213,7 @@ function renderSyncBar() {
 }
 
 function undoLastScan() {
+  if (!canScan()) { toast(blockedMessage(), true); return; }
   var last = state.undoStack.pop();
   if (!last) { $('btnUndo').disabled = true; return; }
   var written = writeScan(last.key, -1, 'scan', 'ยกเลิกการยิงล่าสุด');
@@ -2130,6 +2304,7 @@ function closeManual() {
 }
 
 function saveManual() {
+  if (!canScan()) { toast(blockedMessage(), true); return; }
   if (!state.manualPicked) { toast('เลือกสินค้าก่อน', true); return; }
   var raw = String($('manualQty').value).trim().replace(/,/g, '');
   var qty = Number(raw);
@@ -2169,6 +2344,8 @@ function masterRows() {
 }
 
 function saveProductEdit(key, field, value) {
+  /* Master เป็นข้อมูลกลาง แต่ถ้ากำลังเปิด Job ที่ปิดแล้วอยู่ ให้อ่านอย่างเดียวตามกติกา */
+  if (state.roundId && !canEdit()) { toast(blockedMessage(), true); return Promise.resolve(); }
   var patch = {};
   var next = {};
   next[field] = value;
@@ -2383,6 +2560,20 @@ function renderSummary() {
     body.appendChild(tr);
   });
 
+  /* ปุ่มจัดการรอบ — เปลี่ยนตามสถานะ Job */
+  var st = jobStatus();
+  var notScanned = Object.keys(state.systemQty).filter(function (k) { return !state.counts[k]; }).length;
+  var unknownLeft = Object.keys(state.unknown).length;
+  $('btnReview').style.display = st === 'counting' ? 'flex' : (st === 'reviewing' ? 'flex' : 'none');
+  $('btnReview').textContent = st === 'reviewing' ? '← กลับไปขั้นนับ' : '→ ส่งเข้าขั้นตรวจสอบ';
+  $('btnClose').style.display = st === 'closed' ? 'none' : 'flex';
+  $('btnReopen').style.display = st === 'closed' ? 'flex' : 'none';
+  $('closeHint').textContent = st === 'closed'
+    ? ('ปิดโดย ' + (round.closedBy || 'ไม่ระบุ') + ' เมื่อ ' + fmtTime(round.closedAt))
+    : ('สถานะตอนนี้: ' + JOB_STATUS_TEXT[st] +
+       (notScanned ? ' · ยังไม่ถูกยิงเลย ' + fmtNum(notScanned) + ' รายการ' : '') +
+       (unknownLeft ? ' · บาร์โค้ดไม่พบค้าง ' + fmtNum(unknownLeft) + ' รายการ' : ''));
+
   var noCost = Object.keys(state.products).filter(function (k) {
     var c = state.products[k].costPrice;
     return c === undefined || c === null;
@@ -2532,12 +2723,14 @@ function docCell(row, text, cls) {
 }
 
 function saveReason(key, value) {
+  if (!canEdit()) { toast(blockedMessage(), true); return Promise.resolve(); }
   var patch = {};
   patch['reasons/' + key] = value || null;
   return db.update('rounds/' + state.roundId, patch);
 }
 
 function saveTransferNo(value) {
+  if (!canEdit()) { toast(blockedMessage(), true); return Promise.resolve(); }
   var patch = { transferNo: value || null };
   return db.update('rounds/' + state.roundId, patch);
 }
@@ -2714,6 +2907,21 @@ function renderDocSigns() {
 function renderDoc() {
   var round = state.roundIndex[state.roundId] || { name: '-', branch: '-' };
   var data = summaryData();
+
+  /* Job ที่เคยถูกเปิดแก้หลังปิด ต้องเตือนติดไปกับเอกสารด้วย ไม่ใช่เห็นแค่ในแอป */
+  var reopens = reopenList(round);
+  var rHost = $('docReopen');
+  rHost.innerHTML = '';
+  if (reopens.length) {
+    var warn = document.createElement('div');
+    warn.className = 'reopen-warn';
+    warn.setAttribute('data-reopen-count', String(reopens.length));
+    warn.textContent = '⚠ รอบนี้ถูกเปิดแก้ไขหลังปิด ' + fmtNum(reopens.length) + ' ครั้ง — ' +
+      reopens.map(function (e) {
+        return fmtTime(e.at) + ' โดย ' + (e.by || 'ไม่ระบุ') + ' (' + (e.reason || 'ไม่ระบุเหตุผล') + ')';
+      }).join(' · ');
+    rHost.appendChild(warn);
+  }
 
   $('docCoName').textContent = state.company.name || '(ยังไม่ได้ใส่ชื่อบริษัท)';
   $('docFoot').textContent = state.company.address || '(ยังไม่ได้ใส่ที่อยู่บริษัท)';
@@ -2954,7 +3162,8 @@ function confirmBranch(stat) {
 }
 
 function handleImport(file) {
-  if (!state.roundId) { toast('เลือกรอบนับก่อนนำเข้าไฟล์', true); return; }
+  if (!state.roundId) { toast('เลือก Job ก่อนนำเข้าไฟล์', true); return; }
+  if (!canScan()) { toast(blockedMessage() + ' — นำเข้าไฟล์ไม่ได้', true); return; }
 
   var isXlsx = /\.xlsx$/i.test(file.name);
   $('btnImport').disabled = true;
@@ -2987,16 +3196,355 @@ function handleImport(file) {
 }
 
 /* ============================================================
+   15b. หน้ารายการ Job + แถบสถานะ + การปิด/เปิดรอบ
+   ============================================================ */
+
+var STALE_JOB_DAYS = 7;
+
+function isStaleJob(job) {
+  return (job.status || 'counting') === 'counting' &&
+         (Date.now() - (job.createdAt || 0)) > STALE_JOB_DAYS * 86400000;
+}
+
+/* ความคืบหน้าของ Job อื่นต้องอ่านจากฐานเอง เพราะ subscription ผูกกับ Job ที่เปิดอยู่เท่านั้น
+   อ่านครั้งเดียวแล้วเก็บไว้ ไม่งั้นเลื่อนรายการทีก็ยิงคำขอใหม่ทุกครั้ง */
+function loadJobStats(id) {
+  if (state.jobStats[id]) return Promise.resolve(state.jobStats[id]);
+  return Promise.all([
+    db.get('rounds/' + id + '/systemQty'),
+    db.get('rounds/' + id + '/scans')
+  ]).then(function (res) {
+    var sys = res[0] || {}, scans = res[1] || {};
+    var counts = {};
+    Object.keys(scans).forEach(function (sid) {
+      var rec = scans[sid];
+      if (!rec) return;
+      var k = safeKey(rec.code);
+      counts[k] = (counts[k] || 0) + (Number(rec.delta) || 0);
+    });
+    var keys = {};
+    Object.keys(sys).forEach(function (k) { keys[k] = 1; });
+    Object.keys(counts).forEach(function (k) { keys[k] = 1; });
+    var all = Object.keys(keys);
+    var match = all.filter(function (k) { return (Number(sys[k]) || 0) === (counts[k] || 0); }).length;
+    var stat = {
+      skuTotal: Object.keys(sys).length,
+      skuScanned: Object.keys(counts).filter(function (k) { return counts[k] !== 0; }).length,
+      pieces: Object.keys(counts).reduce(function (s, k) { return s + counts[k]; }, 0),
+      success: all.length ? (match / all.length) * 100 : null
+    };
+    state.jobStats[id] = stat;
+    return stat;
+  }).catch(function () { return null; });
+}
+
+function renderJobBar() {
+  var bar = $('jobBar');
+  var job = currentJob();
+  bar.innerHTML = '';
+  if (!job) { bar.className = 'jobbar'; renderReopenBanner(); return; }
+
+  var st = job.status || 'counting';
+  bar.className = 'jobbar show ' + st;
+
+  var code = document.createElement('span');
+  code.className = 'jb-code';
+  code.setAttribute('data-jobcode', job.jobCode || '');
+  code.textContent = job.jobCode || '(ไม่มีรหัส)';
+  var branch = document.createElement('span');
+  branch.textContent = job.branch || '-';
+  var status = document.createElement('span');
+  status.style.marginLeft = 'auto';
+  status.style.fontWeight = '800';
+  status.setAttribute('data-jobstatus', st);
+  status.textContent = st === 'closed' ? 'รอบนี้ปิดแล้ว แก้ไขไม่ได้' : JOB_STATUS_TEXT[st];
+
+  bar.appendChild(code); bar.appendChild(branch); bar.appendChild(status);
+  renderReopenBanner();
+}
+
+function reopenList(job) {
+  var log = (job && job.reopenLog) || [];
+  return Array.isArray(log) ? log : Object.keys(log).map(function (k) { return log[k]; });
+}
+
+function renderReopenBanner() {
+  var host = $('reopenBanner');
+  host.innerHTML = '';
+  var job = currentJob();
+  var log = reopenList(job);
+  if (!job || !log.length) return;
+
+  var box = document.createElement('div');
+  box.className = 'reopen-banner';
+  box.setAttribute('data-reopen-count', String(log.length));
+  var b = document.createElement('b');
+  b.textContent = '⚠ รอบนี้ถูกเปิดแก้ไขหลังปิด ' + fmtNum(log.length) + ' ครั้ง';
+  box.appendChild(b);
+  var ul = document.createElement('ul');
+  log.forEach(function (entry) {
+    var li = document.createElement('li');
+    li.textContent = fmtTime(entry.at) + ' โดย ' + (entry.by || 'ไม่ระบุ') + ' — ' + (entry.reason || 'ไม่ระบุเหตุผล');
+    ul.appendChild(li);
+  });
+  box.appendChild(ul);
+  host.appendChild(box);
+}
+
+function renderJobs() {
+  document.querySelectorAll('[data-jstatus]').forEach(function (b) {
+    b.className = 'btn sm ' + (b.getAttribute('data-jstatus') === state.jobFilter ? '' : 'grey');
+  });
+
+  var ids = Object.keys(state.roundIndex);
+  var branches = {};
+  ids.forEach(function (id) { if (state.roundIndex[id].branch) branches[state.roundIndex[id].branch] = 1; });
+  var sel = $('jobBranchFilter');
+  var prev = state.jobBranch;
+  sel.innerHTML = '<option value="all">ทุกสาขา</option>';
+  Object.keys(branches).sort().forEach(function (b) {
+    var o = document.createElement('option');
+    o.value = b; o.textContent = b;
+    sel.appendChild(o);
+  });
+  sel.value = branches[prev] ? prev : 'all';
+  state.jobBranch = sel.value;
+
+  var shown = ids.filter(function (id) {
+    var j = state.roundIndex[id];
+    if (state.jobFilter !== 'all' && (j.status || 'counting') !== state.jobFilter) return false;
+    if (state.jobBranch !== 'all' && j.branch !== state.jobBranch) return false;
+    return true;
+  }).sort(function (a, b) {
+    return (state.roundIndex[b].createdAt || 0) - (state.roundIndex[a].createdAt || 0);
+  });
+
+  var list = $('jobList');
+  list.innerHTML = '';
+  if (!shown.length) {
+    list.innerHTML = '<div class="empty">' +
+      (ids.length ? 'ไม่มี Job ในตัวกรองนี้' : 'ยังไม่มี Job — สร้างอันแรกด้านบน') + '</div>';
+    return;
+  }
+
+  shown.forEach(function (id) {
+    var j = state.roundIndex[id];
+    var st = j.status || 'counting';
+    var card = document.createElement('div');
+    card.className = 'jobcard st-' + st + (id === state.roundId ? ' sel' : '');
+    card.setAttribute('data-job', id);
+    card.setAttribute('data-status', st);
+
+    var top = document.createElement('div');
+    top.className = 'j-top';
+    var left = document.createElement('div');
+    var code = document.createElement('div');
+    code.className = 'j-code';
+    code.textContent = j.jobCode || '(ไม่มีรหัส)';
+    var br = document.createElement('div');
+    br.className = 'j-branch';
+    br.textContent = j.branch || '-';
+    left.appendChild(code); left.appendChild(br);
+
+    var right = document.createElement('div');
+    right.style.textAlign = 'right';
+    var chip = document.createElement('span');
+    chip.className = 'chip ' + (st === 'counting' ? 'ok' : st === 'reviewing' ? 'warn' : '');
+    chip.textContent = JOB_STATUS_TEXT[st];
+    right.appendChild(chip);
+    if (isStaleJob(j)) {
+      var stale = document.createElement('div');
+      stale.style.marginTop = '5px';
+      var sc = document.createElement('span');
+      sc.className = 'chip short';
+      sc.setAttribute('data-stale', '1');
+      sc.textContent = 'ค้างนาน';
+      stale.appendChild(sc);
+      right.appendChild(stale);
+    }
+    if (reopenList(j).length) {
+      var rp = document.createElement('div');
+      rp.style.marginTop = '5px';
+      var rc = document.createElement('span');
+      rc.className = 'chip warn';
+      rc.textContent = 'เปิดแก้ ' + reopenList(j).length + ' ครั้ง';
+      rp.appendChild(rc);
+      right.appendChild(rp);
+    }
+    top.appendChild(left); top.appendChild(right);
+
+    var meta = document.createElement('div');
+    meta.className = 'j-meta';
+    [j.name || '-', fmtTime(j.createdAt), 'สร้างโดย ' + (j.createdBy || 'ไม่ระบุ')].forEach(function (t) {
+      var s = document.createElement('span'); s.textContent = t; meta.appendChild(s);
+    });
+
+    var prog = document.createElement('div');
+    prog.className = 'j-prog';
+    [['SKU ที่ยิงแล้ว', '…', 'sku'], ['ชิ้นที่นับได้', '…', 'pieces'], ['%Success', '…', 'success']]
+      .forEach(function (p) {
+        var d = document.createElement('div');
+        var lab = document.createElement('span'); lab.className = 'p-lab'; lab.textContent = p[0];
+        var val = document.createElement('span'); val.className = 'p-val';
+        val.setAttribute('data-prog', p[2]);
+        val.textContent = p[1];
+        d.appendChild(lab); d.appendChild(val);
+        prog.appendChild(d);
+      });
+
+    var bar = document.createElement('div');
+    bar.className = 'j-bar';
+    var fill = document.createElement('i');
+    fill.style.width = '0%';
+    bar.appendChild(fill);
+
+    card.appendChild(top); card.appendChild(meta); card.appendChild(prog); card.appendChild(bar);
+    card.onclick = function () { openJob(id); };
+    list.appendChild(card);
+
+    loadJobStats(id).then(function (stat) {
+      if (!stat) return;
+      var pct = stat.skuTotal ? Math.round(stat.skuScanned / stat.skuTotal * 100) : 0;
+      card.querySelector('[data-prog=sku]').textContent =
+        fmtNum(stat.skuScanned) + ' / ' + fmtNum(stat.skuTotal);
+      card.querySelector('[data-prog=pieces]').textContent = fmtNum(stat.pieces);
+      card.querySelector('[data-prog=success]').textContent = fmtPercent(stat.success);
+      fill.style.width = Math.min(100, pct) + '%';
+    });
+  });
+}
+
+function openJob(id) {
+  selectRound(id);
+  showPage('start');
+}
+
+/* ---------- ปิด / เปิดรอบนับ ---------- */
+
+function sendToReview() {
+  if (!state.roundId) return;
+  if (jobStatus() !== 'counting') { toast('รอบนี้ไม่ได้อยู่ขั้นนับแล้ว', true); return; }
+  ask('ส่งเข้าขั้นตรวจสอบ?',
+      'หลังจากนี้จะยิงเพิ่มไม่ได้ แต่ยังแก้ Reason และออกเอกสารได้\nถ้าต้องยิงเพิ่มให้กดกลับมาเป็น "กำลังนับ" ได้เอง',
+      'ส่งเข้าขั้นตรวจสอบ').then(function (ok) {
+    if (!ok) return;
+    db.update('roundIndex/' + state.roundId, { status: 'reviewing' })
+      .then(function () { toast('ส่งเข้าขั้นตรวจสอบแล้ว'); });
+  });
+}
+
+function backToCounting() {
+  if (!state.roundId || jobStatus() !== 'reviewing') return;
+  db.update('roundIndex/' + state.roundId, { status: 'counting' })
+    .then(function () { toast('กลับมาขั้นนับแล้ว'); });
+}
+
+function closeRound() {
+  if (!state.roundId) return;
+  if (jobStatus() === 'closed') { toast('รอบนี้ปิดไปแล้ว', true); return; }
+
+  var notScanned = Object.keys(state.systemQty).filter(function (k) { return !state.counts[k]; }).length;
+  var unknownN = Object.keys(state.unknown).length;
+  var warn = '';
+  if (notScanned) warn += '\n• ยังมีสินค้าที่ไม่ถูกยิงเลย ' + fmtNum(notScanned) + ' รายการ';
+  if (unknownN) warn += '\n• ยังมีบาร์โค้ดที่หาไม่เจอค้างอยู่ ' + fmtNum(unknownN) + ' รายการ';
+
+  ask('ตรวจก่อนปิดรอบนับ',
+      (warn ? 'พบเรื่องที่ควรดูก่อนปิด:' + warn + '\n\n' : 'ตรวจแล้วไม่พบเรื่องค้าง\n\n') +
+      'ปิดแล้วรอบนี้จะแก้ไขอะไรไม่ได้อีก ต้องใช้ PIN แอดมินเปิดกลับมาเท่านั้น',
+      'เข้าใจแล้ว ไปขั้นยืนยัน', { danger: !!warn }).then(function (ok) {
+    if (!ok) return;
+    return ask('ยืนยันปิดรอบนับ',
+      'รอบ ' + ((currentJob() || {}).jobCode || '') + '\nสาขา ' + ((currentJob() || {}).branch || '-') +
+      '\n\nยืนยันปิดรอบนับนี้',
+      'ยืนยันปิดรอบนับ', { danger: true }).then(function (ok2) {
+      if (!ok2) return;
+      return db.update('roundIndex/' + state.roundId, {
+        status: 'closed', closedBy: state.counter || 'ไม่ระบุ', closedAt: Date.now()
+      }).then(function () { toast('ปิดรอบนับแล้ว'); });
+    });
+  });
+}
+
+function reopenRound() {
+  var job = currentJob();
+  if (!job || job.status !== 'closed') return;
+  ask('เปิดรอบนับกลับมาแก้ (Admin)',
+      'ต้องใส่ PIN แอดมิน และระบุเหตุผล\nระบบจะบันทึกไว้ถาวร และขึ้นแถบเตือนทั้งในแอปและในเอกสาร',
+      'เปิดรอบนับ',
+      { danger: true, fields: [
+        { key: 'pin', label: 'PIN แอดมิน', type: 'pin', placeholder: '••••' },
+        { key: 'reason', label: 'เหตุผลที่ต้องเปิดกลับมาแก้', type: 'text', placeholder: 'เช่น นับตกไป 1 ชั้นวาง' }
+      ] }).then(function (v) {
+    if (!v) return;
+    if (v.pin !== ADMIN_PIN) { toast('PIN ไม่ถูกต้อง', true); return; }
+    if (!v.reason) { toast('ต้องระบุเหตุผล ข้ามไม่ได้', true); return; }
+    var log = reopenList(job).slice();
+    log.push({ by: state.counter || 'ไม่ระบุ', at: Date.now(), reason: v.reason });
+    db.update('roundIndex/' + state.roundId, { status: 'counting', reopenLog: log })
+      .then(function () { toast('เปิดรอบนับกลับมาแล้ว — บันทึกเหตุผลไว้แล้ว'); });
+  });
+}
+
+function deleteJob() {
+  var job = currentJob();
+  if (!job) return;
+  var scanCount = Object.keys(state.counts).length;
+  ask('ลบ Job นี้ (Admin)',
+      'ใช้เฉพาะกรณีสร้าง Job ผิดเท่านั้น\n\n' +
+      'Job: ' + (job.jobCode || '') + '\nสาขา: ' + (job.branch || '-') +
+      (scanCount ? '\n\n⚠ Job นี้มีการนับไปแล้ว ' + fmtNum(scanCount) + ' รายการ ลบแล้วยอดหายถาวร' : '') +
+      '\n\nพิมพ์รหัส Job ให้ตรงเพื่อยืนยัน',
+      'ลบ Job นี้',
+      { danger: true, fields: [
+        { key: 'pin', label: 'PIN แอดมิน', type: 'pin', placeholder: '••••' },
+        { key: 'code', label: 'พิมพ์รหัส Job ให้ตรง', type: 'text', placeholder: job.jobCode || '' }
+      ] }).then(function (v) {
+    if (!v) return;
+    if (v.pin !== ADMIN_PIN) { toast('PIN ไม่ถูกต้อง', true); return; }
+    if (v.code !== job.jobCode) { toast('รหัส Job ไม่ตรง ยกเลิกการลบ', true); return; }
+    var id = state.roundId;
+    db.update('rounds', (function () { var p = {}; p[id] = null; return p; })())
+      .then(function () { return db.update('roundIndex', (function () { var p = {}; p[id] = null; return p; })()); })
+      .then(function () {
+        localStorage.removeItem('isrd_round');
+        state.roundId = null;
+        clearSubs();
+        delete state.jobStats[id];
+        showPage('jobs');
+        renderJobBar();
+        toast('ลบ Job แล้ว');
+      });
+  });
+}
+
+/* กันยิงผิด Job — เปลี่ยน Job แล้วต้องยืนยันอีกครั้งก่อนเริ่มยิง */
+function goScan() {
+  if (!sessionReady()) return;
+  if (state.jobConfirmed) { showPage('scan'); return; }
+  var job = currentJob() || {};
+  ask('ยืนยัน Job ก่อนเริ่มยิง',
+      job.jobCode + '\nสาขา ' + (job.branch || '-') + '\nโซน ' + zoneName(state.zoneId) +
+      '\nผู้นับ ' + state.counter + '\n\nยิงเข้า Job นี้ใช่ไหม',
+      'ใช่ เริ่มยิงได้').then(function (ok) {
+    if (!ok) return;
+    state.jobConfirmed = true;
+    showPage('scan');
+  });
+}
+
+/* ============================================================
    16. หน้าเริ่มนับ + การนำทาง
    ============================================================ */
 
 function startBlockers() {
   var missing = [];
-  if (!state.roundId) missing.push('ยังไม่ได้เลือกรอบนับ');
-  if (state.roundId && !(state.roundIndex[state.roundId] || {}).branch) missing.push('รอบนี้ยังไม่ได้ระบุสาขา');
+  if (!state.roundId) missing.push('ยังไม่ได้เลือก Job');
+  if (state.roundId && !(state.roundIndex[state.roundId] || {}).branch) missing.push('Job นี้ยังไม่ได้ระบุสาขา');
   if (!state.zoneId) missing.push('ยังไม่ได้เลือกโซน');
   if (!state.counter) missing.push('ยังไม่ได้ใส่ชื่อผู้นับ');
-  if (state.roundId && !Object.keys(state.systemQty).length) missing.push('ยังไม่ได้นำเข้ายอดระบบของรอบนี้');
+  if (state.roundId && !Object.keys(state.systemQty).length) missing.push('ยังไม่ได้นำเข้ายอดระบบของ Job นี้');
+  if (state.roundId && !canScan()) missing.push(blockedMessage());
   return missing;
 }
 
@@ -3004,12 +3552,13 @@ function sessionReady() { return startBlockers().length === 0; }
 
 function showPage(name) {
   state.page = name;
-  ['Start', 'Scan', 'Master', 'Summary', 'Doc'].forEach(function (p) {
+  ['Jobs', 'Start', 'Scan', 'Master', 'Summary', 'Doc'].forEach(function (p) {
     var key = p.charAt(0).toLowerCase() + p.slice(1);
     $('page' + p).classList.toggle('active', key === name);
     $('nav' + p).classList.toggle('on', key === name);
   });
   window.scrollTo(0, 0);
+  if (name === 'jobs') renderJobs();
   if (name === 'summary') renderSummary();
   if (name === 'master') renderMaster();
   if (name === 'scan') renderScanPage();
@@ -3018,9 +3567,18 @@ function showPage(name) {
 
 function refreshNav() {
   var ready = sessionReady();
+  $('navStart').disabled = !state.roundId;
   $('navScan').disabled = !ready;
   $('navSummary').disabled = !state.roundId;
   $('navDoc').disabled = !state.roundId;
+  renderJobBar();
+
+  /* ล็อกหน้ายิงตามสถานะ Job — ปุ่มต้องกดไม่ได้ ไม่ใช่แค่แจ้งเตือนทีหลัง */
+  var locked = !canScan();
+  $('scanInput').disabled = locked;
+  $('btnManual').disabled = locked;
+  $('btnUndo').disabled = locked || state.undoStack.length === 0;
+  $('scanInput').placeholder = locked ? blockedMessage() : 'ยิงบาร์โค้ดได้เลย';
   $('btnStart').disabled = !ready;
 
   var blockers = startBlockers();
@@ -3038,33 +3596,16 @@ function refreshNav() {
     });
   }
 
+  /* รหัส Job ต้องอ่านได้จากระยะแขน กันยิงผิด Job ตอนมีหลายสาขาพร้อมกัน */
   var round = state.roundIndex[state.roundId];
+  $('topTitle').textContent = round ? (round.jobCode || 'ISRD ระบบนับสต๊อก') : 'ISRD ระบบนับสต๊อก';
   $('topSub').textContent = round
-    ? (round.name + (round.branch ? ' · ' + round.branch : '') +
+    ? ((round.branch || '-') +
        (state.zoneId ? ' · ' + zoneName(state.zoneId) : '') + (state.counter ? ' · ' + state.counter : ''))
-    : 'ยังไม่ได้เลือกรอบนับ';
+    : 'ยังไม่ได้เลือก Job';
 }
 
 function renderStart() {
-  var wrap = $('roundList');
-  var ids = Object.keys(state.roundIndex).sort(function (a, b) {
-    return (state.roundIndex[b].createdAt || 0) - (state.roundIndex[a].createdAt || 0);
-  });
-  wrap.innerHTML = '';
-  if (!ids.length) wrap.innerHTML = '<div class="empty">ยังไม่มีรอบนับ — ตั้งชื่อรอบและสาขาแล้วกด "+ สร้างรอบ"</div>';
-  ids.forEach(function (id) {
-    var r = state.roundIndex[id];
-    var b = document.createElement('button');
-    b.className = 'pick' + (id === state.roundId ? ' sel' : '');
-    b.setAttribute('data-round', id);
-    b.innerHTML = '<div class="pick-title"></div><div class="pick-meta"></div>';
-    b.querySelector('.pick-title').textContent = r.name;
-    b.querySelector('.pick-meta').textContent = (r.branch ? 'สาขา ' + r.branch + ' · ' : '') +
-      'สร้างเมื่อ ' + fmtTime(r.createdAt);
-    b.onclick = function () { selectRound(id); };
-    wrap.appendChild(b);
-  });
-
   var zw = $('zoneList');
   zw.innerHTML = '';
   if (!state.roundId) {
@@ -3126,6 +3667,8 @@ function selectRound(id) {
   state.lastImport = null;
   state.reasons = {};
   state.transferNo = '';
+  state.jobConfirmed = false;      // เปลี่ยน Job แล้วต้องยืนยันใหม่ก่อนยิง
+  delete state.jobStats[id];
   resetRoundAggregates();
   clearSubs();
   $('recentList').innerHTML = '';
@@ -3201,18 +3744,51 @@ function init() {
     refreshNav();
   });
 
+  function previewJobCode() {
+    var branch = $('newRoundBranch').value.trim();
+    var abbr = $('newJobAbbr').value.trim() || suggestAbbr(branch);
+    var box = $('jobCodePreview');
+    if (!branch) { box.style.display = 'none'; return; }
+    box.style.display = 'block';
+    box.textContent = 'รหัส Job ที่จะได้: ' + makeJobCode(abbr);
+  }
+  $('newRoundBranch').addEventListener('input', function () {
+    if (!$('newJobAbbr').value.trim()) $('newJobAbbr').placeholder = 'อักษรย่อ เช่น ' + suggestAbbr(this.value);
+    previewJobCode();
+  });
+  $('newJobAbbr').addEventListener('input', previewJobCode);
+
   $('btnAddRound').onclick = function () {
     var name = $('newRoundName').value.trim();
     var branch = $('newRoundBranch').value.trim();
+    var abbr = $('newJobAbbr').value.trim();
+    if (!branch) { toast('ใส่ชื่อสาขาก่อน เพื่อให้ตรวจไฟล์นำเข้าได้', true); return; }
     if (!name) { toast('ตั้งชื่อรอบนับก่อน', true); return; }
-    if (!branch) { toast('ใส่ชื่อสาขาด้วย เพื่อให้ตรวจไฟล์นำเข้าได้', true); return; }
-    createRound(name, branch).then(function (id) {
+    createRound(name, branch, abbr).then(function (id) {
       $('newRoundName').value = '';
       $('newRoundBranch').value = '';
+      $('newJobAbbr').value = '';
+      $('jobCodePreview').style.display = 'none';
       selectRound(id);
-      toast('สร้างรอบนับ "' + name + '" แล้ว');
-    }).catch(function () { toast('สร้างรอบนับไม่สำเร็จ กรุณาตรวจสัญญาณอินเทอร์เน็ตแล้วลองใหม่', true); });
+      showPage('start');
+      toast('สร้าง Job ' + ((state.roundIndex[id] || {}).jobCode || '') + ' แล้ว');
+    }).catch(function () { toast('สร้าง Job ไม่สำเร็จ กรุณาตรวจสัญญาณอินเทอร์เน็ตแล้วลองใหม่', true); });
   };
+
+  document.querySelectorAll('[data-jstatus]').forEach(function (b) {
+    b.onclick = function () { state.jobFilter = b.getAttribute('data-jstatus'); renderJobs(); };
+  });
+  $('jobBranchFilter').addEventListener('change', function () {
+    state.jobBranch = this.value;
+    renderJobs();
+  });
+
+  $('btnReview').onclick = function () {
+    if (jobStatus() === 'reviewing') backToCounting(); else sendToReview();
+  };
+  $('btnClose').onclick = closeRound;
+  $('btnReopen').onclick = reopenRound;
+  $('btnDeleteJob').onclick = deleteJob;
 
   function addZone() {
     if (!state.roundId) { toast('เลือกรอบนับก่อนเพิ่มโซน', true); return; }
@@ -3239,10 +3815,11 @@ function init() {
     this.value = '';
   });
 
-  $('btnStart').onclick = function () { if (sessionReady()) showPage('scan'); };
+  $('btnStart').onclick = goScan;
   $('btnChangeSession').onclick = function () { showPage('start'); };
-  $('navStart').onclick = function () { showPage('start'); };
-  $('navScan').onclick = function () { if (sessionReady()) showPage('scan'); };
+  $('navJobs').onclick = function () { showPage('jobs'); };
+  $('navStart').onclick = function () { if (state.roundId) showPage('start'); };
+  $('navScan').onclick = goScan;
   $('navMaster').onclick = function () { showPage('master'); };
   $('navSummary').onclick = function () { if (state.roundId) showPage('summary'); };
 
@@ -3330,14 +3907,20 @@ function init() {
   db.subscribe('roundIndex', function (data) {
     state.roundIndex = data || {};
     renderStart();
+    renderJobBar();
+    if (state.page === 'jobs') renderJobs();
+    if (state.page === 'summary') renderSummary();
+    if (state.page === 'doc') renderDoc();
   });
 
+  /* เปิดแอปมาให้กลับเข้า Job เดิมที่ค้างไว้ */
   var saved = localStorage.getItem('isrd_round');
   if (saved) {
     db.get('roundIndex/' + saved).then(function (r) { if (r) selectRound(saved); });
   }
 
   renderStart();
+  renderJobs();
 }
 
 init();
@@ -3347,6 +3930,29 @@ init();
   ====================================================================
   สรุปการเปลี่ยนแปลง
   ====================================================================
+
+  v1.4.0 — ระบบ Job หลายสาขาพร้อมกัน
+    - roundIndex/{roundId} เก็บ jobCode, branch, createdBy, createdAt,
+      status ('counting'|'reviewing'|'closed'), closedBy, closedAt, reopenLog
+      * ข้อมูล Job อยู่ที่ roundIndex ไม่ใช่ rounds/{roundId} ตามที่ระบุไว้ตอนแรก
+        เพราะถ้าเก็บใต้ rounds การเปิดหน้ารายการ Job จะต้องดึง scans ของทุก Job
+        ลงมาด้วย ซึ่งพังทันทีเมื่อสะสมงานไปหลายเดือน
+        Database Rules อ้างถึงได้ด้วย root.child('roundIndex') ตามปกติ
+    - jobCode รูปแบบ [อักษรย่อสาขา]-[YYYYMMDD]-[ลำดับ] เช่น CFCM-20260729-01
+      แอปเดาอักษรย่อจากชื่อสาขาให้ แก้เองได้ และแสดงตัวอย่างก่อนสร้าง
+    - หน้ารายการ Job เป็นหน้าแรก: การ์ดเรียงใหม่สุดบน แถบสีตามสถานะ
+      ความคืบหน้า (SKU ที่ยิงแล้ว/ทั้งหมด, จำนวนชิ้น, %Success) กรองตามสถานะและสาขา
+      Job ที่ยังนับค้างเกิน 7 วันขึ้นป้าย "ค้างนาน"
+    - ล็อกตามสถานะ: counting ยิงได้ / reviewing แก้ Reason กับ Master ได้แต่ยิงไม่ได้ /
+      closed อ่านอย่างเดียว · ปุ่มถูก disable จริง ไม่ใช่แค่เตือนทีหลัง
+    - ปิดรอบนับต้องยืนยัน 2 ชั้น และเตือนก่อนถ้ายังมี SKU ที่ไม่ถูกยิงเลย
+      หรือยังมีบาร์โค้ดไม่พบค้างอยู่
+    - แถบสถานะ Job อยู่บนสุดทุกหน้า · ปิดแล้วเป็นแถบเทา "รอบนี้ปิดแล้ว แก้ไขไม่ได้"
+    - Admin: PIN สำหรับเปิด Job ที่ปิดแล้ว และลบ Job ที่สร้างผิด
+      เปิดใหม่ต้องกรอกเหตุผลเสมอ บันทึกลง reopenLog และขึ้นแถบส้มถาวร
+      ทั้งในแอปและบนหัวเอกสาร · ลบ Job ต้องพิมพ์รหัส Job ให้ตรงด้วย
+    - กันยิงผิด Job: แถบหัวแอปโชว์ jobCode ตัวใหญ่ เปลี่ยน Job แล้วต้องยืนยัน
+      อีกครั้งก่อนเริ่มยิง และจำ Job ล่าสุดไว้ใน localStorage
 
   v1.3.0 — หน้าออกเอกสาร Transfer (พิมพ์เป็น PDF + Excel)
     - หน้าเอกสาร A4 แนวตั้ง พิมพ์ด้วยตัวพิมพ์ของเบราว์เซอร์ ไม่มีไลบรารี PDF
@@ -3398,26 +4004,54 @@ init();
 
   {
     "rules": {
-      "products":   { ".read": true, ".write": true },
-      "roundIndex": { ".read": true, ".write": true },
+      "settings": { ".read": true, ".write": true },
+      "products": { ".read": true, ".write": true },
+
+      "roundIndex": {
+        ".read": true,
+        "$roundId": {
+          ".write": true,
+          ".validate": "newData.hasChildren(['jobCode','branch','status'])",
+          "status": { ".validate": "newData.val().matches(/^(counting|reviewing|closed)$/)" }
+        }
+      },
+
       "rounds": {
         "$roundId": {
           ".read": true,
-          "zones":     { ".write": true },
-          "systemQty": { ".write": true },
-          "schema":    { ".write": true },
+
+          "zones":      { ".write": true },
+          "systemQty":  { ".write": "root.child('roundIndex').child($roundId).child('status').val() === 'counting'" },
+          "schema":     { ".write": true },
+          "transferNo": { ".write": "root.child('roundIndex').child($roundId).child('status').val() !== 'closed'" },
+          "reasons":    { ".write": "root.child('roundIndex').child($roundId).child('status').val() !== 'closed'" },
+
           "scans": {
             "$scanId": {
-              // เขียนได้เฉพาะตอนสร้างใหม่ — ห้ามแก้ ห้ามลบยอดที่นับไปแล้ว
-              ".write": "!data.exists() && newData.exists()",
+              // เขียนได้เฉพาะตอนสร้างใหม่ และเฉพาะตอน Job อยู่สถานะ counting เท่านั้น
+              // ห้ามแก้ ห้ามลบยอดที่นับไปแล้ว — แก้ผิดให้เขียนแถวใหม่ delta ติดลบ
+              // บังคับที่กฎฝั่งเซิร์ฟเวอร์ ไม่ใช่แค่ปิดปุ่มในหน้าเว็บ
+              ".write": "!data.exists() && newData.exists() && root.child('roundIndex').child($roundId).child('status').val() === 'counting'",
               ".validate": "newData.hasChildren(['code','zone','delta','user','ts'])"
             }
           },
+
           "unknown": {
-            "$id": { ".write": "!data.exists() && newData.exists()" }
-          }
+            "$id": {
+              ".write": "!data.exists() && newData.exists() && root.child('roundIndex').child($roundId).child('status').val() === 'counting'"
+            }
+          },
+
+          // โครงสร้างเดิม v1.1 เก็บไว้อ่านอย่างเดียว ห้ามแก้ ห้ามลบ
+          "items":  { ".write": false },
+          "counts": { ".write": false }
         }
       }
     }
   }
+
+  หมายเหตุ: กฎชุดนี้ยังเปิดให้เขียนได้โดยไม่ต้องล็อกอิน เพราะแอปยังไม่มีระบบผู้ใช้
+  ตอนต่อ dashboard จริงต้องเพิ่ม Firebase Auth แล้วเปลี่ยน ".write": true
+  เป็นเงื่อนไขที่อ้าง auth.uid หรือ custom claim ของแอดมิน โดยเฉพาะ
+  การเปลี่ยน status และการลบ Job ซึ่งตอนนี้กันด้วย PIN ในไฟล์เท่านั้น
 -->
