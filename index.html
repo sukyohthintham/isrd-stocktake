@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="1.5.0">
+<meta name="version" content="1.6.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v1.5.0</title>
+<title>ISRD Stocktake v1.6.0</title>
 
 <style>
 :root{
@@ -431,12 +431,18 @@ table.grid td.neg{color:var(--short);font-weight:700}
   <!-- ฟอร์มสร้างอยู่ล่างรายการ เพราะเปิดแอปมาส่วนใหญ่คือมาเลือกงานที่ค้างอยู่ ไม่ใช่สร้างใหม่ -->
   <div class="card">
     <h3>สร้าง Job ใหม่</h3>
-    <label class="fld" style="margin-bottom:8px">
-      <span>สาขา</span>
-      <input type="text" id="newRoundBranch" placeholder="เช่น NTDS Central Festival Chiangmai FL.4">
+    <label class="fld" style="margin-bottom:6px">
+      <span>สาขา — เลือกจากทะเบียนเท่านั้น</span>
+      <input type="text" id="branchSearch" placeholder="ค้นหาด้วยรหัสหรือชื่อสาขา" autocomplete="off">
+    </label>
+    <div class="banner info" id="branchPicked" style="display:none"></div>
+    <div class="picklist" id="branchResults"></div>
+    <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);margin-bottom:12px">
+      <input type="checkbox" id="branchShowClosed" style="width:18px;height:18px;min-height:0">
+      แสดงสาขาที่ปิดแล้วด้วย
     </label>
     <div class="row" style="margin-bottom:8px">
-      <input type="text" id="newJobAbbr" placeholder="อักษรย่อสาขา เช่น CFCM">
+      <input type="text" id="newJobAbbr" placeholder="อักษรย่อสาขา">
       <input type="text" id="newRoundName" placeholder="ชื่อรอบ เช่น รอบนับ ก.ค. 2569">
     </div>
     <button class="btn ghost block" id="btnAddRound">+ สร้าง Job</button>
@@ -546,20 +552,53 @@ table.grid td.neg{color:var(--short);font-weight:700}
 <!-- ============ PAGE 3 : MASTER ============ -->
 <section class="page" id="pageMaster">
   <div class="card">
-    <h3>ข้อมูลสินค้าหลัก (Master)</h3>
-    <label class="fld" style="margin-bottom:8px">
-      <span>ค้นหาด้วยรหัส ชื่อ หรือบาร์โค้ด</span>
-      <input type="text" id="masterSearch" placeholder="พิมพ์เพื่อค้นหา" autocomplete="off">
-    </label>
-    <div class="filters">
-      <button class="btn sm grey" data-mfilter="all">ทั้งหมด</button>
-      <button class="btn sm grey" data-mfilter="review">รอตรวจสอบ</button>
-      <button class="btn sm grey" data-mfilter="nocost">ยังไม่มีราคาต้นทุน</button>
-      <button class="btn sm grey" data-mfilter="notProduct">Not Product</button>
+    <div class="filters" id="masterTabs">
+      <button class="btn sm" data-mtab="products">สินค้า</button>
+      <button class="btn sm grey" data-mtab="branches">คลังสินค้า/สาขา</button>
     </div>
-    <div class="muted" id="masterCount"></div>
   </div>
-  <div class="clist" id="masterList"></div>
+
+  <div id="masterProducts">
+    <div class="card">
+      <h3>ข้อมูลสินค้าหลัก (Master)</h3>
+      <label class="fld" style="margin-bottom:8px">
+        <span>ค้นหาด้วยรหัส ชื่อ หรือบาร์โค้ด</span>
+        <input type="text" id="masterSearch" placeholder="พิมพ์เพื่อค้นหา" autocomplete="off">
+      </label>
+      <div class="filters">
+        <button class="btn sm grey" data-mfilter="all">ทั้งหมด</button>
+        <button class="btn sm grey" data-mfilter="review">รอตรวจสอบ</button>
+        <button class="btn sm grey" data-mfilter="nocost">ยังไม่มีราคาต้นทุน</button>
+        <button class="btn sm grey" data-mfilter="notProduct">Not Product</button>
+      </div>
+      <div class="muted" id="masterCount"></div>
+    </div>
+    <div class="clist" id="masterList"></div>
+  </div>
+
+  <div id="masterBranches" style="display:none">
+    <div class="card">
+      <h3>คลังสินค้า/สาขา</h3>
+      <div id="branchStatus" class="muted" style="margin-bottom:12px">ยังไม่ได้นำเข้าทะเบียนสาขา</div>
+      <input type="file" id="branchFile" accept=".csv,.xlsx" style="display:none">
+      <button class="btn ghost block" id="btnImportBranch">📄 นำเข้าทะเบียนสาขา (Excel / CSV)</button>
+      <p class="muted" style="margin:12px 0 0">
+        ไฟล์ต้องมี 2 คอลัมน์: <b>รหัส</b> และ <b>ชื่อคลัง/สาขา</b><br>
+        รหัสขึ้นต้นด้วย <b>"X "</b> หรือชื่อขึ้นต้นด้วย <b>"Close "</b> จะถูกตั้งเป็นปิดใช้งานให้อัตโนมัติ
+      </p>
+      <label class="fld" style="margin:14px 0 8px">
+        <span>ค้นหารหัสหรือชื่อสาขา</span>
+        <input type="text" id="branchMasterSearch" placeholder="พิมพ์เพื่อค้นหา" autocomplete="off">
+      </label>
+      <div class="filters">
+        <button class="btn sm" data-bfilter="all">ทั้งหมด</button>
+        <button class="btn sm grey" data-bfilter="active">เปิดใช้งาน</button>
+        <button class="btn sm grey" data-bfilter="closed">ปิดแล้ว</button>
+      </div>
+      <div class="muted" id="branchCount"></div>
+    </div>
+    <div class="clist" id="branchList"></div>
+  </div>
 </section>
 
 <!-- ============ PAGE 4 : SUMMARY ============ -->
@@ -617,8 +656,9 @@ table.grid td.neg{color:var(--short);font-weight:700}
     </div>
     <label class="fld" style="margin-bottom:8px">
       <span id="docNoLabel">เลขที่เอกสาร</span>
-      <input type="text" id="docNo" placeholder="เช่น Admin-ST-256907001" autocomplete="off">
+      <input type="text" id="docNo" placeholder="เช่น ISRD-ST-FCM01-256907001" autocomplete="off">
     </label>
+    <button class="btn ghost sm block" id="btnGenDocNo" style="margin-bottom:14px">🔢 ออกเลขที่เอกสารอัตโนมัติ</button>
     <div class="row" style="margin-bottom:8px">
       <input type="text" id="docCompany" placeholder="ชื่อบริษัท" autocomplete="off">
       <input type="text" id="docAddress" placeholder="ที่อยู่บริษัท (พิมพ์ท้ายกระดาษ)" autocomplete="off">
@@ -654,6 +694,7 @@ table.grid td.neg{color:var(--short);font-weight:700}
           <li>พนักงานประจำสาขา</li>
         </ul>
         <div class="subject" id="docSubject"></div>
+        <div class="doc-ref" id="docBranchLine"></div>
         <div class="doc-ref" id="docRefLine"></div>
         <div class="tf-line">
           <span class="doc-lab" id="docNoLabelPrint">เลขที่เอกสาร:</span>
@@ -739,7 +780,7 @@ table.grid td.neg{color:var(--short);font-weight:700}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '1.5.0';
+var APP_VERSION = '1.6.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -1644,7 +1685,7 @@ var state = {
   roundId: null,
   zoneId: null,
   counter: '',
-  page: 'start',
+  page: 'jobs',          // ต้องตรงกับ section ที่ติด class active ไว้ใน HTML
   products: {},          // master ถาวร
   systemQty: {},         // ยอดระบบของรอบที่เลือก
   zones: {},
@@ -1660,6 +1701,10 @@ var state = {
   scanIndex: null,       // Map: บาร์โค้ด/รหัส (ตัวพิมพ์ใหญ่) -> key
   lastImport: null,
   masterFilter: 'all',
+  masterTab: 'products',
+  branches: {},          // ทะเบียนคลังสินค้า/สาขา
+  branchFilter: 'all',
+  newBranch: null,       // สาขาที่เลือกไว้ตอนกำลังสร้าง Job
   priceField: 'sellPrice',
   reasons: {},           // key -> ข้อความ Reason ในเอกสาร
   docType: 'stockTake',  // ประเภทเอกสารของ Job นี้
@@ -1888,6 +1933,30 @@ function suggestAbbr(branch) {
   return letters.slice(0, 4) || 'JOB';
 }
 
+/* รหัสสาขาแบบไม่มีขีด ใช้ในเลขที่เอกสาร เช่น FCM-01 -> FCM01 */
+function branchCodeCompact(code) {
+  return String(code || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase() || 'NA';
+}
+
+/* ปี พ.ศ. 4 หลัก + เดือน 2 หลัก — ใช้เป็นทั้งคีย์ตัวนับและส่วนหนึ่งของเลขที่เอกสาร */
+function beYearMonth(when) {
+  var d = new Date(when || Date.now());
+  return String(d.getFullYear() + 543) + String(d.getMonth() + 1).padStart(2, '0');
+}
+function beDateStamp(when) {
+  var d = new Date(when || Date.now());
+  return String(d.getFullYear() + 543) +
+         String(d.getMonth() + 1).padStart(2, '0') +
+         String(d.getDate()).padStart(2, '0');
+}
+
+function jobBranchName(round) { return (round && (round.branchName || round.branch)) || '-'; }
+function jobBranchCode(round) { return (round && round.branchCode) || ''; }
+function jobBranchLabel(round) {
+  var code = jobBranchCode(round);
+  return (code ? code + ' · ' : '') + jobBranchName(round);
+}
+
 function makeJobCode(abbr, when) {
   var d = new Date(when || Date.now());
   var day = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
@@ -1905,8 +1974,11 @@ function createRound(name, branch, abbr) {
   var id = db.newKey();
   var patch = {};
   patch[id] = {
-    jobCode: makeJobCode(abbr || suggestAbbr(branch)),
-    name: name, branch: branch || '',
+    jobCode: makeJobCode(abbr || branchCodeCompact(branch.code) || suggestAbbr(branch.name)),
+    name: name,
+    branchCode: branch.code,
+    branchName: branch.name,
+    branch: branch.name,          // คงชื่อฟิลด์เดิมไว้ ให้ Job เก่ายังอ่านเข้ากันได้
     createdAt: Date.now(), createdBy: state.counter || 'ไม่ระบุ',
     status: 'counting'
   };
@@ -2365,6 +2437,265 @@ function saveManual() {
 }
 
 /* ============================================================
+   11b. ทะเบียนคลังสินค้า/สาขา
+   ============================================================ */
+
+var BRANCH_COLUMNS = {
+  code: ['รหัส', 'รหัสสาขา', 'รหัสคลัง', 'รหัสคลังสินค้า', 'code', 'branchcode', 'warehousecode', 'id'],
+  name: ['ชื่อคลัง/สาขา', 'ชื่อคลังสินค้า/สาขา', 'ชื่อสาขา', 'ชื่อคลัง', 'ชื่อ',
+         'name', 'branch', 'branchname', 'warehouse']
+};
+
+/* สาขาที่ปิดไปแล้วในทะเบียนจริงจะขึ้นต้นรหัสด้วย "X " หรือขึ้นต้นชื่อด้วย "Close " */
+function isClosedBranch(code, name) {
+  return /^x\s/i.test(String(code || '').trim()) || /^close\s/i.test(String(name || '').trim());
+}
+
+function findBranchHeaderRow(rows) {
+  var aliases = BRANCH_COLUMNS.code.map(normText);
+  for (var r = 0; r < rows.length && r < 10; r++) {
+    if (!rowHasContent(rows[r])) continue;
+    for (var c = 0; c < rows[r].length; c++) {
+      if (headerMatches(rows[r][c], aliases)) return r;
+    }
+  }
+  return -1;
+}
+
+function parseBranchFile(parsed) {
+  var rows = (parsed && parsed.rows) || [];
+  if (!rows.length) throw new Error('EMPTY_FILE');
+
+  var headerRow = findBranchHeaderRow(rows);
+  var idx = { code: 0, name: 1 };     // ไม่มีหัวตารางก็ยังอ่านได้ ใช้สองคอลัมน์แรก
+  var start = 0;
+  if (headerRow >= 0) {
+    var header = rows[headerRow];
+    Object.keys(BRANCH_COLUMNS).forEach(function (field) {
+      var aliases = BRANCH_COLUMNS[field].map(normText);
+      for (var c = 0; c < header.length; c++) {
+        if (headerMatches(header[c], aliases)) { idx[field] = c; return; }
+      }
+    });
+    start = headerRow + 1;
+  }
+
+  var branches = {};
+  var stat = { rows: 0, imported: 0, closed: 0, noCode: 0, duplicates: [] };
+  for (var r = start; r < rows.length; r++) {
+    var row = rows[r] || [];
+    if (!rowHasContent(row)) continue;
+    stat.rows++;
+    var code = cellText(row[idx.code]);
+    var name = cellText(row[idx.name]);
+    if (!code) { stat.noCode++; continue; }
+    var key = safeKey(code);
+    if (branches[key]) { stat.duplicates.push(code); continue; }
+    var closed = isClosedBranch(code, name);
+    branches[key] = { code: code, name: name || code, active: !closed };
+    if (closed) stat.closed++;
+    stat.imported++;
+  }
+  if (!stat.imported) throw new Error('NO_ROWS');
+  return { branches: branches, stat: stat };
+}
+
+/* เหมือนกฎสินค้า: ถ้าคนเคยแก้สถานะเปิด/ปิดเองไว้ ไฟล์ห้ามทับ */
+function applyBranchImport(incoming) {
+  var patch = {}, added = 0, updated = 0, keptManual = 0;
+  Object.keys(incoming).forEach(function (key) {
+    var fresh = incoming[key], old = state.branches[key];
+    var next = { code: fresh.code, name: fresh.name, updatedAt: Date.now() };
+    if (old && old.activeSource === 'manual') {
+      next.active = !!old.active;
+      next.activeSource = 'manual';
+      keptManual++;
+    } else {
+      next.active = fresh.active;
+      next.activeSource = 'auto';
+    }
+    patch[key] = next;
+    if (old) updated++; else added++;
+  });
+  return db.update('branches', patch).then(function () {
+    return { added: added, updated: updated, keptManual: keptManual };
+  });
+}
+
+function saveBranchActive(key, active) {
+  var patch = {};
+  patch[key + '/active'] = !!active;
+  patch[key + '/activeSource'] = 'manual';
+  patch[key + '/updatedAt'] = Date.now();
+  return db.update('branches', patch);
+}
+
+function branchList(term, includeClosed) {
+  var q = normText(term);
+  return Object.keys(state.branches).map(function (k) { return state.branches[k]; })
+    .filter(function (b) {
+      if (!b) return false;
+      if (!includeClosed && !b.active) return false;
+      if (!q) return true;
+      return normText(b.code).indexOf(q) >= 0 || normText(b.name).indexOf(q) >= 0;
+    })
+    .sort(function (a, b) { return String(a.code).localeCompare(String(b.code), 'th'); });
+}
+
+function handleBranchImport(file) {
+  var isXlsx = /\.xlsx$/i.test(file.name);
+  $('btnImportBranch').disabled = true;
+  $('branchStatus').textContent = 'กำลังอ่านไฟล์...';
+
+  file.arrayBuffer().then(function (buf) {
+    return isXlsx ? parseXlsx(buf) : Promise.resolve(parseCsv(decodeTextFile(buf)));
+  }).then(function (parsed) {
+    var result = parseBranchFile(parsed);
+    return applyBranchImport(result.branches).then(function (diff) {
+      var box = document.createElement('div');
+      var sec = repSection('ผลการนำเข้าทะเบียนสาขา');
+      repLine(sec, 'อ่านทั้งหมด', fmtNum(result.stat.rows) + ' แถว');
+      repLine(sec, 'เข้าระบบ', fmtNum(result.stat.imported) + ' สาขา');
+      repLine(sec, 'ปิดใช้งานอัตโนมัติ', fmtNum(result.stat.closed) + ' สาขา');
+      if (result.stat.closed) repNote(sec, 'รหัสขึ้นต้นด้วย "X " หรือชื่อขึ้นต้นด้วย "Close " — แก้เองได้ในหน้านี้');
+      if (result.stat.noCode) repLine(sec, 'ข้ามเพราะไม่มีรหัส', fmtNum(result.stat.noCode) + ' แถว', true);
+      if (result.stat.duplicates.length) {
+        repLine(sec, 'รหัสซ้ำในไฟล์', fmtNum(result.stat.duplicates.length) + ' รายการ', true);
+        repNote(sec, 'ใช้แถวแรกที่เจอ — ' + listWithLimit(result.stat.duplicates, 'รหัส'));
+      }
+      repLine(sec, 'เพิ่มใหม่', fmtNum(diff.added) + ' สาขา');
+      repLine(sec, 'อัปเดตเดิม', fmtNum(diff.updated) + ' สาขา');
+      if (diff.keptManual) {
+        repLine(sec, 'คงสถานะที่คนแก้ไว้', fmtNum(diff.keptManual) + ' สาขา');
+        repNote(sec, 'สาขาที่เคยกดเปิด/ปิดเองไว้ ไฟล์ไม่ทับให้');
+      }
+      box.appendChild(sec);
+      ask('นำเข้าทะเบียนสาขาเรียบร้อย',
+          'เข้าระบบ ' + fmtNum(result.stat.imported) + ' สาขา',
+          'ปิด', { hideCancel: true, detail: box });
+    });
+  }).catch(function (err) {
+    var messages = {
+      EMPTY_FILE: 'ไฟล์นี้ว่างเปล่า กรุณาตรวจไฟล์แล้วอัปโหลดใหม่',
+      NO_ROWS: 'ไม่พบข้อมูลสาขาในไฟล์ ต้องมีคอลัมน์รหัสและชื่อคลัง/สาขา',
+      NO_SHEET: 'อ่านไฟล์ Excel นี้ไม่ได้ กรุณาบันทึกเป็น .xlsx หรือ CSV แล้วอัปโหลดใหม่',
+      BAD_ZIP: 'ไฟล์ Excel นี้เสียหรือไม่ใช่ไฟล์ .xlsx กรุณาบันทึกเป็น CSV แล้วอัปโหลดใหม่',
+      NO_INFLATE: 'เครื่องนี้อ่านไฟล์ .xlsx ไม่ได้ กรุณาบันทึกเป็น CSV แล้วอัปโหลดใหม่'
+    };
+    toast(messages[err && err.message] || 'นำเข้าทะเบียนสาขาไม่สำเร็จ กรุณาตรวจไฟล์แล้วลองใหม่', true);
+  }).then(function () { renderBranchMaster(); });
+}
+
+var BRANCH_RENDER_LIMIT = 200;
+
+function renderBranchMaster() {
+  document.querySelectorAll('[data-bfilter]').forEach(function (b) {
+    b.className = 'btn sm ' + (b.getAttribute('data-bfilter') === state.branchFilter ? '' : 'grey');
+  });
+  $('btnImportBranch').disabled = false;
+
+  var all = Object.keys(state.branches).length;
+  var term = $('branchMasterSearch').value;
+  var list = branchList(term, true).filter(function (b) {
+    if (state.branchFilter === 'active') return b.active;
+    if (state.branchFilter === 'closed') return !b.active;
+    return true;
+  });
+  var shown = list.slice(0, BRANCH_RENDER_LIMIT);
+
+  $('branchStatus').textContent = all
+    ? ('ทะเบียนมี ' + fmtNum(all) + ' สาขา · เปิดใช้งาน ' +
+       fmtNum(Object.keys(state.branches).filter(function (k) { return state.branches[k].active; }).length))
+    : 'ยังไม่ได้นำเข้าทะเบียนสาขา';
+  $('branchCount').textContent = all
+    ? ('พบ ' + fmtNum(list.length) + ' สาขา' +
+       (list.length > shown.length ? ' — แสดง ' + fmtNum(shown.length) + ' รายการแรก' : ''))
+    : '';
+
+  var host = $('branchList');
+  host.innerHTML = '';
+  shown.forEach(function (b) {
+    var key = safeKey(b.code);
+    var card = document.createElement('div');
+    card.className = 'mrow';
+    card.setAttribute('data-branch', b.code);
+    card.setAttribute('data-active', b.active ? '1' : '0');
+
+    var top = document.createElement('div');
+    top.className = 'm-top';
+    var left = document.createElement('div');
+    var cd = document.createElement('div'); cd.className = 'm-name'; cd.textContent = b.code;
+    var nm = document.createElement('div'); nm.className = 'm-cat'; nm.textContent = b.name;
+    left.appendChild(cd); left.appendChild(nm);
+
+    var right = document.createElement('div');
+    right.style.textAlign = 'right';
+    var chip = document.createElement('span');
+    chip.className = 'chip ' + (b.active ? 'ok' : '');
+    chip.textContent = b.active ? 'เปิดใช้งาน' : 'ปิดแล้ว';
+    right.appendChild(chip);
+    top.appendChild(left); top.appendChild(right);
+
+    var act = document.createElement('div');
+    act.style.marginTop = '10px';
+    var btn = document.createElement('button');
+    btn.className = 'btn sm grey';
+    btn.style.width = '100%';
+    btn.setAttribute('data-action', 'toggleActive');
+    btn.textContent = b.active ? 'ปิดใช้งานสาขานี้' : 'เปิดใช้งานสาขานี้';
+    btn.onclick = function () {
+      saveBranchActive(key, !b.active).then(function () {
+        toast((b.active ? 'ปิด' : 'เปิด') + 'ใช้งาน ' + b.code + ' แล้ว');
+      });
+    };
+    act.appendChild(btn);
+
+    card.appendChild(top); card.appendChild(act);
+    host.appendChild(card);
+  });
+  if (!shown.length) host.innerHTML = '<div class="empty">' +
+    (all ? 'ไม่มีสาขาในตัวกรองนี้' : 'ยังไม่มีทะเบียนสาขา — นำเข้าไฟล์ด้านบนก่อน') + '</div>';
+}
+
+/* ---------- ตัวเลือกสาขาตอนสร้าง Job ---------- */
+
+function renderBranchPicker() {
+  var box = $('branchResults');
+  box.innerHTML = '';
+  var term = $('branchSearch').value;
+  var includeClosed = $('branchShowClosed').checked;
+
+  var picked = state.newBranch;
+  $('branchPicked').style.display = picked ? 'block' : 'none';
+  if (picked) $('branchPicked').textContent = 'เลือกแล้ว: ' + picked.code + ' · ' + picked.name;
+
+  if (!Object.keys(state.branches).length) {
+    box.innerHTML = '<div class="empty">ยังไม่มีทะเบียนสาขา — ไปที่แท็บ Master แล้วนำเข้าก่อน</div>';
+    return;
+  }
+  var hits = branchList(term, includeClosed).slice(0, 25);
+  if (!hits.length) {
+    box.innerHTML = '<div class="empty">ไม่พบสาขาที่ตรงกับที่ค้น</div>';
+    return;
+  }
+  hits.forEach(function (b) {
+    var btn = document.createElement('button');
+    btn.className = 'pick' + (picked && picked.code === b.code ? ' sel' : '');
+    btn.setAttribute('data-branch-pick', b.code);
+    btn.innerHTML = '<div class="pick-title"></div><div class="pick-meta"></div>';
+    btn.querySelector('.pick-title').textContent = b.code + ' · ' + b.name;
+    btn.querySelector('.pick-meta').textContent = b.active ? 'เปิดใช้งาน' : 'ปิดแล้ว (เลือกได้เฉพาะกรณีพิเศษ)';
+    btn.onclick = function () {
+      state.newBranch = { code: b.code, name: b.name };
+      if (!$('newJobAbbr').value.trim()) $('newJobAbbr').placeholder = 'อักษรย่อ เช่น ' + branchCodeCompact(b.code);
+      renderBranchPicker();
+      previewJobCode();
+    };
+    box.appendChild(btn);
+  });
+}
+
+/* ============================================================
    12. หน้า Master
    ============================================================ */
 
@@ -2401,6 +2732,14 @@ function saveProductEdit(key, field, value) {
 }
 
 function renderMaster() {
+  document.querySelectorAll('[data-mtab]').forEach(function (b) {
+    b.className = 'btn sm ' + (b.getAttribute('data-mtab') === state.masterTab ? '' : 'grey');
+  });
+  var onBranches = state.masterTab === 'branches';
+  $('masterProducts').style.display = onBranches ? 'none' : 'block';
+  $('masterBranches').style.display = onBranches ? 'block' : 'none';
+  if (onBranches) { renderBranchMaster(); return; }
+
   document.querySelectorAll('[data-mfilter]').forEach(function (b) {
     b.className = 'btn sm ' + (b.getAttribute('data-mfilter') === state.masterFilter ? '' : 'grey');
   });
@@ -2560,7 +2899,7 @@ var GROUP_LABEL = { product: 'Product', notProduct: 'Not Product', total: 'ร�
 function renderSummary() {
   var round = state.roundIndex[state.roundId] || { name: '-' };
   $('sumHead').textContent = roundLabel(round.name) +
-    (round.branch ? ' · สาขา ' + round.branch : '') + ' · สร้างเมื่อ ' + fmtTime(round.createdAt);
+    (jobBranchCode(round) || round.branchName || round.branch ? ' · สาขา ' + jobBranchLabel(round) : '') + ' · สร้างเมื่อ ' + fmtTime(round.createdAt);
 
   document.querySelectorAll('[data-price]').forEach(function (b) {
     b.className = 'btn sm ' + (b.getAttribute('data-price') === state.priceField ? '' : 'grey');
@@ -2697,7 +3036,7 @@ function exportExcel() {
   });
   s1.push([]);
   s1.push(['คิดมูลค่าด้วย', priceLabel]);
-  s1.push(['สาขา', round.branch || '-']);
+  s1.push(['สาขา', jobBranchLabel(round)]);
 
   var s2 = [['รหัสสินค้า', 'ชื่อสินค้า', 'หน่วย', 'ประเภท', 'จำนวนระบบ', 'จำนวนจริง', 'ผลต่าง',
              'จากการยิง', 'จากการกรอกมือ', priceLabel, 'มูลค่าระบบ', 'มูลค่าจริง']];
@@ -2781,10 +3120,10 @@ var DOC_TYPES = {
   stockTake: {
     label: 'Stock Take',
     noLabel: 'เลขที่เอกสาร',
-    placeholder: 'เช่น Admin-ST-256907001',
+    placeholder: 'เช่น ISRD-ST-FCM01-256907001',
     filePrefix: 'stocktake',
     subject: function (round) {
-      return 'เรื่อง  รายงานผลการตรวจนับสต๊อกสินค้า สาขา ' + (round.branch || '-');
+      return 'เรื่อง  รายงานผลการตรวจนับสต๊อกสินค้า สาขา ' + jobBranchName(round);
     },
     refLine: function (round) {
       return 'รอบนับ ' + (round.jobCode || '-') +
@@ -2795,10 +3134,10 @@ var DOC_TYPES = {
   transfer: {
     label: 'Transfer',
     noLabel: 'เลขที่ Transfer',
-    placeholder: 'เช่น Admin-TF-202607888',
+    placeholder: 'เช่น ISRD-TF-FCM01-256907001',
     filePrefix: 'transfer',
     subject: function (round) {
-      return 'เรื่อง  Transfer สินค้าสาขา ' + (round.branch || '-') + ' กลับคลังสินค้า';
+      return 'เรื่อง  Transfer สินค้าสาขา ' + jobBranchName(round) + ' กลับคลังสินค้า';
     },
     refLine: function (round) {
       return 'อ้างอิงรอบนับ ' + (round.jobCode || '-');
@@ -2830,6 +3169,29 @@ function saveDocNo(value) {
   var patch = {};
   patch['docNo/' + docType()] = value || null;
   return db.update('rounds/' + state.roundId, patch);
+}
+
+/* เลขที่เอกสาร: ISRD-[ST|TF]-[รหัสสาขาไม่มีขีด]-[ปีพ.ศ.][เดือน][ลำดับ 3 หลัก]
+   ตัวนับแยกกันสามชั้น สาขา × ประเภทเอกสาร × เดือน แต่ละสาขาเริ่ม 001 ใหม่ทุกเดือน
+   เพราะรหัสสาขาฝังอยู่ในเลข เลขจึงไม่ชนกันข้ามสาขาแม้ยังไม่ต่อฐานกลาง
+   แต่ยังชนกันได้ถ้าสาขาเดียวกันออกเลขจากคนละเครื่องพร้อมกัน */
+function allocateDocNo() {
+  var round = currentJob();
+  if (!round) return Promise.resolve(null);
+  var kind = docType() === 'transfer' ? 'TF' : 'ST';
+  var branchKey = safeKey(round.branchCode || 'NA');
+  var ym = beYearMonth();
+  var path = 'docCounters/' + branchKey + '/' + kind;
+
+  return db.get(path + '/' + ym).then(function (cur) {
+    var next = (Number(cur) || 0) + 1;
+    var patch = {};
+    patch[ym] = next;
+    return db.update(path, patch).then(function () {
+      return 'ISRD-' + kind + '-' + branchCodeCompact(round.branchCode) + '-' +
+             ym + String(next).padStart(3, '0');
+    });
+  });
 }
 
 /* ชื่อและที่อยู่บริษัทเก็บทั้งในฐาน (ให้ทุกเครื่องใช้ร่วมกัน)
@@ -3055,6 +3417,7 @@ function renderDoc() {
   $('docFoot').textContent = state.company.address || '(ยังไม่ได้ใส่ที่อยู่บริษัท)';
   $('docDate').textContent = 'วันที่ ' + thaiDate(Date.now());
   $('docSubject').textContent = spec.subject(round);
+  $('docBranchLine').textContent = 'สาขา: ' + jobBranchLabel(round);
   $('docRefLine').textContent = spec.refLine(round);
   $('docNoLabelPrint').textContent = spec.noLabel + ':';
   $('docNoShow').textContent = currentDocNo() || '—';
@@ -3107,7 +3470,7 @@ function exportDocExcel() {
   s1.push([]);
   s1.push(['ประเภทเอกสาร', spec.label]);
   s1.push([spec.noLabel, currentDocNo() || '-']);
-  s1.push(['สาขา', round.branch || '-']);
+  s1.push(['สาขา', jobBranchLabel(round)]);
   s1.push(['รหัสรอบนับ', round.jobCode || '-']);
   s1.push(['รอบนับ', round.name || '-']);
   s1.push(['คิดมูลค่าด้วย', priceLabel]);
@@ -3140,12 +3503,12 @@ function exportDocExcel() {
     { name: 'บาร์โค้ดไม่พบ', rows: s3, widths: [22, 24, 18, 14] }
   ]);
 
-  var safeBranch = String(round.branch || round.name || 'doc').replace(/[\\\/:*?"<>|]/g, '_').slice(0, 40);
-  var d = new Date();
-  var stamp = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+  /* ชื่อไฟล์ใช้รหัสสาขา อ่านง่ายและไม่ยาวเกินเวลาส่งต่อกัน */
+  var safeBranch = String(jobBranchCode(round) || jobBranchName(round) || 'doc')
+    .replace(/[\\\/:*?"<>|]/g, '_').slice(0, 40);
   var a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = spec.filePrefix + '_' + safeBranch + '_' + stamp + '.xlsx';
+  a.download = spec.filePrefix + '_' + safeBranch + '_' + beDateStamp() + '.xlsx';
   document.body.appendChild(a);
   a.click();
   setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
@@ -3280,7 +3643,7 @@ function showMissingColumnsHelp(missing) {
 /* ตรวจสาขาก่อนเขียนข้อมูลลงฐานเสมอ */
 function confirmBranch(stat) {
   var round = state.roundIndex[state.roundId] || {};
-  var expected = String(round.branch || '').trim();
+  var expected = String(jobBranchName(round) || '').trim();
   var found = stat.branchInFile;
 
   if (!found) {
@@ -3391,7 +3754,7 @@ function renderJobBar() {
   code.setAttribute('data-jobcode', job.jobCode || '');
   code.textContent = job.jobCode || '(ไม่มีรหัส)';
   var branch = document.createElement('span');
-  branch.textContent = job.branch || '-';
+  branch.textContent = jobBranchLabel(job);
   var status = document.createElement('span');
   status.style.marginLeft = 'auto';
   status.style.fontWeight = '800';
@@ -3437,13 +3800,17 @@ function renderJobs() {
 
   var ids = Object.keys(state.roundIndex);
   var branches = {};
-  ids.forEach(function (id) { if (state.roundIndex[id].branch) branches[state.roundIndex[id].branch] = 1; });
+  ids.forEach(function (id) {
+    var j = state.roundIndex[id];
+    var name = jobBranchName(j);
+    if (name && name !== '-') branches[name] = jobBranchLabel(j);
+  });
   var sel = $('jobBranchFilter');
   var prev = state.jobBranch;
   sel.innerHTML = '<option value="all">ทุกสาขา</option>';
   Object.keys(branches).sort().forEach(function (b) {
     var o = document.createElement('option');
-    o.value = b; o.textContent = b;
+    o.value = b; o.textContent = branches[b];
     sel.appendChild(o);
   });
   sel.value = branches[prev] ? prev : 'all';
@@ -3452,7 +3819,7 @@ function renderJobs() {
   var shown = ids.filter(function (id) {
     var j = state.roundIndex[id];
     if (state.jobFilter !== 'all' && (j.status || 'counting') !== state.jobFilter) return false;
-    if (state.jobBranch !== 'all' && j.branch !== state.jobBranch) return false;
+    if (state.jobBranch !== 'all' && jobBranchName(j) !== state.jobBranch) return false;
     return true;
   }).sort(function (a, b) {
     return (state.roundIndex[b].createdAt || 0) - (state.roundIndex[a].createdAt || 0);
@@ -3482,7 +3849,7 @@ function renderJobs() {
     code.textContent = j.jobCode || '(ไม่มีรหัส)';
     var br = document.createElement('div');
     br.className = 'j-branch';
-    br.textContent = j.branch || '-';
+    br.textContent = jobBranchLabel(j);
     left.appendChild(code); left.appendChild(br);
 
     var right = document.createElement('div');
@@ -3558,6 +3925,14 @@ function openJob(id) {
   showPage('start');
 }
 
+function previewJobCode() {
+  var box = $('jobCodePreview');
+  if (!state.newBranch) { box.style.display = 'none'; return; }
+  var abbr = $('newJobAbbr').value.trim() || branchCodeCompact(state.newBranch.code);
+  box.style.display = 'block';
+  box.textContent = 'รหัส Job ที่จะได้: ' + makeJobCode(abbr);
+}
+
 /* ---------- ปิด / เปิดรอบนับ ---------- */
 
 function sendToReview() {
@@ -3631,7 +4006,7 @@ function deleteJob() {
   var scanCount = Object.keys(state.counts).length;
   ask('ลบ Job นี้ (Admin)',
       'ใช้เฉพาะกรณีสร้าง Job ผิดเท่านั้น\n\n' +
-      'Job: ' + (job.jobCode || '') + '\nสาขา: ' + (job.branch || '-') +
+      'Job: ' + (job.jobCode || '') + '\nสาขา: ' + jobBranchLabel(job) +
       (scanCount ? '\n\n⚠ Job นี้มีการนับไปแล้ว ' + fmtNum(scanCount) + ' รายการ ลบแล้วยอดหายถาวร' : '') +
       '\n\nพิมพ์รหัส Job ให้ตรงเพื่อยืนยัน',
       'ลบ Job นี้',
@@ -3663,7 +4038,7 @@ function goScan() {
   if (state.jobConfirmed) { showPage('scan'); return; }
   var job = currentJob() || {};
   ask('ยืนยัน Job ก่อนเริ่มยิง',
-      job.jobCode + '\nสาขา ' + (job.branch || '-') + '\nโซน ' + zoneName(state.zoneId) +
+      job.jobCode + '\nสาขา ' + jobBranchLabel(job) + '\nโซน ' + zoneName(state.zoneId) +
       '\nผู้นับ ' + state.counter + '\n\nยิงเข้า Job นี้ใช่ไหม',
       'ใช่ เริ่มยิงได้').then(function (ok) {
     if (!ok) return;
@@ -3739,7 +4114,7 @@ function refreshNav() {
   var round = state.roundIndex[state.roundId];
   $('topTitle').textContent = round ? (round.jobCode || 'ISRD ระบบนับสต๊อก') : 'ISRD ระบบนับสต๊อก';
   $('topSub').textContent = round
-    ? ((round.branch || '-') +
+    ? (jobBranchLabel(round) +
        (state.zoneId ? ' · ' + zoneName(state.zoneId) : '') + (state.counter ? ' · ' + state.counter : ''))
     : 'ยังไม่ได้เลือก Job';
 }
@@ -3881,8 +4256,10 @@ function init() {
   if (!db.remote) {
     var b = document.createElement('div');
     b.className = 'banner';
-    b.textContent = 'โหมดทดสอบ — ยังไม่ได้ตั้งค่า Firebase ข้อมูลจะเก็บอยู่ในเครื่องนี้เท่านั้น ' +
-                    'คนอื่นจะยังไม่เห็นยอดที่คุณนับ';
+    /* รหัสสาขาอยู่ในเลขที่เอกสารแล้ว เลขจึงไม่ชนกันข้ามสาขา
+       เหลือความเสี่ยงเฉพาะกรณีสาขาเดียวกันออกเลขจากหลายเครื่องพร้อมกัน */
+    b.textContent = 'ยังไม่ได้ต่อฐานข้อมูลกลาง เลขอาจซ้ำได้ถ้ามีคนนับสาขาเดียวกันคนละเครื่อง ' +
+                    '— ข้อมูลที่นับตอนนี้เก็บอยู่ในเครื่องนี้เท่านั้น';
     $('modeBanner').appendChild(b);
   }
 
@@ -3894,31 +4271,22 @@ function init() {
     refreshNav();
   });
 
-  function previewJobCode() {
-    var branch = $('newRoundBranch').value.trim();
-    var abbr = $('newJobAbbr').value.trim() || suggestAbbr(branch);
-    var box = $('jobCodePreview');
-    if (!branch) { box.style.display = 'none'; return; }
-    box.style.display = 'block';
-    box.textContent = 'รหัส Job ที่จะได้: ' + makeJobCode(abbr);
-  }
-  $('newRoundBranch').addEventListener('input', function () {
-    if (!$('newJobAbbr').value.trim()) $('newJobAbbr').placeholder = 'อักษรย่อ เช่น ' + suggestAbbr(this.value);
-    previewJobCode();
-  });
+  $('branchSearch').addEventListener('input', renderBranchPicker);
+  $('branchShowClosed').addEventListener('change', renderBranchPicker);
   $('newJobAbbr').addEventListener('input', previewJobCode);
 
   $('btnAddRound').onclick = function () {
     var name = $('newRoundName').value.trim();
-    var branch = $('newRoundBranch').value.trim();
     var abbr = $('newJobAbbr').value.trim();
-    if (!branch) { toast('ใส่ชื่อสาขาก่อน เพื่อให้ตรวจไฟล์นำเข้าได้', true); return; }
+    if (!state.newBranch) { toast('เลือกสาขาจากทะเบียนก่อน', true); return; }
     if (!name) { toast('ตั้งชื่อรอบนับก่อน', true); return; }
-    createRound(name, branch, abbr).then(function (id) {
+    createRound(name, state.newBranch, abbr).then(function (id) {
       $('newRoundName').value = '';
-      $('newRoundBranch').value = '';
       $('newJobAbbr').value = '';
+      $('branchSearch').value = '';
+      state.newBranch = null;
       $('jobCodePreview').style.display = 'none';
+      renderBranchPicker();
       selectRound(id);
       showPage('start');
       toast('สร้าง Job ' + ((state.roundIndex[id] || {}).jobCode || '') + ' แล้ว');
@@ -4003,6 +4371,20 @@ function init() {
   document.querySelectorAll('[data-mfilter]').forEach(function (b) {
     b.onclick = function () { state.masterFilter = b.getAttribute('data-mfilter'); renderMaster(); };
   });
+  document.querySelectorAll('[data-mtab]').forEach(function (b) {
+    b.onclick = function () { state.masterTab = b.getAttribute('data-mtab'); renderMaster(); };
+  });
+
+  /* ---- ทะเบียนสาขา ---- */
+  $('btnImportBranch').onclick = function () { $('branchFile').click(); };
+  $('branchFile').addEventListener('change', function () {
+    if (this.files && this.files[0]) handleBranchImport(this.files[0]);
+    this.value = '';
+  });
+  $('branchMasterSearch').addEventListener('input', renderBranchMaster);
+  document.querySelectorAll('[data-bfilter]').forEach(function (b) {
+    b.onclick = function () { state.branchFilter = b.getAttribute('data-bfilter'); renderBranchMaster(); };
+  });
 
   /* ---- สรุป ---- */
   /* ปุ่มสลับราคาใช้ค่าเดียวกันทั้งหน้าสรุปและหน้าเอกสาร กดที่ไหนก็เปลี่ยนตามกันหมด */
@@ -4036,6 +4418,26 @@ function init() {
     var label = docSpec().noLabel;
     saveDocNo(this.value.trim()).then(function () { toast('บันทึก' + label + 'แล้ว'); });
   });
+  $('btnGenDocNo').onclick = function () {
+    if (!state.roundId) { toast('เลือก Job ก่อน', true); return; }
+    if (!canEdit()) { toast(blockedMessage(), true); return; }
+    var existing = currentDocNo();
+    var go = existing
+      ? ask('ออกเลขที่ใหม่?', 'ตอนนี้มีเลขที่อยู่แล้ว: ' + existing + '\n\nออกเลขใหม่จะทับเลขเดิม',
+            'ออกเลขใหม่', { danger: true })
+      : Promise.resolve(true);
+    go.then(function (ok) {
+      if (!ok) return;
+      return allocateDocNo().then(function (no) {
+        if (!no) return;
+        return saveDocNo(no).then(function () {
+          $('docNo').value = no;
+          renderDoc();
+          toast('ออกเลขที่ ' + no + ' แล้ว');
+        });
+      });
+    });
+  };
 
   $('docCompany').addEventListener('change', function () { saveCompany('name', this.value.trim()); });
   $('docAddress').addEventListener('change', function () { saveCompany('address', this.value.trim()); });
@@ -4062,6 +4464,12 @@ function init() {
     if (state.page === 'summary') renderSummary();
   });
 
+  db.subscribe('branches', function (data) {
+    state.branches = data || {};
+    if (state.page === 'master') renderMaster();
+    if (state.page === 'jobs') renderBranchPicker();
+  });
+
   db.subscribe('roundIndex', function (data) {
     state.roundIndex = data || {};
     renderStart();
@@ -4079,6 +4487,7 @@ function init() {
 
   renderStart();
   renderJobs();
+  renderBranchPicker();
 }
 
 init();
@@ -4088,6 +4497,24 @@ init();
   ====================================================================
   สรุปการเปลี่ยนแปลง
   ====================================================================
+
+  v1.6.0 — ทะเบียนสาขา + เลขที่เอกสารมีรหัสสาขา
+    - ทะเบียนคลังสินค้า/สาขาอยู่ในแท็บ Master (branches/{รหัส})
+      เก็บ code, name, active · นำเข้าจากไฟล์ 2 คอลัมน์ (รหัส, ชื่อคลัง/สาขา)
+      รหัสขึ้นต้น "X " หรือชื่อขึ้นต้น "Close " → active = false อัตโนมัติ
+      กดเปิด/ปิดเองได้ และถ้าเคยแก้เอง (activeSource = manual) ไฟล์จะไม่ทับ
+    - ตอนสร้าง Job เลือกสาขาจากทะเบียนเท่านั้น พิมพ์ชื่อเองไม่ได้แล้ว
+      ค้นได้ทั้งรหัสและชื่อ แสดงเฉพาะที่ active และมีตัวเลือกให้ดูสาขาที่ปิดแล้ว
+      Job เก็บทั้ง branchCode และ branchName
+    - เลขที่เอกสารเปลี่ยนเป็น ISRD-[ST|TF]-[รหัสสาขาไม่มีขีด]-[ปีพ.ศ.][เดือน][ลำดับ3หลัก]
+      เช่น ISRD-ST-FCM01-256907001 · มีปุ่มออกเลขให้อัตโนมัติ แก้เองทับได้
+    - ตัวนับแยก 3 ชั้น สาขา × ประเภท × เดือน ที่ docCounters/{สาขา}/{ST|TF}/{ปีเดือน}
+      แต่ละสาขาเริ่ม 001 ใหม่ทุกเดือนของตัวเอง
+    - เอกสารขึ้นบรรทัด "สาขา: FCM-01 · ชื่อสาขา" ทั้งสองประเภท
+      ชื่อไฟล์ Excel ใช้รหัสสาขาและวันที่ พ.ศ. เช่น stocktake_FCM-01_25690729.xlsx
+      หน้ารายการ Job แสดงรหัสสาขานำหน้าชื่อทุกการ์ด
+    - ปรับข้อความเตือนสีส้มให้ตรงความเสี่ยงจริง: รหัสสาขาอยู่ในเลขแล้ว
+      เลขจึงไม่ชนข้ามสาขา เหลือเสี่ยงเฉพาะสาขาเดียวกันออกเลขจากหลายเครื่องพร้อมกัน
 
   v1.5.0 — เอกสาร 2 ประเภท (Stock Take / Transfer)
     - ปุ่มสลับประเภทอยู่บนสุดของหน้าเอกสาร ก่อนช่องกรอกอื่นทั้งหมด
@@ -4196,6 +4623,16 @@ init();
     "rules": {
       "settings": { ".read": true, ".write": true },
       "products": { ".read": true, ".write": true },
+      "branches": { ".read": true, ".write": true },
+
+      // ตัวนับเลขที่เอกสาร แยกตาม สาขา / ประเภท / ปีเดือน (พ.ศ.)
+      // เพิ่มได้อย่างเดียว ห้ามลดเลข ไม่งั้นเลขที่ออกไปแล้วจะถูกใช้ซ้ำ
+      "docCounters": {
+        ".read": true,
+        "$branch": { "$kind": { "$yearMonth": {
+          ".write": "newData.isNumber() && (!data.exists() || newData.val() > data.val())"
+        } } }
+      },
 
       "roundIndex": {
         ".read": true,
