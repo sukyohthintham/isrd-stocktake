@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="1.4.1">
+<meta name="version" content="1.5.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v1.4.1</title>
+<title>ISRD Stocktake v1.5.0</title>
 
 <style>
 :root{
@@ -312,8 +312,9 @@ table.grid td.neg{color:var(--short);font-weight:700}
 .doc-lab{font-weight:700}
 .doc .to-list{margin:2px 0 0 24px;padding:0}
 .doc .to-list li{margin:1px 0}
-.doc .subject{font-size:12pt;font-weight:800;margin-top:8px}
-.doc .tf-line{margin-top:10px}
+.doc .subject{font-size:11.5pt;font-weight:800;margin-top:8px}
+.doc .doc-ref{font-size:9pt;color:#334155;margin-top:3px}
+.doc .tf-line{margin-top:9px}
 .doc .tf-box{
   display:inline-block;min-width:220px;border-bottom:1.5px dotted #111827;
   padding:1px 6px;font-weight:700;
@@ -606,10 +607,17 @@ table.grid td.neg{color:var(--short);font-weight:700}
 <!-- ============ PAGE 5 : DOCUMENT ============ -->
 <section class="page" id="pageDoc">
   <div class="card no-print">
-    <h3>ออกเอกสาร Transfer</h3>
+    <h3>ออกเอกสาร</h3>
+    <label class="fld" style="margin-bottom:6px">
+      <span>ประเภทเอกสาร</span>
+    </label>
+    <div class="filters" id="docTypeFilters" style="margin-bottom:14px">
+      <button class="btn sm" data-doctype="stockTake">Stock Take</button>
+      <button class="btn sm grey" data-doctype="transfer">Transfer</button>
+    </div>
     <label class="fld" style="margin-bottom:8px">
-      <span>เลขที่ Transfer</span>
-      <input type="text" id="docTransferNo" placeholder="เช่น Admin-TF-202607888" autocomplete="off">
+      <span id="docNoLabel">เลขที่เอกสาร</span>
+      <input type="text" id="docNo" placeholder="เช่น Admin-ST-256907001" autocomplete="off">
     </label>
     <div class="row" style="margin-bottom:8px">
       <input type="text" id="docCompany" placeholder="ชื่อบริษัท" autocomplete="off">
@@ -646,9 +654,10 @@ table.grid td.neg{color:var(--short);font-weight:700}
           <li>พนักงานประจำสาขา</li>
         </ul>
         <div class="subject" id="docSubject"></div>
+        <div class="doc-ref" id="docRefLine"></div>
         <div class="tf-line">
-          <span class="doc-lab">เลขที่ Transfer:</span>
-          <span class="tf-box" id="docTfShow">—</span>
+          <span class="doc-lab" id="docNoLabelPrint">เลขที่เอกสาร:</span>
+          <span class="tf-box" id="docNoShow">—</span>
         </div>
       </div>
 
@@ -730,7 +739,7 @@ table.grid td.neg{color:var(--short);font-weight:700}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '1.4.1';
+var APP_VERSION = '1.5.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -1653,8 +1662,10 @@ var state = {
   masterFilter: 'all',
   priceField: 'sellPrice',
   reasons: {},           // key -> ข้อความ Reason ในเอกสาร
-  transferNo: '',
-  company: {},           // { name, address } ใช้ร่วมทุกเครื่อง
+  docType: 'stockTake',  // ประเภทเอกสารของ Job นี้
+  docNo: {},             // { stockTake, transfer } เลขที่เอกสารแยกตามประเภท
+  legacyTransferNo: '',  // เลขที่ Transfer ที่บันทึกไว้ก่อน v1.5.0
+  company: {},           // { name, address } กรอกครั้งเดียวใช้ได้ทุก Job
   unsub: [],
   manualPicked: null,
   modalOpen: false,
@@ -2762,13 +2773,89 @@ function saveReason(key, value) {
   return db.update('rounds/' + state.roundId, patch);
 }
 
-function saveTransferNo(value) {
+/* ---------- ประเภทเอกสาร ----------
+   Stock Take = รายงานผลการตรวจนับ (ใช้บ่อยกว่า จึงเป็นค่าตั้งต้น)
+   Transfer   = ใบส่งของกลับคลัง
+   ส่วนที่เหลือของเอกสารใช้ร่วมกันทั้งสองแบบ ต่างแค่หัวเรื่อง เลขที่ และบรรทัดอ้างอิง */
+var DOC_TYPES = {
+  stockTake: {
+    label: 'Stock Take',
+    noLabel: 'เลขที่เอกสาร',
+    placeholder: 'เช่น Admin-ST-256907001',
+    filePrefix: 'stocktake',
+    subject: function (round) {
+      return 'เรื่อง  รายงานผลการตรวจนับสต๊อกสินค้า สาขา ' + (round.branch || '-');
+    },
+    refLine: function (round) {
+      return 'รอบนับ ' + (round.jobCode || '-') +
+             ' · วันที่นับ ' + thaiDate(round.createdAt) +
+             ' ถึง ' + (round.closedAt ? thaiDate(round.closedAt) : 'ยังไม่ปิดรอบ');
+    }
+  },
+  transfer: {
+    label: 'Transfer',
+    noLabel: 'เลขที่ Transfer',
+    placeholder: 'เช่น Admin-TF-202607888',
+    filePrefix: 'transfer',
+    subject: function (round) {
+      return 'เรื่อง  Transfer สินค้าสาขา ' + (round.branch || '-') + ' กลับคลังสินค้า';
+    },
+    refLine: function (round) {
+      return 'อ้างอิงรอบนับ ' + (round.jobCode || '-');
+    }
+  }
+};
+var DEFAULT_DOC_TYPE = 'stockTake';
+
+function docType() { return DOC_TYPES[state.docType] ? state.docType : DEFAULT_DOC_TYPE; }
+function docSpec() { return DOC_TYPES[docType()]; }
+
+function currentDocNo() {
+  var map = state.docNo || {};
+  /* เอกสารที่ออกก่อน v1.5.0 เก็บเลขไว้ที่ transferNo — อ่านต่อได้ ไม่ต้องกรอกใหม่ */
+  if (docType() === 'transfer') return map.transfer || state.legacyTransferNo || '';
+  return map.stockTake || '';
+}
+
+function saveDocType(type) {
+  if (!DOC_TYPES[type]) return Promise.resolve();
+  state.docType = type;                       // สลับให้เห็นทันที ไม่รอ subscription
+  renderDoc();
+  if (!state.roundId || !canEdit()) return Promise.resolve();
+  return db.update('rounds/' + state.roundId, { docType: type });   // จำไว้กับ Job นี้
+}
+
+function saveDocNo(value) {
   if (!canEdit()) { toast(blockedMessage(), true); return Promise.resolve(); }
-  var patch = { transferNo: value || null };
+  var patch = {};
+  patch['docNo/' + docType()] = value || null;
   return db.update('rounds/' + state.roundId, patch);
 }
 
+/* ชื่อและที่อยู่บริษัทเก็บทั้งในฐาน (ให้ทุกเครื่องใช้ร่วมกัน)
+   และสำเนาไว้ในเครื่อง เพื่อให้เปิดมาเห็นทันทีโดยไม่ต้องรอโหลด และใช้ได้ตอนเน็ตหลุด */
+var COMPANY_KEY = 'isrd_company';
+
+function loadCompanyLocal() {
+  try { return JSON.parse(localStorage.getItem(COMPANY_KEY) || '{}') || {}; }
+  catch (e) { return {}; }
+}
+function saveCompanyLocal(data) {
+  try { localStorage.setItem(COMPANY_KEY, JSON.stringify(data || {})); } catch (e) { /* เต็มก็ปล่อย */ }
+}
+function applyCompany(data) {
+  state.company = data || {};
+  if ($('docCompany') !== document.activeElement) $('docCompany').value = state.company.name || '';
+  if ($('docAddress') !== document.activeElement) $('docAddress').value = state.company.address || '';
+  if (state.page === 'doc') renderDoc();
+}
+
 function saveCompany(field, value) {
+  var next = {};
+  Object.keys(state.company || {}).forEach(function (k) { next[k] = state.company[k]; });
+  next[field] = value || '';
+  saveCompanyLocal(next);
+  applyCompany(next);
   var patch = {};
   patch[field] = value || null;
   return db.update('settings/company', patch);
@@ -2963,12 +3050,21 @@ function renderDoc() {
     rHost.appendChild(warn);
   }
 
+  var spec = docSpec();
   $('docCoName').textContent = state.company.name || '(ยังไม่ได้ใส่ชื่อบริษัท)';
   $('docFoot').textContent = state.company.address || '(ยังไม่ได้ใส่ที่อยู่บริษัท)';
   $('docDate').textContent = 'วันที่ ' + thaiDate(Date.now());
-  $('docSubject').textContent = 'เรื่อง  Transfer สินค้าสาขา ' + (round.branch || '-') + ' กลับคลังสินค้า';
-  $('docTfShow').textContent = state.transferNo || '—';
+  $('docSubject').textContent = spec.subject(round);
+  $('docRefLine').textContent = spec.refLine(round);
+  $('docNoLabelPrint').textContent = spec.noLabel + ':';
+  $('docNoShow').textContent = currentDocNo() || '—';
+  $('docNoLabel').textContent = spec.noLabel;
+  $('docNo').placeholder = spec.placeholder;
+  if ($('docNo') !== document.activeElement) $('docNo').value = currentDocNo();
 
+  document.querySelectorAll('[data-doctype]').forEach(function (b) {
+    b.className = 'btn sm ' + (b.getAttribute('data-doctype') === docType() ? '' : 'grey');
+  });
   document.querySelectorAll('[data-docprice]').forEach(function (b) {
     b.className = 'btn sm ' + (b.getAttribute('data-docprice') === state.priceField ? '' : 'grey');
   });
@@ -3007,9 +3103,12 @@ function exportDocExcel() {
              Math.round((g.actValue - g.sysValue) * 100) / 100,
              g.skuMatch, g.skuShort, g.skuOver, g.skuTotal]);
   });
+  var spec = docSpec();
   s1.push([]);
-  s1.push(['เลขที่ Transfer', state.transferNo || '-']);
+  s1.push(['ประเภทเอกสาร', spec.label]);
+  s1.push([spec.noLabel, currentDocNo() || '-']);
   s1.push(['สาขา', round.branch || '-']);
+  s1.push(['รหัสรอบนับ', round.jobCode || '-']);
   s1.push(['รอบนับ', round.name || '-']);
   s1.push(['คิดมูลค่าด้วย', priceLabel]);
   s1.push(['วันที่ออกเอกสาร', thaiDate(Date.now())]);
@@ -3041,12 +3140,12 @@ function exportDocExcel() {
     { name: 'บาร์โค้ดไม่พบ', rows: s3, widths: [22, 24, 18, 14] }
   ]);
 
-  var safeBranch = String(round.branch || round.name || 'stocktake').replace(/[\\\/:*?"<>|]/g, '_').slice(0, 40);
+  var safeBranch = String(round.branch || round.name || 'doc').replace(/[\\\/:*?"<>|]/g, '_').slice(0, 40);
   var d = new Date();
   var stamp = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
   var a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'stocktake_' + safeBranch + '_' + stamp + '.xlsx';
+  a.download = spec.filePrefix + '_' + safeBranch + '_' + stamp + '.xlsx';
   document.body.appendChild(a);
   a.click();
   setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
@@ -3706,7 +3805,9 @@ function selectRound(id) {
   state.systemQty = {};
   state.lastImport = null;
   state.reasons = {};
-  state.transferNo = '';
+  state.docType = DEFAULT_DOC_TYPE;
+  state.docNo = {};
+  state.legacyTransferNo = '';
   state.jobConfirmed = false;      // เปลี่ยน Job แล้วต้องยืนยันใหม่ก่อนยิง
   delete state.jobStats[id];
   resetRoundAggregates();
@@ -3750,10 +3851,19 @@ function selectRound(id) {
       if (state.page === 'doc' && !(el && el.classList && el.classList.contains('reason-in'))) renderDoc();
     }));
 
+    state.unsub.push(db.subscribe('rounds/' + id + '/docType', function (value) {
+      state.docType = DOC_TYPES[value] ? value : DEFAULT_DOC_TYPE;
+      if (state.page === 'doc') renderDoc();
+    }));
+
+    state.unsub.push(db.subscribe('rounds/' + id + '/docNo', function (value) {
+      state.docNo = value || {};
+      if (state.page === 'doc' && $('docNo') !== document.activeElement) renderDoc();
+    }));
+
     state.unsub.push(db.subscribe('rounds/' + id + '/transferNo', function (value) {
-      state.transferNo = value || '';
-      if ($('docTransferNo') !== document.activeElement) $('docTransferNo').value = state.transferNo;
-      $('docTfShow').textContent = state.transferNo || '—';
+      state.legacyTransferNo = value || '';
+      if (state.page === 'doc' && $('docNo') !== document.activeElement) renderDoc();
     }));
   });
 
@@ -3919,17 +4029,25 @@ function init() {
   $('navDoc').onclick = function () { if (state.roundId) showPage('doc'); };
   $('btnPrint').onclick = function () { window.print(); };
   $('btnDocExcel').onclick = exportDocExcel;
-  $('docTransferNo').addEventListener('change', function () {
-    saveTransferNo(this.value.trim()).then(function () { toast('บันทึกเลขที่ Transfer แล้ว'); });
+  document.querySelectorAll('[data-doctype]').forEach(function (b) {
+    b.onclick = function () { saveDocType(b.getAttribute('data-doctype')); };
   });
+  $('docNo').addEventListener('change', function () {
+    var label = docSpec().noLabel;
+    saveDocNo(this.value.trim()).then(function () { toast('บันทึก' + label + 'แล้ว'); });
+  });
+
   $('docCompany').addEventListener('change', function () { saveCompany('name', this.value.trim()); });
   $('docAddress').addEventListener('change', function () { saveCompany('address', this.value.trim()); });
 
+  /* ชื่อ/ที่อยู่บริษัทเติมจากเครื่องก่อนทันที แล้วค่อยให้ค่าจากฐานทับ
+     กรอกครั้งเดียวใช้ได้ทุก Job ทุกเอกสาร และยังขึ้นให้แม้เปิดตอนเน็ตหลุด */
+  applyCompany(loadCompanyLocal());
+
   db.subscribe('settings/company', function (data) {
-    state.company = data || {};
-    if ($('docCompany') !== document.activeElement) $('docCompany').value = state.company.name || '';
-    if ($('docAddress') !== document.activeElement) $('docAddress').value = state.company.address || '';
-    if (state.page === 'doc') renderDoc();
+    if (!data) return;
+    saveCompanyLocal(data);
+    applyCompany(data);
   });
 
   /* ---- คิวเขียนข้อมูล ---- */
@@ -3970,6 +4088,22 @@ init();
   ====================================================================
   สรุปการเปลี่ยนแปลง
   ====================================================================
+
+  v1.5.0 — เอกสาร 2 ประเภท (Stock Take / Transfer)
+    - ปุ่มสลับประเภทอยู่บนสุดของหน้าเอกสาร ก่อนช่องกรอกอื่นทั้งหมด
+      ค่าตั้งต้นคือ Stock Take (ใช้บ่อยกว่า) และจำไว้กับ Job แต่ละอัน
+      ไม่ใช่จำรวมทั้งแอป
+    - Stock Take: หัวเรื่อง "รายงานผลการตรวจนับสต๊อกสินค้า สาขา [สาขา]"
+      ช่อง "เลขที่เอกสาร" · บรรทัดใต้หัวเรื่องบอกรอบนับและช่วงวันที่นับถึงวันปิด Job
+    - Transfer: หัวเรื่องเดิม ช่อง "เลขที่ Transfer"
+      เพิ่มบรรทัด "อ้างอิงรอบนับ [jobCode]" ให้ตามกลับได้ว่ามาจากการนับรอบไหน
+    - เลขที่เอกสารเก็บแยกตามประเภทที่ rounds/{id}/docNo/{ประเภท}
+      ของเดิมที่เก็บไว้ใน transferNo ก่อน v1.5.0 ยังอ่านขึ้นมาใช้ได้
+    - ตาราง Dashboard, กราฟโดนัท, ตารางรายการ, ช่องลงชื่อ, ที่อยู่บริษัท
+      และปุ่มสลับราคา ใช้ร่วมกันทั้งสองแบบ ไม่ได้ทำซ้ำ
+    - ชื่อไฟล์ Excel เปลี่ยนตามประเภท: stocktake_… หรือ transfer_…
+    - ชื่อ/ที่อยู่บริษัทสำเนาไว้ในเครื่องด้วย กรอกครั้งเดียวใช้ได้ทุก Job
+      เปิดมาเห็นทันทีโดยไม่ต้องรอโหลด และยังขึ้นให้ตอนเน็ตหลุด
 
   v1.4.1 — จัดหน้าเอกสารให้เป็น A4 จริง
     - @page A4 portrait ขอบ 12/10/14/10mm · ตัวเอกสารกว้าง 190mm ตายตัว
@@ -4080,6 +4214,8 @@ init();
           "systemQty":  { ".write": "root.child('roundIndex').child($roundId).child('status').val() === 'counting'" },
           "schema":     { ".write": true },
           "transferNo": { ".write": "root.child('roundIndex').child($roundId).child('status').val() !== 'closed'" },
+          "docType":    { ".write": "root.child('roundIndex').child($roundId).child('status').val() !== 'closed'" },
+          "docNo":      { ".write": "root.child('roundIndex').child($roundId).child('status').val() !== 'closed'" },
           "reasons":    { ".write": "root.child('roundIndex').child($roundId).child('status').val() !== 'closed'" },
 
           "scans": {
