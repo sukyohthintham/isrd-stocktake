@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="1.6.0">
+<meta name="version" content="1.7.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v1.6.0</title>
+<title>ISRD Stocktake v1.7.0</title>
 
 <style>
 :root{
@@ -145,14 +145,14 @@ select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,va
   border-color:var(--brand);
 }
 .scan-last{display:flex;gap:12px;align-items:center;margin-top:14px;min-height:74px}
-.scan-last img{
-  width:64px;height:64px;object-fit:cover;border-radius:12px;
-  background:var(--line-soft);flex:0 0 auto;
+/* ---------- รูปสินค้า (โหลดแบบ lazy ไม่มีรูปก็เป็นกรอบเทา ไม่ใช่รูปแตก) ---------- */
+.imgbox{
+  background:var(--line-soft);border-radius:8px;overflow:hidden;flex:0 0 auto;
+  display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:18px;
 }
-.scan-last .sl-noimg{
-  width:64px;height:64px;border-radius:12px;background:var(--line-soft);flex:0 0 auto;
-  display:flex;align-items:center;justify-content:center;font-size:26px;color:var(--muted);
-}
+.imgbox .img-el{width:100%;height:100%;object-fit:cover;display:block}
+.scan-last .imgbox{width:64px;height:64px;border-radius:12px;font-size:26px}
+.mrow .imgbox{width:44px;height:44px;margin-right:10px}
 .scan-last .sl-name{font-size:19px;font-weight:800;line-height:1.25;word-break:break-word}
 .scan-last .sl-meta{font-size:13px;color:var(--muted);margin-top:3px}
 .scan-last .sl-qty{font-size:30px;font-weight:800;white-space:nowrap;color:var(--brand-dark);
@@ -346,7 +346,10 @@ table.grid td.neg{color:var(--short);font-weight:700}
 .doc .pos{color:#15803d;font-weight:700}
 .doc .neg{color:#b91c1c;font-weight:700}
 .doc .tbl-title{font-weight:800;font-size:10.5pt;margin:14px 0 6px}
-.doc .img-box{width:24px;height:24px;border:0.5pt solid #cbd5e1;border-radius:3px;margin:0 auto;background:#fff}
+.doc .imgbox{
+  width:24px;height:24px;border:0.5pt solid #cbd5e1;border-radius:3px;margin:0 auto;
+  background:#fff;font-size:9px;
+}
 .doc .reason-in{
   width:100%;min-height:0;border:0;border-bottom:1px dotted #94a3b8;border-radius:0;
   font-size:9pt;padding:2px 3px;background:transparent;font-family:inherit;
@@ -502,7 +505,7 @@ table.grid td.neg{color:var(--short);font-weight:700}
     <input type="text" id="scanInput" inputmode="none" autocomplete="off"
            autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="ยิงบาร์โค้ดได้เลย">
     <div class="scan-last" id="scanLast">
-      <div class="sl-noimg">📦</div>
+      <div class="imgbox noimg" id="slImage">📦</div>
       <div style="flex:1 1 auto">
         <div class="sl-name" id="slName">พร้อมรับการยิง</div>
         <div class="sl-meta" id="slMeta">ยิง 1 ครั้ง = นับเพิ่ม 1 ชิ้น</div>
@@ -572,6 +575,11 @@ table.grid td.neg{color:var(--short);font-weight:700}
         <button class="btn sm grey" data-mfilter="notProduct">Not Product</button>
       </div>
       <div class="muted" id="masterCount"></div>
+      <button class="btn ghost sm block" id="btnImportImages" style="margin-top:12px">🖼 นำเข้ารูปสินค้า (JSON)</button>
+      <p class="muted" style="margin:10px 0 0">
+        รับได้ทั้ง <b>product-images.json</b> และ <b>product-images.min.json</b><br>
+        จับคู่ด้วยรหัสสินค้า แล้วเก็บลิงก์รูปไว้กับสินค้าใน Master
+      </p>
     </div>
     <div class="clist" id="masterList"></div>
   </div>
@@ -581,6 +589,7 @@ table.grid td.neg{color:var(--short);font-weight:700}
       <h3>คลังสินค้า/สาขา</h3>
       <div id="branchStatus" class="muted" style="margin-bottom:12px">ยังไม่ได้นำเข้าทะเบียนสาขา</div>
       <input type="file" id="branchFile" accept=".csv,.xlsx" style="display:none">
+      <input type="file" id="imageFile" accept=".json" style="display:none">
       <button class="btn ghost block" id="btnImportBranch">📄 นำเข้าทะเบียนสาขา (Excel / CSV)</button>
       <p class="muted" style="margin:12px 0 0">
         ไฟล์ต้องมี 2 คอลัมน์: <b>รหัส</b> และ <b>ชื่อคลัง/สาขา</b><br>
@@ -780,7 +789,7 @@ table.grid td.neg{color:var(--short);font-weight:700}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '1.6.0';
+var APP_VERSION = '1.7.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -2213,6 +2222,188 @@ function flashStage(cls) {
 }
 
 /* ============================================================
+   10b. รูปสินค้า — โหลดแบบ lazy และห้ามให้หน้าค้างรอรูป
+
+   กฎ: รูปไม่ขึ้นภายใน 3 วินาที ให้ตกไปเป็นกรอบเทาทันที
+   การยิงบาร์โค้ดต้องทำงานได้เต็มที่แม้รูปไม่ขึ้นสักรูป
+   ============================================================ */
+
+var IMAGE_TIMEOUT_MS = 3000;
+var lazyObserver = null;
+
+function ensureLazyObserver() {
+  if (lazyObserver || typeof IntersectionObserver === 'undefined') return;
+  lazyObserver = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) { if (e.isIntersecting) loadLazyImage(e.target); });
+  }, { rootMargin: '250px' });
+}
+
+function markNoImage(box, state) {
+  box.classList.add('noimg');
+  box.textContent = '📦';
+  box.setAttribute('data-state', state || 'none');
+}
+
+function loadLazyImage(box) {
+  if (box.getAttribute('data-state')) return;
+  box.setAttribute('data-state', 'loading');
+  if (lazyObserver) { try { lazyObserver.unobserve(box); } catch (e) { /* ปิดไปแล้วก็ช่าง */ } }
+
+  var url = box.getAttribute('data-src');
+  if (!url) { markNoImage(box); return; }
+
+  var img = new Image();
+  var settled = false;
+  var timer = setTimeout(function () {
+    if (settled) return;
+    settled = true;
+    img.onload = img.onerror = null;
+    img.src = '';                      // เลิกรอ ไม่ให้ค้างคาหน้าจอ
+    markNoImage(box, 'timeout');
+  }, IMAGE_TIMEOUT_MS);
+
+  img.onload = function () {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timer);
+    box.textContent = '';
+    box.classList.remove('noimg');
+    img.className = 'img-el';
+    img.alt = '';
+    box.appendChild(img);
+    box.setAttribute('data-state', 'ok');
+  };
+  img.onerror = function () {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timer);
+    markNoImage(box, 'error');
+  };
+  img.decoding = 'async';
+  img.src = url;
+}
+
+function imageBox(url, extraClass) {
+  var box = document.createElement('div');
+  box.className = 'imgbox' + (extraClass ? ' ' + extraClass : '');
+  if (!url) { markNoImage(box); return box; }
+  box.setAttribute('data-src', url);
+  ensureLazyObserver();
+  if (lazyObserver) lazyObserver.observe(box);
+  else loadLazyImage(box);             // เบราว์เซอร์ที่ไม่มี IntersectionObserver ก็ยังใช้ได้
+  return box;
+}
+
+/* ก่อนสั่งพิมพ์ต้องดึงรูปที่ยังไม่โหลดขึ้นมาก่อน ไม่งั้นเอกสารจะออกมาเป็นกรอบเปล่า */
+function preloadAllImages(root) {
+  var boxes = (root || document).querySelectorAll('.imgbox[data-src]:not([data-state])');
+  [].forEach.call(boxes, loadLazyImage);
+  return boxes.length;
+}
+
+function waitForImages(root, maxMs) {
+  var start = Date.now();
+  return new Promise(function (resolve) {
+    (function poll() {
+      var pending = (root || document)
+        .querySelectorAll('.imgbox[data-src][data-state="loading"]').length;
+      if (!pending || Date.now() - start > maxMs) return resolve(pending);
+      setTimeout(poll, 200);
+    })();
+  });
+}
+
+/* ---------- นำเข้าลิงก์รูปสินค้า ----------
+   รับได้ทั้งไฟล์เต็ม {รหัส: URL} และไฟล์ย่อ {prefix, suffix, images:{รหัส: ส่วนท้าย}}
+   ค่าที่ขึ้นต้นด้วย * คือ URL เต็มของโฮสต์อื่น ใช้ตามนั้นเลย */
+function parseImageMap(text) {
+  var data;
+  try { data = JSON.parse(text); }
+  catch (e) { throw new Error('BAD_JSON'); }
+
+  var map = {};
+  if (data && data.images && typeof data.images === 'object') {
+    var prefix = data.prefix || '', suffix = data.suffix || '';
+    Object.keys(data.images).forEach(function (k) {
+      var v = String(data.images[k] == null ? '' : data.images[k]);
+      if (!v) return;
+      map[k] = v.charAt(0) === '*' ? v.slice(1) : prefix + v + suffix;
+    });
+  } else if (data && typeof data === 'object') {
+    Object.keys(data).forEach(function (k) {
+      var v = String(data[k] == null ? '' : data[k]);
+      if (v) map[k] = v;
+    });
+  }
+  if (!Object.keys(map).length) throw new Error('NO_ROWS');
+  return map;
+}
+
+function applyImageImport(map) {
+  var patch = {}, matched = 0, missing = [];
+  Object.keys(state.products).forEach(function (key) {
+    var product = state.products[key];
+    var url = map[product.code] || map[key];
+    if (url) {
+      if (product.imageUrl !== url) patch[key + '/imageUrl'] = url;
+      matched++;
+    } else {
+      missing.push({ code: product.code || key, category: product.category || '(ไม่มีหมวด)' });
+    }
+  });
+  var write = Object.keys(patch).length ? db.update('products', patch) : Promise.resolve();
+  return write.then(function () {
+    return { total: Object.keys(state.products).length, matched: matched,
+             missing: missing, mapSize: Object.keys(map).length };
+  });
+}
+
+function handleImageImport(file) {
+  if (!Object.keys(state.products).length) {
+    toast('ยังไม่มีสินค้าใน Master — นำเข้าไฟล์สินค้าก่อน', true);
+    return;
+  }
+  $('btnImportImages').disabled = true;
+  file.text().then(function (text) {
+    var map = parseImageMap(text);
+    return applyImageImport(map).then(function (res) {
+      var box = document.createElement('div');
+      var sec = repSection('ผลการจับคู่รูปสินค้า');
+      repLine(sec, 'ลิงก์รูปในไฟล์', fmtNum(res.mapSize) + ' รายการ');
+      repLine(sec, 'สินค้าใน Master', fmtNum(res.total) + ' รายการ');
+      repLine(sec, 'จับคู่รูปได้', fmtNum(res.matched) + ' รายการ');
+      repLine(sec, 'ไม่มีรูป', fmtNum(res.missing.length) + ' รายการ', res.missing.length > 0);
+      box.appendChild(sec);
+
+      if (res.missing.length) {
+        var byCat = {};
+        res.missing.forEach(function (m) { byCat[m.category] = (byCat[m.category] || 0) + 1; });
+        var cat = repSection('รายการที่ไม่มีรูป แยกตามหมวดหมู่');
+        Object.keys(byCat).sort(function (a, b) { return byCat[b] - byCat[a]; }).forEach(function (c) {
+          repLine(cat, c, fmtNum(byCat[c]) + ' รายการ');
+        });
+        repNote(cat, 'รายการเหล่านี้จะขึ้นเป็นกรอบเทา ไม่ใช่รูปแตก — ' +
+                     listWithLimit(res.missing.slice(0, 30).map(function (m) { return m.code; }), 'รหัส'));
+        box.appendChild(cat);
+      }
+
+      ask('นำเข้ารูปสินค้าเรียบร้อย',
+          'จับคู่รูปได้ ' + fmtNum(res.matched) + ' จาก ' + fmtNum(res.total) + ' รายการ',
+          'ปิด', { hideCancel: true, detail: box });
+    });
+  }).catch(function (err) {
+    var messages = {
+      BAD_JSON: 'อ่านไฟล์ไม่ได้ ต้องเป็นไฟล์ JSON ที่ถูกต้อง',
+      NO_ROWS: 'ไม่พบลิงก์รูปในไฟล์ กรุณาตรวจไฟล์แล้วลองใหม่'
+    };
+    toast(messages[err && err.message] || 'นำเข้ารูปไม่สำเร็จ กรุณาตรวจไฟล์แล้วลองใหม่', true);
+  }).then(function () {
+    $('btnImportImages').disabled = false;
+    if (state.page === 'master') renderMaster();
+  });
+}
+
+/* ============================================================
    11. หน้ายิงบาร์โค้ด
    ============================================================ */
 
@@ -2256,24 +2447,17 @@ function handleScanValue(raw) {
   $('btnUndo').disabled = false;
 }
 
+/* เปลี่ยนเฉพาะกรอบรูป ไม่วาดการ์ดใหม่ทั้งใบ ยิงรัวจะได้ไม่หน่วง */
+function swapScanImage(url) {
+  var old = $('slImage');
+  var next = imageBox(url);
+  next.id = 'slImage';
+  old.parentNode.replaceChild(next, old);
+}
+
 function showScanHit(key) {
   var p = state.products[key];
-  var box = $('scanLast');
-  var img = box.firstElementChild;
-  if (p.imageUrl) {
-    if (img.tagName !== 'IMG') {
-      var el = document.createElement('img');
-      box.replaceChild(el, img);
-      img = el;
-    }
-    if (img.getAttribute('src') !== p.imageUrl) img.src = p.imageUrl;
-    img.alt = p.name;
-  } else if (img.tagName === 'IMG') {
-    var ph = document.createElement('div');
-    ph.className = 'sl-noimg';
-    ph.textContent = '📦';
-    box.replaceChild(ph, img);
-  }
+  swapScanImage(p.imageUrl);
   $('slName').textContent = p.name;
   $('slName').className = 'sl-name';
   $('slMeta').textContent = p.code + (p.unit ? ' · ' + p.unit : '') +
@@ -2282,15 +2466,8 @@ function showScanHit(key) {
 }
 
 function showScanMiss(value) {
-  var box = $('scanLast');
-  var img = box.firstElementChild;
-  if (img.tagName === 'IMG') {
-    var ph = document.createElement('div');
-    ph.className = 'sl-noimg';
-    box.replaceChild(ph, img);
-    img = ph;
-  }
-  img.textContent = '❌';
+  swapScanImage(null);
+  $('slImage').textContent = '❌';
   $('slName').textContent = 'ไม่พบบาร์โค้ดนี้ในระบบ';
   $('slName').className = 'sl-name scan-miss-code';
   $('slMeta').textContent = 'ค่าที่ยิงได้: ' + value + ' — บันทึกไว้แล้ว ยิงตัวถัดไปต่อได้เลย';
@@ -2763,12 +2940,18 @@ function renderMaster() {
     var top = document.createElement('div');
     top.className = 'm-top';
     var left = document.createElement('div');
+    left.style.display = 'flex';
+    left.style.minWidth = '0';
+    left.appendChild(imageBox(p.imageUrl));
+    var texts = document.createElement('div');
+    texts.style.minWidth = '0';
     var nm = document.createElement('div'); nm.className = 'm-name'; nm.textContent = p.name;
     var cd = document.createElement('div'); cd.className = 'm-code';
     cd.textContent = p.code + (p.barcode ? ' · บาร์โค้ด ' + p.barcode : ' · ไม่มีบาร์โค้ด');
     var ct = document.createElement('div'); ct.className = 'm-cat';
     ct.textContent = (p.category || 'ไม่มีหมวดหมู่') + (p.subCategory ? ' / ' + p.subCategory : '');
-    left.appendChild(nm); left.appendChild(cd); left.appendChild(ct);
+    texts.appendChild(nm); texts.appendChild(cd); texts.appendChild(ct);
+    left.appendChild(texts);
 
     var right = document.createElement('div');
     right.style.textAlign = 'right';
@@ -3329,9 +3512,8 @@ function buildDocItemTable(title, rows) {
 
     var imgTd = document.createElement('td');
     imgTd.className = 'mid';
-    var frame = document.createElement('div');
-    frame.className = 'img-box';
-    imgTd.appendChild(frame);      // เว้นกรอบว่างไว้ก่อน เดี๋ยวต่อรูปทีหลัง
+    var product = state.products[r.key] || {};
+    imgTd.appendChild(imageBox(product.imageUrl));
     tr.appendChild(imgTd);
 
     docCell(tr, r.code);
@@ -4409,7 +4591,20 @@ function init() {
 
   /* ---- เอกสาร ---- */
   $('navDoc').onclick = function () { if (state.roundId) showPage('doc'); };
-  $('btnPrint').onclick = function () { window.print(); };
+  /* ดึงรูปที่ยังไม่โหลดขึ้นมาก่อนพิมพ์ ไม่งั้นเอกสารออกมาเป็นกรอบเปล่า
+     แต่ไม่รอเกิน 8 วินาที รูปไหนไม่มาก็ปล่อยเป็นกรอบเทาแล้วพิมพ์ต่อ */
+  $('btnPrint').onclick = function () {
+    var pending = preloadAllImages($('docSheet'));
+    if (!pending) { window.print(); return; }
+    toast('กำลังโหลดรูป ' + fmtNum(pending) + ' รูปก่อนพิมพ์...');
+    waitForImages($('docSheet'), 8000).then(function () { window.print(); });
+  };
+
+  $('btnImportImages').onclick = function () { $('imageFile').click(); };
+  $('imageFile').addEventListener('change', function () {
+    if (this.files && this.files[0]) handleImageImport(this.files[0]);
+    this.value = '';
+  });
   $('btnDocExcel').onclick = exportDocExcel;
   document.querySelectorAll('[data-doctype]').forEach(function (b) {
     b.onclick = function () { saveDocType(b.getAttribute('data-doctype')); };
@@ -4497,6 +4692,23 @@ init();
   ====================================================================
   สรุปการเปลี่ยนแปลง
   ====================================================================
+
+  v1.7.0 — รูปสินค้า
+    - นำเข้าลิงก์รูปจากไฟล์ JSON ที่แท็บ Master (รับทั้งไฟล์เต็มและไฟล์ย่อ)
+      จับคู่ด้วยรหัสสินค้าแล้วเก็บลงสินค้าใน Master
+      รายงานให้เห็นว่าจับคู่ได้กี่รายการ ไม่มีรูปกี่รายการ และเป็นหมวดอะไรบ้าง
+      * ไม่ได้ฝังตารางรูปลงในไฟล์แอป เพราะไฟล์ย่อยังใหญ่ 554 KB
+        ถ้าฝังลงไป index.html จะโตจาก 208 KB เป็นเกือบ 800 KB
+        และการอ่านไฟล์จากโฟลเดอร์ตอนรันก็ผิดกฎ "ทั้งแอปอยู่ในไฟล์เดียว"
+        เก็บลง Firebase แทน แก้รูปทีหลังได้โดยไม่ต้อง deploy ใหม่
+    - แสดงรูปที่การ์ดตอนยิงบาร์โค้ด (สี่เหลี่ยมจัตุรัสด้านซ้าย)
+      ในคอลัมน์ "รูป" ของเอกสาร และหน้าแต่ละแถวใน Master
+    - โหลดแบบ lazy ด้วย IntersectionObserver โหลดเฉพาะรูปที่กำลังจะเข้าจอ
+      ไม่ได้ยิงขอ 407 รูปพร้อมกันตอนเปิดหน้า
+    - ไม่มีรูปหรือโหลดไม่ขึ้นภายใน 3 วินาที ตกไปเป็นกรอบเทาพร้อมไอคอน
+      ไม่มีรูปแตก และหน้าไม่ค้างรอรูป การยิงทำงานได้แม้รูปไม่ขึ้นเลย
+    - ก่อนสั่งพิมพ์จะดึงรูปที่ยังไม่โหลดขึ้นมาก่อน รอไม่เกิน 8 วินาที
+      รูปไหนไม่มาก็พิมพ์เป็นกรอบเทาไปเลย ไม่ค้าง
 
   v1.6.0 — ทะเบียนสาขา + เลขที่เอกสารมีรหัสสาขา
     - ทะเบียนคลังสินค้า/สาขาอยู่ในแท็บ Master (branches/{รหัส})
