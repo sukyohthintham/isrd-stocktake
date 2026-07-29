@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="1.1.0">
+<meta name="version" content="1.2.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v1.1.0</title>
+<title>ISRD Stocktake v1.2.0</title>
 
 <style>
 :root{
@@ -76,6 +76,7 @@ select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,va
 .btn.ghost{background:#fff;color:var(--brand);border-color:var(--brand)}
 .btn.grey{background:#fff;color:var(--muted);border-color:var(--line)}
 .btn.sm{min-height:40px;padding:6px 14px;font-size:14px;border-radius:9px}
+.btn.danger{background:var(--short);color:#fff}
 .row{display:flex;gap:10px;flex-wrap:wrap}
 .row > *{flex:1 1 140px}
 
@@ -123,19 +124,78 @@ select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,va
 .pick.sel{border-color:var(--brand);background:var(--brand-light)}
 .pick.sel .pick-meta{color:var(--brand-dark)}
 
-/* ---------- counted list ---------- */
-.clist{display:flex;flex-direction:column;gap:10px}
-.crec{border:1px solid var(--line-soft);border-radius:12px;padding:12px;background:#fff}
-.crec .c-top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
-.crec .c-name{font-weight:700;word-break:break-word}
-.crec .c-code{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
-.crec .c-qty{font-size:24px;font-weight:800;white-space:nowrap;color:var(--brand-dark)}
-.crec .c-meta{font-size:13px;color:var(--muted);margin-top:6px;display:flex;flex-wrap:wrap;gap:4px 12px}
-.crec .c-act{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}
-.hist{margin-top:10px;border-top:1px dashed var(--line);padding-top:8px;display:flex;flex-direction:column;gap:6px}
-.hist .h-item{font-size:13px;color:var(--muted);background:#f8fafc;border-radius:8px;padding:7px 10px}
+.banner.bad{background:var(--short-bg);color:#7f1d1d;border-color:#fca5a5}
+.hint{font-size:13px;color:var(--warn);margin-top:6px;font-weight:600}
+.hint.list{background:var(--warn-bg);border:1px solid #fcd34d;border-radius:11px;padding:10px 14px;margin-top:10px}
+.hint.list ul{margin:6px 0 0;padding-left:20px}
+
+/* ---------- หน้ายิงบาร์โค้ด ---------- */
+#pageScan .wrapfix{display:flex;flex-direction:column;gap:12px}
+.scan-stage{
+  border-radius:16px;padding:16px;background:#fff;border:2px solid var(--line-soft);
+  transition:background .12s,border-color .12s;
+}
+.scan-stage.hit{background:var(--over-bg);border-color:var(--over)}
+.scan-stage.miss{background:var(--short-bg);border-color:var(--short)}
+.scan-total{font-size:52px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;text-align:center}
+.scan-total-lab{text-align:center;font-size:13px;color:var(--muted);margin-top:4px}
+#scanInput{
+  font-size:20px;text-align:center;letter-spacing:1px;min-height:64px;margin-top:14px;
+  border-color:var(--brand);
+}
+.scan-last{display:flex;gap:12px;align-items:center;margin-top:14px;min-height:74px}
+.scan-last img{
+  width:64px;height:64px;object-fit:cover;border-radius:12px;
+  background:var(--line-soft);flex:0 0 auto;
+}
+.scan-last .sl-noimg{
+  width:64px;height:64px;border-radius:12px;background:var(--line-soft);flex:0 0 auto;
+  display:flex;align-items:center;justify-content:center;font-size:26px;color:var(--muted);
+}
+.scan-last .sl-name{font-size:19px;font-weight:800;line-height:1.25;word-break:break-word}
+.scan-last .sl-meta{font-size:13px;color:var(--muted);margin-top:3px}
+.scan-last .sl-qty{font-size:30px;font-weight:800;white-space:nowrap;color:var(--brand-dark);
+  font-variant-numeric:tabular-nums}
+.scan-miss-code{font-family:ui-monospace,Consolas,monospace;font-size:17px;font-weight:700;
+  word-break:break-all;color:var(--short)}
+.recent{display:flex;flex-direction:column;gap:6px}
+.recent .r-item{display:flex;justify-content:space-between;gap:10px;font-size:14px;
+  background:#f8fafc;border-radius:9px;padding:8px 11px}
+.recent .r-item.neg{background:var(--short-bg)}
+.recent .r-item .r-t{color:var(--muted);font-size:12px;white-space:nowrap}
+.syncbar{display:flex;justify-content:space-between;align-items:center;gap:10px;
+  font-size:13px;color:var(--muted)}
+.syncbar .dot{width:9px;height:9px;border-radius:50%;background:var(--over);display:inline-block;margin-right:6px}
+.syncbar.pending .dot{background:var(--warn)}
+
+/* ---------- Master ---------- */
+.mrow{background:#fff;border:1px solid var(--line-soft);border-radius:12px;padding:12px}
+.mrow .m-top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.mrow .m-name{font-weight:700;word-break:break-word}
+.mrow .m-code{font-size:13px;color:var(--muted)}
+.mrow .m-cat{font-size:13px;color:var(--muted);margin-top:2px}
+.mrow .m-edit{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.mrow .m-edit label{display:block}
+.mrow .m-edit span{display:block;font-size:12px;color:var(--muted);margin-bottom:3px}
+.mrow .m-edit input{min-height:44px;font-size:15px;padding:8px 10px}
+.mrow .m-edit .full{grid-column:1 / -1}
 
 /* ---------- summary ---------- */
+.tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line-soft);
+  border-radius:12px;background:#fff;margin-bottom:12px}
+table.grid{border-collapse:separate;border-spacing:0;font-size:14px;white-space:nowrap}
+table.grid th,table.grid td{padding:9px 12px;border-bottom:1px solid var(--line-soft);text-align:right}
+table.grid th{background:#f8fafc;font-size:12px;color:var(--muted);font-weight:700}
+table.grid th:first-child,table.grid td:first-child{
+  text-align:left;position:sticky;left:0;background:#fff;z-index:1;font-weight:700;
+  border-right:1px solid var(--line-soft);
+}
+table.grid th:first-child{background:#f8fafc}
+table.grid tr:last-child td{border-bottom:0;background:var(--brand-light)}
+table.grid tr:last-child td:first-child{background:var(--brand-light)}
+table.grid td.pos{color:var(--over);font-weight:700}
+table.grid td.neg{color:var(--short);font-weight:700}
+.clist{display:flex;flex-direction:column;gap:10px}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:8px;margin-bottom:14px}
 .stat{background:#fff;border:1px solid var(--line-soft);border-radius:12px;padding:10px;text-align:center}
 .stat .s-num{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
@@ -208,10 +268,15 @@ select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,va
   <div class="card">
     <h3>1. เลือกรอบนับ</h3>
     <div class="picklist" id="roundList"></div>
-    <div class="row">
-      <input type="text" id="newRoundName" placeholder="ชื่อรอบนับใหม่ เช่น รอบนับ ก.ค. 2569">
-      <button class="btn ghost" id="btnAddRound" style="flex:0 0 auto">+ สร้างรอบ</button>
-    </div>
+    <label class="fld" style="margin-bottom:8px">
+      <span>ชื่อรอบนับใหม่</span>
+      <input type="text" id="newRoundName" placeholder="เช่น รอบนับ ก.ค. 2569">
+    </label>
+    <label class="fld" style="margin-bottom:10px">
+      <span>สาขา — ใช้ตรวจว่าไฟล์ที่นำเข้าเป็นของสาขานี้จริง</span>
+      <input type="text" id="newRoundBranch" placeholder="เช่น NTDS Central Festival Chiangmai FL.4">
+    </label>
+    <button class="btn ghost block" id="btnAddRound">+ สร้างรอบ</button>
   </div>
 
   <div class="card">
@@ -221,6 +286,7 @@ select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,va
       <input type="text" id="newZoneName" placeholder="ชื่อโซนใหม่ เช่น โซน A ชั้น 1">
       <button class="btn ghost" id="btnAddZone" style="flex:0 0 auto">+ เพิ่มโซน</button>
     </div>
+    <div class="hint" id="zoneHint" style="display:none">พิมพ์แล้วต้องกด <b>+ เพิ่มโซน</b> ด้วย ถึงจะใช้โซนนี้ได้</div>
   </div>
 
   <div class="card">
@@ -236,62 +302,128 @@ select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,va
     <div id="importStatus" class="muted" style="margin-bottom:12px">ยังไม่ได้นำเข้ายอดระบบของรอบนี้</div>
     <button class="btn ghost sm block" id="btnImportReport" style="display:none;margin-bottom:12px">ดูรายละเอียดการนำเข้าล่าสุด</button>
     <input type="file" id="fileInput" accept=".csv,.xlsx" style="display:none">
-    <button class="btn ghost block" id="btnImport">📄 นำเข้ายอดระบบ (Excel / CSV)</button>
+    <button class="btn ghost block" id="btnImport">📄 นำเข้าไฟล์สินค้าจากระบบ (Excel / CSV)</button>
     <p class="muted" style="margin:12px 0 0">
-      ไฟล์ Excel จะอ่านจากชีตชื่อ <b>สินค้า</b> โดยหัวตารางอยู่แถวแรก<br>
-      จำเป็น: <b>รหัสสินค้า</b>, <b>ยอดระบบ</b> · ใส่หรือไม่ใส่ก็ได้: ชื่อสินค้า, หน่วยสินค้า
+      อ่านจากชีตชื่อ <b>สินค้า</b> · ข้ามแถวชื่อเรื่องให้อัตโนมัติ<br>
+      จำเป็น: <b>รหัสสินค้า</b>, <b>จำนวน</b><br>
+      ใส่หรือไม่ใส่ก็ได้: ชื่อสินค้า · หมวดหมู่ · หมวดหมู่ย่อย · Tag · ราคาขาย · หน่วยสินค้า · Barcode
     </p>
   </div>
 
   <button class="btn big block" id="btnStart" disabled>เริ่มนับ</button>
+  <div class="hint list" id="startBlockers" style="display:none"></div>
   <div class="foot">เวอร์ชัน <span id="verText"></span></div>
 </section>
 
-<!-- ============ PAGE 2 : COUNT ============ -->
-<section class="page" id="pageCount">
-  <div class="banner info" id="sessionBar" style="display:flex;justify-content:space-between;gap:10px;align-items:center">
+<!-- ============ PAGE 2 : SCAN ============ -->
+<section class="page" id="pageScan">
+  <div class="banner info" style="display:flex;justify-content:space-between;gap:10px;align-items:center">
     <span id="sessionText"></span>
     <button class="btn sm grey" id="btnChangeSession" style="flex:0 0 auto">เปลี่ยน</button>
   </div>
 
-  <div class="card">
-    <h3>ค้นหาสินค้า</h3>
+  <div class="scan-stage" id="scanStage">
+    <div class="scan-total" id="scanTotal">0</div>
+    <div class="scan-total-lab" id="scanTotalLab">ชิ้นที่ยิงแล้วในโซนนี้</div>
+    <input type="text" id="scanInput" inputmode="none" autocomplete="off"
+           autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="ยิงบาร์โค้ดได้เลย">
+    <div class="scan-last" id="scanLast">
+      <div class="sl-noimg">📦</div>
+      <div style="flex:1 1 auto">
+        <div class="sl-name" id="slName">พร้อมรับการยิง</div>
+        <div class="sl-meta" id="slMeta">ยิง 1 ครั้ง = นับเพิ่ม 1 ชิ้น</div>
+      </div>
+      <div class="sl-qty" id="slQty"></div>
+    </div>
+  </div>
+
+  <div class="row" style="margin:12px 0">
+    <button class="btn grey sm" id="btnUndo" disabled>↶ ยกเลิกการยิงล่าสุด</button>
+    <button class="btn grey sm" id="btnManual">✎ กรอกมือ</button>
+    <button class="btn grey sm" id="btnKeyboard">⌨ เปิดแป้นพิมพ์</button>
+  </div>
+
+  <div class="card" id="manualPanel" style="display:none">
+    <h3>กรอกมือ — สำหรับของที่ป้ายขาดหรือไม่มีบาร์โค้ด</h3>
     <label class="fld" style="margin-bottom:8px">
-      <span>พิมพ์รหัสสินค้า หรือ ชื่อสินค้า</span>
-      <input type="text" id="searchBox" placeholder="เช่น A001 หรือ น้ำตาล" autocomplete="off">
+      <span>ค้นหาด้วยรหัสหรือชื่อสินค้า</span>
+      <input type="text" id="manualSearch" placeholder="เช่น NTBG001 หรือ ถุงหิ้ว" autocomplete="off">
     </label>
-    <div class="picklist" id="searchResults"></div>
-    <div id="searchHint" class="muted"></div>
-  </div>
-
-  <div class="card" id="countForm" style="display:none">
-    <h3 id="cfTitle"></h3>
-    <div id="cfInfo" class="muted" style="margin-bottom:12px"></div>
-    <label class="fld">
-      <span>จำนวนที่นับได้</span>
-      <input class="qty" type="text" id="qtyInput" inputmode="numeric" pattern="[0-9]*" placeholder="0" autocomplete="off">
-    </label>
-    <button class="btn big block" id="btnSave">บันทึกการนับ</button>
-    <button class="btn grey block" id="btnCancel" style="margin-top:10px">ยกเลิก</button>
+    <div class="picklist" id="manualResults"></div>
+    <div id="manualForm" style="display:none">
+      <div class="banner info" id="manualPicked"></div>
+      <label class="fld">
+        <span>จำนวนที่นับได้</span>
+        <input class="qty" type="text" id="manualQty" inputmode="numeric" pattern="[0-9]*" placeholder="0" autocomplete="off">
+      </label>
+      <label class="fld">
+        <span>เหตุผลที่ต้องกรอกมือ</span>
+        <input type="text" id="manualReason" placeholder="เช่น ป้ายบาร์โค้ดขาด" autocomplete="off">
+      </label>
+      <button class="btn big block" id="btnManualSave">บันทึกยอดที่กรอกมือ</button>
+    </div>
+    <button class="btn grey block" id="btnManualClose" style="margin-top:10px">ปิด</button>
   </div>
 
   <div class="card">
-    <h3>รายการที่นับแล้วในรอบนี้ <span class="chip" id="countedTotal">0</span></h3>
-    <div class="clist" id="countedList"></div>
+    <div class="syncbar" id="syncBar" style="margin-bottom:10px">
+      <span><span class="dot"></span><span id="syncText">ข้อมูลถูกบันทึกครบแล้ว</span></span>
+      <span id="unknownCount"></span>
+    </div>
+    <h3>5 ครั้งล่าสุด</h3>
+    <div class="recent" id="recentList"></div>
   </div>
 </section>
 
-<!-- ============ PAGE 3 : SUMMARY ============ -->
+<!-- ============ PAGE 3 : MASTER ============ -->
+<section class="page" id="pageMaster">
+  <div class="card">
+    <h3>ข้อมูลสินค้าหลัก (Master)</h3>
+    <label class="fld" style="margin-bottom:8px">
+      <span>ค้นหาด้วยรหัส ชื่อ หรือบาร์โค้ด</span>
+      <input type="text" id="masterSearch" placeholder="พิมพ์เพื่อค้นหา" autocomplete="off">
+    </label>
+    <div class="filters">
+      <button class="btn sm grey" data-mfilter="all">ทั้งหมด</button>
+      <button class="btn sm grey" data-mfilter="review">รอตรวจสอบ</button>
+      <button class="btn sm grey" data-mfilter="nocost">ยังไม่มีราคาต้นทุน</button>
+      <button class="btn sm grey" data-mfilter="notProduct">Not Product</button>
+    </div>
+    <div class="muted" id="masterCount"></div>
+  </div>
+  <div class="clist" id="masterList"></div>
+</section>
+
+<!-- ============ PAGE 4 : SUMMARY ============ -->
 <section class="page" id="pageSummary">
   <div class="banner info" id="sumHead"></div>
-  <div class="stats" id="sumStats"></div>
   <div class="filters">
-    <button class="btn sm grey" data-filter="all">ทั้งหมด</button>
-    <button class="btn sm grey" data-filter="diff">เฉพาะที่มีผลต่าง</button>
-    <button class="btn sm grey" data-filter="none">ยังไม่นับ</button>
+    <button class="btn sm" data-price="sellPrice">ราคาขาย</button>
+    <button class="btn sm grey" data-price="costPrice">ราคาต้นทุน</button>
   </div>
-  <div class="clist" id="sumList"></div>
-  <p class="muted" style="margin:12px 0 14px">แตะรายการเพื่อดูว่านับได้เท่าไหร่ในแต่ละโซน</p>
+  <div class="tablewrap">
+    <table class="grid" id="sumTable">
+      <thead><tr>
+        <th>กลุ่ม</th><th>จำนวนระบบ</th><th>จำนวนจริง</th><th>ผลต่าง (ชิ้น)</th>
+        <th>SKU ตรง</th><th>SKU ขาด</th><th>SKU เกิน</th>
+        <th>%Success (ชิ้น)</th><th>%Success (SKU)</th>
+        <th>มูลค่าระบบ</th><th>มูลค่าจริง</th><th>ผลต่าง (บาท)</th>
+      </tr></thead>
+      <tbody id="sumBody"></tbody>
+    </table>
+  </div>
+  <div class="muted" id="costNote" style="margin-bottom:14px"></div>
+
+  <div class="card">
+    <h3>บาร์โค้ดไม่พบในระบบ <span class="chip" id="unknownChip">0</span></h3>
+    <div class="clist" id="unknownList"></div>
+  </div>
+
+  <div class="card">
+    <h3>ยอดที่กรอกมือ <span class="chip" id="manualChip">0</span></h3>
+    <div class="clist" id="manualList"></div>
+  </div>
+
   <button class="btn big block" id="btnExport">⬇ ดาวน์โหลด Excel</button>
 </section>
 
@@ -299,7 +431,8 @@ select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,va
 
 <nav class="nav">
   <button id="navStart" class="on"><span class="ic">📋</span>เริ่มนับ</button>
-  <button id="navCount" disabled><span class="ic">🔢</span>นับ</button>
+  <button id="navScan" disabled><span class="ic">📷</span>ยิงบาร์โค้ด</button>
+  <button id="navMaster"><span class="ic">🗂</span>Master</button>
   <button id="navSummary" disabled><span class="ic">📊</span>สรุปผล</button>
 </nav>
 
@@ -326,7 +459,7 @@ select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,va
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '1.1.0';
+var APP_VERSION = '1.2.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -507,6 +640,47 @@ var db = (function () {
       var entry = { path: path, cb: cb };
       listeners.push(entry);
       Promise.resolve(readLocal(path)).then(cb);
+      return function () {
+        var i = listeners.indexOf(entry);
+        if (i >= 0) listeners.splice(i, 1);
+      };
+    },
+
+    /* ต่างจาก subscribe: ส่งกลับ "เฉพาะลูกที่เพิ่งเพิ่ม" ไม่ใช่ทั้งก้อน
+       หน้ายิงบาร์โค้ดต้องใช้ตัวนี้ ไม่งั้นการยิงแต่ละครั้งจะกลายเป็น O(n)
+       ของจำนวน scan ทั้งหมดในรอบ ซึ่งช้าลงเรื่อย ๆ ระหว่างวัน */
+    subscribeChildren: function (path, onChild) {
+      var seen = Object.create(null);
+      function emit(key, value) {
+        if (value == null || seen[key]) return;
+        seen[key] = 1;
+        onChild(key, value);
+      }
+      function emitAll(map) {
+        if (!map || typeof map !== 'object') return;
+        Object.keys(map).forEach(function (k) { emit(k, map[k]); });
+      }
+
+      if (REMOTE_MODE) {
+        var es = new EventSource(url(path));
+        var alive = true;
+        function handle(e) {
+          if (!alive) return;
+          var msg;
+          try { msg = JSON.parse(e.data); } catch (err) { return; }
+          var sub = String(msg.path || '/');
+          if (sub === '/') emitAll(msg.data);
+          else emit(sub.replace(/^\/+/, '').split('/')[0], msg.data);
+        }
+        es.addEventListener('put', handle);
+        es.addEventListener('patch', handle);
+        es.onerror = function () { /* EventSource เชื่อมต่อใหม่ให้เอง */ };
+        return function () { alive = false; es.close(); };
+      }
+
+      var entry = { path: path, cb: function (map) { emitAll(map); } };
+      listeners.push(entry);
+      Promise.resolve(readLocal(path)).then(entry.cb);
       return function () {
         var i = listeners.indexOf(entry);
         if (i >= 0) listeners.splice(i, 1);
@@ -925,16 +1099,37 @@ function parseXlsx(buffer, preferredSheet) {
   });
 }
 
-/* header aliases — รับได้ทั้งหัวตารางไทยและอังกฤษ */
-var HEADER_MAP = {
-  code:      ['รหัสสินค้า', 'รหัส', 'รหัสของ', 'code', 'itemcode', 'item_code', 'sku', 'barcode'],
-  name:      ['ชื่อสินค้า', 'ชื่อ', 'รายการ', 'name', 'itemname', 'item_name', 'description', 'desc'],
-  unit:      ['หน่วยสินค้า', 'หน่วย', 'หน่วยนับ', 'unit', 'uom'],
-  systemQty: ['ยอดระบบ', 'ยอดในระบบ', 'จำนวนระบบ', 'จำนวนในระบบ', 'คงเหลือ', 'systemqty', 'system_qty', 'qty', 'quantity', 'stock']
+/* ============================================================
+   4. อ่านไฟล์สินค้าจากระบบ (Zort export)
+
+   โครงไฟล์จริง:
+     แถว 1  = ชื่อเรื่อง "สินค้า - <ชื่อสาขา>"   ← ห้ามอ่านเป็นหัวตาราง
+     แถว 2  = หัวคอลัมน์ 11 ช่อง
+     แถว 3+ = ข้อมูล
+     ท้ายไฟล์ = แถวว่าง + "Exported by" + "Date Time" โดยช่อง "#" ว่าง
+   ============================================================ */
+
+var COLUMN_ALIASES = {
+  seq:         ['#', 'ลำดับ', 'ลำดับที่', 'no'],
+  code:        ['รหัสสินค้า', 'รหัส', 'code', 'itemcode', 'sku'],
+  name:        ['ชื่อสินค้า', 'ชื่อ', 'รายการ', 'name', 'itemname'],
+  category:    ['หมวดหมู่', 'category'],
+  subCategory: ['หมวดหมู่ย่อย', 'subcategory'],
+  tag:         ['tag', 'แท็ก'],
+  qty:         ['จำนวน', 'ยอดระบบ', 'ยอดในระบบ', 'systemqty', 'qty', 'quantity'],
+  qtyReady:    ['จำนวนพร้อมขาย', 'availableqty'],
+  sellPrice:   ['ราคาขาย', 'sellprice', 'price'],
+  unit:        ['หน่วยสินค้า', 'หน่วย', 'หน่วยนับ', 'unit', 'uom'],
+  barcode:     ['barcode', 'บาร์โค้ด']
 };
 
-var REQUIRED_COLUMNS = [{ field: 'code', label: 'รหัสสินค้า' }, { field: 'systemQty', label: 'ยอดระบบ' }];
-var OPTIONAL_COLUMN_LABELS = ['ชื่อสินค้า', 'หน่วยสินค้า'];
+/* ยอดระบบใช้คอลัมน์ "จำนวน" ไม่ใช่ "จำนวนพร้อมขาย" — จำนวนพร้อมขายหักของที่จองไว้แล้ว
+   ซึ่งจะน้อยกว่าของที่นับเจอจริงบนชั้น */
+var REQUIRED_COLUMNS = [
+  { field: 'code', label: 'รหัสสินค้า' },
+  { field: 'qty', label: 'จำนวน' }
+];
+var OPTIONAL_COLUMN_LABELS = ['ชื่อสินค้า', 'หมวดหมู่', 'หมวดหมู่ย่อย', 'Tag', 'ราคาขาย', 'หน่วยสินค้า', 'Barcode'];
 
 function normText(s) { return String(s == null ? '' : s).replace(/[\s_]/g, '').trim().toLowerCase(); }
 function cellText(v) { return String(v == null ? '' : v).trim(); }
@@ -942,8 +1137,8 @@ function rowHasContent(row) {
   return (row || []).some(function (c) { return cellText(c) !== ''; });
 }
 
-/* หัวตารางจริงมักลงท้ายด้วย "สินค้า" — รหัสสินค้า/ชื่อสินค้า/หน่วยสินค้า
-   ตัดท้ายทิ้งแล้วเทียบอีกรอบ ครอบคลุมทั้งตระกูลโดยไม่ต้องไล่เพิ่ม alias ทีละคำ */
+/* หัวตารางไทยลงท้ายด้วย "สินค้า" หลายตัว — รหัสสินค้า / ชื่อสินค้า / หน่วยสินค้า
+   ตัดท้ายทิ้งแล้วเทียบอีกรอบ ครอบคลุมทั้งตระกูลด้วยกฎเดียว */
 function headerKeys(s) {
   var n = normText(s);
   var keys = [n];
@@ -951,14 +1146,11 @@ function headerKeys(s) {
   if (stripped && stripped !== n) keys.push(stripped);
   return keys;
 }
-
 function headerMatches(cell, aliases) {
   return headerKeys(cell).some(function (k) { return aliases.indexOf(k) >= 0; });
 }
 
-/* ท้ายไฟล์ export มีแถวข้อมูลการพิมพ์รายงานต่อท้าย ไม่ใช่สินค้า
-   ของจริงมีสองแถว: "Exported by" แล้วตามด้วย "Date Time"
-   เจอแถวแรกของกลุ่มนี้เมื่อไหร่ = จบข้อมูลสินค้าแล้ว */
+/* ตาข่ายรอง เผื่อไฟล์รุ่นอื่นไม่มีคอลัมน์ "#" ให้ใช้ตัดท้ายไฟล์ */
 var EXPORT_FOOTER_LABELS = [
   'exportedby', 'exportby', 'printedby', 'printby', 'printdate', 'reportdate',
   'วันที่พิมพ์', 'ผู้พิมพ์', 'พิมพ์โดย', 'ผู้ออกรายงาน'
@@ -970,9 +1162,9 @@ function isExportFooter(cell) {
   return EXPORT_FOOTER_LABELS.indexOf(n) >= 0;
 }
 
-/* บาง sheet มีแถวชื่อรายงานอยู่เหนือหัวตาราง — มองหาหัวตารางใน 10 แถวแรกที่ไม่ว่าง */
+/* หัวตารางไม่ได้อยู่แถวแรกเสมอ — ไฟล์จริงมีแถวชื่อเรื่องคั่นอยู่ */
 function findHeaderRow(rows) {
-  var codeAliases = HEADER_MAP.code.map(normText);
+  var codeAliases = COLUMN_ALIASES.code.map(normText);
   var checked = 0;
   for (var r = 0; r < rows.length && checked < 10; r++) {
     if (!rowHasContent(rows[r])) continue;
@@ -990,16 +1182,46 @@ function missingColumnsError(missing) {
   return err;
 }
 
-function parseQtyCell(raw) {
+function parseNumberCell(raw) {
   var s = String(raw == null ? '' : raw).replace(/,/g, '').trim();
-  if (s === '') return { qty: 0, blank: true };
+  if (s === '') return { value: 0, blank: true };
   var n = Number(s);
-  if (!isFinite(n)) return { qty: 0, bad: true };
-  return { qty: n };
+  if (!isFinite(n)) return { value: 0, bad: true };
+  return { value: n };
+}
+
+/* Firebase keys ห้ามมี . $ # [ ] / หรืออักขระควบคุม */
+function safeKey(code) {
+  return String(code).replace(/[.$#\[\]\/\x00-\x1F\x7F]/g, '_');
+}
+
+/* ---------- กฎแยก Product / Not Product ----------
+   ระบุจากฝั่ง Not Product เท่านั้น และห้ามใช้คอลัมน์ Tag เพราะข้อมูลไม่นิ่ง */
+var NOT_PRODUCT_CATEGORIES = ['ทรัพย์สินบริษัท', 'วัสดุของใช้สิ้นเปลือง'];
+var REVIEW_CATEGORIES = ['ปิดใช้งาน'];
+
+function classifyByCategory(category) {
+  var c = normText(category);
+  if (!c) return { type: 'product', needsReview: true };            // หมวดว่าง = ต้องมีคนมาดู
+  if (NOT_PRODUCT_CATEGORIES.map(normText).indexOf(c) >= 0) return { type: 'notProduct', needsReview: false };
+  if (REVIEW_CATEGORIES.map(normText).indexOf(c) >= 0) return { type: 'product', needsReview: true };
+  return { type: 'product', needsReview: false };
+}
+
+/* ชื่อสาขาอยู่แถวชื่อเรื่อง: "สินค้า - NTDS Central Festival Chiangmai FL.4" */
+function branchFromTitle(rows, headerRow) {
+  for (var r = 0; r < headerRow; r++) {
+    if (!rowHasContent(rows[r])) continue;
+    var text = cellText(rows[r][0]) || cellText((rows[r] || []).join(' '));
+    var m = /^\s*สินค้า\s*[-–—:]\s*(.+)$/.exec(text);
+    if (m) return m[1].trim();
+    if (text) return null;    // มีแถวชื่อเรื่อง แต่รูปแบบไม่ใช่ที่รู้จัก
+  }
+  return null;
 }
 
 /* parsed = { rows, rowNums, sheetName, ... } จาก parseXlsx / parseCsv */
-function rowsToItems(parsed) {
+function parseProductFile(parsed) {
   var rows = (parsed && parsed.rows) || [];
   var rowNums = (parsed && parsed.rowNums) || [];
   if (!rows.length) throw new Error('EMPTY_FILE');
@@ -1009,8 +1231,8 @@ function rowsToItems(parsed) {
 
   var header = rows[headerRow];
   var idx = {};
-  Object.keys(HEADER_MAP).forEach(function (field) {
-    var aliases = HEADER_MAP[field].map(normText);
+  Object.keys(COLUMN_ALIASES).forEach(function (field) {
+    var aliases = COLUMN_ALIASES[field].map(normText);
     for (var c = 0; c < header.length; c++) {
       if (headerMatches(header[c], aliases)) { idx[field] = c; return; }
     }
@@ -1021,32 +1243,31 @@ function rowsToItems(parsed) {
     .map(function (col) { return col.label; });
   if (missing.length) throw missingColumnsError(missing);
 
-  /* แถวว่างท้ายชีตของ Excel ไม่ใช่ข้อมูล ตัดทิ้งก่อนนับ ไม่งั้นรายงานจะบอกว่า
-     "ข้ามแถวว่างหลายหมื่นแถว" ซึ่งไม่มีประโยชน์กับใคร */
+  /* Excel ทิ้งแถวว่างท้ายชีตไว้เยอะ ตัดก่อนนับ ไม่งั้นรายงานจะบอกว่าข้ามหลายหมื่นแถว */
   var lastReal = rows.length - 1;
   while (lastReal > headerRow && !rowHasContent(rows[lastReal])) lastReal--;
 
-  var items = {}, firstRowOf = {};
   var headerNum = rowNums[headerRow] || 1;
+  var products = {}, systemQty = {}, firstRowOf = {};
   var stat = {
     sheetName: parsed.sheetName || null,
-    sheetNames: parsed.sheetNames || [],
     fellBackToFirstSheet: !!parsed.fellBackToFirstSheet,
-    /* นับตามเลขแถวจริง ไม่ใช่จำนวน <row> ที่มีในไฟล์ — Excel ตัดแถวว่างทิ้งไม่เขียนลงไฟล์
-       ถ้านับแต่แถวที่มีอยู่ ตัวเลขจะไม่ตรงกับที่ผู้ใช้เห็นตอนเปิดไฟล์ */
+    branchInFile: branchFromTitle(rows, headerRow),
     totalRows: (rowNums[lastReal] || headerNum) - headerNum,
-    headerRowNum: headerNum,
-    blank: 0, noCode: [], afterFooter: 0, footerRowNum: null, footerLabel: null,
-    merged: [], badQty: [], blankQty: 0, dataRows: 0
+    blank: 0, noCode: [], afterFooter: 0, footerRowNum: null, footerReason: null,
+    merged: [], badQty: [], imported: 0,
+    noCategory: 0, noBarcode: 0, noUnit: 0, zeroPrice: 0, noSubCategory: 0,
+    product: 0, notProduct: 0, needsReview: 0
   };
 
   var stopped = false;
   var prevNum = headerNum;
+
   for (var r = headerRow + 1; r <= lastReal; r++) {
     var row = rows[r] || [];
     var num = rowNums[r];
 
-    /* เลขแถวที่หายไปคือแถวว่างที่ Excel ไม่ได้เขียนลงไฟล์ ต้องนับด้วย ไม่งั้นยอดไม่ลงตัว */
+    /* เลขแถวที่ข้ามหายคือแถวว่างที่ Excel ไม่ได้เขียนลงไฟล์ ต้องนับด้วยยอดถึงจะลงตัว */
     if (num > prevNum + 1) {
       if (stopped) stat.afterFooter += num - prevNum - 1;
       else stat.blank += num - prevNum - 1;
@@ -1055,74 +1276,104 @@ function rowsToItems(parsed) {
 
     if (stopped) { if (rowHasContent(row)) stat.afterFooter++; continue; }
     if (!rowHasContent(row)) { stat.blank++; continue; }
-    if (isExportFooter(row[0]) || isExportFooter(row[idx.code])) {
+
+    /* จบข้อมูลเมื่อช่อง "#" ว่าง — แถวขยะท้ายไฟล์เว้นช่องนี้ไว้ทุกแถว */
+    var seqEmpty = idx.seq !== undefined && cellText(row[idx.seq]) === '';
+    if (seqEmpty || isExportFooter(row[0]) || isExportFooter(row[idx.code])) {
       stopped = true;
       stat.footerRowNum = num;
-      stat.footerLabel = cellText(row[0]) || cellText(row[idx.code]);
-      stat.afterFooter++;          // นับแถวปิดท้ายเองด้วย ตัวเลขในรายงานจะได้ลงตัวพอดี
+      stat.footerReason = seqEmpty ? 'ช่อง "#" ว่าง' : ('เจอคำว่า "' + (cellText(row[0]) || cellText(row[idx.code])) + '"');
+      stat.afterFooter++;
       continue;
     }
 
-    stat.dataRows++;
     var code = cellText(row[idx.code]);
     if (!code) { stat.noCode.push(num); continue; }
 
-    var parsedQty = parseQtyCell(row[idx.systemQty]);
-    if (parsedQty.bad) stat.badQty.push(num);
-    if (parsedQty.blank) stat.blankQty++;
+    var qtyCell = parseNumberCell(row[idx.qty]);
+    if (qtyCell.bad) stat.badQty.push(num);
 
-    var name = idx.name === undefined ? '' : cellText(row[idx.name]);
-    var unit = idx.unit === undefined ? '' : cellText(row[idx.unit]);
     var key = safeKey(code);
+    var category = idx.category === undefined ? '' : cellText(row[idx.category]);
+    var barcode = idx.barcode === undefined ? '' : cellText(row[idx.barcode]);
+    var unit = idx.unit === undefined ? '' : cellText(row[idx.unit]);
+    var sellPrice = idx.sellPrice === undefined ? 0 : parseNumberCell(row[idx.sellPrice]).value;
 
-    if (items[key]) {
-      /* รหัสซ้ำในไฟล์เดียวกัน = ของตัวเดียวกันวางหลายล็อต รวมยอดเข้าด้วยกัน */
-      items[key].systemQty += parsedQty.qty;
-      if (!items[key].name && name) items[key].name = name;
-      if (!items[key].unit && unit) items[key].unit = unit;
+    if (!category) stat.noCategory++;
+    if (!barcode) stat.noBarcode++;
+    if (!unit) stat.noUnit++;
+    if (!sellPrice) stat.zeroPrice++;
+    if (idx.subCategory !== undefined && !cellText(row[idx.subCategory])) stat.noSubCategory++;
+
+    if (products[key]) {
+      /* รหัสเดียวกันหลายแถว = ของตัวเดียวกันคนละล็อต รวมยอดเข้าด้วยกัน */
+      systemQty[key] += qtyCell.value;
       var entry = null;
       for (var d = 0; d < stat.merged.length; d++) if (stat.merged[d].code === code) entry = stat.merged[d];
-      if (!entry) {
-        entry = { code: code, rows: [firstRowOf[key]], total: 0 };
-        stat.merged.push(entry);
-      }
+      if (!entry) { entry = { code: code, rows: [firstRowOf[key]], total: 0 }; stat.merged.push(entry); }
       entry.rows.push(num);
-      entry.total = items[key].systemQty;
-    } else {
-      items[key] = { code: code, name: name, unit: unit, systemQty: parsedQty.qty };
-      firstRowOf[key] = num;
+      entry.total = systemQty[key];
+      continue;
     }
+
+    products[key] = {
+      code: code,
+      name: idx.name === undefined ? code : (cellText(row[idx.name]) || code),
+      category: category,
+      subCategory: idx.subCategory === undefined ? '' : cellText(row[idx.subCategory]),
+      tag: idx.tag === undefined ? '' : cellText(row[idx.tag]),
+      unit: unit,
+      barcode: barcode,
+      sellPrice: sellPrice
+    };
+    systemQty[key] = qtyCell.value;
+    firstRowOf[key] = num;
   }
 
-  Object.keys(items).forEach(function (k) { if (!items[k].name) items[k].name = items[k].code; });
-
-  stat.imported = Object.keys(items).length;
+  stat.imported = Object.keys(products).length;
   if (!stat.imported) throw new Error('NO_ROWS');
-  return { items: items, stat: stat };
-}
 
-/* Firebase keys cannot contain . $ # [ ] / or control chars */
-function safeKey(code) {
-  return String(code).replace(/[.$#\[\]\/\x00-\x1F\x7F]/g, '_');
+  Object.keys(products).forEach(function (k) {
+    var cls = classifyByCategory(products[k].category);
+    products[k]._type = cls.type;
+    products[k]._needsReview = cls.needsReview;
+    if (cls.type === 'notProduct') stat.notProduct++; else stat.product++;
+    if (cls.needsReview) stat.needsReview++;
+  });
+
+  return { products: products, systemQty: systemQty, stat: stat };
 }
 
 /* ============================================================
-   4. APP STATE
+   5. สถานะแอป
    ============================================================ */
 
 var state = {
-  roundIndex: {},    // {roundId: {name, createdAt, createdBy, status}}
+  roundIndex: {},
   roundId: null,
   zoneId: null,
   counter: '',
-  round: { zones: {}, items: {}, counts: {} },
-  selectedItem: null,
-  editing: null,     // count record being replaced
-  lastImport: null,  // { stat, diff } ของการนำเข้าครั้งล่าสุดในเซสชันนี้
-  filter: 'all',
   page: 'start',
-  openRows: {},
-  unsubRound: null
+  products: {},          // master ถาวร
+  systemQty: {},         // ยอดระบบของรอบที่เลือก
+  zones: {},
+  counts: {},            // key -> ยอดรวม (ผลรวม delta)
+  scanQty: {},           // key -> ยอดที่มาจากการยิง
+  manualQty: {},         // key -> ยอดที่มาจากการกรอกมือ
+  zoneTotals: {},        // zoneId -> จำนวนชิ้นในโซนนั้น
+  manualLog: [],
+  scanLog: [],           // ทุกแถว สำหรับ export
+  unknown: {},           // pushId -> {value, zone, user, ts}
+  appliedScanIds: Object.create(null),
+  undoStack: [],
+  scanIndex: null,       // Map: บาร์โค้ด/รหัส (ตัวพิมพ์ใหญ่) -> key
+  lastImport: null,
+  masterFilter: 'all',
+  priceField: 'sellPrice',
+  unsub: [],
+  manualPicked: null,
+  modalOpen: false,
+  manualOpen: false
 };
 
 var $ = function (id) { return document.getElementById(id); };
@@ -1137,19 +1388,24 @@ function toast(msg, bad) {
 
 function ask(title, message, okLabel, opts) {
   opts = opts || {};
+  state.modalOpen = true;
   return new Promise(function (resolve) {
     $('modalTitle').textContent = title;
     $('modalMsg').textContent = message;
     $('modalDetail').innerHTML = '';
     if (opts.detail) $('modalDetail').appendChild(opts.detail);
     $('modalCancel').style.display = opts.hideCancel ? 'none' : '';
+    $('modalCancel').textContent = opts.cancelLabel || 'ยกเลิก';
     $('modalOk').textContent = okLabel || 'ตกลง';
+    $('modalOk').className = 'btn big' + (opts.danger ? ' danger' : '');
     $('modalBg').classList.add('show');
     function done(v) {
       $('modalBg').classList.remove('show');
       $('modalOk').onclick = null;
       $('modalCancel').onclick = null;
+      state.modalOpen = false;
       resolve(v);
+      if (state.page === 'scan') focusScan();
     }
     $('modalOk').onclick = function () { done(true); };
     $('modalCancel').onclick = function () { done(false); };
@@ -1158,19 +1414,28 @@ function ask(title, message, okLabel, opts) {
 
 function fmtTime(ms) {
   if (!ms) return '-';
-  var d = new Date(ms);
-  return d.toLocaleString('th-TH', {
-    day: '2-digit', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit'
+  return new Date(ms).toLocaleString('th-TH', {
+    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
   });
 }
-
+function fmtClock(ms) {
+  if (!ms) return '-';
+  return new Date(ms).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
 function fmtNum(n) {
   if (n === null || n === undefined || !isFinite(n)) return '-';
   return Number(n).toLocaleString('th-TH', { maximumFractionDigits: 3 });
 }
+function fmtMoney(n) {
+  if (n === null || n === undefined || !isFinite(n)) return '-';
+  return Number(n).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function fmtPercent(n) {
+  if (n === null || !isFinite(n)) return '–';
+  return n.toLocaleString('th-TH', { maximumFractionDigits: 1 }) + '%';
+}
 
-/* ผู้ใช้ตั้งชื่อโซนว่า "โซน A" อยู่แล้วบ่อย ๆ — อย่าเติมคำนำหน้าซ้ำเป็น "โซน โซน A" */
+/* ผู้ใช้ตั้งชื่อโซนว่า "โซน A" อยู่แล้วบ่อย ๆ — อย่าเติมคำนำหน้าซ้ำ */
 function zoneLabel(name) {
   var n = String(name == null ? '' : name).trim() || '-';
   return /^โซน/.test(n) ? n : 'โซน ' + n;
@@ -1179,88 +1444,114 @@ function roundLabel(name) {
   var n = String(name == null ? '' : name).trim() || '-';
   return /^รอบ/.test(n) ? n : 'รอบ ' + n;
 }
+function zoneName(zoneId) {
+  var z = state.zones[zoneId];
+  return z ? z.name : '-';
+}
 
 /* ============================================================
-   5. COUNT LOGIC
-   Records are append-only. Superseded records stay forever so the
-   history is always auditable — nothing is ever deleted or edited.
+   6. รวมยอดนับ — ต่อท้ายอย่างเดียว ยอด = ผลรวม delta
    ============================================================ */
 
-function liveCounts() {
-  var counts = state.round.counts || {};
-  var superseded = {};
-  Object.keys(counts).forEach(function (id) {
-    if (counts[id] && counts[id].supersedes) superseded[counts[id].supersedes] = true;
-  });
-  return Object.keys(counts)
-    .filter(function (id) { return counts[id] && !superseded[id]; })
-    .map(function (id) {
-      var rec = counts[id];
-      return {
-        id: id, itemCode: rec.itemCode, itemName: rec.itemName, unit: rec.unit || '',
-        zoneId: rec.zoneId, zoneName: rec.zoneName, qty: Number(rec.qty) || 0,
-        counter: rec.counter, countedAt: Number(rec.countedAt) || 0, supersedes: rec.supersedes || null
-      };
-    })
-    .sort(function (a, b) { return b.countedAt - a.countedAt; });
-}
+function applyScanRecord(id, rec) {
+  if (!rec || state.appliedScanIds[id]) return false;
+  state.appliedScanIds[id] = 1;
 
-/* Effective value per (item, zone) = newest live record for that pair.
-   Extra live records on the same pair mean two people counted the same
-   spot — surfaced as "นับซ้ำ" instead of silently dropped. */
-function effectiveByItem() {
-  var byPair = {}, dupes = {};
-  liveCounts().forEach(function (rec) {
-    var key = rec.itemCode + '||' + rec.zoneId;
-    if (!byPair[key]) byPair[key] = rec;
-    else {
-      dupes[rec.itemCode] = true;
-      if (rec.countedAt > byPair[key].countedAt) byPair[key] = rec;
-    }
-  });
-  var result = {};
-  Object.keys(byPair).forEach(function (key) {
-    var rec = byPair[key];
-    if (!result[rec.itemCode]) result[rec.itemCode] = { total: 0, zones: [], duplicated: false };
-    result[rec.itemCode].total += rec.qty;
-    result[rec.itemCode].zones.push(rec);
-    result[rec.itemCode].duplicated = !!dupes[rec.itemCode];
-  });
-  return result;
-}
-
-function findLiveRecord(itemCode, zoneId) {
-  var found = null;
-  liveCounts().forEach(function (rec) {
-    if (rec.itemCode === itemCode && rec.zoneId === zoneId) {
-      if (!found || rec.countedAt > found.countedAt) found = rec;
-    }
-  });
-  return found;
-}
-
-function historyOf(recordId) {
-  var counts = state.round.counts || {};
-  var chain = [], cur = counts[recordId];
-  var guard = 0;
-  while (cur && cur.supersedes && guard++ < 50) {
-    var prev = counts[cur.supersedes];
-    if (!prev) break;
-    chain.push({ id: cur.supersedes, qty: Number(prev.qty) || 0, counter: prev.counter, countedAt: Number(prev.countedAt) || 0, zoneName: prev.zoneName });
-    cur = prev;
+  var key = safeKey(rec.code);
+  var delta = Number(rec.delta) || 0;
+  state.counts[key] = (state.counts[key] || 0) + delta;
+  state.zoneTotals[rec.zone] = (state.zoneTotals[rec.zone] || 0) + delta;
+  if (rec.mode === 'manual') {
+    state.manualQty[key] = (state.manualQty[key] || 0) + delta;
+    state.manualLog.push({ id: id, rec: rec });
+  } else {
+    state.scanQty[key] = (state.scanQty[key] || 0) + delta;
   }
-  return chain;
+  state.scanLog.push({ id: id, rec: rec });
+  return true;
+}
+
+function resetRoundAggregates() {
+  state.counts = {};
+  state.scanQty = {};
+  state.manualQty = {};
+  state.zoneTotals = {};
+  state.manualLog = [];
+  state.scanLog = [];
+  state.unknown = {};
+  state.appliedScanIds = Object.create(null);
+  state.undoStack = [];
+}
+
+function buildScanIndex() {
+  var map = new Map();
+  Object.keys(state.products).forEach(function (key) {
+    var bc = String(state.products[key].barcode || '').trim().toUpperCase();
+    if (bc) map.set(bc, key);
+  });
+  /* ใส่รหัสสินค้าทีหลัง เพื่อให้ชนะบาร์โค้ดของตัวอื่นเมื่อค่าชนกัน */
+  Object.keys(state.products).forEach(function (key) {
+    var code = String(state.products[key].code || '').trim().toUpperCase();
+    if (code) map.set(code, key);
+  });
+  state.scanIndex = map;
 }
 
 /* ============================================================
-   6. DATA WRITES  (always .update() / PATCH on a single record)
+   7. คิวเขียนข้อมูล — เน็ตหลุดต้องยิงต่อได้
    ============================================================ */
 
-function createRound(name) {
+var QUEUE_KEY = 'isrd_write_queue';
+var flushing = false;
+
+function queueLoad() {
+  try { return JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]') || []; }
+  catch (e) { return []; }
+}
+function queueSave(q) {
+  try { localStorage.setItem(QUEUE_KEY, JSON.stringify(q)); } catch (e) { /* เต็มก็ปล่อย */ }
+}
+function pendingCount() { return queueLoad().length; }
+
+function enqueueWrite(path, patch) {
+  var q = queueLoad();
+  q.push({ path: path, patch: patch });
+  queueSave(q);
+  renderSyncBar();
+  flushQueue();
+}
+
+function flushQueue() {
+  if (flushing) return;
+  var q = queueLoad();
+  if (!q.length) { renderSyncBar(); return; }
+  flushing = true;
+  var item = q[0];
+  db.update(item.path, item.patch).then(function () {
+    var cur = queueLoad();
+    cur.shift();
+    queueSave(cur);
+    flushing = false;
+    renderSyncBar();
+    if (cur.length) flushQueue();
+  }).catch(function () {
+    /* ส่งไม่ผ่าน = เก็บไว้ในคิวเหมือนเดิม pushId คงที่อยู่แล้ว ส่งซ้ำไม่นับซ้ำ */
+    flushing = false;
+    renderSyncBar();
+  });
+}
+
+/* ============================================================
+   8. เขียนข้อมูล
+   ============================================================ */
+
+function createRound(name, branch) {
   var id = db.newKey();
-  var meta = { name: name, createdAt: Date.now(), createdBy: state.counter || 'ไม่ระบุ', status: 'open' };
   var patch = {};
-  patch[id] = meta;
+  patch[id] = {
+    name: name, branch: branch || '',
+    createdAt: Date.now(), createdBy: state.counter || 'ไม่ระบุ', status: 'open'
+  };
   return db.update('roundIndex', patch).then(function () { return id; });
 }
 
@@ -1271,495 +1562,759 @@ function createZone(roundId, name) {
   return db.update('rounds/' + roundId, patch).then(function () { return id; });
 }
 
-function saveCount(item, qty, supersedesId) {
+function writeScan(key, delta, mode, reason) {
+  var product = state.products[key] || { code: key };
   var id = db.newKey();
-  var zone = (state.round.zones || {})[state.zoneId] || { name: '-' };
-  var patch = {};
-  patch['counts/' + id] = {
-    itemCode: item.code,
-    itemName: item.name,
-    unit: item.unit || '',
-    zoneId: state.zoneId,
-    zoneName: zone.name,
-    qty: qty,
-    counter: state.counter,
-    countedAt: Date.now(),
-    supersedes: supersedesId || null
+  var rec = {
+    code: product.code || key,
+    zone: state.zoneId,
+    zoneName: zoneName(state.zoneId),
+    user: state.counter,
+    ts: Date.now(),
+    delta: delta,
+    mode: mode
   };
-  return db.update('rounds/' + state.roundId, patch);
+  if (reason) rec.reason = reason;
+
+  applyScanRecord(id, rec);                       // นับในเครื่องทันที ไม่รอเน็ต
+  var patch = {};
+  patch['scans/' + id] = rec;
+  enqueueWrite('rounds/' + state.roundId, patch);
+  return { id: id, rec: rec };
 }
 
-/* นำเข้าไฟล์ใหม่ = ยอดระบบชุดใหม่ทับของเดิม แต่สินค้าที่นับไปแล้วห้ามหาย
-   ไม่งั้นยอดที่นับไว้จะกลายเป็นเรคอร์ดลอย ตรวจย้อนหลังไม่ได้ */
-function applyImportedItems(roundId, newItems) {
-  var existing = state.round.items || {};
-  var counted = {};
-  liveCounts().forEach(function (rec) { counted[safeKey(rec.itemCode)] = true; });
+function writeUnknown(value) {
+  var id = db.newKey();
+  var rec = { value: value, zone: state.zoneId, zoneName: zoneName(state.zoneId), user: state.counter, ts: Date.now() };
+  state.unknown[id] = rec;
+  var patch = {};
+  patch['unknown/' + id] = rec;
+  enqueueWrite('rounds/' + state.roundId, patch);
+}
 
-  var patch = {}, added = 0, updated = 0, removed = [], keptBecauseCounted = [];
+/* ข้อ 4: import ห้ามล้างค่าที่คนแก้ไว้ */
+function buildProductPatch(incoming) {
+  var patch = {};
+  var added = 0, updated = 0, keptManual = 0;
 
-  Object.keys(newItems).forEach(function (k) {
-    if (existing[k]) updated++; else added++;
-    patch['items/' + k] = newItems[k];
+  Object.keys(incoming).forEach(function (key) {
+    var fresh = incoming[key];
+    var old = state.products[key];
+    var next = {
+      code: fresh.code,
+      name: fresh.name,
+      category: fresh.category,
+      subCategory: fresh.subCategory,
+      tag: fresh.tag,
+      unit: fresh.unit,
+      barcode: fresh.barcode,
+      sellPrice: fresh.sellPrice,
+      updatedAt: Date.now()
+    };
+
+    if (old && old.typeSource === 'manual') {
+      /* คนตัดสินใจไว้แล้ว ห้ามให้ไฟล์มาทับ */
+      next.type = old.type;
+      next.typeSource = 'manual';
+      next.needsReview = !!old.needsReview;
+      keptManual++;
+    } else {
+      next.type = fresh._type;
+      next.typeSource = 'auto';
+      next.needsReview = fresh._needsReview;
+    }
+
+    /* ราคาต้นทุนกับรูปเป็นของที่คนกรอกในแอป ไฟล์ไม่มีสิทธิ์แตะ */
+    if (old && old.costPrice !== undefined && old.costPrice !== null) next.costPrice = old.costPrice;
+    if (old && old.imageUrl) next.imageUrl = old.imageUrl;
+
+    patch[key] = next;
+    if (old) updated++; else added++;
   });
 
-  Object.keys(existing).forEach(function (k) {
-    if (newItems[k]) return;
-    var code = (existing[k] && existing[k].code) || k;
-    if (counted[k]) { keptBecauseCounted.push(code); return; }
-    patch['items/' + k] = null;   // ยังเป็น update รายเรคอร์ด ไม่ใช่เขียนทับทั้งก้อน
-    removed.push(code);
+  return { patch: patch, added: added, updated: updated, keptManual: keptManual };
+}
+
+function applyImport(roundId, parsedResult) {
+  var productDiff = buildProductPatch(parsedResult.products);
+  var sysPatch = {}, removed = 0;
+
+  Object.keys(parsedResult.systemQty).forEach(function (key) {
+    sysPatch['systemQty/' + key] = parsedResult.systemQty[key];
+  });
+  Object.keys(state.systemQty).forEach(function (key) {
+    if (parsedResult.systemQty[key] === undefined) { sysPatch['systemQty/' + key] = null; removed++; }
   });
 
-  return db.update('rounds/' + roundId, patch).then(function () {
-    return { added: added, updated: updated, removed: removed, keptBecauseCounted: keptBecauseCounted };
-  });
+  return db.update('products', productDiff.patch)
+    .then(function () { return db.update('rounds/' + roundId, sysPatch); })
+    .then(function () {
+      return {
+        added: productDiff.added, updated: productDiff.updated,
+        keptManual: productDiff.keptManual, removedFromRound: removed
+      };
+    });
 }
 
 /* ============================================================
-   7. RENDERING
+   9. ย้ายข้อมูลโครงสร้างเดิม (v1.1) มาโครงใหม่
+      ห้ามลบของเดิม ห้ามทำยอดที่นับไว้หาย และต้องรันซ้ำได้โดยไม่ซ้ำซ้อน
    ============================================================ */
 
-function showPage(name) {
-  state.page = name;
-  ['start', 'count', 'summary'].forEach(function (p) {
-    $('page' + p.charAt(0).toUpperCase() + p.slice(1)).classList.toggle('active', p === name);
-    $('nav' + p.charAt(0).toUpperCase() + p.slice(1)).classList.toggle('on', p === name);
+function oldEffectiveCounts(counts) {
+  var superseded = {};
+  Object.keys(counts).forEach(function (id) {
+    if (counts[id] && counts[id].supersedes) superseded[counts[id].supersedes] = 1;
   });
-  window.scrollTo(0, 0);
-  if (name === 'summary') renderSummary();
-  if (name === 'count') renderCountPage();
+  var byPair = {};
+  Object.keys(counts).forEach(function (id) {
+    var rec = counts[id];
+    if (!rec || superseded[id]) return;
+    var pair = rec.itemCode + '||' + rec.zoneId;
+    if (!byPair[pair] || (Number(rec.countedAt) || 0) > (Number(byPair[pair].countedAt) || 0)) byPair[pair] = rec;
+  });
+  return Object.keys(byPair).map(function (p) { return byPair[p]; });
 }
 
-function sessionReady() {
-  return !!(state.roundId && state.zoneId && state.counter);
-}
+function migrateRoundIfNeeded(roundId, data) {
+  data = data || {};
+  if (Number(data.schema) >= 2) return Promise.resolve(false);
 
-function refreshNav() {
-  var ready = sessionReady();
-  $('navCount').disabled = !ready;
-  $('navSummary').disabled = !state.roundId;
-  $('btnStart').disabled = !ready;
+  var items = data.items || {};
+  var oldCounts = data.counts || {};
+  var roundPatch = { schema: 2 };
+  var productPatch = {};
+  var migrated = 0;
 
-  var round = state.roundIndex[state.roundId];
-  var zone = (state.round.zones || {})[state.zoneId];
-  $('topSub').textContent = round
-    ? (round.name + (zone ? ' · ' + zone.name : '') + (state.counter ? ' · ' + state.counter : ''))
-    : 'ยังไม่ได้เลือกรอบนับ';
-}
-
-function renderStart() {
-  /* rounds */
-  var wrap = $('roundList');
-  var ids = Object.keys(state.roundIndex).sort(function (a, b) {
-    return (state.roundIndex[b].createdAt || 0) - (state.roundIndex[a].createdAt || 0);
-  });
-  wrap.innerHTML = '';
-  if (!ids.length) {
-    wrap.innerHTML = '<div class="empty">ยังไม่มีรอบนับ — พิมพ์ชื่อแล้วกด "+ สร้างรอบ" ด้านล่าง</div>';
-  }
-  ids.forEach(function (id) {
-    var r = state.roundIndex[id];
-    var b = document.createElement('button');
-    b.className = 'pick' + (id === state.roundId ? ' sel' : '');
-    b.setAttribute('data-round', id);
-    b.innerHTML = '<div class="pick-title"></div><div class="pick-meta"></div>';
-    b.querySelector('.pick-title').textContent = r.name;
-    b.querySelector('.pick-meta').textContent = 'สร้างเมื่อ ' + fmtTime(r.createdAt) + ' โดย ' + (r.createdBy || 'ไม่ระบุ');
-    b.onclick = function () { selectRound(id); };
-    wrap.appendChild(b);
-  });
-
-  /* zones */
-  var zw = $('zoneList');
-  zw.innerHTML = '';
-  if (!state.roundId) {
-    zw.innerHTML = '<div class="empty">เลือกรอบนับก่อน แล้วจึงเลือกโซน</div>';
-  } else {
-    var zones = state.round.zones || {};
-    var zids = Object.keys(zones).sort(function (a, b) { return (zones[a].createdAt || 0) - (zones[b].createdAt || 0); });
-    if (!zids.length) {
-      zw.innerHTML = '<div class="empty">รอบนี้ยังไม่มีโซน — พิมพ์ชื่อแล้วกด "+ เพิ่มโซน"</div>';
-    }
-    zids.forEach(function (id) {
-      var b = document.createElement('button');
-      b.className = 'pick' + (id === state.zoneId ? ' sel' : '');
-      b.setAttribute('data-zone', id);
-      b.innerHTML = '<div class="pick-title"></div>';
-      b.querySelector('.pick-title').textContent = zones[id].name;
-      b.onclick = function () {
-        state.zoneId = id;
-        localStorage.setItem('isrd_zone_' + state.roundId, id);
-        renderStart(); refreshNav();
+  Object.keys(items).forEach(function (key) {
+    var it = items[key];
+    if (!it) return;
+    roundPatch['systemQty/' + key] = Number(it.systemQty) || 0;
+    /* เติม master เฉพาะรหัสที่ยังไม่มี ไม่ทับข้อมูลที่สมบูรณ์กว่าจากไฟล์ Zort */
+    if (!state.products[key]) {
+      var cls = classifyByCategory('');
+      productPatch[key] = {
+        code: it.code || key, name: it.name || it.code || key,
+        category: '', subCategory: '', tag: '', unit: it.unit || '', barcode: '',
+        sellPrice: 0, type: cls.type, typeSource: 'auto', needsReview: cls.needsReview,
+        updatedAt: Date.now()
       };
-      zw.appendChild(b);
-    });
-  }
+    }
+  });
 
-  /* import status */
-  var itemCount = Object.keys(state.round.items || {}).length;
-  var status = !state.roundId
-    ? 'เลือกรอบนับก่อน แล้วจึงนำเข้ายอดระบบ'
-    : (itemCount ? 'รอบนี้มีสินค้าในระบบแล้ว ' + fmtNum(itemCount) + ' รายการ' : 'ยังไม่ได้นำเข้ายอดระบบของรอบนี้');
-  if (state.roundId && state.lastImport) {
-    var st = state.lastImport.stat;
-    var skippedRows = st.blank + st.noCode.length + st.afterFooter;
-    status += '\nนำเข้าล่าสุด: อ่าน ' + fmtNum(st.totalRows) + ' แถว · เข้าระบบ ' + fmtNum(st.imported) +
-              ' รายการ · ข้าม ' + fmtNum(skippedRows) + ' แถว';
-  }
-  $('importStatus').textContent = status;
-  $('importStatus').style.whiteSpace = 'pre-line';
-  $('btnImportReport').style.display = (state.roundId && state.lastImport) ? 'flex' : 'none';
-  $('btnImport').disabled = !state.roundId;
-  $('btnAddZone').disabled = !state.roundId;
+  oldEffectiveCounts(oldCounts).forEach(function (rec) {
+    var id = db.newKey();
+    roundPatch['scans/' + id] = {
+      code: rec.itemCode,
+      zone: rec.zoneId,
+      zoneName: rec.zoneName || '-',
+      user: rec.counter || 'ไม่ระบุ',
+      ts: Number(rec.countedAt) || Date.now(),
+      delta: Number(rec.qty) || 0,
+      mode: 'manual',
+      reason: 'ย้ายจากโครงสร้างเดิม v1.1'
+    };
+    migrated++;
+  });
 
-  refreshNav();
+  var chain = Object.keys(productPatch).length
+    ? db.update('products', productPatch)
+    : Promise.resolve();
+
+  /* items และ counts เดิมไม่ถูกแตะเลย — ประวัติการนับต้องตรวจย้อนหลังได้ตลอด */
+  return chain.then(function () { return db.update('rounds/' + roundId, roundPatch); })
+              .then(function () { return migrated > 0 || Object.keys(items).length > 0; });
 }
 
-function renderCountPage() {
+/* ============================================================
+   10. เสียง / สั่น / ไฟกระพริบ
+   ============================================================ */
+
+var audioCtx = null;
+function beep(freq, ms, type) {
+  try {
+    var Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    if (!audioCtx) audioCtx = new Ctx();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    var osc = audioCtx.createOscillator();
+    var gain = audioCtx.createGain();
+    osc.type = type || 'square';
+    osc.frequency.value = freq;
+    gain.gain.value = 0.06;
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + ms / 1000);
+  } catch (e) { /* เครื่องไม่มีเสียงก็ยังยิงได้ ไม่ใช่เรื่องคอขาดบาดตาย */ }
+}
+function vibrate(pattern) {
+  try { if (navigator.vibrate) navigator.vibrate(pattern); } catch (e) { /* ไม่รองรับก็ข้าม */ }
+}
+
+var flashTimer = null;
+function flashStage(cls) {
+  var el = $('scanStage');
+  el.classList.remove('hit', 'miss');
+  void el.offsetWidth;                 // บังคับให้เบราว์เซอร์เริ่ม transition ใหม่
+  el.classList.add(cls);
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(function () { el.classList.remove(cls); }, 300);
+}
+
+/* ============================================================
+   11. หน้ายิงบาร์โค้ด
+   ============================================================ */
+
+function focusScan() {
+  if (state.page !== 'scan' || state.modalOpen || state.manualOpen) return;
+  var el = $('scanInput');
+  if (el && document.activeElement !== el) el.focus();
+}
+
+function handleScanValue(raw) {
+  var value = String(raw || '').trim();
+  if (!value) return;
+  if (!state.scanIndex) buildScanIndex();
+
+  var key = state.scanIndex.get(value.toUpperCase());
+  if (!key) {
+    writeUnknown(value);
+    flashStage('miss');
+    beep(180, 260, 'sawtooth');
+    vibrate([80, 60, 80]);
+    showScanMiss(value);
+    renderSyncBar();
+    return;
+  }
+
+  var written = writeScan(key, 1, 'scan', null);
+  state.undoStack.push({ key: key, id: written.id });
+  flashStage('hit');
+  beep(1180, 70, 'square');
+  vibrate(40);
+  showScanHit(key);
+  pushRecent(state.products[key].name, 1, written.rec.ts);
+  renderScanTotals();
+  $('btnUndo').disabled = false;
+}
+
+function showScanHit(key) {
+  var p = state.products[key];
+  var box = $('scanLast');
+  var img = box.firstElementChild;
+  if (p.imageUrl) {
+    if (img.tagName !== 'IMG') {
+      var el = document.createElement('img');
+      box.replaceChild(el, img);
+      img = el;
+    }
+    if (img.getAttribute('src') !== p.imageUrl) img.src = p.imageUrl;
+    img.alt = p.name;
+  } else if (img.tagName === 'IMG') {
+    var ph = document.createElement('div');
+    ph.className = 'sl-noimg';
+    ph.textContent = '📦';
+    box.replaceChild(ph, img);
+  }
+  $('slName').textContent = p.name;
+  $('slName').className = 'sl-name';
+  $('slMeta').textContent = p.code + (p.unit ? ' · ' + p.unit : '') +
+    ' · ยอดระบบ ' + fmtNum(state.systemQty[key] || 0);
+  $('slQty').textContent = fmtNum(state.counts[key] || 0);
+}
+
+function showScanMiss(value) {
+  var box = $('scanLast');
+  var img = box.firstElementChild;
+  if (img.tagName === 'IMG') {
+    var ph = document.createElement('div');
+    ph.className = 'sl-noimg';
+    box.replaceChild(ph, img);
+    img = ph;
+  }
+  img.textContent = '❌';
+  $('slName').textContent = 'ไม่พบบาร์โค้ดนี้ในระบบ';
+  $('slName').className = 'sl-name scan-miss-code';
+  $('slMeta').textContent = 'ค่าที่ยิงได้: ' + value + ' — บันทึกไว้แล้ว ยิงตัวถัดไปต่อได้เลย';
+  $('slQty').textContent = '';
+}
+
+/* ต่อหัวรายการแล้วตัดตัวที่ 6 ทิ้ง — ไม่วาดรายการใหม่ทั้งชุดทุกครั้งที่ยิง */
+function pushRecent(name, delta, ts) {
+  var list = $('recentList');
+  var item = document.createElement('div');
+  item.className = 'r-item' + (delta < 0 ? ' neg' : '');
+  var left = document.createElement('span');
+  left.textContent = (delta > 0 ? '+' + delta + ' ' : delta + ' ') + name;
+  var right = document.createElement('span');
+  right.className = 'r-t';
+  right.textContent = fmtClock(ts);
+  item.appendChild(left);
+  item.appendChild(right);
+  list.insertBefore(item, list.firstChild);
+  while (list.children.length > 5) list.removeChild(list.lastChild);
+}
+
+function renderScanTotals() {
+  $('scanTotal').textContent = fmtNum(state.zoneTotals[state.zoneId] || 0);
+}
+
+function renderSyncBar() {
+  var pending = pendingCount();
+  var bar = $('syncBar');
+  bar.className = 'syncbar' + (pending ? ' pending' : '');
+  $('syncText').textContent = pending
+    ? 'ยังไม่ได้ส่งขึ้นระบบ ' + fmtNum(pending) + ' รายการ — ยิงต่อได้ เดี๋ยวส่งให้เอง'
+    : 'ข้อมูลถูกบันทึกครบแล้ว';
+  var unknownN = Object.keys(state.unknown).length;
+  $('unknownCount').textContent = unknownN ? 'บาร์โค้ดไม่พบ ' + fmtNum(unknownN) : '';
+}
+
+function undoLastScan() {
+  var last = state.undoStack.pop();
+  if (!last) { $('btnUndo').disabled = true; return; }
+  var written = writeScan(last.key, -1, 'scan', 'ยกเลิกการยิงล่าสุด');
+  var p = state.products[last.key] || { name: last.key };
+  pushRecent(p.name, -1, written.rec.ts);
+  renderScanTotals();
+  showScanHit(last.key);
+  flashStage('miss');
+  beep(420, 120, 'sine');
+  toast('ยกเลิกการยิง ' + p.name + ' แล้ว');
+  $('btnUndo').disabled = state.undoStack.length === 0;
+}
+
+function renderScanPage() {
   var round = state.roundIndex[state.roundId] || { name: '-' };
-  var zone = (state.round.zones || {})[state.zoneId] || { name: '-' };
-  $('sessionText').textContent = roundLabel(round.name) + ' · ' + zoneLabel(zone.name) + ' · ผู้นับ ' + state.counter;
-  renderSearch();
-  renderCountedList();
+  $('sessionText').textContent = roundLabel(round.name) + ' · ' + zoneLabel(zoneName(state.zoneId)) +
+    ' · ผู้นับ ' + state.counter;
+  renderScanTotals();
+  renderSyncBar();
+  focusScan();
 }
 
-function searchItems(term) {
-  var items = state.round.items || {};
+/* ---------- กรอกมือ ---------- */
+
+function searchProducts(term) {
   var q = String(term || '').trim().toLowerCase();
   if (!q) return [];
   var hits = [];
-  Object.keys(items).forEach(function (k) {
-    var it = items[k];
-    if (!it) return;
-    var code = String(it.code || '').toLowerCase();
-    var name = String(it.name || '').toLowerCase();
+  var keys = Object.keys(state.products);
+  for (var i = 0; i < keys.length && hits.length < 400; i++) {
+    var p = state.products[keys[i]];
+    var code = String(p.code || '').toLowerCase();
+    var name = String(p.name || '').toLowerCase();
+    var bc = String(p.barcode || '').toLowerCase();
     var score = -1;
-    if (code === q) score = 0;
+    if (code === q || bc === q) score = 0;
     else if (code.indexOf(q) === 0) score = 1;
     else if (name.indexOf(q) === 0) score = 2;
-    else if (code.indexOf(q) >= 0) score = 3;
+    else if (code.indexOf(q) >= 0 || bc.indexOf(q) >= 0) score = 3;
     else if (name.indexOf(q) >= 0) score = 4;
-    if (score >= 0) hits.push({ item: it, score: score });
-  });
-  hits.sort(function (a, b) { return a.score - b.score || String(a.item.code).localeCompare(String(b.item.code)); });
-  return hits.slice(0, 20).map(function (h) { return h.item; });
+    if (score >= 0) hits.push({ key: keys[i], p: p, score: score });
+  }
+  hits.sort(function (a, b) { return a.score - b.score || String(a.p.code).localeCompare(String(b.p.code)); });
+  return hits.slice(0, 20);
 }
 
-function renderSearch() {
-  var term = $('searchBox').value;
-  var box = $('searchResults');
-  var hint = $('searchHint');
+function renderManualResults() {
+  var box = $('manualResults');
   box.innerHTML = '';
-
-  var total = Object.keys(state.round.items || {}).length;
-  if (!total) {
-    hint.textContent = 'รอบนี้ยังไม่มียอดระบบ — กลับไปหน้า "เริ่มนับ" แล้วนำเข้าไฟล์ก่อน';
-    return;
-  }
-  if (!String(term).trim()) {
-    hint.textContent = 'มีสินค้าในรอบนี้ ' + fmtNum(total) + ' รายการ — พิมพ์เพื่อค้นหา';
-    return;
-  }
-
-  var results = searchItems(term);
-  if (!results.length) {
-    hint.textContent = 'ไม่พบสินค้าที่ตรงกับ "' + term + '" — ลองพิมพ์รหัสหรือชื่อบางส่วน';
-    return;
-  }
-  hint.textContent = '';
-
-  results.forEach(function (it) {
-    var existing = findLiveRecord(it.code, state.zoneId);
+  var hits = searchProducts($('manualSearch').value);
+  hits.forEach(function (h) {
     var b = document.createElement('button');
     b.className = 'pick';
-    b.setAttribute('data-code', it.code);
+    b.setAttribute('data-key', h.key);
     b.innerHTML = '<div class="pick-title"></div><div class="pick-meta"></div>';
-    b.querySelector('.pick-title').textContent = it.code + ' · ' + it.name;
-    b.querySelector('.pick-meta').textContent =
-      'ยอดระบบ ' + fmtNum(it.systemQty) + (it.unit ? ' ' + it.unit : '') +
-      (existing ? ' · โซนนี้นับแล้ว ' + fmtNum(existing.qty) : ' · โซนนี้ยังไม่นับ');
-    b.onclick = function () { openCountForm(it, null); };
+    b.querySelector('.pick-title').textContent = h.p.code + ' · ' + h.p.name;
+    b.querySelector('.pick-meta').textContent = 'ยอดระบบ ' + fmtNum(state.systemQty[h.key] || 0) +
+      (h.p.unit ? ' ' + h.p.unit : '') + ' · นับแล้ว ' + fmtNum(state.counts[h.key] || 0);
+    b.onclick = function () { pickManual(h.key); };
     box.appendChild(b);
   });
 }
 
-function openCountForm(item, editRecord) {
-  state.selectedItem = item;
-  state.editing = editRecord || null;
-  $('countForm').style.display = 'block';
-  $('cfTitle').textContent = item.code + ' · ' + item.name;
-
-  var zone = (state.round.zones || {})[state.zoneId] || { name: '-' };
-  var info = 'ยอดระบบ ' + fmtNum(item.systemQty) + (item.unit ? ' ' + item.unit : '') + ' · ' + zoneLabel(zone.name);
-  if (editRecord) {
-    info = 'กำลังแก้ไขยอดที่นับไว้ใน' + zoneLabel(editRecord.zoneName) + ' (เดิม ' + fmtNum(editRecord.qty) +
-           ' โดย ' + editRecord.counter + ')\nยอดเดิมจะถูกเก็บไว้เป็นประวัติ ไม่หายไปไหน';
-  }
-  $('cfInfo').textContent = info;
-  $('qtyInput').value = editRecord ? String(editRecord.qty) : '';
-  $('qtyInput').focus();
-  $('countForm').scrollIntoView({ block: 'center' });
+function pickManual(key) {
+  state.manualPicked = key;
+  var p = state.products[key];
+  $('manualPicked').textContent = p.code + ' · ' + p.name;
+  $('manualForm').style.display = 'block';
+  $('manualQty').value = '';
+  $('manualReason').value = '';
+  $('manualQty').focus();
 }
 
-function closeCountForm() {
-  state.selectedItem = null;
-  state.editing = null;
-  $('countForm').style.display = 'none';
-  $('qtyInput').value = '';
+function openManual() {
+  state.manualOpen = true;
+  state.manualPicked = null;
+  $('manualPanel').style.display = 'block';
+  $('manualForm').style.display = 'none';
+  $('manualSearch').value = '';
+  $('manualResults').innerHTML = '';
+  $('manualSearch').focus();
 }
 
-function renderCountedList() {
-  var list = $('countedList');
-  var records = liveCounts();
-  $('countedTotal').textContent = fmtNum(records.length);
+function closeManual() {
+  state.manualOpen = false;
+  $('manualPanel').style.display = 'none';
+  focusScan();
+}
+
+function saveManual() {
+  if (!state.manualPicked) { toast('เลือกสินค้าก่อน', true); return; }
+  var raw = String($('manualQty').value).trim().replace(/,/g, '');
+  var qty = Number(raw);
+  if (raw === '' || !isFinite(qty) || qty <= 0) { toast('ใส่จำนวนเป็นตัวเลขมากกว่า 0', true); return; }
+  var reason = $('manualReason').value.trim();
+  if (!reason) { toast('ใส่เหตุผลที่ต้องกรอกมือด้วย', true); $('manualReason').focus(); return; }
+
+  var key = state.manualPicked;
+  var written = writeScan(key, qty, 'manual', reason);
+  pushRecent(state.products[key].name + ' (กรอกมือ)', qty, written.rec.ts);
+  renderScanTotals();
+  toast('บันทึกยอดกรอกมือ ' + state.products[key].code + ' = ' + fmtNum(qty));
+  closeManual();
+}
+
+/* ============================================================
+   12. หน้า Master
+   ============================================================ */
+
+var MASTER_RENDER_LIMIT = 200;
+
+function masterRows() {
+  var term = String($('masterSearch').value || '').trim().toLowerCase();
+  var keys = Object.keys(state.products);
+  return keys.filter(function (key) {
+    var p = state.products[key];
+    if (state.masterFilter === 'review' && !p.needsReview) return false;
+    if (state.masterFilter === 'nocost' && p.costPrice !== undefined && p.costPrice !== null) return false;
+    if (state.masterFilter === 'notProduct' && p.type !== 'notProduct') return false;
+    if (!term) return true;
+    return String(p.code || '').toLowerCase().indexOf(term) >= 0 ||
+           String(p.name || '').toLowerCase().indexOf(term) >= 0 ||
+           String(p.barcode || '').toLowerCase().indexOf(term) >= 0;
+  }).sort(function (a, b) {
+    return String(state.products[a].code).localeCompare(String(state.products[b].code), 'th');
+  });
+}
+
+function saveProductEdit(key, field, value) {
+  var patch = {};
+  var next = {};
+  next[field] = value;
+  next.typeSource = 'manual';       // คนแตะแล้ว ไฟล์ import ห้ามทับอีก
+  next.needsReview = false;
+  next.updatedAt = Date.now();
+  Object.keys(next).forEach(function (f) { patch[key + '/' + f] = next[f]; });
+  return db.update('products', patch);
+}
+
+function renderMaster() {
+  document.querySelectorAll('[data-mfilter]').forEach(function (b) {
+    b.className = 'btn sm ' + (b.getAttribute('data-mfilter') === state.masterFilter ? '' : 'grey');
+  });
+
+  var keys = masterRows();
+  var total = Object.keys(state.products).length;
+  var shown = keys.slice(0, MASTER_RENDER_LIMIT);
+  $('masterCount').textContent = total
+    ? ('พบ ' + fmtNum(keys.length) + ' จากทั้งหมด ' + fmtNum(total) + ' รายการ' +
+       (keys.length > shown.length ? ' — แสดง ' + fmtNum(shown.length) + ' รายการแรก พิมพ์ค้นหาเพื่อกรองให้แคบลง' : ''))
+    : 'ยังไม่มีข้อมูลสินค้า — นำเข้าไฟล์ที่หน้า "เริ่มนับ" ก่อน';
+
+  var list = $('masterList');
   list.innerHTML = '';
-
-  if (!records.length) {
-    list.innerHTML = '<div class="empty">ยังไม่มีการนับในรอบนี้</div>';
-    return;
-  }
-
-  records.forEach(function (rec) {
+  shown.forEach(function (key) {
+    var p = state.products[key];
     var card = document.createElement('div');
-    card.className = 'crec';
-    card.setAttribute('data-rec', rec.id);
+    card.className = 'mrow';
+    card.setAttribute('data-key', key);
 
     var top = document.createElement('div');
-    top.className = 'c-top';
+    top.className = 'm-top';
     var left = document.createElement('div');
-    var nm = document.createElement('div'); nm.className = 'c-name'; nm.textContent = rec.itemName;
-    var cd = document.createElement('div'); cd.className = 'c-code'; cd.textContent = rec.itemCode;
-    left.appendChild(nm); left.appendChild(cd);
-    var qty = document.createElement('div');
-    qty.className = 'c-qty';
-    qty.textContent = fmtNum(rec.qty) + (rec.unit ? ' ' + rec.unit : '');
-    top.appendChild(left); top.appendChild(qty);
+    var nm = document.createElement('div'); nm.className = 'm-name'; nm.textContent = p.name;
+    var cd = document.createElement('div'); cd.className = 'm-code';
+    cd.textContent = p.code + (p.barcode ? ' · บาร์โค้ด ' + p.barcode : ' · ไม่มีบาร์โค้ด');
+    var ct = document.createElement('div'); ct.className = 'm-cat';
+    ct.textContent = (p.category || 'ไม่มีหมวดหมู่') + (p.subCategory ? ' / ' + p.subCategory : '');
+    left.appendChild(nm); left.appendChild(cd); left.appendChild(ct);
 
-    var meta = document.createElement('div');
-    meta.className = 'c-meta';
-    [zoneLabel(rec.zoneName), 'ผู้นับ ' + rec.counter, fmtTime(rec.countedAt)].forEach(function (txt) {
-      var s = document.createElement('span'); s.textContent = txt; meta.appendChild(s);
-    });
-
-    var act = document.createElement('div');
-    act.className = 'c-act';
-    var edit = document.createElement('button');
-    edit.className = 'btn sm ghost';
-    edit.textContent = 'แก้ไข';
-    edit.onclick = function () {
-      var item = (state.round.items || {})[safeKey(rec.itemCode)] ||
-                 { code: rec.itemCode, name: rec.itemName, unit: rec.unit, systemQty: 0 };
-      openCountForm(item, rec);
-    };
-    act.appendChild(edit);
-
-    var chain = historyOf(rec.id);
-    if (chain.length) {
-      var hbtn = document.createElement('button');
-      hbtn.className = 'btn sm grey';
-      hbtn.textContent = 'ดูประวัติ (' + chain.length + ')';
-      var hbox = document.createElement('div');
-      hbox.className = 'hist';
-      hbox.style.display = 'none';
-      chain.forEach(function (h) {
-        var d = document.createElement('div');
-        d.className = 'h-item';
-        d.textContent = 'เดิม ' + fmtNum(h.qty) + ' · ' + zoneLabel(h.zoneName) + ' · ' + h.counter + ' · ' + fmtTime(h.countedAt) + ' (ถูกแก้ไข)';
-        hbox.appendChild(d);
-      });
-      hbtn.onclick = function () {
-        hbox.style.display = hbox.style.display === 'none' ? 'flex' : 'none';
-      };
-      act.appendChild(hbtn);
-      card.appendChild(top); card.appendChild(meta); card.appendChild(act); card.appendChild(hbox);
-      list.appendChild(card);
-      return;
+    var right = document.createElement('div');
+    right.style.textAlign = 'right';
+    var typeChip = document.createElement('span');
+    typeChip.className = 'chip ' + (p.type === 'notProduct' ? 'warn' : 'ok');
+    typeChip.setAttribute('data-type', p.type);
+    typeChip.textContent = p.type === 'notProduct' ? 'Not Product' : 'Product';
+    right.appendChild(typeChip);
+    if (p.needsReview) {
+      var rv = document.createElement('div');
+      rv.style.marginTop = '5px';
+      var chip = document.createElement('span');
+      chip.className = 'chip short';
+      chip.textContent = 'รอตรวจสอบ';
+      rv.appendChild(chip);
+      right.appendChild(rv);
     }
+    top.appendChild(left); top.appendChild(right);
 
-    card.appendChild(top); card.appendChild(meta); card.appendChild(act);
-    list.appendChild(card);
-  });
-}
+    var edit = document.createElement('div');
+    edit.className = 'm-edit';
 
-function summaryRows() {
-  var items = state.round.items || {};
-  var eff = effectiveByItem();
-  return Object.keys(items).map(function (k) {
-    var it = items[k];
-    var e = eff[it.code];
-    var counted = e ? e.total : null;
-    var variance = (counted === null) ? null : counted - (Number(it.systemQty) || 0);
-    var status = (counted === null) ? 'none' : (variance === 0 ? 'ok' : (variance > 0 ? 'over' : 'short'));
-    return {
-      key: k, code: it.code, name: it.name, unit: it.unit || '',
-      systemQty: Number(it.systemQty) || 0,
-      counted: counted, variance: variance, status: status,
-      zones: e ? e.zones : [], duplicated: e ? e.duplicated : false
+    var costLab = document.createElement('label');
+    costLab.innerHTML = '<span>ราคาต้นทุน</span>';
+    var costIn = document.createElement('input');
+    costIn.type = 'text';
+    costIn.inputMode = 'decimal';
+    costIn.setAttribute('data-field', 'costPrice');
+    costIn.placeholder = 'ยังไม่กรอก';
+    costIn.value = (p.costPrice === undefined || p.costPrice === null) ? '' : String(p.costPrice);
+    costIn.onchange = function () {
+      var raw = costIn.value.trim().replace(/,/g, '');
+      if (raw === '') return;
+      var n = Number(raw);
+      if (!isFinite(n) || n < 0) { toast('ราคาต้นทุนต้องเป็นตัวเลขไม่ติดลบ', true); return; }
+      saveProductEdit(key, 'costPrice', n).then(function () { toast('บันทึกราคาต้นทุน ' + p.code + ' แล้ว'); });
     };
-  }).sort(function (a, b) { return String(a.code).localeCompare(String(b.code), 'th'); });
-}
+    costLab.appendChild(costIn);
 
-var STATUS_TEXT = { none: 'ยังไม่นับ', ok: 'ตรงกัน', over: 'เกิน', short: 'ขาด' };
-var STATUS_CHIP = { none: '', ok: 'ok', over: 'over', short: 'short' };
-
-function renderSummary() {
-  var round = state.roundIndex[state.roundId] || { name: '-' };
-  $('sumHead').textContent = roundLabel(round.name) + ' · สร้างเมื่อ ' + fmtTime(round.createdAt);
-
-  var rows = summaryRows();
-  var stats = { total: rows.length, counted: 0, none: 0, ok: 0, diff: 0 };
-  rows.forEach(function (r) {
-    if (r.status === 'none') stats.none++; else stats.counted++;
-    if (r.status === 'ok') stats.ok++;
-    if (r.status === 'over' || r.status === 'short') stats.diff++;
-  });
-
-  $('sumStats').innerHTML = '';
-  [['ทั้งหมด', stats.total], ['นับแล้ว', stats.counted], ['ยังไม่นับ', stats.none],
-   ['ตรงกัน', stats.ok], ['มีผลต่าง', stats.diff]].forEach(function (pair) {
-    var d = document.createElement('div');
-    d.className = 'stat';
-    d.innerHTML = '<div class="s-num"></div><div class="s-lab"></div>';
-    d.querySelector('.s-num').textContent = fmtNum(pair[1]);
-    d.querySelector('.s-lab').textContent = pair[0];
-    $('sumStats').appendChild(d);
-  });
-
-  document.querySelectorAll('.filters .btn').forEach(function (b) {
-    b.className = 'btn sm ' + (b.getAttribute('data-filter') === state.filter ? '' : 'grey');
-  });
-
-  var list = $('sumList');
-  list.innerHTML = '';
-  var shown = rows.filter(function (r) {
-    if (state.filter === 'diff') return r.status === 'over' || r.status === 'short';
-    if (state.filter === 'none') return r.status === 'none';
-    return true;
-  });
-
-  if (!shown.length) {
-    var empty = document.createElement('div');
-    empty.className = 'empty';
-    empty.textContent = rows.length
-      ? 'ไม่มีรายการในตัวกรองนี้'
-      : 'รอบนี้ยังไม่มียอดระบบ — นำเข้าไฟล์ที่หน้า "เริ่มนับ" ก่อน';
-    list.appendChild(empty);
-    return;
-  }
-
-  shown.forEach(function (r) {
-    var card = document.createElement('div');
-    card.className = 'srow';
-    card.setAttribute('data-code', r.code);
-
-    var head = document.createElement('div');
-    head.className = 's-head';
-    var left = document.createElement('div');
-    var code = document.createElement('div'); code.className = 's-code'; code.textContent = r.code;
-    var name = document.createElement('div'); name.className = 's-name'; name.textContent = r.name;
-    left.appendChild(code); left.appendChild(name);
-    if (r.duplicated) {
-      var w = document.createElement('span');
-      w.className = 'chip warn';
-      w.textContent = 'นับซ้ำ';
-      left.appendChild(w);
-    }
-    var chip = document.createElement('span');
-    chip.className = 'chip ' + STATUS_CHIP[r.status];
-    chip.setAttribute('data-status', r.status);
-    chip.textContent = STATUS_TEXT[r.status];
-    head.appendChild(left); head.appendChild(chip);
-
-    var nums = document.createElement('div');
-    nums.className = 's-nums';
-    [
-      ['ยอดระบบ', fmtNum(r.systemQty), '', 'system'],
-      ['นับจริง', r.counted === null ? '-' : fmtNum(r.counted), '', 'counted'],
-      ['ผลต่าง',
-        r.variance === null ? '-' : (r.variance > 0 ? '+' : '') + fmtNum(r.variance),
-        r.status === 'over' ? ' over' : (r.status === 'short' ? ' short' : ''), 'variance']
-    ].forEach(function (col) {
-      var box = document.createElement('div');
-      var cap = document.createElement('span'); cap.className = 's-cap'; cap.textContent = col[0];
-      var val = document.createElement('span');
-      val.className = 's-val' + col[2];
-      val.setAttribute('data-field', col[3]);
-      val.textContent = col[1];
-      box.appendChild(cap); box.appendChild(val);
-      nums.appendChild(box);
-    });
-
-    card.appendChild(head); card.appendChild(nums);
-
-    if (state.openRows[r.code]) {
-      var zbox = document.createElement('div');
-      zbox.className = 's-zones';
-      if (!r.zones.length) {
-        var z0 = document.createElement('div');
-        z0.className = 'z-item';
-        z0.textContent = 'ยังไม่มีการนับสินค้ารายการนี้';
-        zbox.appendChild(z0);
-      }
-      r.zones.slice().sort(function (a, b) { return b.countedAt - a.countedAt; }).forEach(function (z) {
-        var zi = document.createElement('div');
-        zi.className = 'z-item';
-        zi.textContent = zoneLabel(z.zoneName) + ' : ' + fmtNum(z.qty) + (r.unit ? ' ' + r.unit : '') +
-                         ' · ผู้นับ ' + z.counter + ' · ' + fmtTime(z.countedAt);
-        zbox.appendChild(zi);
-      });
-      card.appendChild(zbox);
-    }
-
-    card.onclick = function () {
-      state.openRows[r.code] = !state.openRows[r.code];
-      renderSummary();
+    var typeLab = document.createElement('label');
+    typeLab.innerHTML = '<span>ประเภท</span>';
+    var typeBtn = document.createElement('button');
+    typeBtn.className = 'btn sm grey';
+    typeBtn.style.width = '100%';
+    typeBtn.setAttribute('data-action', 'toggleType');
+    typeBtn.textContent = p.type === 'notProduct' ? 'เปลี่ยนเป็น Product' : 'เปลี่ยนเป็น Not Product';
+    typeBtn.onclick = function () {
+      var next = p.type === 'notProduct' ? 'product' : 'notProduct';
+      saveProductEdit(key, 'type', next).then(function () { toast('เปลี่ยน ' + p.code + ' เป็น ' + next); });
     };
+    typeLab.appendChild(typeBtn);
+
+    var imgLab = document.createElement('label');
+    imgLab.className = 'full';
+    imgLab.innerHTML = '<span>ลิงก์รูปสินค้า</span>';
+    var imgIn = document.createElement('input');
+    imgIn.type = 'text';
+    imgIn.setAttribute('data-field', 'imageUrl');
+    imgIn.placeholder = 'วางลิงก์รูป (ไม่ใส่ก็ได้)';
+    imgIn.value = p.imageUrl || '';
+    imgIn.onchange = function () {
+      saveProductEdit(key, 'imageUrl', imgIn.value.trim()).then(function () { toast('บันทึกรูป ' + p.code + ' แล้ว'); });
+    };
+    imgLab.appendChild(imgIn);
+
+    edit.appendChild(costLab); edit.appendChild(typeLab); edit.appendChild(imgLab);
+    card.appendChild(top); card.appendChild(edit);
     list.appendChild(card);
   });
 }
 
 /* ============================================================
-   8. EXPORT
+   13. หน้าสรุป
+   ============================================================ */
+
+function blankGroup() {
+  return { sysQty: 0, actQty: 0, skuTotal: 0, skuMatch: 0, skuShort: 0, skuOver: 0, sysValue: 0, actValue: 0 };
+}
+
+function summaryData() {
+  var priceField = state.priceField;
+  var groups = { product: blankGroup(), notProduct: blankGroup(), total: blankGroup() };
+  var keys = {};
+  Object.keys(state.systemQty).forEach(function (k) { keys[k] = 1; });
+  Object.keys(state.counts).forEach(function (k) { keys[k] = 1; });
+
+  var rows = [];
+  Object.keys(keys).forEach(function (key) {
+    var p = state.products[key] || { code: key, name: key, type: 'product' };
+    var sys = Number(state.systemQty[key]) || 0;
+    var act = Number(state.counts[key]) || 0;
+    var price = Number(p[priceField]) || 0;      // ยังไม่กรอกต้นทุน = คิดเป็น 0
+    var bucket = p.type === 'notProduct' ? 'notProduct' : 'product';
+
+    [groups[bucket], groups.total].forEach(function (g) {
+      g.sysQty += sys;
+      g.actQty += act;
+      g.skuTotal++;
+      if (act === sys) g.skuMatch++;
+      else if (act < sys) g.skuShort++;
+      else g.skuOver++;
+      g.sysValue += sys * price;
+      g.actValue += act * price;
+    });
+
+    rows.push({
+      key: key, code: p.code, name: p.name, unit: p.unit || '', type: bucket,
+      sys: sys, act: act, diff: act - sys, price: price,
+      scanQty: Number(state.scanQty[key]) || 0,
+      manualQty: Number(state.manualQty[key]) || 0
+    });
+  });
+
+  rows.sort(function (a, b) { return String(a.code).localeCompare(String(b.code), 'th'); });
+  return { groups: groups, rows: rows };
+}
+
+var GROUP_LABEL = { product: 'Product', notProduct: 'Not Product', total: 'รวมทั้งหมด' };
+
+function renderSummary() {
+  var round = state.roundIndex[state.roundId] || { name: '-' };
+  $('sumHead').textContent = roundLabel(round.name) +
+    (round.branch ? ' · สาขา ' + round.branch : '') + ' · สร้างเมื่อ ' + fmtTime(round.createdAt);
+
+  document.querySelectorAll('[data-price]').forEach(function (b) {
+    b.className = 'btn sm ' + (b.getAttribute('data-price') === state.priceField ? '' : 'grey');
+  });
+
+  var data = summaryData();
+  var body = $('sumBody');
+  body.innerHTML = '';
+
+  ['product', 'notProduct', 'total'].forEach(function (name) {
+    var g = data.groups[name];
+    var tr = document.createElement('tr');
+    tr.setAttribute('data-group', name);
+    var diffQty = g.actQty - g.sysQty;
+    var diffValue = g.actValue - g.sysValue;
+    var pctPieces = g.sysQty > 0 ? (g.actQty / g.sysQty) * 100 : null;
+    var pctSku = g.skuTotal > 0 ? (g.skuMatch / g.skuTotal) * 100 : null;
+
+    function cell(text, cls) {
+      var td = document.createElement('td');
+      if (cls) td.className = cls;
+      td.textContent = text;
+      td.setAttribute('data-col', cls || '');
+      return td;
+    }
+    var cells = [
+      [GROUP_LABEL[name], ''],
+      [fmtNum(g.sysQty), 'sysQty'],
+      [fmtNum(g.actQty), 'actQty'],
+      [(diffQty > 0 ? '+' : '') + fmtNum(diffQty), diffQty > 0 ? 'pos' : (diffQty < 0 ? 'neg' : '')],
+      [fmtNum(g.skuMatch), ''],
+      [fmtNum(g.skuShort), ''],
+      [fmtNum(g.skuOver), ''],
+      [fmtPercent(pctPieces), 'pctPieces'],
+      [fmtPercent(pctSku), 'pctSku'],
+      [fmtMoney(g.sysValue), 'sysValue'],
+      [fmtMoney(g.actValue), 'actValue'],
+      [(diffValue > 0 ? '+' : '') + fmtMoney(diffValue), diffValue > 0 ? 'pos' : (diffValue < 0 ? 'neg' : '')]
+    ];
+    cells.forEach(function (c) { tr.appendChild(cell(c[0], c[1])); });
+    body.appendChild(tr);
+  });
+
+  var noCost = Object.keys(state.products).filter(function (k) {
+    var c = state.products[k].costPrice;
+    return c === undefined || c === null;
+  }).length;
+  $('costNote').textContent = state.priceField === 'costPrice'
+    ? (noCost ? 'ยังไม่ได้กรอกราคาต้นทุน ' + fmtNum(noCost) + ' รายการ — คิดเป็น 0 ไปก่อน กรอกได้ที่หน้า Master'
+              : 'กรอกราคาต้นทุนครบทุกรายการแล้ว')
+    : 'กำลังคิดมูลค่าด้วยราคาขาย' + (noCost ? ' — ยังไม่ได้กรอกราคาต้นทุน ' + fmtNum(noCost) + ' รายการ' : '');
+
+  /* บาร์โค้ดไม่พบในระบบ */
+  var unknownIds = Object.keys(state.unknown).sort(function (a, b) {
+    return (state.unknown[b].ts || 0) - (state.unknown[a].ts || 0);
+  });
+  $('unknownChip').textContent = fmtNum(unknownIds.length);
+  var ul = $('unknownList');
+  ul.innerHTML = '';
+  if (!unknownIds.length) {
+    ul.innerHTML = '<div class="empty">ไม่มีบาร์โค้ดที่หาไม่เจอ</div>';
+  } else {
+    unknownIds.forEach(function (id) {
+      var u = state.unknown[id];
+      var d = document.createElement('div');
+      d.className = 'rep-line';
+      var s = document.createElement('span');
+      s.textContent = u.value + ' · ' + zoneLabel(u.zoneName || zoneName(u.zone)) + ' · ' + (u.user || '-');
+      var b = document.createElement('b');
+      b.textContent = fmtClock(u.ts);
+      d.appendChild(s); d.appendChild(b);
+      ul.appendChild(d);
+    });
+  }
+
+  /* ยอดที่กรอกมือ */
+  var manual = state.manualLog.slice().sort(function (a, b) { return (b.rec.ts || 0) - (a.rec.ts || 0); });
+  $('manualChip').textContent = fmtNum(manual.length);
+  var ml = $('manualList');
+  ml.innerHTML = '';
+  if (!manual.length) {
+    ml.innerHTML = '<div class="empty">ยังไม่มียอดที่กรอกมือ</div>';
+  } else {
+    manual.forEach(function (m) {
+      var p = state.products[safeKey(m.rec.code)] || { name: m.rec.code };
+      var d = document.createElement('div');
+      d.className = 'rep-line';
+      var s = document.createElement('span');
+      s.textContent = m.rec.code + ' · ' + p.name + ' · ' + (m.rec.reason || 'ไม่ระบุเหตุผล') +
+        ' · ' + (m.rec.user || '-');
+      var b = document.createElement('b');
+      b.textContent = (m.rec.delta > 0 ? '+' : '') + fmtNum(m.rec.delta);
+      d.appendChild(s); d.appendChild(b);
+      ml.appendChild(d);
+    });
+  }
+}
+
+/* ============================================================
+   14. Export Excel
    ============================================================ */
 
 function exportExcel() {
   var round = state.roundIndex[state.roundId] || { name: 'stocktake' };
-  var rows = summaryRows();
+  var data = summaryData();
+  var priceLabel = state.priceField === 'costPrice' ? 'ราคาต้นทุน' : 'ราคาขาย';
 
-  var sheet1 = [['รหัสสินค้า', 'ชื่อสินค้า', 'หน่วย', 'ยอดระบบ', 'ยอดนับจริง', 'ผลต่าง', 'สถานะ']];
-  rows.forEach(function (r) {
-    sheet1.push([
-      r.code, r.name, r.unit, r.systemQty,
-      r.counted === null ? '' : r.counted,
-      r.variance === null ? '' : r.variance,
-      STATUS_TEXT[r.status] + (r.duplicated ? ' (นับซ้ำ)' : '')
+  var s1 = [['กลุ่ม', 'จำนวนระบบ', 'จำนวนจริง', 'ผลต่าง (ชิ้น)', 'SKU ตรง', 'SKU ขาด', 'SKU เกิน',
+             '%Success (ชิ้น)', '%Success (SKU)', 'มูลค่าระบบ', 'มูลค่าจริง', 'ผลต่าง (บาท)']];
+  ['product', 'notProduct', 'total'].forEach(function (name) {
+    var g = data.groups[name];
+    s1.push([
+      GROUP_LABEL[name], g.sysQty, g.actQty, g.actQty - g.sysQty,
+      g.skuMatch, g.skuShort, g.skuOver,
+      g.sysQty > 0 ? Math.round((g.actQty / g.sysQty) * 1000) / 10 : '',
+      g.skuTotal > 0 ? Math.round((g.skuMatch / g.skuTotal) * 1000) / 10 : '',
+      Math.round(g.sysValue * 100) / 100, Math.round(g.actValue * 100) / 100,
+      Math.round((g.actValue - g.sysValue) * 100) / 100
     ]);
   });
+  s1.push([]);
+  s1.push(['คิดมูลค่าด้วย', priceLabel]);
+  s1.push(['สาขา', round.branch || '-']);
 
-  /* ประวัติเต็ม รวมรายการที่ถูกแก้ไขทับไปแล้ว — audit trail */
-  var counts = state.round.counts || {};
-  var superseded = {};
-  Object.keys(counts).forEach(function (id) {
-    if (counts[id] && counts[id].supersedes) superseded[counts[id].supersedes] = true;
+  var s2 = [['รหัสสินค้า', 'ชื่อสินค้า', 'หน่วย', 'ประเภท', 'จำนวนระบบ', 'จำนวนจริง', 'ผลต่าง',
+             'จากการยิง', 'จากการกรอกมือ', priceLabel, 'มูลค่าระบบ', 'มูลค่าจริง']];
+  data.rows.forEach(function (r) {
+    s2.push([r.code, r.name, r.unit, r.type === 'notProduct' ? 'Not Product' : 'Product',
+             r.sys, r.act, r.diff, r.scanQty, r.manualQty, r.price,
+             Math.round(r.sys * r.price * 100) / 100, Math.round(r.act * r.price * 100) / 100]);
   });
-  var sheet2 = [['วันเวลา', 'รหัสสินค้า', 'ชื่อสินค้า', 'โซน', 'จำนวน', 'ผู้นับ', 'สถานะรายการ', 'รหัสรายการ', 'ทับรายการ']];
-  Object.keys(counts).sort(function (a, b) {
-    return (Number(counts[b].countedAt) || 0) - (Number(counts[a].countedAt) || 0);
-  }).forEach(function (id) {
-    var c = counts[id];
-    if (!c) return;
-    sheet2.push([
-      fmtTime(Number(c.countedAt) || 0), c.itemCode, c.itemName, c.zoneName,
-      Number(c.qty) || 0, c.counter,
-      superseded[id] ? 'ถูกแก้ไข' : 'ใช้งาน',
-      id, c.supersedes || ''
-    ]);
+
+  var s3 = [['วันเวลา', 'รหัสสินค้า', 'ชื่อสินค้า', 'โซน', 'ผู้นับ', 'จำนวน', 'วิธีนับ', 'เหตุผล', 'รหัสรายการ']];
+  state.scanLog.slice().sort(function (a, b) { return (b.rec.ts || 0) - (a.rec.ts || 0); }).forEach(function (s) {
+    var p = state.products[safeKey(s.rec.code)] || { name: s.rec.code };
+    s3.push([fmtTime(s.rec.ts), s.rec.code, p.name, s.rec.zoneName || zoneName(s.rec.zone),
+             s.rec.user, s.rec.delta, s.rec.mode === 'manual' ? 'กรอกมือ' : 'ยิงบาร์โค้ด',
+             s.rec.reason || '', s.id]);
+  });
+
+  var s4 = [['วันเวลา', 'ค่าที่ยิงได้', 'โซน', 'ผู้ยิง']];
+  Object.keys(state.unknown).forEach(function (id) {
+    var u = state.unknown[id];
+    s4.push([fmtTime(u.ts), u.value, u.zoneName || zoneName(u.zone), u.user]);
   });
 
   var blob = buildXlsx([
-    { name: 'สรุปผลต่าง', rows: sheet1, widths: [16, 34, 10, 12, 12, 12, 14] },
-    { name: 'ประวัติการนับ', rows: sheet2, widths: [22, 16, 34, 18, 10, 16, 14, 24, 24] }
+    { name: 'สรุป', rows: s1, widths: [16, 12, 12, 13, 10, 10, 10, 14, 14, 14, 14, 14] },
+    { name: 'รายสินค้า', rows: s2, widths: [18, 36, 10, 12, 12, 12, 10, 11, 14, 12, 14, 14] },
+    { name: 'ประวัติการนับ', rows: s3, widths: [22, 18, 36, 16, 14, 10, 13, 22, 24] },
+    { name: 'บาร์โค้ดไม่พบ', rows: s4, widths: [22, 24, 16, 14] }
   ]);
 
   var safeName = String(round.name).replace(/[\\\/:*?"<>|]/g, '_').slice(0, 40);
@@ -1775,33 +2330,8 @@ function exportExcel() {
 }
 
 /* ============================================================
-   9. WIRING
+   15. รายงานผลนำเข้า
    ============================================================ */
-
-function selectRound(id) {
-  state.roundId = id;
-  localStorage.setItem('isrd_round', id);
-  state.zoneId = localStorage.getItem('isrd_zone_' + id) || null;
-  state.round = { zones: {}, items: {}, counts: {} };
-  state.openRows = {};
-  state.lastImport = null;   // รายงานนำเข้าเป็นของแต่ละรอบ ห้ามค้างข้ามรอบ
-
-  if (state.unsubRound) { state.unsubRound(); state.unsubRound = null; }
-  state.unsubRound = db.subscribe('rounds/' + id, function (data) {
-    state.round = {
-      zones: (data && data.zones) || {},
-      items: (data && data.items) || {},
-      counts: (data && data.counts) || {}
-    };
-    if (state.zoneId && !state.round.zones[state.zoneId]) state.zoneId = null;
-    renderStart();
-    if (state.page === 'count') renderCountPage();
-    if (state.page === 'summary') renderSummary();
-  });
-  renderStart();
-}
-
-/* ---------- รายงานผลนำเข้า ---------- */
 
 var REPORT_LIST_LIMIT = 50;
 
@@ -1821,7 +2351,6 @@ function repSection(title) {
   box.appendChild(h);
   return box;
 }
-
 function repLine(parent, label, value, bad) {
   var line = document.createElement('div');
   line.className = 'rep-line' + (bad ? ' bad' : '');
@@ -1830,7 +2359,6 @@ function repLine(parent, label, value, bad) {
   line.appendChild(l); line.appendChild(v);
   parent.appendChild(line);
 }
-
 function repNote(parent, text) {
   if (!text) return;
   var note = document.createElement('div');
@@ -1844,12 +2372,10 @@ function buildImportReport(stat, diff) {
 
   var read = repSection('อ่านจากไฟล์');
   if (stat.sheetName) repLine(read, 'ชีตที่อ่าน', stat.sheetName);
+  if (stat.branchInFile) repLine(read, 'สาขาในไฟล์', stat.branchInFile);
   repLine(read, 'แถวทั้งหมด (ไม่นับหัวตาราง)', fmtNum(stat.totalRows) + ' แถว');
-  repLine(read, 'นำเข้าสำเร็จ', fmtNum(stat.imported) + ' รายการ');
-  if (stat.fellBackToFirstSheet) {
-    repNote(read, 'ไม่พบชีตชื่อ "' + MASTER_SHEET_NAME + '" จึงอ่านชีตแรกให้แทน — ชีตในไฟล์นี้: ' +
-                  stat.sheetNames.join(', '));
-  }
+  repLine(read, 'เข้าระบบ', fmtNum(stat.imported) + ' รายการ');
+  if (stat.fellBackToFirstSheet) repNote(read, 'ไม่พบชีตชื่อ "' + MASTER_SHEET_NAME + '" จึงอ่านชีตแรกแทน');
   box.appendChild(read);
 
   var skipped = stat.blank + stat.noCode.length + stat.afterFooter;
@@ -1859,42 +2385,49 @@ function buildImportReport(stat, diff) {
   if (stat.noCode.length) repNote(skip, 'แถวที่ ' + listWithLimit(stat.noCode, 'แถว'));
   repLine(skip, 'แถวปิดท้ายไฟล์ export', fmtNum(stat.afterFooter) + ' แถว');
   if (stat.footerRowNum) {
-    repNote(skip, 'เจอแถว "' + (stat.footerLabel || 'Date Time') + '" ที่แถวที่ ' + fmtNum(stat.footerRowNum) +
-                  ' ซึ่งเป็นข้อมูลการ export ไม่ใช่สินค้า จึงหยุดอ่านตรงนั้นและข้ามแถวที่เหลือทั้งหมด');
+    repNote(skip, 'จบข้อมูลที่แถวที่ ' + fmtNum(stat.footerRowNum) + ' (' + stat.footerReason +
+                  ') แถวที่เหลือเป็นข้อมูลการ export ไม่ใช่สินค้า');
   }
   box.appendChild(skip);
+
+  var cls = repSection('แยกประเภทตามหมวดหมู่');
+  repLine(cls, 'Product', fmtNum(stat.product) + ' รายการ');
+  repLine(cls, 'Not Product', fmtNum(stat.notProduct) + ' รายการ');
+  repLine(cls, 'รอตรวจสอบ', fmtNum(stat.needsReview) + ' รายการ', stat.needsReview > 0);
+  if (stat.needsReview) repNote(cls, 'หมวด "ปิดใช้งาน" หรือไม่มีหมวดหมู่ — เปิดหน้า Master แล้วกรอง "รอตรวจสอบ" เพื่อเคลียร์');
+  box.appendChild(cls);
+
+  var gaps = repSection('ข้อมูลที่ไม่ครบ (ไม่ทำให้นำเข้าล้ม)');
+  repLine(gaps, 'ไม่มีบาร์โค้ด', fmtNum(stat.noBarcode) + ' รายการ', stat.noBarcode > 0);
+  if (stat.noBarcode) repNote(gaps, 'รายการเหล่านี้ยิงไม่ได้ ต้องใช้ปุ่ม "กรอกมือ" ตอนนับ');
+  repLine(gaps, 'ไม่มีหมวดหมู่', fmtNum(stat.noCategory) + ' รายการ');
+  repLine(gaps, 'ไม่มีหน่วยสินค้า', fmtNum(stat.noUnit) + ' รายการ');
+  repLine(gaps, 'ราคาขายเป็น 0', fmtNum(stat.zeroPrice) + ' รายการ');
+  if (stat.badQty.length) {
+    repLine(gaps, 'จำนวนไม่ใช่ตัวเลข', fmtNum(stat.badQty.length) + ' แถว', true);
+    repNote(gaps, 'ตั้งเป็น 0 ให้ — แถวที่ ' + listWithLimit(stat.badQty, 'แถว'));
+  }
+  box.appendChild(gaps);
 
   if (stat.merged.length) {
     var dup = repSection('รหัสซ้ำที่รวมยอดให้แล้ว ' + fmtNum(stat.merged.length) + ' รหัส');
     stat.merged.slice(0, REPORT_LIST_LIMIT).forEach(function (m) {
       repLine(dup, m.code + ' (แถวที่ ' + m.rows.join(' + ') + ')', 'รวม ' + fmtNum(m.total));
     });
-    if (stat.merged.length > REPORT_LIST_LIMIT) {
-      repNote(dup, 'และอีก ' + fmtNum(stat.merged.length - REPORT_LIST_LIMIT) + ' รหัส');
-    }
     box.appendChild(dup);
   }
 
-  if (stat.badQty.length || stat.blankQty) {
-    var qty = repSection('ยอดระบบที่ตั้งให้เป็น 0');
-    if (stat.badQty.length) {
-      repLine(qty, 'ยอดระบบไม่ใช่ตัวเลข', fmtNum(stat.badQty.length) + ' แถว', true);
-      repNote(qty, 'แถวที่ ' + listWithLimit(stat.badQty, 'แถว'));
-    }
-    if (stat.blankQty) repLine(qty, 'ยอดระบบเว้นว่าง', fmtNum(stat.blankQty) + ' แถว');
-    box.appendChild(qty);
-  }
-
   if (diff) {
-    var cmp = repSection('เทียบกับที่นำเข้าครั้งก่อน');
-    repLine(cmp, 'เพิ่มใหม่', fmtNum(diff.added) + ' รายการ');
-    repLine(cmp, 'อัปเดตยอด', fmtNum(diff.updated) + ' รายการ');
-    repLine(cmp, 'เอาออกเพราะไม่มีในไฟล์ใหม่', fmtNum(diff.removed.length) + ' รายการ');
-    if (diff.removed.length) repNote(cmp, listWithLimit(diff.removed, 'รายการ'));
-    if (diff.keptBecauseCounted.length) {
-      repLine(cmp, 'เก็บไว้เพราะนับไปแล้ว', fmtNum(diff.keptBecauseCounted.length) + ' รายการ', true);
-      repNote(cmp, 'ไม่มีในไฟล์ใหม่ แต่นับไปแล้วจึงไม่ลบทิ้ง เพื่อให้ยอดที่นับไว้ตรวจย้อนหลังได้: ' +
-                   listWithLimit(diff.keptBecauseCounted, 'รายการ'));
+    var cmp = repSection('เทียบกับข้อมูลเดิม');
+    repLine(cmp, 'สินค้าใหม่ใน Master', fmtNum(diff.added) + ' รายการ');
+    repLine(cmp, 'อัปเดตข้อมูลเดิม', fmtNum(diff.updated) + ' รายการ');
+    if (diff.keptManual) {
+      repLine(cmp, 'คงประเภทที่คนแก้ไว้', fmtNum(diff.keptManual) + ' รายการ');
+      repNote(cmp, 'รายการที่เคยแก้ประเภทเองในหน้า Master ไฟล์ไม่ทับให้');
+    }
+    if (diff.removedFromRound) {
+      repLine(cmp, 'เอาออกจากยอดระบบรอบนี้', fmtNum(diff.removedFromRound) + ' รายการ');
+      repNote(cmp, 'ไม่มีในไฟล์ใหม่ — ข้อมูลสินค้าใน Master ยังอยู่ ไม่ได้ลบ');
     }
     box.appendChild(cmp);
   }
@@ -1905,8 +2438,8 @@ function buildImportReport(stat, diff) {
 function showImportReport() {
   if (!state.lastImport) return;
   var stat = state.lastImport.stat;
-  ask('ผลการนำเข้ายอดระบบ',
-      'นำเข้าได้ ' + fmtNum(stat.imported) + ' รายการ จาก ' + fmtNum(stat.totalRows) + ' แถวในไฟล์',
+  ask('ผลการนำเข้าไฟล์สินค้า',
+      'เข้าระบบ ' + fmtNum(stat.imported) + ' รายการ จาก ' + fmtNum(stat.totalRows) + ' แถวในไฟล์',
       'ปิด',
       { hideCancel: true, detail: buildImportReport(stat, state.lastImport.diff) });
 }
@@ -1914,15 +2447,38 @@ function showImportReport() {
 function showMissingColumnsHelp(missing) {
   ask('ไฟล์นี้ยังใช้ไม่ได้',
       'ไฟล์ที่อัปโหลดมาไม่มีคอลัมน์ ' + (missing || []).join(', ') + '\n\n' +
-      'ไฟล์ยอดระบบต้องมีหัวตารางอยู่แถวแรก และมีคอลัมน์เหล่านี้\n' +
+      'ไฟล์สินค้าต้องมีหัวตาราง และมีคอลัมน์เหล่านี้\n' +
       'จำเป็น: ' + REQUIRED_COLUMNS.map(function (c) { return c.label; }).join(', ') + '\n' +
       'ใส่หรือไม่ใส่ก็ได้: ' + OPTIONAL_COLUMN_LABELS.join(', ') + '\n\n' +
-      'กรุณาแก้หัวตารางในไฟล์ แล้วอัปโหลดใหม่อีกครั้ง — ยอดระบบเดิมในรอบนี้ยังอยู่ครบ ไม่ถูกแตะต้อง',
+      'กรุณาแก้หัวตารางในไฟล์ แล้วอัปโหลดใหม่ — ข้อมูลเดิมยังอยู่ครบ ไม่ถูกแตะต้อง',
       'รับทราบ', { hideCancel: true });
 }
 
+/* ตรวจสาขาก่อนเขียนข้อมูลลงฐานเสมอ */
+function confirmBranch(stat) {
+  var round = state.roundIndex[state.roundId] || {};
+  var expected = String(round.branch || '').trim();
+  var found = stat.branchInFile;
+
+  if (!found) {
+    return ask('ตรวจสาขาไม่ได้',
+      'อ่านชื่อสาขาจากแถวแรกของไฟล์ไม่ได้ (ไม่พบข้อความรูปแบบ "สินค้า - ชื่อสาขา")\n\n' +
+      'สาขาของรอบนับนี้คือ: ' + (expected || 'ยังไม่ได้ระบุ') + '\n\n' +
+      'ถ้าแน่ใจว่าเป็นไฟล์ของสาขานี้ กดนำเข้าต่อได้เลย',
+      'นำเข้าต่อ', { cancelLabel: 'ยกเลิก' });
+  }
+  if (!expected) return Promise.resolve(true);
+  if (normText(found) === normText(expected)) return Promise.resolve(true);
+
+  return ask('สาขาไม่ตรงกัน',
+    'ไฟล์นี้เป็นของสาขา:\n' + found + '\n\n' +
+    'แต่รอบนับที่เลือกอยู่คือสาขา:\n' + expected + '\n\n' +
+    'ถ้านำเข้าต่อ ยอดระบบของรอบนี้จะถูกแทนที่ด้วยข้อมูลของสาขาข้างบน',
+    'ยืนยันว่าถูกต้อง แล้วนำเข้าต่อ', { cancelLabel: 'ยกเลิก', danger: true });
+}
+
 function handleImport(file) {
-  if (!state.roundId) { toast('เลือกรอบนับก่อนนำเข้ายอดระบบ', true); return; }
+  if (!state.roundId) { toast('เลือกรอบนับก่อนนำเข้าไฟล์', true); return; }
 
   var isXlsx = /\.xlsx$/i.test(file.name);
   $('btnImport').disabled = true;
@@ -1931,18 +2487,21 @@ function handleImport(file) {
   file.arrayBuffer().then(function (buf) {
     return isXlsx ? parseXlsx(buf) : Promise.resolve(parseCsv(decodeTextFile(buf)));
   }).then(function (parsed) {
-    var result = rowsToItems(parsed);
-    return applyImportedItems(state.roundId, result.items).then(function (diff) {
-      state.lastImport = { stat: result.stat, diff: diff };
-      renderStart();
-      showImportReport();
+    var result = parseProductFile(parsed);
+    return confirmBranch(result.stat).then(function (ok) {
+      if (!ok) { toast('ยกเลิกการนำเข้า ข้อมูลเดิมไม่ถูกแตะ'); return; }
+      return applyImport(state.roundId, result).then(function (diff) {
+        state.lastImport = { stat: result.stat, diff: diff };
+        renderStart();
+        showImportReport();
+      });
     });
   }).catch(function (err) {
     var code = err && err.message;
     if (code === 'MISSING_COLUMNS') { showMissingColumnsHelp(err.missing); return; }
     var messages = {
       EMPTY_FILE: 'ไฟล์นี้ว่างเปล่า กรุณาตรวจไฟล์แล้วอัปโหลดใหม่',
-      NO_ROWS: 'ไม่พบข้อมูลสินค้าในไฟล์ กรุณาตรวจว่ามีข้อมูลอยู่ใต้หัวตาราง และรหัสสินค้าไม่ได้เว้นว่างทั้งหมด',
+      NO_ROWS: 'ไม่พบข้อมูลสินค้าในไฟล์ กรุณาตรวจว่ามีข้อมูลอยู่ใต้หัวตาราง',
       NO_SHEET: 'อ่านไฟล์ Excel นี้ไม่ได้ กรุณาเปิดใน Excel แล้วบันทึกเป็น .xlsx หรือ CSV แล้วอัปโหลดใหม่',
       BAD_ZIP: 'ไฟล์ Excel นี้เสียหรือไม่ใช่ไฟล์ .xlsx กรุณาบันทึกไฟล์เป็น CSV แล้วอัปโหลดใหม่',
       NO_INFLATE: 'เครื่องนี้อ่านไฟล์ .xlsx ไม่ได้ กรุณาเปิดไฟล์ใน Excel แล้วบันทึกเป็น CSV จากนั้นอัปโหลดใหม่'
@@ -1951,42 +2510,182 @@ function handleImport(file) {
   }).then(function () { renderStart(); });
 }
 
-function doSave() {
-  var item = state.selectedItem;
-  if (!item) return;
+/* ============================================================
+   16. หน้าเริ่มนับ + การนำทาง
+   ============================================================ */
 
-  var raw = String($('qtyInput').value).trim().replace(/,/g, '');
-  if (raw === '') { toast('กรุณาใส่จำนวนที่นับได้', true); $('qtyInput').focus(); return; }
-  var qty = Number(raw);
-  if (!isFinite(qty) || qty < 0) { toast('จำนวนต้องเป็นตัวเลขไม่ติดลบ', true); $('qtyInput').focus(); return; }
+function startBlockers() {
+  var missing = [];
+  if (!state.roundId) missing.push('ยังไม่ได้เลือกรอบนับ');
+  if (state.roundId && !(state.roundIndex[state.roundId] || {}).branch) missing.push('รอบนี้ยังไม่ได้ระบุสาขา');
+  if (!state.zoneId) missing.push('ยังไม่ได้เลือกโซน');
+  if (!state.counter) missing.push('ยังไม่ได้ใส่ชื่อผู้นับ');
+  if (state.roundId && !Object.keys(state.systemQty).length) missing.push('ยังไม่ได้นำเข้ายอดระบบของรอบนี้');
+  return missing;
+}
 
-  var editing = state.editing;
+function sessionReady() { return startBlockers().length === 0; }
 
-  function write(supersedesId) {
-    saveCount(item, qty, supersedesId).then(function () {
-      toast('บันทึกแล้ว ' + item.code + ' = ' + fmtNum(qty));
-      closeCountForm();
-      $('searchBox').value = '';
-      renderSearch();
-      $('searchBox').focus();
-    }).catch(function () {
-      toast('บันทึกไม่สำเร็จ กรุณาตรวจสัญญาณอินเทอร์เน็ตแล้วกดบันทึกอีกครั้ง', true);
+function showPage(name) {
+  state.page = name;
+  ['Start', 'Scan', 'Master', 'Summary'].forEach(function (p) {
+    var key = p.charAt(0).toLowerCase() + p.slice(1);
+    $('page' + p).classList.toggle('active', key === name);
+    $('nav' + p).classList.toggle('on', key === name);
+  });
+  window.scrollTo(0, 0);
+  if (name === 'summary') renderSummary();
+  if (name === 'master') renderMaster();
+  if (name === 'scan') renderScanPage();
+}
+
+function refreshNav() {
+  var ready = sessionReady();
+  $('navScan').disabled = !ready;
+  $('navSummary').disabled = !state.roundId;
+  $('btnStart').disabled = !ready;
+
+  var blockers = startBlockers();
+  var box = $('startBlockers');
+  if (!blockers.length) {
+    box.style.display = 'none';
+  } else {
+    box.style.display = 'block';
+    box.innerHTML = 'ยังเริ่มนับไม่ได้ เพราะ<ul></ul>';
+    var ul = box.querySelector('ul');
+    blockers.forEach(function (b) {
+      var li = document.createElement('li');
+      li.textContent = b;
+      ul.appendChild(li);
     });
   }
 
-  if (editing) { write(editing.id); return; }
-
-  var existing = findLiveRecord(item.code, state.zoneId);
-  if (existing) {
-    ask('รายการนี้เคยนับแล้ว',
-        'โซนนี้เคยนับ ' + item.code + ' ไว้ ' + fmtNum(existing.qty) + ' โดย ' + existing.counter +
-        ' เมื่อ ' + fmtTime(existing.countedAt) + '\n\nบันทึกใหม่จะใช้ยอด ' + fmtNum(qty) +
-        ' แทน ส่วนยอดเดิมยังเก็บไว้ดูย้อนหลังได้',
-        'บันทึกทับ').then(function (ok) { if (ok) write(existing.id); });
-  } else {
-    write(null);
-  }
+  var round = state.roundIndex[state.roundId];
+  $('topSub').textContent = round
+    ? (round.name + (round.branch ? ' · ' + round.branch : '') +
+       (state.zoneId ? ' · ' + zoneName(state.zoneId) : '') + (state.counter ? ' · ' + state.counter : ''))
+    : 'ยังไม่ได้เลือกรอบนับ';
 }
+
+function renderStart() {
+  var wrap = $('roundList');
+  var ids = Object.keys(state.roundIndex).sort(function (a, b) {
+    return (state.roundIndex[b].createdAt || 0) - (state.roundIndex[a].createdAt || 0);
+  });
+  wrap.innerHTML = '';
+  if (!ids.length) wrap.innerHTML = '<div class="empty">ยังไม่มีรอบนับ — ตั้งชื่อรอบและสาขาแล้วกด "+ สร้างรอบ"</div>';
+  ids.forEach(function (id) {
+    var r = state.roundIndex[id];
+    var b = document.createElement('button');
+    b.className = 'pick' + (id === state.roundId ? ' sel' : '');
+    b.setAttribute('data-round', id);
+    b.innerHTML = '<div class="pick-title"></div><div class="pick-meta"></div>';
+    b.querySelector('.pick-title').textContent = r.name;
+    b.querySelector('.pick-meta').textContent = (r.branch ? 'สาขา ' + r.branch + ' · ' : '') +
+      'สร้างเมื่อ ' + fmtTime(r.createdAt);
+    b.onclick = function () { selectRound(id); };
+    wrap.appendChild(b);
+  });
+
+  var zw = $('zoneList');
+  zw.innerHTML = '';
+  if (!state.roundId) {
+    zw.innerHTML = '<div class="empty">เลือกรอบนับก่อน แล้วจึงเลือกโซน</div>';
+  } else {
+    var zids = Object.keys(state.zones).sort(function (a, b) {
+      return (state.zones[a].createdAt || 0) - (state.zones[b].createdAt || 0);
+    });
+    if (!zids.length) zw.innerHTML = '<div class="empty">รอบนี้ยังไม่มีโซน — พิมพ์ชื่อแล้วกด "+ เพิ่มโซน"</div>';
+    zids.forEach(function (id) {
+      var b = document.createElement('button');
+      b.className = 'pick' + (id === state.zoneId ? ' sel' : '');
+      b.setAttribute('data-zone', id);
+      b.innerHTML = '<div class="pick-title"></div>';
+      b.querySelector('.pick-title').textContent = state.zones[id].name;
+      b.onclick = function () {
+        state.zoneId = id;
+        localStorage.setItem('isrd_zone_' + state.roundId, id);
+        renderStart();
+      };
+      zw.appendChild(b);
+    });
+  }
+
+  var itemCount = Object.keys(state.systemQty).length;
+  var status = !state.roundId
+    ? 'เลือกรอบนับก่อน แล้วจึงนำเข้าไฟล์'
+    : (itemCount ? 'รอบนี้มียอดระบบแล้ว ' + fmtNum(itemCount) + ' รายการ' : 'ยังไม่ได้นำเข้ายอดระบบของรอบนี้');
+  if (state.roundId && state.lastImport) {
+    var st = state.lastImport.stat;
+    status += '\nนำเข้าล่าสุด: อ่าน ' + fmtNum(st.totalRows) + ' แถว · เข้าระบบ ' + fmtNum(st.imported) +
+              ' รายการ · Product ' + fmtNum(st.product) + ' · Not Product ' + fmtNum(st.notProduct);
+  }
+  $('importStatus').textContent = status;
+  $('importStatus').style.whiteSpace = 'pre-line';
+  $('btnImportReport').style.display = (state.roundId && state.lastImport) ? 'flex' : 'none';
+  $('btnImport').disabled = !state.roundId;
+  $('btnAddZone').disabled = !state.roundId;
+  $('zoneHint').style.display = ($('newZoneName').value.trim() && state.roundId) ? 'block' : 'none';
+
+  refreshNav();
+}
+
+/* ============================================================
+   17. เลือกรอบนับ + subscription
+   ============================================================ */
+
+function clearSubs() {
+  state.unsub.forEach(function (fn) { try { fn(); } catch (e) { /* ปิดไปแล้วก็ช่าง */ } });
+  state.unsub = [];
+}
+
+function selectRound(id) {
+  state.roundId = id;
+  localStorage.setItem('isrd_round', id);
+  state.zoneId = localStorage.getItem('isrd_zone_' + id) || null;
+  state.zones = {};
+  state.systemQty = {};
+  state.lastImport = null;
+  resetRoundAggregates();
+  clearSubs();
+  $('recentList').innerHTML = '';
+  $('btnUndo').disabled = true;
+
+  db.get('rounds/' + id).then(function (data) {
+    return migrateRoundIfNeeded(id, data);
+  }).then(function (didMigrate) {
+    if (didMigrate) toast('ย้ายข้อมูลรอบนี้มาโครงสร้างใหม่แล้ว ยอดเดิมอยู่ครบ');
+
+    state.unsub.push(db.subscribe('rounds/' + id + '/zones', function (data) {
+      state.zones = data || {};
+      if (state.zoneId && !state.zones[state.zoneId]) state.zoneId = null;
+      renderStart();
+    }));
+
+    state.unsub.push(db.subscribe('rounds/' + id + '/systemQty', function (data) {
+      state.systemQty = data || {};
+      renderStart();
+      if (state.page === 'summary') renderSummary();
+    }));
+
+    /* ต่อท้ายอย่างเดียว จึงรับเฉพาะลูกที่เพิ่มใหม่ ไม่ดึงทั้งก้อนทุกครั้งที่มีคนยิง */
+    state.unsub.push(db.subscribeChildren('rounds/' + id + '/scans', function (scanId, rec) {
+      if (!applyScanRecord(scanId, rec)) return;
+      if (state.page === 'scan') renderScanTotals();
+    }));
+
+    state.unsub.push(db.subscribeChildren('rounds/' + id + '/unknown', function (uid, rec) {
+      state.unknown[uid] = rec;
+      if (state.page === 'scan') renderSyncBar();
+    }));
+  });
+
+  renderStart();
+}
+
+/* ============================================================
+   18. เริ่มทำงาน
+   ============================================================ */
 
 function init() {
   $('verText').textContent = APP_VERSION;
@@ -2002,7 +2701,6 @@ function init() {
 
   state.counter = localStorage.getItem('isrd_counter') || '';
   $('counterName').value = state.counter;
-
   $('counterName').addEventListener('input', function () {
     state.counter = this.value.trim();
     localStorage.setItem('isrd_counter', state.counter);
@@ -2011,26 +2709,34 @@ function init() {
 
   $('btnAddRound').onclick = function () {
     var name = $('newRoundName').value.trim();
-    if (!name) { toast('กรุณาตั้งชื่อรอบนับก่อน', true); return; }
-    createRound(name).then(function (id) {
+    var branch = $('newRoundBranch').value.trim();
+    if (!name) { toast('ตั้งชื่อรอบนับก่อน', true); return; }
+    if (!branch) { toast('ใส่ชื่อสาขาด้วย เพื่อให้ตรวจไฟล์นำเข้าได้', true); return; }
+    createRound(name, branch).then(function (id) {
       $('newRoundName').value = '';
+      $('newRoundBranch').value = '';
       selectRound(id);
       toast('สร้างรอบนับ "' + name + '" แล้ว');
     }).catch(function () { toast('สร้างรอบนับไม่สำเร็จ กรุณาตรวจสัญญาณอินเทอร์เน็ตแล้วลองใหม่', true); });
   };
 
-  $('btnAddZone').onclick = function () {
+  function addZone() {
     if (!state.roundId) { toast('เลือกรอบนับก่อนเพิ่มโซน', true); return; }
     var name = $('newZoneName').value.trim();
-    if (!name) { toast('กรุณาตั้งชื่อโซนก่อน', true); return; }
+    if (!name) { toast('ตั้งชื่อโซนก่อน', true); return; }
     createZone(state.roundId, name).then(function (id) {
       $('newZoneName').value = '';
-      state.zoneId = id;
+      state.zoneId = id;                       // โซนที่เพิ่งเพิ่ม = โซนปัจจุบันทันที
       localStorage.setItem('isrd_zone_' + state.roundId, id);
       renderStart();
       toast('เพิ่มโซน "' + name + '" แล้ว');
     }).catch(function () { toast('เพิ่มโซนไม่สำเร็จ กรุณาตรวจสัญญาณอินเทอร์เน็ตแล้วลองใหม่', true); });
-  };
+  }
+  $('btnAddZone').onclick = addZone;
+  $('newZoneName').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); addZone(); } });
+  $('newZoneName').addEventListener('input', function () {
+    $('zoneHint').style.display = (this.value.trim() && state.roundId) ? 'block' : 'none';
+  });
 
   $('btnImport').onclick = function () { $('fileInput').click(); };
   $('btnImportReport').onclick = showImportReport;
@@ -2039,28 +2745,61 @@ function init() {
     this.value = '';
   });
 
-  $('btnStart').onclick = function () {
-    if (!sessionReady()) return;
-    if (!Object.keys(state.round.items || {}).length) {
-      toast('รอบนี้ยังไม่มียอดระบบ นำเข้าไฟล์ก่อนจึงจะค้นหาสินค้าได้', true);
-    }
-    showPage('count');
-  };
-
+  $('btnStart').onclick = function () { if (sessionReady()) showPage('scan'); };
   $('btnChangeSession').onclick = function () { showPage('start'); };
   $('navStart').onclick = function () { showPage('start'); };
-  $('navCount').onclick = function () { if (sessionReady()) showPage('count'); };
+  $('navScan').onclick = function () { if (sessionReady()) showPage('scan'); };
+  $('navMaster').onclick = function () { showPage('master'); };
   $('navSummary').onclick = function () { if (state.roundId) showPage('summary'); };
 
-  $('searchBox').addEventListener('input', renderSearch);
-  $('btnSave').onclick = doSave;
-  $('btnCancel').onclick = closeCountForm;
-  $('qtyInput').addEventListener('keydown', function (e) { if (e.key === 'Enter') doSave(); });
+  /* ---- หน้ายิงบาร์โค้ด ---- */
+  var scanInput = $('scanInput');
+  scanInput.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    var value = scanInput.value;
+    scanInput.value = '';                      // ล้างทันที พร้อมรับตัวถัดไป
+    handleScanValue(value);
+  });
+  scanInput.addEventListener('blur', function () { setTimeout(focusScan, 30); });
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) focusScan(); });
 
-  document.querySelectorAll('.filters .btn').forEach(function (b) {
-    b.onclick = function () { state.filter = b.getAttribute('data-filter'); renderSummary(); };
+  $('btnUndo').onclick = undoLastScan;
+  $('btnManual').onclick = openManual;
+  $('btnManualClose').onclick = closeManual;
+  $('btnManualSave').onclick = saveManual;
+  $('manualSearch').addEventListener('input', renderManualResults);
+  $('btnKeyboard').onclick = function () {
+    var on = scanInput.getAttribute('inputmode') === 'none';
+    scanInput.setAttribute('inputmode', on ? 'text' : 'none');
+    $('btnKeyboard').textContent = on ? '⌨ ปิดแป้นพิมพ์' : '⌨ เปิดแป้นพิมพ์';
+    scanInput.blur();
+    setTimeout(focusScan, 30);
+  };
+
+  /* ---- Master ---- */
+  $('masterSearch').addEventListener('input', renderMaster);
+  document.querySelectorAll('[data-mfilter]').forEach(function (b) {
+    b.onclick = function () { state.masterFilter = b.getAttribute('data-mfilter'); renderMaster(); };
+  });
+
+  /* ---- สรุป ---- */
+  document.querySelectorAll('[data-price]').forEach(function (b) {
+    b.onclick = function () { state.priceField = b.getAttribute('data-price'); renderSummary(); };
   });
   $('btnExport').onclick = exportExcel;
+
+  /* ---- คิวเขียนข้อมูล ---- */
+  window.addEventListener('online', flushQueue);
+  setInterval(flushQueue, 15000);
+  flushQueue();
+
+  db.subscribe('products', function (data) {
+    state.products = data || {};
+    buildScanIndex();
+    if (state.page === 'master') renderMaster();
+    if (state.page === 'summary') renderSummary();
+  });
 
   db.subscribe('roundIndex', function (data) {
     state.roundIndex = data || {};
@@ -2071,10 +2810,47 @@ function init() {
   if (saved) {
     db.get('roundIndex/' + saved).then(function (r) { if (r) selectRound(saved); });
   }
+
+  renderStart();
 }
 
 init();
 </script>
+
+<!--
+  ====================================================================
+  สรุปการเปลี่ยนแปลง
+  ====================================================================
+
+  v1.2.0 — รื้อเป็นแบบยิงบาร์โค้ด (scan-first) + แยกข้อมูล 3 ชั้น
+    - แยก products (Master ถาวร) / rounds/{id}/systemQty (ยอดระบบรายรอบ)
+      / rounds/{id}/scans (การนับรายครั้ง) ออกจากกันชัดเจน
+      เดิม master ผูกอยู่กับรอบนับ ทำให้ข้อมูลสินค้าซ้ำทุกรอบและแก้ที่เดียวไม่ได้
+    - นำเข้าไฟล์ Zort 11 คอลัมน์ ข้ามแถวชื่อเรื่อง จบข้อมูลเมื่อช่อง "#" ว่าง
+      ยอดระบบใช้คอลัมน์ "จำนวน" ไม่ใช่ "จำนวนพร้อมขาย"
+    - แยก Product / Not Product จากหมวดหมู่เท่านั้น (ห้ามใช้ Tag ข้อมูลไม่นิ่ง)
+      หมวด "ปิดใช้งาน" และหมวดว่าง = product + รอตรวจสอบ
+    - import ไม่ทับค่าที่คนแก้: typeSource=manual คงประเภทเดิม
+      costPrice และ imageUrl ไม่ถูกแตะเลย
+    - ตรวจสาขาจากแถวแรกของไฟล์ ไม่ตรง = กล่องแดง ต้องกดยืนยันเอง
+    - หน้านับใหม่ทั้งหมด: ยิง 1 ครั้ง = +1 ชิ้น ไม่มีปุ่มคั่น
+      ยอด = ผลรวม delta แก้ผิดด้วยแถว delta -1 ไม่ลบของเดิม
+      เน็ตหลุดยิงต่อได้ คิวอยู่ใน localStorage แล้ว sync กลับเอง
+    - หน้า Master ใหม่: แก้ราคาต้นทุน ประเภท รูป และเคลียร์รายการรอตรวจสอบ
+    - หน้าสรุปใหม่: 3 บรรทัด Product / Not Product / Total
+      มี %Success ทั้งแบบชิ้นและแบบ SKU สลับราคาขาย/ต้นทุนได้
+    - migrate ข้อมูลโครงเก่า v1.1 อัตโนมัติ โดยไม่ลบ items/counts เดิม
+
+  v1.1.0 — รองรับไฟล์ export จริง
+    - เลือกชีตตามชื่อผ่าน workbook rels ไม่เดา sheet1.xml
+    - จับหัวคอลัมน์ที่ลงท้ายด้วย "สินค้า" และตัดแถวปิดท้ายไฟล์ export
+    - รหัสซ้ำรวมยอด ไม่เขียนทับเงียบ ๆ · รายงานผลนำเข้าแบบละเอียด
+
+  v1.0.0 — รุ่นแรก
+    - ไฟล์เดียว ไม่มี CDN ไม่มี bundler
+    - Firebase Realtime Database ผ่าน REST (PATCH เท่านั้น) + SSE
+    - เขียน/อ่าน .xlsx เอง · CSV รองรับ UTF-8 และ Windows-874
+-->
 
 <!--
   ตัวอย่าง Firebase Realtime Database Rules ที่ตรงกับกฎของโปรเจกต์นี้
@@ -2082,18 +2858,23 @@ init();
 
   {
     "rules": {
+      "products":   { ".read": true, ".write": true },
       "roundIndex": { ".read": true, ".write": true },
       "rounds": {
         "$roundId": {
           ".read": true,
-          "zones": { ".write": true },
-          "items": { ".write": true },
-          "counts": {
-            "$countId": {
+          "zones":     { ".write": true },
+          "systemQty": { ".write": true },
+          "schema":    { ".write": true },
+          "scans": {
+            "$scanId": {
               // เขียนได้เฉพาะตอนสร้างใหม่ — ห้ามแก้ ห้ามลบยอดที่นับไปแล้ว
               ".write": "!data.exists() && newData.exists()",
-              ".validate": "newData.hasChildren(['itemCode','zoneId','qty','counter','countedAt'])"
+              ".validate": "newData.hasChildren(['code','zone','delta','user','ts'])"
             }
+          },
+          "unknown": {
+            "$id": { ".write": "!data.exists() && newData.exists()" }
           }
         }
       }
