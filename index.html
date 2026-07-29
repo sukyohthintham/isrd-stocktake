@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="1.7.0">
+<meta name="version" content="1.8.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v1.7.0</title>
+<title>ISRD Stocktake v1.8.0</title>
 
 <style>
 :root{
@@ -38,6 +38,14 @@ h3{font-size:17px}
 }
 .topbar .t-title{font-size:18px;font-weight:700}
 .topbar .t-sub{font-size:13px;opacity:.9;margin-top:2px;word-break:break-word}
+/* ตัวบอกสถานะการเชื่อมต่อ — เขียว = ต่อฐานกลางแล้ว ส้ม = ออฟไลน์ เก็บคิวในเครื่อง */
+.topbar .t-conn{
+  display:inline-flex;align-items:center;gap:7px;margin-top:7px;font-size:12px;font-weight:600;
+  background:rgba(255,255,255,.18);border-radius:999px;padding:4px 11px;
+}
+.topbar .t-conn .dot{width:9px;height:9px;border-radius:50%;background:#4ade80;flex:0 0 auto}
+.topbar .t-conn.off{background:rgba(251,191,36,.32)}
+.topbar .t-conn.off .dot{background:#fbbf24}
 .wrap{padding:16px;max-width:760px;margin:0 auto}
 .page{display:none}
 .page.active{display:block}
@@ -404,6 +412,7 @@ table.grid td.neg{color:var(--short);font-weight:700}
 <div class="topbar">
   <div class="t-title" id="topTitle">ISRD ระบบนับสต๊อก</div>
   <div class="t-sub" id="topSub">ยังไม่ได้เลือกรอบนับ</div>
+  <div class="t-conn" id="connBar"><span class="dot"></span><span id="connText">กำลังตรวจการเชื่อมต่อ...</span></div>
 </div>
 
 <div class="wrap">
@@ -576,6 +585,7 @@ table.grid td.neg{color:var(--short);font-weight:700}
       </div>
       <div class="muted" id="masterCount"></div>
       <button class="btn ghost sm block" id="btnImportImages" style="margin-top:12px">🖼 นำเข้ารูปสินค้า (JSON)</button>
+      <button class="btn grey sm block" id="btnUploadLocal" style="margin-top:10px">☁ ย้ายข้อมูลในเครื่องขึ้นฐานกลาง</button>
       <p class="muted" style="margin:10px 0 0">
         รับได้ทั้ง <b>product-images.json</b> และ <b>product-images.min.json</b><br>
         จับคู่ด้วยรหัสสินค้า แล้วเก็บลิงก์รูปไว้กับสินค้าใน Master
@@ -789,7 +799,7 @@ table.grid td.neg{color:var(--short);font-weight:700}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '1.7.0';
+var APP_VERSION = '1.8.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -798,9 +808,19 @@ var APP_VERSION = '1.7.0';
    (เก็บข้อมูลไว้ในเครื่องนี้เท่านั้น)
    ------------------------------------------------------------ */
 var FIREBASE_CONFIG = {
-  apiKey:      'PASTE_YOUR_API_KEY_HERE',
-  databaseURL: 'PASTE_YOUR_DATABASE_URL_HERE'   // https://xxx-default-rtdb.asia-southeast1.firebasedatabase.app
+  apiKey:      'AIzaSyCNE2_0bRqUFDhOfrA_VwJhfd52C7C14yM',
+  databaseURL: 'https://wms-dashboard-d9ff4-default-rtdb.asia-southeast1.firebasedatabase.app'
 };
+
+/* ------------------------------------------------------------
+   โปรเจกต์ Firebase นี้ใช้ร่วมกับ WMS Dashboard ซึ่งเก็บข้อมูลไว้ใต้ wms2026
+   ข้อมูลของแอปนับสต๊อกทั้งหมดต้องอยู่ใต้ stocktake2026 เท่านั้น
+
+   ทุก path ถูกเติมคำนำหน้าที่ชั้น adapter ที่เดียว (ดู scoped() ด้านล่าง)
+   โค้ดส่วนอื่นเรียก db.get('products') ได้ตามปกติ แล้วมันจะไปโผล่ที่
+   stocktake2026/products เสมอ — เขียนทับ root หรือทับ wms2026 ไม่ได้เลย
+   ------------------------------------------------------------ */
+var ROOT_PATH = 'stocktake2026';
 
 /* ------------------------------------------------------------
    PIN ของแอดมิน — ใช้กับการเปิด Job ที่ปิดแล้ว และการลบ Job
@@ -875,6 +895,12 @@ var REMOTE_MODE = /^https?:\/\//.test(FIREBASE_CONFIG.databaseURL || '');
 var db = (function () {
   var listeners = [];   // {path, cb}
 
+  /* ประตูเดียวที่ทุก path ต้องผ่าน — กันไม่ให้เขียนหลุดออกนอก stocktake2026 */
+  function scoped(path) {
+    var p = String(path == null ? '' : path).replace(/^\/+/, '').replace(/\/+$/, '');
+    return p ? ROOT_PATH + '/' + p : ROOT_PATH;
+  }
+
   /* a listener fires when the changed path is itself, an ancestor, or a descendant */
   function pathTouches(listenerPath, changedPath) {
     if (changedPath === null) return true;
@@ -897,7 +923,7 @@ var db = (function () {
     catch (e) { return {}; }
   }
   function saveTree(tree) { localStorage.setItem(LS_KEY, JSON.stringify(tree)); }
-  function readLocal(path) { return deepGet(loadTree(), path); }
+  function readLocal(path) { return deepGet(loadTree(), scoped(path)); }
 
   if (channel) channel.onmessage = function () { fire(null); };
   window.addEventListener('storage', function (e) { if (e.key === LS_KEY) fire(null); });
@@ -905,15 +931,20 @@ var db = (function () {
   /* ---------- remote backend (Firebase REST) ---------- */
   var base = String(FIREBASE_CONFIG.databaseURL || '').replace(/\/+$/, '');
   var authQS = '';
-  function url(path) { return base + '/' + String(path).replace(/^\/+/, '') + '.json' + authQS; }
+  function url(path) { return base + '/' + scoped(path) + '.json' + authQS; }
 
   var remoteCache = {};   // mirror of every subscribed subtree, kept fresh by SSE
+
+  /* สถานะการเชื่อมต่อ — ให้หน้าจอรู้ว่าตอนนี้ต่อฐานกลางได้จริงหรือไม่ */
+  var statusCb = null;
+  function setStatus(ok, why) { if (statusCb) statusCb(!!ok, why || ''); }
 
   function remoteGet(path) {
     return fetch(url(path)).then(function (r) {
       if (!r.ok) throw new Error('HTTP ' + r.status);
+      setStatus(true);
       return r.json();
-    });
+    }).catch(function (err) { setStatus(false, String(err && err.message || err)); throw err; });
   }
 
   function remoteUpdate(path, patch) {
@@ -923,8 +954,9 @@ var db = (function () {
       body: JSON.stringify(patch)
     }).then(function (r) {
       if (!r.ok) throw new Error('HTTP ' + r.status);
+      setStatus(true);
       return r.json();
-    });
+    }).catch(function (err) { setStatus(false, String(err && err.message || err)); throw err; });
   }
 
   function remoteSubscribe(path, cb) {
@@ -934,7 +966,10 @@ var db = (function () {
       var sub = (msg.path === '/' ? '' : msg.path);
       var full = (path + sub).replace(/\/+$/, '');
       if (kind === 'put') {
-        if (sub === '') remoteCache[path] = msg.data;
+        /* ต้องใช้ deepSet ไม่ใช่ remoteCache[path] เพราะ path มีสแลชได้
+           เช่น 'rounds/<id>/systemQty' — ถ้าเก็บเป็นคีย์แบน deepGet จะหาไม่เจอ
+           แล้วข้อมูลจะไม่ขึ้นเลยตอนต่อฐานจริง */
+        if (sub === '') deepSet(remoteCache, path, msg.data);
         else deepSet(remoteCache, full, msg.data);
       } else {
         var target = sub === '' ? path : full;
@@ -949,14 +984,22 @@ var db = (function () {
         try { apply(evt, JSON.parse(e.data)); } catch (err) { /* ignore malformed frame */ }
       });
     });
-    es.onerror = function () { /* EventSource reconnects on its own */ };
+    es.onopen = function () { setStatus(true); };
+    es.onerror = function () { setStatus(false, 'stream'); };   // EventSource ต่อใหม่ให้เอง
     return function () { alive = false; es.close(); };
   }
 
   /* ---------- public API ---------- */
   return {
     remote: REMOTE_MODE,
+    rootPath: ROOT_PATH,
     newKey: generatePushId,
+
+    /* หน้าจอสมัครรับสถานะการเชื่อมต่อได้ที่นี่ */
+    onStatus: function (cb) { statusCb = cb; },
+
+    /* อ่านข้อมูลดิบทั้งก้อนที่เก็บไว้ในเครื่อง — ใช้ตอนย้ายขึ้นฐานกลางด้วยมือ */
+    localSnapshot: function () { return deepGet(loadTree(), ROOT_PATH) || {}; },
 
     get: function (path) {
       if (REMOTE_MODE) return remoteGet(path);
@@ -968,7 +1011,7 @@ var db = (function () {
       if (REMOTE_MODE) return remoteUpdate(path, patch);
       var tree = loadTree();
       Object.keys(patch).forEach(function (k) {
-        deepSet(tree, path + '/' + k, patch[k]);
+        deepSet(tree, scoped(path) + '/' + k, patch[k]);
       });
       saveTree(tree);
       if (channel) channel.postMessage(1);
@@ -1015,7 +1058,8 @@ var db = (function () {
         }
         es.addEventListener('put', handle);
         es.addEventListener('patch', handle);
-        es.onerror = function () { /* EventSource เชื่อมต่อใหม่ให้เอง */ };
+        es.onopen = function () { setStatus(true); };
+        es.onerror = function () { setStatus(false, 'stream'); };
         return function () { alive = false; es.close(); };
       }
 
@@ -1727,7 +1771,8 @@ var state = {
   jobFilter: 'all',        // ตัวกรองสถานะในหน้ารายการ Job
   jobBranch: 'all',
   jobStats: {},            // roundId -> ความคืบหน้า (คำนวณครั้งเดียวแล้วเก็บไว้)
-  jobConfirmed: false      // ยืนยัน Job แล้วหรือยังก่อนเริ่มยิง
+  jobConfirmed: false,     // ยืนยัน Job แล้วหรือยังก่อนเริ่มยิง
+  connection: 'unknown'    // 'online' | 'offline' | 'unknown'
 };
 
 var $ = function (id) { return document.getElementById(id); };
@@ -1902,10 +1947,21 @@ function pendingCount() { return queueLoad().length; }
 
 function enqueueWrite(path, patch) {
   var q = queueLoad();
-  q.push({ path: path, patch: patch });
+  q.push({ path: path, patch: patch, remote: !!db.remote });
   queueSave(q);
   renderSyncBar();
+  renderConnection();
   flushQueue();
+}
+
+/* คิวที่ค้างมาจากโหมดทดสอบต้องไม่ถูกส่งขึ้นฐานจริงโดยอัตโนมัติ
+   ของที่ลองยิงเล่นไว้จะได้ไม่ปนกับข้อมูลจริง */
+function dropForeignQueue() {
+  var q = queueLoad();
+  var mine = q.filter(function (e) { return !!e.remote === !!db.remote; });
+  if (mine.length === q.length) return 0;
+  queueSave(mine);
+  return q.length - mine.length;
 }
 
 function flushQueue() {
@@ -1920,11 +1976,13 @@ function flushQueue() {
     queueSave(cur);
     flushing = false;
     renderSyncBar();
+    renderConnection();
     if (cur.length) flushQueue();
   }).catch(function () {
     /* ส่งไม่ผ่าน = เก็บไว้ในคิวเหมือนเดิม pushId คงที่อยู่แล้ว ส่งซ้ำไม่นับซ้ำ */
     flushing = false;
     renderSyncBar();
+    renderConnection();
   });
 }
 
@@ -2351,10 +2409,66 @@ function applyImageImport(map) {
       missing.push({ code: product.code || key, category: product.category || '(ไม่มีหมวด)' });
     }
   });
-  var write = Object.keys(patch).length ? db.update('products', patch) : Promise.resolve();
+  var write = Object.keys(patch).length ? db.update('products', patch).then(refreshProducts) : Promise.resolve();
   return write.then(function () {
     return { total: Object.keys(state.products).length, matched: matched,
              missing: missing, mapSize: Object.keys(map).length };
+  });
+}
+
+/* ---------- ย้ายข้อมูลในเครื่องขึ้นฐานกลางด้วยมือ ----------
+   ตั้งใจไม่ทำอัตโนมัติ เพราะข้อมูลที่ค้างในเครื่องส่วนใหญ่คือของที่ลองยิงเล่น
+   ต่อฐานจริงครั้งแรกจึงเริ่มจากฐานว่างเสมอ แล้วให้คนกดย้ายเองถ้าต้องการ */
+function countLocalData(snap) {
+  var rounds = snap.rounds || {};
+  var scans = 0, unknown = 0;
+  Object.keys(rounds).forEach(function (id) {
+    scans += Object.keys((rounds[id] || {}).scans || {}).length;
+    unknown += Object.keys((rounds[id] || {}).unknown || {}).length;
+  });
+  return {
+    products: Object.keys(snap.products || {}).length,
+    branches: Object.keys(snap.branches || {}).length,
+    jobs: Object.keys(snap.roundIndex || {}).length,
+    scans: scans, unknown: unknown
+  };
+}
+
+function uploadLocalToCloud() {
+  if (!db.remote) { toast('ยังไม่ได้ตั้งค่าฐานกลาง จึงไม่มีที่ให้ย้ายขึ้น', true); return; }
+  var snap = db.localSnapshot();
+  var top = Object.keys(snap);
+  if (!top.length) { toast('ไม่มีข้อมูลในเครื่องให้ย้าย', true); return; }
+
+  var n = countLocalData(snap);
+  var box = document.createElement('div');
+  var sec = repSection('ข้อมูลในเครื่องที่จะย้ายขึ้น');
+  repLine(sec, 'สินค้าใน Master', fmtNum(n.products) + ' รายการ');
+  repLine(sec, 'ทะเบียนสาขา', fmtNum(n.branches) + ' สาขา');
+  repLine(sec, 'Job', fmtNum(n.jobs) + ' รายการ');
+  repLine(sec, 'การยิง', fmtNum(n.scans) + ' แถว');
+  repLine(sec, 'บาร์โค้ดไม่พบ', fmtNum(n.unknown) + ' รายการ');
+  repNote(sec, 'ข้อมูลจะถูกรวมเข้ากับของที่มีอยู่บนฐานกลาง (merge) ไม่ได้ลบของเดิม ' +
+               'ถ้าเป็นข้อมูลลองยิงเล่น อย่ากดปุ่มนี้');
+  box.appendChild(sec);
+
+  ask('ย้ายข้อมูลในเครื่องขึ้นฐานกลาง?',
+      'เขียนขึ้นใต้ ' + db.rootPath + ' เท่านั้น',
+      'ย้ายขึ้นเลย', { danger: true, detail: box }).then(function (ok) {
+    if (!ok) return;
+    $('btnUploadLocal').disabled = true;
+    /* ส่งทีละก้อนบนสุด ถ้าก้อนไหนล้มจะรู้ว่าล้มที่ไหน */
+    return top.reduce(function (chain, key) {
+      return chain.then(function () {
+        var patch = {};
+        patch[key] = snap[key];
+        return db.update('', patch);
+      });
+    }, Promise.resolve()).then(function () {
+      toast('ย้ายข้อมูลขึ้นฐานกลางแล้ว');
+    }).catch(function () {
+      toast('ย้ายข้อมูลไม่สำเร็จ กรุณาตรวจการเชื่อมต่อแล้วลองใหม่', true);
+    }).then(function () { $('btnUploadLocal').disabled = false; });
   });
 }
 
@@ -2492,6 +2606,31 @@ function pushRecent(name, delta, ts) {
 
 function renderScanTotals() {
   $('scanTotal').textContent = fmtNum(state.zoneTotals[state.zoneId] || 0);
+}
+
+function renderConnection() {
+  var bar = $('connBar');
+  var text = $('connText');
+  if (!bar || !text) return;
+  var pending = pendingCount();
+
+  if (!db.remote) {
+    bar.className = 't-conn off';
+    bar.setAttribute('data-conn', 'local');
+    text.textContent = 'โหมดทดสอบ — ยังไม่ได้ต่อฐานกลาง';
+    return;
+  }
+  if (state.connection === 'offline') {
+    bar.className = 't-conn off';
+    bar.setAttribute('data-conn', 'offline');
+    text.textContent = 'ออฟไลน์ — เก็บคิวในเครื่อง ' + fmtNum(pending) + ' รายการ';
+    return;
+  }
+  bar.className = 't-conn';
+  bar.setAttribute('data-conn', 'online');
+  text.textContent = pending
+    ? 'ต่อฐานกลางแล้ว — กำลังส่ง ' + fmtNum(pending) + ' รายการ'
+    : 'ต่อฐานกลางแล้ว';
 }
 
 function renderSyncBar() {
@@ -2694,7 +2833,7 @@ function applyBranchImport(incoming) {
     patch[key] = next;
     if (old) updated++; else added++;
   });
-  return db.update('branches', patch).then(function () {
+  return db.update('branches', patch).then(refreshBranches).then(function () {
     return { added: added, updated: updated, keptManual: keptManual };
   });
 }
@@ -2704,7 +2843,7 @@ function saveBranchActive(key, active) {
   patch[key + '/active'] = !!active;
   patch[key + '/activeSource'] = 'manual';
   patch[key + '/updatedAt'] = Date.now();
-  return db.update('branches', patch);
+  return db.update('branches', patch).then(refreshBranches);
 }
 
 function branchList(term, includeClosed) {
@@ -2905,6 +3044,12 @@ function saveProductEdit(key, field, value) {
   next.needsReview = false;
   next.updatedAt = Date.now();
   Object.keys(next).forEach(function (f) { patch[key + '/' + f] = next[f]; });
+  /* อัปเดตในเครื่องทันทีให้ครบทุกฟิลด์ที่เขียนลงฐาน เพราะ products ไม่ได้เปิดสายค้างไว้แล้ว
+     ถ้าอัปเดตแค่ field เดียว typeSource ในหน่วยความจำจะยังเป็น auto
+     แล้วการ import รอบถัดไปจะทับค่าที่คนเพิ่งแก้ */
+  if (state.products[key]) {
+    Object.keys(next).forEach(function (f) { state.products[key][f] = next[f]; });
+  }
   return db.update('products', patch);
 }
 
@@ -3290,6 +3435,7 @@ function docCell(row, text, cls) {
 
 function saveReason(key, value) {
   if (!canEdit()) { toast(blockedMessage(), true); return Promise.resolve(); }
+  if (value) state.reasons[key] = value; else delete state.reasons[key];   // เห็นผลทันที ไม่รอ subscription
   var patch = {};
   patch['reasons/' + key] = value || null;
   return db.update('rounds/' + state.roundId, patch);
@@ -3349,6 +3495,8 @@ function saveDocType(type) {
 
 function saveDocNo(value) {
   if (!canEdit()) { toast(blockedMessage(), true); return Promise.resolve(); }
+  state.docNo = state.docNo || {};
+  if (value) state.docNo[docType()] = value; else delete state.docNo[docType()];
   var patch = {};
   patch['docNo/' + docType()] = value || null;
   return db.update('rounds/' + state.roundId, patch);
@@ -3861,8 +4009,10 @@ function handleImport(file) {
       if (!ok) { toast('ยกเลิกการนำเข้า ข้อมูลเดิมไม่ถูกแตะ'); return; }
       return applyImport(state.roundId, result).then(function (diff) {
         state.lastImport = { stat: result.stat, diff: diff };
-        renderStart();
-        showImportReport();
+        return Promise.all([refreshProducts(), refreshSystemQty()]).then(function () {
+          renderStart();
+          showImportReport();
+        });
       });
     });
   }).catch(function (err) {
@@ -4177,8 +4327,19 @@ function reopenRound() {
     if (!v.reason) { toast('ต้องระบุเหตุผล ข้ามไม่ได้', true); return; }
     var log = reopenList(job).slice();
     log.push({ by: state.counter || 'ไม่ระบุ', at: Date.now(), reason: v.reason });
-    db.update('roundIndex/' + state.roundId, { status: 'counting', reopenLog: log })
-      .then(function () { toast('เปิดรอบนับกลับมาแล้ว — บันทึกเหตุผลไว้แล้ว'); });
+    /* reopenCount เป็นตัวเลขคู่กับ reopenLog เพราะ Database Rules นับสมาชิกใน array ไม่ได้
+       กฎฝั่งเซิร์ฟเวอร์จึงใช้ตัวนี้บังคับว่า "ออกจาก closed ได้ต่อเมื่อมีการบันทึกเหตุผลเพิ่ม" */
+    db.update('roundIndex/' + state.roundId, {
+      status: 'counting', reopenLog: log, reopenCount: log.length
+    }).then(function () { toast('เปิดรอบนับกลับมาแล้ว — บันทึกเหตุผลไว้แล้ว'); })
+      .catch(function () {
+        /* กฎฝั่งฐานข้อมูลอาจตั้งไว้ไม่ให้ออกจาก closed ได้เลย ซึ่งแรงกว่าปุ่มในแอป */
+        ask('เปิดรอบนับไม่ได้',
+            'ฐานข้อมูลปฏิเสธการเปลี่ยนสถานะกลับจาก "ปิดแล้ว"\n\n' +
+            'แปลว่า Database Rules ตั้งไว้ห้ามเปิดรอบที่ปิดแล้วโดยเด็ดขาด\n' +
+            'ถ้าต้องการให้เปิดกลับได้ ต้องแก้ Rules ที่ Firebase Console ก่อน',
+            'รับทราบ', { hideCancel: true });
+      });
   });
 }
 
@@ -4258,7 +4419,7 @@ function showPage(name) {
   if (name === 'summary') renderSummary();
   if (name === 'master') renderMaster();
   if (name === 'scan') renderScanPage();
-  if (name === 'doc') renderDoc();
+  if (name === 'doc') { renderDoc(); refreshDocMeta(); }
 }
 
 function refreshNav() {
@@ -4349,6 +4510,84 @@ function renderStart() {
    17. เลือกรอบนับ + subscription
    ============================================================ */
 
+/* ---------- ทำไมบางอย่างใช้ db.get แทน db.subscribe ----------
+   เบราว์เซอร์เปิดได้ 6 สายต่อ origin เมื่อวิ่งบน HTTP/1.1 (เช่นผ่าน proxy องค์กร)
+   EventSource เป็นสายที่เปิดค้างไว้ตลอด ถ้าเปิดครบ 6 สายเมื่อไหร่
+   คำขออื่นทั้งหมดจะถูกคิวไว้ไม่มีวันได้ออก — รวมถึง PATCH ที่ใช้บันทึกการยิง
+   อาการคือยิงได้ ยอดขึ้นบนจอ แต่ไม่มีอะไรถูกบันทึกเลย และไม่มี error ให้เห็น
+
+   จึงเปิดสายค้างไว้แค่ 3 อย่างที่ต้องเห็นสดจริง ๆ:
+     roundIndex (สถานะ Job) · scans · unknown
+   ที่เหลือดึงเป็นครั้ง ๆ ด้วย db.get แล้วอัปเดต state ในเครื่องทันทีตอนบันทึกเอง
+   เหลือช่องว่างให้คำขอปกติวิ่งได้เสมอ */
+
+function refreshDocMeta() {
+  if (!state.roundId) return Promise.resolve();
+  var id = state.roundId;
+  return Promise.all([
+    db.get('rounds/' + id + '/docType'),
+    db.get('rounds/' + id + '/docNo'),
+    db.get('rounds/' + id + '/transferNo'),
+    db.get('rounds/' + id + '/reasons')
+  ]).then(function (res) {
+    if (state.roundId !== id) return;        // เปลี่ยน Job ระหว่างรอ ทิ้งผลเก่า
+    state.docType = DOC_TYPES[res[0]] ? res[0] : DEFAULT_DOC_TYPE;
+    state.docNo = res[1] || {};
+    state.legacyTransferNo = res[2] || '';
+    state.reasons = res[3] || {};
+    if (state.page === 'doc') renderDoc();
+  }).catch(function () { /* อ่านไม่ได้ก็ใช้ค่าที่มีในเครื่องไปก่อน */ });
+}
+
+function refreshZones() {
+  if (!state.roundId) return Promise.resolve();
+  var id = state.roundId;
+  return db.get('rounds/' + id + '/zones').then(function (data) {
+    if (state.roundId !== id) return;
+    state.zones = data || {};
+    if (state.zoneId && !state.zones[state.zoneId]) state.zoneId = null;
+    renderStart();
+  }).catch(function () { /* ใช้ค่าเดิมไปก่อน */ });
+}
+
+function refreshSystemQty() {
+  if (!state.roundId) return Promise.resolve();
+  var id = state.roundId;
+  return db.get('rounds/' + id + '/systemQty').then(function (data) {
+    if (state.roundId !== id) return;
+    state.systemQty = data || {};
+    renderStart();
+    if (state.page === 'summary') renderSummary();
+    if (state.page === 'doc') renderDoc();
+  }).catch(function () { /* ใช้ค่าเดิมไปก่อน */ });
+}
+
+function refreshProducts() {
+  return db.get('products').then(function (data) {
+    state.products = data || {};
+    buildScanIndex();
+    if (state.page === 'master') renderMaster();
+    if (state.page === 'summary') renderSummary();
+    if (state.page === 'doc') renderDoc();
+  }).catch(function () { /* ใช้ค่าเดิมไปก่อน */ });
+}
+
+function refreshBranches() {
+  return db.get('branches').then(function (data) {
+    state.branches = data || {};
+    if (state.page === 'master') renderMaster();
+    if (state.page === 'jobs') renderBranchPicker();
+  }).catch(function () { /* ปล่อยให้ใช้ค่าเดิม */ });
+}
+
+function refreshCompany() {
+  return db.get('settings/company').then(function (data) {
+    if (!data) return;
+    saveCompanyLocal(data);
+    applyCompany(data);
+  }).catch(function () { /* ปล่อย */ });
+}
+
 function clearSubs() {
   state.unsub.forEach(function (fn) { try { fn(); } catch (e) { /* ปิดไปแล้วก็ช่าง */ } });
   state.unsub = [];
@@ -4377,18 +4616,8 @@ function selectRound(id) {
   }).then(function (didMigrate) {
     if (didMigrate) toast('ย้ายข้อมูลรอบนี้มาโครงสร้างใหม่แล้ว ยอดเดิมอยู่ครบ');
 
-    state.unsub.push(db.subscribe('rounds/' + id + '/zones', function (data) {
-      state.zones = data || {};
-      if (state.zoneId && !state.zones[state.zoneId]) state.zoneId = null;
-      renderStart();
-    }));
-
-    state.unsub.push(db.subscribe('rounds/' + id + '/systemQty', function (data) {
-      state.systemQty = data || {};
-      renderStart();
-      if (state.page === 'summary') renderSummary();
-      if (state.page === 'doc') renderDoc();
-    }));
+    refreshZones();
+    refreshSystemQty();
 
     /* ต่อท้ายอย่างเดียว จึงรับเฉพาะลูกที่เพิ่มใหม่ ไม่ดึงทั้งก้อนทุกครั้งที่มีคนยิง */
     state.unsub.push(db.subscribeChildren('rounds/' + id + '/scans', function (scanId, rec) {
@@ -4401,27 +4630,9 @@ function selectRound(id) {
       if (state.page === 'scan') renderSyncBar();
     }));
 
-    state.unsub.push(db.subscribe('rounds/' + id + '/reasons', function (data) {
-      state.reasons = data || {};
-      /* อย่าวาดตารางใหม่ขณะที่คนกำลังพิมพ์ Reason อยู่ ไม่งั้นโฟกัสหลุดกลางคำ */
-      var el = document.activeElement;
-      if (state.page === 'doc' && !(el && el.classList && el.classList.contains('reason-in'))) renderDoc();
-    }));
-
-    state.unsub.push(db.subscribe('rounds/' + id + '/docType', function (value) {
-      state.docType = DOC_TYPES[value] ? value : DEFAULT_DOC_TYPE;
-      if (state.page === 'doc') renderDoc();
-    }));
-
-    state.unsub.push(db.subscribe('rounds/' + id + '/docNo', function (value) {
-      state.docNo = value || {};
-      if (state.page === 'doc' && $('docNo') !== document.activeElement) renderDoc();
-    }));
-
-    state.unsub.push(db.subscribe('rounds/' + id + '/transferNo', function (value) {
-      state.legacyTransferNo = value || '';
-      if (state.page === 'doc' && $('docNo') !== document.activeElement) renderDoc();
-    }));
+    /* ข้อมูลฝั่งเอกสาร (reasons / docType / docNo / transferNo) ไม่ต้องเปิดสายค้างไว้
+       ดึงตอนเปิดหน้าเอกสารพอ — ดูเหตุผลที่ refreshDocMeta() */
+    refreshDocMeta();
   });
 
   renderStart();
@@ -4496,6 +4707,7 @@ function init() {
     if (!name) { toast('ตั้งชื่อโซนก่อน', true); return; }
     createZone(state.roundId, name).then(function (id) {
       $('newZoneName').value = '';
+      state.zones[id] = { name: name, createdAt: Date.now() };   // เห็นทันที ไม่ต้องรออ่านกลับ
       state.zoneId = id;                       // โซนที่เพิ่งเพิ่ม = โซนปัจจุบันทันที
       localStorage.setItem('isrd_zone_' + state.roundId, id);
       renderStart();
@@ -4640,30 +4852,32 @@ function init() {
   /* ชื่อ/ที่อยู่บริษัทเติมจากเครื่องก่อนทันที แล้วค่อยให้ค่าจากฐานทับ
      กรอกครั้งเดียวใช้ได้ทุก Job ทุกเอกสาร และยังขึ้นให้แม้เปิดตอนเน็ตหลุด */
   applyCompany(loadCompanyLocal());
+  refreshCompany();
 
-  db.subscribe('settings/company', function (data) {
-    if (!data) return;
-    saveCompanyLocal(data);
-    applyCompany(data);
+  $('btnUploadLocal').onclick = uploadLocalToCloud;
+
+  /* ---- คิวเขียนข้อมูล + สถานะการเชื่อมต่อ ---- */
+  db.onStatus(function (ok) {
+    var next = ok ? 'online' : 'offline';
+    if (state.connection === next) return;
+    state.connection = next;
+    renderConnection();
+    if (ok) flushQueue();
   });
+  window.addEventListener('online', function () { state.connection = 'unknown'; flushQueue(); renderConnection(); });
+  window.addEventListener('offline', function () { state.connection = 'offline'; renderConnection(); });
 
-  /* ---- คิวเขียนข้อมูล ---- */
-  window.addEventListener('online', flushQueue);
+  var dropped = dropForeignQueue();
+  if (dropped) {
+    toast('ข้ามคิวเก่าจากโหมดทดสอบ ' + fmtNum(dropped) + ' รายการ ไม่ได้ส่งขึ้นฐานจริง');
+  }
   setInterval(flushQueue, 15000);
   flushQueue();
+  renderConnection();
 
-  db.subscribe('products', function (data) {
-    state.products = data || {};
-    buildScanIndex();
-    if (state.page === 'master') renderMaster();
-    if (state.page === 'summary') renderSummary();
-  });
+  refreshProducts();
 
-  db.subscribe('branches', function (data) {
-    state.branches = data || {};
-    if (state.page === 'master') renderMaster();
-    if (state.page === 'jobs') renderBranchPicker();
-  });
+  refreshBranches();
 
   db.subscribe('roundIndex', function (data) {
     state.roundIndex = data || {};
@@ -4692,6 +4906,27 @@ init();
   ====================================================================
   สรุปการเปลี่ยนแปลง
   ====================================================================
+
+  v1.8.0 — ต่อ Firebase ใช้งานจริง
+    - ใส่ config จริง และบังคับให้ข้อมูลทั้งหมดอยู่ใต้ stocktake2026 เท่านั้น
+      ด้วยฟังก์ชัน scoped() ที่ชั้น adapter ที่เดียว เขียนหลุดไปทับ wms2026
+      หรือ root ไม่ได้เลย
+    - ไม่อัปโหลดข้อมูลในเครื่องขึ้นเองอัตโนมัติ เริ่มจากฐานว่างเสมอ
+      คิวที่ค้างมาจากโหมดทดสอบถูกทิ้ง ไม่ส่งขึ้นฐานจริง
+      มีปุ่ม "ย้ายข้อมูลในเครื่องขึ้นฐานกลาง" ในแท็บ Master ให้กดเองเมื่อต้องการ
+    - ตัวบอกสถานะบนหัวแอป เขียว = ต่อฐานกลางแล้ว ส้ม = ออฟไลน์ พร้อมจำนวนที่ค้าง
+      ออฟไลน์ยังยิงต่อได้ แล้ว sync กลับเองเมื่อเน็ตมา
+    - Database Rules ฉบับใช้งานจริงอยู่ท้ายไฟล์ คลุมทั้ง wms2026 และ stocktake2026
+
+    บั๊กสองตัวที่เจอตอนทดสอบกับฐานจริง (โหมดทดสอบจับไม่ได้เลย)
+    1) remoteSubscribe เก็บ cache ด้วย remoteCache[path] ซึ่งสร้างคีย์แบนที่มี /
+       แต่ตอนอ่านใช้ deepGet ที่เดินตามลำดับชั้น ทำให้ทุก path ที่มีสแลช
+       (zones, systemQty, settings/company, reasons, docNo) ไม่โหลดขึ้นเลย
+    2) แอปเคยเปิด EventSource ถึง 12 สายต่อเครื่อง แต่ HTTP/1.1 จำกัด 6 สายต่อ origin
+       พอเปิดครบ คำขออื่นจะถูกคิวไว้ไม่มีวันได้ออก รวมถึง PATCH ที่ใช้บันทึกการยิง
+       อาการคือยิงได้ ยอดขึ้นบนจอ แต่ไม่มีอะไรถูกบันทึก และไม่มี error ให้เห็น
+       ตอนนี้เหลือสายค้างแค่ 3 อย่างที่ต้องสดจริง: roundIndex, scans, unknown
+       ที่เหลือใช้ db.get แล้วอัปเดต state ในเครื่องทันทีตอนบันทึก
 
   v1.7.0 — รูปสินค้า
     - นำเข้าลิงก์รูปจากไฟล์ JSON ที่แท็บ Master (รับทั้งไฟล์เต็มและไฟล์ย่อ)
@@ -4828,71 +5063,158 @@ init();
 -->
 
 <!--
-  ตัวอย่าง Firebase Realtime Database Rules ที่ตรงกับกฎของโปรเจกต์นี้
-  (คัดลอกไปวางใน Firebase Console > Realtime Database > Rules)
+  Firebase Realtime Database Rules — ฉบับใช้งานจริง
+  (คัดลอกทั้งก้อนไปวางใน Firebase Console > Realtime Database > Rules แล้วกด Publish)
+
+  โปรเจกต์นี้ใช้ร่วมกับ WMS Dashboard ที่เก็บข้อมูลใต้ wms2026
+  กฎชุดนี้จึงต้องคลุมทั้งสองฝั่ง และต้องไม่ทำของเดิมพัง
 
   {
     "rules": {
-      "settings": { ".read": true, ".write": true },
-      "products": { ".read": true, ".write": true },
-      "branches": { ".read": true, ".write": true },
+      ".read": false,
+      ".write": false,
 
-      // ตัวนับเลขที่เอกสาร แยกตาม สาขา / ประเภท / ปีเดือน (พ.ศ.)
-      // เพิ่มได้อย่างเดียว ห้ามลดเลข ไม่งั้นเลขที่ออกไปแล้วจะถูกใช้ซ้ำ
-      "docCounters": {
+      "wms2026": {
         ".read": true,
-        "$branch": { "$kind": { "$yearMonth": {
-          ".write": "newData.isNumber() && (!data.exists() || newData.val() > data.val())"
-        } } }
+        ".write": true
       },
 
-      "roundIndex": {
+      "stocktake2026": {
         ".read": true,
-        "$roundId": {
-          ".write": true,
-          ".validate": "newData.hasChildren(['jobCode','branch','status'])",
-          "status": { ".validate": "newData.val().matches(/^(counting|reviewing|closed)$/)" }
-        }
-      },
 
-      "rounds": {
-        "$roundId": {
-          ".read": true,
+        "settings": { ".write": true },
+        "products": { ".write": true },
+        "branches": { ".write": true },
 
-          "zones":      { ".write": true },
-          "systemQty":  { ".write": "root.child('roundIndex').child($roundId).child('status').val() === 'counting'" },
-          "schema":     { ".write": true },
-          "transferNo": { ".write": "root.child('roundIndex').child($roundId).child('status').val() !== 'closed'" },
-          "docType":    { ".write": "root.child('roundIndex').child($roundId).child('status').val() !== 'closed'" },
-          "docNo":      { ".write": "root.child('roundIndex').child($roundId).child('status').val() !== 'closed'" },
-          "reasons":    { ".write": "root.child('roundIndex').child($roundId).child('status').val() !== 'closed'" },
+        "docCounters": {
+          "$branch": { "$kind": { "$yearMonth": {
+            ".write": "newData.isNumber() && (!data.exists() || newData.val() > data.val())"
+          } } }
+        },
 
-          "scans": {
-            "$scanId": {
-              // เขียนได้เฉพาะตอนสร้างใหม่ และเฉพาะตอน Job อยู่สถานะ counting เท่านั้น
-              // ห้ามแก้ ห้ามลบยอดที่นับไปแล้ว — แก้ผิดให้เขียนแถวใหม่ delta ติดลบ
-              // บังคับที่กฎฝั่งเซิร์ฟเวอร์ ไม่ใช่แค่ปิดปุ่มในหน้าเว็บ
-              ".write": "!data.exists() && newData.exists() && root.child('roundIndex').child($roundId).child('status').val() === 'counting'",
-              ".validate": "newData.hasChildren(['code','zone','delta','user','ts'])"
-            }
-          },
+        "roundIndex": {
+          "$roundId": {
+            ".write": "!data.exists() || data.child('status').val() !== 'closed'",
+            ".validate": "newData.hasChildren(['jobCode','branchCode','status'])",
+            "status": { ".validate": "newData.isString() && newData.val().matches(/^(counting|reviewing|closed)$/)" },
+            "closedAt": { ".validate": "newData.isNumber()" },
+            "createdAt": { ".validate": "newData.isNumber()" }
+          }
+        },
 
-          "unknown": {
-            "$id": {
-              ".write": "!data.exists() && newData.exists() && root.child('roundIndex').child($roundId).child('status').val() === 'counting'"
-            }
-          },
+        "rounds": {
+          "$roundId": {
+            "zones":      { ".write": true },
+            "schema":     { ".write": true },
+            "systemQty":  { ".write": "root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting'" },
+            "reasons":    { ".write": "root.child('stocktake2026/roundIndex').child($roundId).child('status').val() !== 'closed'" },
+            "docType":    { ".write": "root.child('stocktake2026/roundIndex').child($roundId).child('status').val() !== 'closed'" },
+            "docNo":      { ".write": "root.child('stocktake2026/roundIndex').child($roundId).child('status').val() !== 'closed'" },
+            "transferNo": { ".write": "root.child('stocktake2026/roundIndex').child($roundId).child('status').val() !== 'closed'" },
 
-          // โครงสร้างเดิม v1.1 เก็บไว้อ่านอย่างเดียว ห้ามแก้ ห้ามลบ
-          "items":  { ".write": false },
-          "counts": { ".write": false }
+            "scans": {
+              "$scanId": {
+                ".write": "!data.exists() && newData.exists() && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting'",
+                ".validate": "newData.hasChildren(['code','zone','delta','user','ts'])",
+                "delta": { ".validate": "newData.isNumber()" },
+                "ts":    { ".validate": "newData.isNumber()" }
+              }
+            },
+
+            "unknown": {
+              "$id": {
+                ".write": "!data.exists() && newData.exists() && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting'"
+              }
+            },
+
+            "items":  { ".write": false },
+            "counts": { ".write": false }
+          }
         }
       }
     }
   }
 
-  หมายเหตุ: กฎชุดนี้ยังเปิดให้เขียนได้โดยไม่ต้องล็อกอิน เพราะแอปยังไม่มีระบบผู้ใช้
-  ตอนต่อ dashboard จริงต้องเพิ่ม Firebase Auth แล้วเปลี่ยน ".write": true
-  เป็นเงื่อนไขที่อ้าง auth.uid หรือ custom claim ของแอดมิน โดยเฉพาะ
-  การเปลี่ยน status และการลบ Job ซึ่งตอนนี้กันด้วย PIN ในไฟล์เท่านั้น
+  ====================================================================
+  กฎนี้ทำอะไรบ้าง
+  ====================================================================
+
+  1. ปิด root — เดิมทั้งฐานเปิด public ใครก็ยิง GET /.json ดูดข้อมูลทั้งก้อน
+     หรือ PUT /.json ลบทิ้งทั้งฐานได้ ตอนนี้ทำไม่ได้แล้ว
+     WMS ไม่ได้เขียนที่ root จึงไม่กระทบ
+
+  2. scans เขียนได้เฉพาะตอนสร้างใหม่ และเฉพาะตอน Job อยู่สถานะ counting
+     แก้หรือลบแถวเดิมไม่ได้เลยทุกกรณี (!data.exists())
+     แก้ยอดผิดต้องเขียนแถวใหม่ delta ติดลบ ตามที่แอปทำอยู่
+
+  3. items / counts ของโครงสร้างเดิม v1.1 ล็อกอ่านอย่างเดียวถาวร
+
+  4. ตัวนับเลขที่เอกสารเพิ่มได้อย่างเดียว ลดไม่ได้
+     เลขที่ออกไปแล้วจะไม่ถูกใช้ซ้ำแม้มีคนพยายามรีเซ็ต
+
+  ====================================================================
+  ข้อ "closed กลับเป็น counting ไม่ได้" — ผลข้างเคียงที่ต้องรู้
+  ====================================================================
+
+  กฎด้านบนล็อกแข็งตามที่กำหนด: เมื่อ Job เป็น closed แล้ว จะเขียนอะไร
+  ลง roundIndex/<roundId> ไม่ได้อีกเลย รวมถึงการเปลี่ยนสถานะกลับ
+
+  ผลคือปุ่ม "เปิดรอบนับกลับมาแก้ (Admin)" ในแอปจะกดไม่ผ่าน
+  แอปจะขึ้นกล่องบอกว่าฐานข้อมูลปฏิเสธ และแนะให้ไปแก้ Rules ก่อน — ตั้งใจให้เป็นแบบนั้น
+
+  ถ้าภายหลังอยากให้เปิดกลับได้ แต่บังคับว่าต้องบันทึกเหตุผลทุกครั้ง
+  ให้เปลี่ยนบรรทัด ".write" ของ roundIndex/ เป็น
+
+    ".write": "!data.exists() || data.child('status').val() !== 'closed' || newData.child('status').val() === 'closed' || (newData.child('reopenCount').isNumber() && ((!data.child('reopenCount').isNumber() && newData.child('reopenCount').val() === 1) || (data.child('reopenCount').isNumber() && newData.child('reopenCount').val() === data.child('reopenCount').val() + 1)))"
+
+  แบบนั้นจะออกจาก closed ได้เฉพาะเมื่อ reopenCount เพิ่มขึ้น 1 พอดี
+  ซึ่งเกิดได้ทางเดียวคือผ่านปุ่มที่บังคับกรอกเหตุผลลง reopenLog
+
+  ====================================================================
+  สิ่งที่กฎนี้ยัง "ไม่ได้" แก้ — ต้องรู้ไว้
+  ====================================================================
+
+  wms2026 ยังเปิดให้อ่านและเขียนได้โดยไม่ต้องล็อกอิน เพราะไม่รู้ว่า
+  WMS Dashboard ใช้ Firebase Auth อยู่หรือเปล่า ถ้าใส่เงื่อนไข auth ลงไป
+  แล้ว WMS ไม่ได้ล็อกอิน มันจะพังทันที กฎชุดนี้จึงเลือกไม่แตะพฤติกรรมเดิม
+
+  การปิดช่องนั้นจริง ๆ ต้องทำสองอย่างคู่กัน
+    1) ให้ทั้ง WMS และแอปนี้ล็อกอิน Firebase Auth (Anonymous ก็พอสำหรับเริ่มต้น)
+    2) เปลี่ยนกฎเป็น
+
+       "wms2026":      { ".read": "auth != null", ".write": "auth != null" },
+       "stocktake2026": { ".read": "auth != null", ... เงื่อนไขเดิมทั้งหมด ... }
+
+  ระหว่างที่ยังไม่ได้ทำ ให้ถือว่า URL ของฐานข้อมูลนี้เท่ากับรหัสผ่าน
+  อย่าเผยแพร่ต่อ และอย่าใส่ข้อมูลที่หลุดไม่ได้ลงไป
+
+  ====================================================================
+  ต้องทดสอบอะไรบ้างหลังวาง Rules — เพื่อยืนยันว่า WMS ยังปกติ
+  ====================================================================
+
+  ทำตามลำดับนี้ ใช้เวลาไม่เกิน 5 นาที
+
+  ก) ก่อนกด Publish ให้กดแท็บ Rules Playground ใน Console แล้วลอง
+     - Location: /wms2026/inbound   Type: read   -> ต้องขึ้น Allowed
+     - Location: /wms2026/inbound   Type: write  -> ต้องขึ้น Allowed
+     - Location: /                  Type: read   -> ต้องขึ้น Denied
+     - Location: /                  Type: write  -> ต้องขึ้น Denied
+
+  ข) หลัง Publish เปิด WMS Dashboard ของจริงแล้วไล่ดู
+     - หน้าแรกโหลดข้อมูลขึ้นครบเหมือนเดิม (online / inbound / transport /
+       outbound / returns ต้องมีข้อมูลขึ้นทุกส่วน)
+     - ลองบันทึกรายการใหม่ 1 รายการในส่วนที่ใช้บ่อยที่สุด แล้วรีเฟรชดูว่ายังอยู่
+     - ลองแก้รายการเดิม 1 รายการ แล้วรีเฟรชดูว่าค่าเปลี่ยนตาม
+     - ถ้ามีหน้าไหนขึ้นค้างหรือว่างเปล่า ให้ดู Console ของเบราว์เซอร์
+       ถ้าเจอ "permission_denied" ให้บอกมาว่า path ไหน จะได้เปิดเฉพาะ path นั้นเพิ่ม
+
+  ค) ฝั่งแอปนับสต๊อก
+     - เปิดแอป ตัวบอกสถานะบนหัวต้องเป็นสีเขียว "ต่อฐานกลางแล้ว"
+     - สร้าง Job แล้วยิง 1 ครั้ง รีเฟรชแล้วยอดต้องยังอยู่
+     - ปิดรอบนับ แล้วลองยิงอีกครั้ง ต้องยิงไม่เข้า
+     - เปิดรอบกลับด้วย PIN พร้อมกรอกเหตุผล ต้องเปิดได้
+
+  ง) ทดสอบว่ากฎกันการแก้ scan ได้จริง (ทำผ่าน Rules Playground)
+     - Location: /stocktake2026/rounds/<roundId>/scans/<scanId>
+       Type: write  ใส่ข้อมูลอะไรก็ได้ -> ต้องขึ้น Denied
 -->
