@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="1.0.0">
+<meta name="version" content="1.1.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v1.0.0</title>
+<title>ISRD Stocktake v1.1.0</title>
 
 <style>
 :root{
@@ -170,6 +170,17 @@ select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,va
 }
 .modal h3{margin-bottom:10px}
 .modal p{margin:0 0 16px;font-size:15px;color:#334155;white-space:pre-line}
+/* รายงานผลนำเข้า — ไฟล์ 400 แถวต้องเลื่อนอ่านได้ในกล่องเดียว */
+#modalDetail{max-height:46vh;overflow-y:auto;margin-bottom:16px}
+#modalDetail:empty{display:none}
+.rep-sec{margin-bottom:12px}
+.rep-h{font-size:13px;font-weight:700;color:var(--muted);margin-bottom:5px}
+.rep-line{display:flex;justify-content:space-between;gap:10px;align-items:baseline;
+  font-size:14px;padding:6px 10px;background:#f8fafc;border-radius:8px;margin-bottom:4px}
+.rep-line span{word-break:break-word}
+.rep-line b{font-variant-numeric:tabular-nums;white-space:nowrap}
+.rep-line.bad b{color:var(--short)}
+.rep-note{font-size:12px;color:var(--muted);padding:0 10px 6px;word-break:break-word}
 .modal .m-act{display:flex;flex-direction:column;gap:10px}
 .toast{
   position:fixed;left:50%;transform:translateX(-50%);
@@ -223,11 +234,12 @@ select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,va
   <div class="card">
     <h3>4. ยอดในระบบ</h3>
     <div id="importStatus" class="muted" style="margin-bottom:12px">ยังไม่ได้นำเข้ายอดระบบของรอบนี้</div>
+    <button class="btn ghost sm block" id="btnImportReport" style="display:none;margin-bottom:12px">ดูรายละเอียดการนำเข้าล่าสุด</button>
     <input type="file" id="fileInput" accept=".csv,.xlsx" style="display:none">
     <button class="btn ghost block" id="btnImport">📄 นำเข้ายอดระบบ (Excel / CSV)</button>
     <p class="muted" style="margin:12px 0 0">
-      ไฟล์ต้องมีหัวตารางแถวแรก และมีคอลัมน์ <b>รหัสสินค้า</b> กับ <b>ยอดระบบ</b> เป็นอย่างน้อย<br>
-      ตัวอย่าง: รหัสสินค้า | ชื่อสินค้า | หน่วย | ยอดระบบ
+      ไฟล์ Excel จะอ่านจากชีตชื่อ <b>สินค้า</b> โดยหัวตารางอยู่แถวแรก<br>
+      จำเป็น: <b>รหัสสินค้า</b>, <b>ยอดระบบ</b> · ใส่หรือไม่ใส่ก็ได้: ชื่อสินค้า, หน่วยสินค้า
     </p>
   </div>
 
@@ -295,6 +307,7 @@ select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,va
   <div class="modal">
     <h3 id="modalTitle"></h3>
     <p id="modalMsg"></p>
+    <div id="modalDetail"></div>
     <div class="m-act">
       <button class="btn big" id="modalOk"></button>
       <button class="btn grey" id="modalCancel">ยกเลิก</button>
@@ -313,7 +326,7 @@ select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,va
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '1.0.0';
+var APP_VERSION = '1.1.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -707,7 +720,14 @@ function parseCsv(text) {
     }
   }
   if (field.length || row.length) { row.push(field); rows.push(row); }
-  return rows.filter(function (r) { return r.some(function (c) { return String(c).trim() !== ''; }); });
+
+  /* แถวว่างไม่ถูกกรองทิ้งตรงนี้ — rowsToItems ต้องนับไว้รายงานว่าข้ามไปกี่แถว */
+  return {
+    rows: rows,
+    rowNums: rows.map(function (_, i) { return i + 1; }),
+    sheetName: null,
+    sheetNames: []
+  };
 }
 
 function inflateRaw(bytes) {
@@ -778,7 +798,94 @@ function textOfNode(xml) {
   return out;
 }
 
-function parseXlsx(buffer) {
+/* ชื่อชีตในไฟล์ export จริงจากระบบ */
+var MASTER_SHEET_NAME = 'สินค้า';
+
+/* Target ใน rels เขียนได้หลายแบบ: "worksheets/sheet1.xml" หรือ "/xl/worksheets/sheet1.xml" */
+function normalizeZipPath(target) {
+  var t = String(target || '').replace(/^\/+/, '');
+  return t.indexOf('xl/') === 0 ? t : 'xl/' + t;
+}
+
+/* ลำดับและชื่อชีตอยู่ใน workbook.xml แต่ชื่อไฟล์จริงต้องตามผ่าน r:id ไปที่ rels
+   จะเดาว่า sheet1.xml คือชีตแรกที่เห็นใน Excel ไม่ได้ */
+function xlsxSheetList(zip) {
+  return zip.read('xl/workbook.xml').then(function (wbBytes) {
+    if (!wbBytes) throw new Error('NO_SHEET');
+    var wb = new TextDecoder('utf-8').decode(wbBytes);
+    var sheets = [];
+    var sheetRe = /<sheet\b([^>]*?)\/>|<sheet\b([^>]*)>/g, m;
+    while ((m = sheetRe.exec(wb)) !== null) {
+      var attrs = m[1] || m[2] || '';
+      var nameM = /name="([^"]*)"/.exec(attrs);
+      var ridM = /r:id="([^"]*)"/.exec(attrs);
+      if (nameM) sheets.push({ name: decodeXmlEntities(nameM[1]), rid: ridM ? ridM[1] : null });
+    }
+
+    return zip.read('xl/_rels/workbook.xml.rels').then(function (relBytes) {
+      var byId = {};
+      if (relBytes) {
+        var rels = new TextDecoder('utf-8').decode(relBytes);
+        var relRe = /<Relationship\b([^>]*?)\/?>/g, rm;
+        while ((rm = relRe.exec(rels)) !== null) {
+          var idM = /Id="([^"]*)"/.exec(rm[1]);
+          var tgtM = /Target="([^"]*)"/.exec(rm[1]);
+          if (idM && tgtM) byId[idM[1]] = tgtM[1];
+        }
+      }
+      sheets.forEach(function (s, i) {
+        var target = s.rid ? byId[s.rid] : null;
+        s.path = target ? normalizeZipPath(target) : 'xl/worksheets/sheet' + (i + 1) + '.xml';
+      });
+      return sheets;
+    });
+  });
+}
+
+function parseSheetXml(xml, shared) {
+  var rows = [], rowNums = [];
+  /* แถวว่างของ Excel เป็น <row r="5"/> ต้องจับก่อนแบบมีเนื้อหา ไม่งั้นจะกลืนแถวถัดไป */
+  var rowRe = /<row\b([^>]*?)\/>|<row\b([^>]*)>([\s\S]*?)<\/row>/g, rm;
+  while ((rm = rowRe.exec(xml)) !== null) {
+    var attrs = rm[1] || rm[2] || '';
+    var body = rm[3] || '';
+    var rM = /\br="(\d+)"/.exec(attrs);
+    var rowNum = rM ? +rM[1] : (rowNums.length ? rowNums[rowNums.length - 1] + 1 : 1);
+
+    var cells = [];
+    var cellRe = /<c([^>]*)\/>|<c([^>]*)>([\s\S]*?)<\/c>/g, cm;
+    while ((cm = cellRe.exec(body)) !== null) {
+      var cAttrs = cm[1] || cm[2] || '';
+      var cBody = cm[3] || '';
+      var refM = /r="([A-Z]+)\d+"/.exec(cAttrs);
+      var col = 0;
+      if (refM) {
+        var letters = refM[1];
+        for (var i = 0; i < letters.length; i++) col = col * 26 + (letters.charCodeAt(i) - 64);
+        col -= 1;
+      } else col = cells.length;
+
+      var type = (/t="([^"]+)"/.exec(cAttrs) || [])[1];
+      var value = '';
+      if (type === 's') {
+        var vm = /<v>([\s\S]*?)<\/v>/.exec(cBody);
+        value = vm ? (shared[+vm[1]] || '') : '';
+      } else if (type === 'inlineStr') {
+        value = textOfNode(cBody);
+      } else {
+        var vv = /<v>([\s\S]*?)<\/v>/.exec(cBody);
+        value = vv ? decodeXmlEntities(vv[1]) : '';
+      }
+      while (cells.length < col) cells.push('');
+      cells[col] = value;
+    }
+    rows.push(cells);
+    rowNums.push(rowNum);
+  }
+  return { rows: rows, rowNums: rowNums };
+}
+
+function parseXlsx(buffer, preferredSheet) {
   var zip;
   try { zip = unzip(buffer); }
   catch (e) { return Promise.reject(e); }
@@ -790,45 +897,30 @@ function parseXlsx(buffer) {
       var re = /<si>([\s\S]*?)<\/si>/g, m;
       while ((m = re.exec(ssXml)) !== null) shared.push(textOfNode(m[1]));
     }
-    // ชีตแรกของไฟล์คือชีตที่นำเข้า
-    var sheetName = zip.has('xl/worksheets/sheet1.xml') ? 'xl/worksheets/sheet1.xml' : null;
-    if (!sheetName) throw new Error('NO_SHEET');
 
-    return zip.read(sheetName).then(function (sheetBytes) {
-      var xml = new TextDecoder('utf-8').decode(sheetBytes);
-      var rows = [];
-      var rowRe = /<row[^>]*>([\s\S]*?)<\/row>/g, rm;
-      while ((rm = rowRe.exec(xml)) !== null) {
-        var cells = [];
-        var cellRe = /<c([^>]*)\/>|<c([^>]*)>([\s\S]*?)<\/c>/g, cm;
-        while ((cm = cellRe.exec(rm[1])) !== null) {
-          var attrs = cm[1] || cm[2] || '';
-          var body = cm[3] || '';
-          var refM = /r="([A-Z]+)\d+"/.exec(attrs);
-          var col = 0;
-          if (refM) {
-            var letters = refM[1];
-            for (var i = 0; i < letters.length; i++) col = col * 26 + (letters.charCodeAt(i) - 64);
-            col -= 1;
-          } else col = cells.length;
+    return xlsxSheetList(zip).then(function (sheets) {
+      var usable = sheets.filter(function (s) { return s.path && zip.has(s.path); });
+      if (!usable.length) throw new Error('NO_SHEET');
 
-          var type = (/t="([^"]+)"/.exec(attrs) || [])[1];
-          var value = '';
-          if (type === 's') {
-            var vm = /<v>([\s\S]*?)<\/v>/.exec(body);
-            value = vm ? (shared[+vm[1]] || '') : '';
-          } else if (type === 'inlineStr') {
-            value = textOfNode(body);
-          } else {
-            var vv = /<v>([\s\S]*?)<\/v>/.exec(body);
-            value = vv ? decodeXmlEntities(vv[1]) : '';
-          }
-          while (cells.length < col) cells.push('');
-          cells[col] = value;
-        }
-        rows.push(cells);
+      var want = normText(preferredSheet || MASTER_SHEET_NAME);
+      var chosen = null;
+      for (var i = 0; i < usable.length && !chosen; i++) {
+        if (normText(usable[i].name) === want) chosen = usable[i];
       }
-      return rows.filter(function (r) { return r.some(function (c) { return String(c).trim() !== ''; }); });
+      /* ไม่เจอชีตชื่อ "สินค้า" ก็ยังอ่านชีตแรกให้ แต่ต้องบอกในรายงานว่าอ่านชีตไหน */
+      var fellBack = !chosen;
+      if (!chosen) chosen = usable[0];
+
+      return zip.read(chosen.path).then(function (sheetBytes) {
+        var parsed = parseSheetXml(new TextDecoder('utf-8').decode(sheetBytes), shared);
+        return {
+          rows: parsed.rows,
+          rowNums: parsed.rowNums,
+          sheetName: chosen.name,
+          sheetNames: usable.map(function (s) { return s.name; }),
+          fellBackToFirstSheet: fellBack
+        };
+      });
     });
   });
 }
@@ -837,41 +929,176 @@ function parseXlsx(buffer) {
 var HEADER_MAP = {
   code:      ['รหัสสินค้า', 'รหัส', 'รหัสของ', 'code', 'itemcode', 'item_code', 'sku', 'barcode'],
   name:      ['ชื่อสินค้า', 'ชื่อ', 'รายการ', 'name', 'itemname', 'item_name', 'description', 'desc'],
-  unit:      ['หน่วย', 'หน่วยนับ', 'unit', 'uom'],
+  unit:      ['หน่วยสินค้า', 'หน่วย', 'หน่วยนับ', 'unit', 'uom'],
   systemQty: ['ยอดระบบ', 'ยอดในระบบ', 'จำนวนระบบ', 'จำนวนในระบบ', 'คงเหลือ', 'systemqty', 'system_qty', 'qty', 'quantity', 'stock']
 };
 
-function normHeader(s) { return String(s == null ? '' : s).replace(/\s|_/g, '').trim().toLowerCase(); }
+var REQUIRED_COLUMNS = [{ field: 'code', label: 'รหัสสินค้า' }, { field: 'systemQty', label: 'ยอดระบบ' }];
+var OPTIONAL_COLUMN_LABELS = ['ชื่อสินค้า', 'หน่วยสินค้า'];
 
-function rowsToItems(rows) {
+function normText(s) { return String(s == null ? '' : s).replace(/[\s_]/g, '').trim().toLowerCase(); }
+function cellText(v) { return String(v == null ? '' : v).trim(); }
+function rowHasContent(row) {
+  return (row || []).some(function (c) { return cellText(c) !== ''; });
+}
+
+/* หัวตารางจริงมักลงท้ายด้วย "สินค้า" — รหัสสินค้า/ชื่อสินค้า/หน่วยสินค้า
+   ตัดท้ายทิ้งแล้วเทียบอีกรอบ ครอบคลุมทั้งตระกูลโดยไม่ต้องไล่เพิ่ม alias ทีละคำ */
+function headerKeys(s) {
+  var n = normText(s);
+  var keys = [n];
+  var stripped = n.replace(/สินค้า$/, '');
+  if (stripped && stripped !== n) keys.push(stripped);
+  return keys;
+}
+
+function headerMatches(cell, aliases) {
+  return headerKeys(cell).some(function (k) { return aliases.indexOf(k) >= 0; });
+}
+
+/* ท้ายไฟล์ export มีแถวข้อมูลการพิมพ์รายงานต่อท้าย ไม่ใช่สินค้า
+   ของจริงมีสองแถว: "Exported by" แล้วตามด้วย "Date Time"
+   เจอแถวแรกของกลุ่มนี้เมื่อไหร่ = จบข้อมูลสินค้าแล้ว */
+var EXPORT_FOOTER_LABELS = [
+  'exportedby', 'exportby', 'printedby', 'printby', 'printdate', 'reportdate',
+  'วันที่พิมพ์', 'ผู้พิมพ์', 'พิมพ์โดย', 'ผู้ออกรายงาน'
+];
+function isExportFooter(cell) {
+  var n = normText(cell);
+  if (!n) return false;
+  if (n.indexOf('datetime') === 0) return true;
+  return EXPORT_FOOTER_LABELS.indexOf(n) >= 0;
+}
+
+/* บาง sheet มีแถวชื่อรายงานอยู่เหนือหัวตาราง — มองหาหัวตารางใน 10 แถวแรกที่ไม่ว่าง */
+function findHeaderRow(rows) {
+  var codeAliases = HEADER_MAP.code.map(normText);
+  var checked = 0;
+  for (var r = 0; r < rows.length && checked < 10; r++) {
+    if (!rowHasContent(rows[r])) continue;
+    checked++;
+    for (var c = 0; c < rows[r].length; c++) {
+      if (headerMatches(rows[r][c], codeAliases)) return r;
+    }
+  }
+  return -1;
+}
+
+function missingColumnsError(missing) {
+  var err = new Error('MISSING_COLUMNS');
+  err.missing = missing;
+  return err;
+}
+
+function parseQtyCell(raw) {
+  var s = String(raw == null ? '' : raw).replace(/,/g, '').trim();
+  if (s === '') return { qty: 0, blank: true };
+  var n = Number(s);
+  if (!isFinite(n)) return { qty: 0, bad: true };
+  return { qty: n };
+}
+
+/* parsed = { rows, rowNums, sheetName, ... } จาก parseXlsx / parseCsv */
+function rowsToItems(parsed) {
+  var rows = (parsed && parsed.rows) || [];
+  var rowNums = (parsed && parsed.rowNums) || [];
   if (!rows.length) throw new Error('EMPTY_FILE');
-  var header = rows[0].map(normHeader);
+
+  var headerRow = findHeaderRow(rows);
+  if (headerRow < 0) throw missingColumnsError(REQUIRED_COLUMNS.map(function (c) { return c.label; }));
+
+  var header = rows[headerRow];
   var idx = {};
   Object.keys(HEADER_MAP).forEach(function (field) {
-    var aliases = HEADER_MAP[field].map(normHeader);
+    var aliases = HEADER_MAP[field].map(normText);
     for (var c = 0; c < header.length; c++) {
-      if (aliases.indexOf(header[c]) >= 0) { idx[field] = c; return; }
+      if (headerMatches(header[c], aliases)) { idx[field] = c; return; }
     }
   });
-  if (idx.code === undefined) throw new Error('NO_CODE_COLUMN');
 
-  var items = {}, added = 0, skipped = 0;
-  for (var r = 1; r < rows.length; r++) {
-    var row = rows[r];
-    var code = String(row[idx.code] == null ? '' : row[idx.code]).trim();
-    if (!code) { skipped++; continue; }
-    var qtyRaw = idx.systemQty === undefined ? '0' : String(row[idx.systemQty] == null ? '' : row[idx.systemQty]);
-    var qty = parseFloat(qtyRaw.replace(/,/g, '').trim());
-    items[safeKey(code)] = {
-      code: code,
-      name: idx.name === undefined ? code : String(row[idx.name] == null ? '' : row[idx.name]).trim() || code,
-      unit: idx.unit === undefined ? '' : String(row[idx.unit] == null ? '' : row[idx.unit]).trim(),
-      systemQty: isFinite(qty) ? qty : 0
-    };
-    added++;
+  var missing = REQUIRED_COLUMNS
+    .filter(function (col) { return idx[col.field] === undefined; })
+    .map(function (col) { return col.label; });
+  if (missing.length) throw missingColumnsError(missing);
+
+  /* แถวว่างท้ายชีตของ Excel ไม่ใช่ข้อมูล ตัดทิ้งก่อนนับ ไม่งั้นรายงานจะบอกว่า
+     "ข้ามแถวว่างหลายหมื่นแถว" ซึ่งไม่มีประโยชน์กับใคร */
+  var lastReal = rows.length - 1;
+  while (lastReal > headerRow && !rowHasContent(rows[lastReal])) lastReal--;
+
+  var items = {}, firstRowOf = {};
+  var headerNum = rowNums[headerRow] || 1;
+  var stat = {
+    sheetName: parsed.sheetName || null,
+    sheetNames: parsed.sheetNames || [],
+    fellBackToFirstSheet: !!parsed.fellBackToFirstSheet,
+    /* นับตามเลขแถวจริง ไม่ใช่จำนวน <row> ที่มีในไฟล์ — Excel ตัดแถวว่างทิ้งไม่เขียนลงไฟล์
+       ถ้านับแต่แถวที่มีอยู่ ตัวเลขจะไม่ตรงกับที่ผู้ใช้เห็นตอนเปิดไฟล์ */
+    totalRows: (rowNums[lastReal] || headerNum) - headerNum,
+    headerRowNum: headerNum,
+    blank: 0, noCode: [], afterFooter: 0, footerRowNum: null, footerLabel: null,
+    merged: [], badQty: [], blankQty: 0, dataRows: 0
+  };
+
+  var stopped = false;
+  var prevNum = headerNum;
+  for (var r = headerRow + 1; r <= lastReal; r++) {
+    var row = rows[r] || [];
+    var num = rowNums[r];
+
+    /* เลขแถวที่หายไปคือแถวว่างที่ Excel ไม่ได้เขียนลงไฟล์ ต้องนับด้วย ไม่งั้นยอดไม่ลงตัว */
+    if (num > prevNum + 1) {
+      if (stopped) stat.afterFooter += num - prevNum - 1;
+      else stat.blank += num - prevNum - 1;
+    }
+    prevNum = num;
+
+    if (stopped) { if (rowHasContent(row)) stat.afterFooter++; continue; }
+    if (!rowHasContent(row)) { stat.blank++; continue; }
+    if (isExportFooter(row[0]) || isExportFooter(row[idx.code])) {
+      stopped = true;
+      stat.footerRowNum = num;
+      stat.footerLabel = cellText(row[0]) || cellText(row[idx.code]);
+      stat.afterFooter++;          // นับแถวปิดท้ายเองด้วย ตัวเลขในรายงานจะได้ลงตัวพอดี
+      continue;
+    }
+
+    stat.dataRows++;
+    var code = cellText(row[idx.code]);
+    if (!code) { stat.noCode.push(num); continue; }
+
+    var parsedQty = parseQtyCell(row[idx.systemQty]);
+    if (parsedQty.bad) stat.badQty.push(num);
+    if (parsedQty.blank) stat.blankQty++;
+
+    var name = idx.name === undefined ? '' : cellText(row[idx.name]);
+    var unit = idx.unit === undefined ? '' : cellText(row[idx.unit]);
+    var key = safeKey(code);
+
+    if (items[key]) {
+      /* รหัสซ้ำในไฟล์เดียวกัน = ของตัวเดียวกันวางหลายล็อต รวมยอดเข้าด้วยกัน */
+      items[key].systemQty += parsedQty.qty;
+      if (!items[key].name && name) items[key].name = name;
+      if (!items[key].unit && unit) items[key].unit = unit;
+      var entry = null;
+      for (var d = 0; d < stat.merged.length; d++) if (stat.merged[d].code === code) entry = stat.merged[d];
+      if (!entry) {
+        entry = { code: code, rows: [firstRowOf[key]], total: 0 };
+        stat.merged.push(entry);
+      }
+      entry.rows.push(num);
+      entry.total = items[key].systemQty;
+    } else {
+      items[key] = { code: code, name: name, unit: unit, systemQty: parsedQty.qty };
+      firstRowOf[key] = num;
+    }
   }
-  if (!added) throw new Error('NO_ROWS');
-  return { items: items, added: added, skipped: skipped, hasQtyColumn: idx.systemQty !== undefined };
+
+  Object.keys(items).forEach(function (k) { if (!items[k].name) items[k].name = items[k].code; });
+
+  stat.imported = Object.keys(items).length;
+  if (!stat.imported) throw new Error('NO_ROWS');
+  return { items: items, stat: stat };
 }
 
 /* Firebase keys cannot contain . $ # [ ] / or control chars */
@@ -891,6 +1118,7 @@ var state = {
   round: { zones: {}, items: {}, counts: {} },
   selectedItem: null,
   editing: null,     // count record being replaced
+  lastImport: null,  // { stat, diff } ของการนำเข้าครั้งล่าสุดในเซสชันนี้
   filter: 'all',
   page: 'start',
   openRows: {},
@@ -907,10 +1135,14 @@ function toast(msg, bad) {
   toast._t = setTimeout(function () { t.className = 'toast'; }, 3200);
 }
 
-function ask(title, message, okLabel) {
+function ask(title, message, okLabel, opts) {
+  opts = opts || {};
   return new Promise(function (resolve) {
     $('modalTitle').textContent = title;
     $('modalMsg').textContent = message;
+    $('modalDetail').innerHTML = '';
+    if (opts.detail) $('modalDetail').appendChild(opts.detail);
+    $('modalCancel').style.display = opts.hideCancel ? 'none' : '';
     $('modalOk').textContent = okLabel || 'ตกลง';
     $('modalBg').classList.add('show');
     function done(v) {
@@ -1057,10 +1289,31 @@ function saveCount(item, qty, supersedesId) {
   return db.update('rounds/' + state.roundId, patch);
 }
 
-function saveItems(roundId, items) {
-  var patch = {};
-  Object.keys(items).forEach(function (k) { patch['items/' + k] = items[k]; });
-  return db.update('rounds/' + roundId, patch);
+/* นำเข้าไฟล์ใหม่ = ยอดระบบชุดใหม่ทับของเดิม แต่สินค้าที่นับไปแล้วห้ามหาย
+   ไม่งั้นยอดที่นับไว้จะกลายเป็นเรคอร์ดลอย ตรวจย้อนหลังไม่ได้ */
+function applyImportedItems(roundId, newItems) {
+  var existing = state.round.items || {};
+  var counted = {};
+  liveCounts().forEach(function (rec) { counted[safeKey(rec.itemCode)] = true; });
+
+  var patch = {}, added = 0, updated = 0, removed = [], keptBecauseCounted = [];
+
+  Object.keys(newItems).forEach(function (k) {
+    if (existing[k]) updated++; else added++;
+    patch['items/' + k] = newItems[k];
+  });
+
+  Object.keys(existing).forEach(function (k) {
+    if (newItems[k]) return;
+    var code = (existing[k] && existing[k].code) || k;
+    if (counted[k]) { keptBecauseCounted.push(code); return; }
+    patch['items/' + k] = null;   // ยังเป็น update รายเรคอร์ด ไม่ใช่เขียนทับทั้งก้อน
+    removed.push(code);
+  });
+
+  return db.update('rounds/' + roundId, patch).then(function () {
+    return { added: added, updated: updated, removed: removed, keptBecauseCounted: keptBecauseCounted };
+  });
 }
 
 /* ============================================================
@@ -1145,9 +1398,18 @@ function renderStart() {
 
   /* import status */
   var itemCount = Object.keys(state.round.items || {}).length;
-  $('importStatus').textContent = !state.roundId
+  var status = !state.roundId
     ? 'เลือกรอบนับก่อน แล้วจึงนำเข้ายอดระบบ'
     : (itemCount ? 'รอบนี้มีสินค้าในระบบแล้ว ' + fmtNum(itemCount) + ' รายการ' : 'ยังไม่ได้นำเข้ายอดระบบของรอบนี้');
+  if (state.roundId && state.lastImport) {
+    var st = state.lastImport.stat;
+    var skippedRows = st.blank + st.noCode.length + st.afterFooter;
+    status += '\nนำเข้าล่าสุด: อ่าน ' + fmtNum(st.totalRows) + ' แถว · เข้าระบบ ' + fmtNum(st.imported) +
+              ' รายการ · ข้าม ' + fmtNum(skippedRows) + ' แถว';
+  }
+  $('importStatus').textContent = status;
+  $('importStatus').style.whiteSpace = 'pre-line';
+  $('btnImportReport').style.display = (state.roundId && state.lastImport) ? 'flex' : 'none';
   $('btnImport').disabled = !state.roundId;
   $('btnAddZone').disabled = !state.roundId;
 
@@ -1522,6 +1784,7 @@ function selectRound(id) {
   state.zoneId = localStorage.getItem('isrd_zone_' + id) || null;
   state.round = { zones: {}, items: {}, counts: {} };
   state.openRows = {};
+  state.lastImport = null;   // รายงานนำเข้าเป็นของแต่ละรอบ ห้ามค้างข้ามรอบ
 
   if (state.unsubRound) { state.unsubRound(); state.unsubRound = null; }
   state.unsubRound = db.subscribe('rounds/' + id, function (data) {
@@ -1538,35 +1801,154 @@ function selectRound(id) {
   renderStart();
 }
 
+/* ---------- รายงานผลนำเข้า ---------- */
+
+var REPORT_LIST_LIMIT = 50;
+
+function listWithLimit(values, unit) {
+  if (!values.length) return '';
+  var shown = values.slice(0, REPORT_LIST_LIMIT).join(', ');
+  var rest = values.length - REPORT_LIST_LIMIT;
+  return shown + (rest > 0 ? ' และอีก ' + fmtNum(rest) + ' ' + (unit || 'รายการ') : '');
+}
+
+function repSection(title) {
+  var box = document.createElement('div');
+  box.className = 'rep-sec';
+  var h = document.createElement('div');
+  h.className = 'rep-h';
+  h.textContent = title;
+  box.appendChild(h);
+  return box;
+}
+
+function repLine(parent, label, value, bad) {
+  var line = document.createElement('div');
+  line.className = 'rep-line' + (bad ? ' bad' : '');
+  var l = document.createElement('span'); l.textContent = label;
+  var v = document.createElement('b'); v.textContent = value;
+  line.appendChild(l); line.appendChild(v);
+  parent.appendChild(line);
+}
+
+function repNote(parent, text) {
+  if (!text) return;
+  var note = document.createElement('div');
+  note.className = 'rep-note';
+  note.textContent = text;
+  parent.appendChild(note);
+}
+
+function buildImportReport(stat, diff) {
+  var box = document.createElement('div');
+
+  var read = repSection('อ่านจากไฟล์');
+  if (stat.sheetName) repLine(read, 'ชีตที่อ่าน', stat.sheetName);
+  repLine(read, 'แถวทั้งหมด (ไม่นับหัวตาราง)', fmtNum(stat.totalRows) + ' แถว');
+  repLine(read, 'นำเข้าสำเร็จ', fmtNum(stat.imported) + ' รายการ');
+  if (stat.fellBackToFirstSheet) {
+    repNote(read, 'ไม่พบชีตชื่อ "' + MASTER_SHEET_NAME + '" จึงอ่านชีตแรกให้แทน — ชีตในไฟล์นี้: ' +
+                  stat.sheetNames.join(', '));
+  }
+  box.appendChild(read);
+
+  var skipped = stat.blank + stat.noCode.length + stat.afterFooter;
+  var skip = repSection('ข้ามไป ' + fmtNum(skipped) + ' แถว');
+  repLine(skip, 'แถวว่าง', fmtNum(stat.blank) + ' แถว');
+  repLine(skip, 'ไม่มีรหัสสินค้า', fmtNum(stat.noCode.length) + ' แถว', stat.noCode.length > 0);
+  if (stat.noCode.length) repNote(skip, 'แถวที่ ' + listWithLimit(stat.noCode, 'แถว'));
+  repLine(skip, 'แถวปิดท้ายไฟล์ export', fmtNum(stat.afterFooter) + ' แถว');
+  if (stat.footerRowNum) {
+    repNote(skip, 'เจอแถว "' + (stat.footerLabel || 'Date Time') + '" ที่แถวที่ ' + fmtNum(stat.footerRowNum) +
+                  ' ซึ่งเป็นข้อมูลการ export ไม่ใช่สินค้า จึงหยุดอ่านตรงนั้นและข้ามแถวที่เหลือทั้งหมด');
+  }
+  box.appendChild(skip);
+
+  if (stat.merged.length) {
+    var dup = repSection('รหัสซ้ำที่รวมยอดให้แล้ว ' + fmtNum(stat.merged.length) + ' รหัส');
+    stat.merged.slice(0, REPORT_LIST_LIMIT).forEach(function (m) {
+      repLine(dup, m.code + ' (แถวที่ ' + m.rows.join(' + ') + ')', 'รวม ' + fmtNum(m.total));
+    });
+    if (stat.merged.length > REPORT_LIST_LIMIT) {
+      repNote(dup, 'และอีก ' + fmtNum(stat.merged.length - REPORT_LIST_LIMIT) + ' รหัส');
+    }
+    box.appendChild(dup);
+  }
+
+  if (stat.badQty.length || stat.blankQty) {
+    var qty = repSection('ยอดระบบที่ตั้งให้เป็น 0');
+    if (stat.badQty.length) {
+      repLine(qty, 'ยอดระบบไม่ใช่ตัวเลข', fmtNum(stat.badQty.length) + ' แถว', true);
+      repNote(qty, 'แถวที่ ' + listWithLimit(stat.badQty, 'แถว'));
+    }
+    if (stat.blankQty) repLine(qty, 'ยอดระบบเว้นว่าง', fmtNum(stat.blankQty) + ' แถว');
+    box.appendChild(qty);
+  }
+
+  if (diff) {
+    var cmp = repSection('เทียบกับที่นำเข้าครั้งก่อน');
+    repLine(cmp, 'เพิ่มใหม่', fmtNum(diff.added) + ' รายการ');
+    repLine(cmp, 'อัปเดตยอด', fmtNum(diff.updated) + ' รายการ');
+    repLine(cmp, 'เอาออกเพราะไม่มีในไฟล์ใหม่', fmtNum(diff.removed.length) + ' รายการ');
+    if (diff.removed.length) repNote(cmp, listWithLimit(diff.removed, 'รายการ'));
+    if (diff.keptBecauseCounted.length) {
+      repLine(cmp, 'เก็บไว้เพราะนับไปแล้ว', fmtNum(diff.keptBecauseCounted.length) + ' รายการ', true);
+      repNote(cmp, 'ไม่มีในไฟล์ใหม่ แต่นับไปแล้วจึงไม่ลบทิ้ง เพื่อให้ยอดที่นับไว้ตรวจย้อนหลังได้: ' +
+                   listWithLimit(diff.keptBecauseCounted, 'รายการ'));
+    }
+    box.appendChild(cmp);
+  }
+
+  return box;
+}
+
+function showImportReport() {
+  if (!state.lastImport) return;
+  var stat = state.lastImport.stat;
+  ask('ผลการนำเข้ายอดระบบ',
+      'นำเข้าได้ ' + fmtNum(stat.imported) + ' รายการ จาก ' + fmtNum(stat.totalRows) + ' แถวในไฟล์',
+      'ปิด',
+      { hideCancel: true, detail: buildImportReport(stat, state.lastImport.diff) });
+}
+
+function showMissingColumnsHelp(missing) {
+  ask('ไฟล์นี้ยังใช้ไม่ได้',
+      'ไฟล์ที่อัปโหลดมาไม่มีคอลัมน์ ' + (missing || []).join(', ') + '\n\n' +
+      'ไฟล์ยอดระบบต้องมีหัวตารางอยู่แถวแรก และมีคอลัมน์เหล่านี้\n' +
+      'จำเป็น: ' + REQUIRED_COLUMNS.map(function (c) { return c.label; }).join(', ') + '\n' +
+      'ใส่หรือไม่ใส่ก็ได้: ' + OPTIONAL_COLUMN_LABELS.join(', ') + '\n\n' +
+      'กรุณาแก้หัวตารางในไฟล์ แล้วอัปโหลดใหม่อีกครั้ง — ยอดระบบเดิมในรอบนี้ยังอยู่ครบ ไม่ถูกแตะต้อง',
+      'รับทราบ', { hideCancel: true });
+}
+
 function handleImport(file) {
   if (!state.roundId) { toast('เลือกรอบนับก่อนนำเข้ายอดระบบ', true); return; }
 
   var isXlsx = /\.xlsx$/i.test(file.name);
+  $('btnImport').disabled = true;
+  $('importStatus').textContent = 'กำลังอ่านไฟล์...';
+
   file.arrayBuffer().then(function (buf) {
     return isXlsx ? parseXlsx(buf) : Promise.resolve(parseCsv(decodeTextFile(buf)));
-  }).then(function (rows) {
-    var parsed = rowsToItems(rows);
-    return saveItems(state.roundId, parsed.items).then(function () {
-      var msg = 'นำเข้าสำเร็จ ' + fmtNum(parsed.added) + ' รายการ';
-      if (parsed.skipped) msg += ' (ข้าม ' + fmtNum(parsed.skipped) + ' แถวที่ไม่มีรหัสสินค้า)';
-      toast(msg);
-      if (!parsed.hasQtyColumn) {
-        ask('ไม่พบคอลัมน์ยอดระบบ',
-            'นำเข้ารายการสินค้าเรียบร้อย แต่ไฟล์ไม่มีคอลัมน์ "ยอดระบบ"\nระบบตั้งยอดระบบให้เป็น 0 ทุกรายการ\nถ้าต้องการเทียบผลต่าง ให้เพิ่มคอลัมน์ "ยอดระบบ" แล้วนำเข้าไฟล์ใหม่อีกครั้ง',
-            'รับทราบ');
-      }
+  }).then(function (parsed) {
+    var result = rowsToItems(parsed);
+    return applyImportedItems(state.roundId, result.items).then(function (diff) {
+      state.lastImport = { stat: result.stat, diff: diff };
+      renderStart();
+      showImportReport();
     });
   }).catch(function (err) {
+    var code = err && err.message;
+    if (code === 'MISSING_COLUMNS') { showMissingColumnsHelp(err.missing); return; }
     var messages = {
       EMPTY_FILE: 'ไฟล์นี้ว่างเปล่า กรุณาตรวจไฟล์แล้วอัปโหลดใหม่',
-      NO_CODE_COLUMN: 'ไฟล์นี้ไม่มีคอลัมน์ "รหัสสินค้า" กรุณาตรวจหัวตารางแถวแรก แล้วอัปโหลดใหม่',
-      NO_ROWS: 'ไม่พบข้อมูลสินค้าในไฟล์ กรุณาตรวจว่าแถวแรกเป็นหัวตาราง และมีข้อมูลตั้งแต่แถวที่ 2 ลงไป',
-      NO_SHEET: 'อ่านไฟล์ Excel นี้ไม่ได้ กรุณาบันทึกเป็น .xlsx หรือ CSV แล้วอัปโหลดใหม่',
+      NO_ROWS: 'ไม่พบข้อมูลสินค้าในไฟล์ กรุณาตรวจว่ามีข้อมูลอยู่ใต้หัวตาราง และรหัสสินค้าไม่ได้เว้นว่างทั้งหมด',
+      NO_SHEET: 'อ่านไฟล์ Excel นี้ไม่ได้ กรุณาเปิดใน Excel แล้วบันทึกเป็น .xlsx หรือ CSV แล้วอัปโหลดใหม่',
       BAD_ZIP: 'ไฟล์ Excel นี้เสียหรือไม่ใช่ไฟล์ .xlsx กรุณาบันทึกไฟล์เป็น CSV แล้วอัปโหลดใหม่',
       NO_INFLATE: 'เครื่องนี้อ่านไฟล์ .xlsx ไม่ได้ กรุณาเปิดไฟล์ใน Excel แล้วบันทึกเป็น CSV จากนั้นอัปโหลดใหม่'
     };
-    toast(messages[err && err.message] || 'นำเข้าไฟล์ไม่สำเร็จ กรุณาตรวจไฟล์แล้วลองใหม่อีกครั้ง', true);
-  });
+    toast(messages[code] || 'นำเข้าไฟล์ไม่สำเร็จ กรุณาตรวจไฟล์แล้วลองใหม่อีกครั้ง', true);
+  }).then(function () { renderStart(); });
 }
 
 function doSave() {
@@ -1651,6 +2033,7 @@ function init() {
   };
 
   $('btnImport').onclick = function () { $('fileInput').click(); };
+  $('btnImportReport').onclick = showImportReport;
   $('fileInput').addEventListener('change', function () {
     if (this.files && this.files[0]) handleImport(this.files[0]);
     this.value = '';

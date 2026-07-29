@@ -1,0 +1,12 @@
+# ไฟล์ข้อมูลสต๊อกจริงจากระบบ — ห้ามขึ้น GitHub เพราะ Pages เป็น public
+*.xlsx
+*.xls
+*.csv
+
+# ไฟล์ล็อกที่ Excel สร้างตอนเปิดไฟล์ค้างไว้
+~$*
+
+# ขยะของ OS
+Thumbs.db
+desktop.ini
+.DS_Store
