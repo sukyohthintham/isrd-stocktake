@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="1.2.0">
+<meta name="version" content="1.3.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v1.2.0</title>
+<title>ISRD Stocktake v1.3.0</title>
 
 <style>
 :root{
@@ -88,7 +88,7 @@ select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,va
 }
 .nav button{
   flex:1;border:0;background:none;font-family:inherit;cursor:pointer;
-  padding:10px 4px;min-height:66px;color:var(--muted);font-size:13px;font-weight:600;
+  padding:10px 2px;min-height:66px;color:var(--muted);font-size:12px;font-weight:600;
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
 }
 .nav button .ic{font-size:22px;line-height:1}
@@ -252,6 +252,80 @@ table.grid td.neg{color:var(--short);font-weight:700}
 .toast.show{opacity:.96}
 .toast.bad{background:#991b1b}
 .foot{text-align:center;color:var(--muted);font-size:13px;padding:6px 0 10px}
+
+/* ---------- หน้าเอกสาร A4 ---------- */
+.docwrap{overflow-x:auto;-webkit-overflow-scrolling:touch;background:#e2e8f0;padding:10px;border-radius:12px}
+.doc{
+  width:210mm;min-height:297mm;background:#fff;color:#111827;
+  padding:14mm 12mm;margin:0 auto;box-shadow:0 2px 12px rgba(0,0,0,.18);
+  font-size:11pt;line-height:1.45;
+}
+.doc h1,.doc h2,.doc h3{margin:0}
+.doc .co-name{font-size:16pt;font-weight:800;letter-spacing:.3px}
+.doc .co-date{text-align:right;font-size:11pt;margin-top:-22px}
+.doc hr{border:0;border-top:2px solid #111827;margin:10px 0 14px}
+.doc-sec{margin-bottom:14px}
+.doc-lab{font-weight:700}
+.doc .to-list{margin:2px 0 0 24px;padding:0}
+.doc .to-list li{margin:1px 0}
+.doc .subject{font-size:12pt;font-weight:800;margin-top:8px}
+.doc .tf-line{margin-top:10px}
+.doc .tf-box{
+  display:inline-block;min-width:220px;border-bottom:1.5px dotted #111827;
+  padding:1px 6px;font-weight:700;
+}
+.doc table{border-collapse:collapse;width:100%;font-size:9.5pt}
+/* ตารางรายการมี 14 คอลัมน์ ถ้าปล่อยให้เบราว์เซอร์จัดเอง คอลัมน์ Reason จะถูกดันตกขอบ A4
+   จึงล็อกความกว้างเป็นเปอร์เซ็นต์ด้วย table-layout:fixed ให้พอดีหน้ากระดาษเสมอ */
+.doc table.items{table-layout:fixed;font-size:8pt}
+/* ภาษาไทยไม่มีช่องว่างระหว่างคำ ต้องใช้ overflow-wrap:anywhere ถึงจะตัดบรรทัดได้
+   ไม่งั้นข้อความยาวจะล้นออกนอกช่องแล้วถูกตัดหายตอนพิมพ์ */
+.doc table.items td,.doc table.items th{padding:3px 4px;overflow-wrap:anywhere;word-break:normal}
+.doc table th,.doc table td{border:1px solid #94a3b8;padding:4px 5px;vertical-align:middle}
+.doc table th{background:#e2e8f0;font-weight:700;text-align:center}
+.doc table td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.doc table td.mid{text-align:center}
+.doc tr.total-row td{background:#f1f5f9;font-weight:800}
+.doc .pos{color:#15803d;font-weight:700}
+.doc .neg{color:#b91c1c;font-weight:700}
+.doc .tbl-title{font-weight:800;font-size:11.5pt;margin:16px 0 6px}
+.doc .img-box{width:24px;height:24px;border:1px solid #94a3b8;border-radius:3px;margin:0 auto;background:#fff}
+.doc .reason-in{
+  width:100%;min-height:0;border:0;border-bottom:1px dotted #94a3b8;border-radius:0;
+  font-size:9pt;padding:2px 3px;background:transparent;font-family:inherit;
+}
+.doc .reason-in:focus{outline:none;background:#fef9c3}
+.donut-wrap{display:flex;align-items:center;gap:18px;margin:8px 0 4px}
+.donut-legend{font-size:10pt}
+.donut-legend .k{display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+.sign-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px 14px;margin-top:10px}
+.sign-box{border:1px solid #94a3b8;border-radius:4px;padding:8px 10px 6px;font-size:9.5pt}
+.sign-box .s-role{font-weight:700;margin-bottom:26px}
+.sign-box .s-line{border-top:1px dotted #111827;padding-top:3px;text-align:center;color:#475569}
+.doc-foot{margin-top:18px;padding-top:8px;border-top:1px solid #94a3b8;font-size:9pt;color:#334155;text-align:center}
+.doc .reopen-warn{
+  border:2px solid #b45309;background:#fef3c7;color:#78350f;
+  padding:8px 10px;border-radius:5px;font-size:10pt;margin-bottom:12px;
+}
+
+@media print {
+  @page { size: A4 portrait; margin: 12mm 10mm; }
+  html,body{background:#fff !important;padding:0 !important;margin:0 !important}
+  .topbar,.nav,.toast,.modal-bg,.no-print{display:none !important}
+  .wrap{padding:0 !important;max-width:none !important}
+  .page{display:none !important}
+  #pageDoc{display:block !important}
+  .docwrap{overflow:visible !important;background:none !important;padding:0 !important;border-radius:0}
+  .doc{width:auto !important;min-height:0 !important;box-shadow:none !important;padding:0 !important;margin:0 !important}
+  /* หัวตารางต้องซ้ำทุกหน้า และห้ามตัดกลางแถว */
+  table{page-break-inside:auto}
+  thead{display:table-header-group}
+  tfoot{display:table-footer-group}
+  tr{page-break-inside:avoid;page-break-after:auto}
+  .doc-sec,.sign-grid,.sign-box,.donut-wrap,.doc-foot{page-break-inside:avoid}
+  .doc .reason-in{border-bottom:0;background:transparent !important}
+  .doc table th{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
 </style>
 
 <div class="topbar">
@@ -424,16 +498,105 @@ table.grid td.neg{color:var(--short);font-weight:700}
     <div class="clist" id="manualList"></div>
   </div>
 
-  <button class="btn big block" id="btnExport">⬇ ดาวน์โหลด Excel</button>
+  <button class="btn big block" id="btnExport">⬇ ดาวน์โหลด Excel (ฉบับเต็ม)</button>
+</section>
+
+<!-- ============ PAGE 5 : DOCUMENT ============ -->
+<section class="page" id="pageDoc">
+  <div class="card no-print">
+    <h3>ออกเอกสาร Transfer</h3>
+    <label class="fld" style="margin-bottom:8px">
+      <span>เลขที่ Transfer</span>
+      <input type="text" id="docTransferNo" placeholder="เช่น Admin-TF-202607888" autocomplete="off">
+    </label>
+    <div class="row" style="margin-bottom:8px">
+      <input type="text" id="docCompany" placeholder="ชื่อบริษัท" autocomplete="off">
+      <input type="text" id="docAddress" placeholder="ที่อยู่บริษัท (พิมพ์ท้ายกระดาษ)" autocomplete="off">
+    </div>
+    <div class="filters">
+      <button class="btn sm" data-docprice="sellPrice">ราคาขาย</button>
+      <button class="btn sm grey" data-docprice="costPrice">ราคาต้นทุน</button>
+    </div>
+    <button class="btn big block" id="btnPrint">🖨 พิมพ์ / บันทึกเป็น PDF</button>
+    <button class="btn ghost block" id="btnDocExcel" style="margin-top:10px">⬇ ดาวน์โหลด Excel</button>
+    <p class="muted" style="margin:12px 0 0">
+      กดพิมพ์แล้วเลือก "บันทึกเป็น PDF" ในหน้าต่างพิมพ์ของเบราว์เซอร์ได้เลย<br>
+      ตั้งกระดาษ A4 แนวตั้ง · ช่อง Reason ที่พิมพ์ไว้จะติดไปในเอกสารด้วย
+    </p>
+  </div>
+
+  <div class="docwrap">
+    <div class="doc" id="docSheet">
+      <div id="docReopen"></div>
+      <div class="co-name" id="docCoName">(ยังไม่ได้ใส่ชื่อบริษัท)</div>
+      <div class="co-date" id="docDate"></div>
+      <hr>
+
+      <div class="doc-sec">
+        <span class="doc-lab">เรียน</span>
+        <ul class="to-list">
+          <li>Operation Manager</li>
+          <li>Area ประจำสาขา</li>
+          <li>พนักงานประจำสาขา</li>
+        </ul>
+        <div class="subject" id="docSubject"></div>
+        <div class="tf-line">
+          <span class="doc-lab">เลขที่ Transfer:</span>
+          <span class="tf-box" id="docTfShow">—</span>
+        </div>
+      </div>
+
+      <div class="doc-sec">
+        <div class="tbl-title">สรุปผลการนับ (Dashboard)</div>
+        <table id="docDash">
+          <thead><tr>
+            <th rowspan="2">กลุ่ม</th>
+            <th colspan="6">จำนวน (ชิ้น)</th>
+            <th rowspan="2">%Success</th>
+            <th colspan="3">มูลค่า (บาท)</th>
+            <th rowspan="2">SKU<br>ตรง/ขาด/เกิน/รวม</th>
+          </tr><tr>
+            <th>ในระบบ</th><th>จริง</th><th>ตรง</th><th>ขาด</th><th>เกิน</th><th>Dift</th>
+            <th>ระบบ</th><th>จริง</th><th>ผลต่าง</th>
+          </tr></thead>
+          <tbody id="docDashBody"></tbody>
+        </table>
+      </div>
+
+      <div class="doc-sec">
+        <div class="tbl-title">Stock Counting Accuracy</div>
+        <div class="donut-wrap">
+          <svg viewBox="0 0 120 120" width="140" height="140" role="img" aria-label="Stock Counting Accuracy">
+            <circle cx="60" cy="60" r="52" fill="none" stroke="#e2e8f0" stroke-width="16"></circle>
+            <circle id="donutArc" cx="60" cy="60" r="52" fill="none" stroke="#0f766e" stroke-width="16"
+                    stroke-dasharray="0 999" transform="rotate(-90 60 60)"></circle>
+            <text x="60" y="60" text-anchor="middle" font-size="19" font-weight="800" fill="#0f172a" id="donutPct">0%</text>
+            <text x="60" y="76" text-anchor="middle" font-size="8" fill="#64748b">Success</text>
+          </svg>
+          <div class="donut-legend" id="donutLegend"></div>
+        </div>
+      </div>
+
+      <div class="doc-sec" id="docItemTables"></div>
+
+      <div class="doc-sec">
+        <div class="tbl-title">ลงชื่อผู้เกี่ยวข้อง</div>
+        <div class="sign-grid" id="docSigns"></div>
+      </div>
+
+      <div class="doc-foot" id="docFoot">(ยังไม่ได้ใส่ที่อยู่บริษัท)</div>
+    </div>
+  </div>
 </section>
 
 </div>
 
 <nav class="nav">
   <button id="navStart" class="on"><span class="ic">📋</span>เริ่มนับ</button>
-  <button id="navScan" disabled><span class="ic">📷</span>ยิงบาร์โค้ด</button>
+  <button id="navScan" disabled><span class="ic">📷</span>ยิง</button>
   <button id="navMaster"><span class="ic">🗂</span>Master</button>
-  <button id="navSummary" disabled><span class="ic">📊</span>สรุปผล</button>
+  <button id="navSummary" disabled><span class="ic">📊</span>สรุป</button>
+  <button id="navDoc" disabled><span class="ic">📄</span>เอกสาร</button>
 </nav>
 
 <div class="modal-bg" id="modalBg">
@@ -459,7 +622,7 @@ table.grid td.neg{color:var(--short);font-weight:700}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '1.2.0';
+var APP_VERSION = '1.3.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -1370,6 +1533,9 @@ var state = {
   lastImport: null,
   masterFilter: 'all',
   priceField: 'sellPrice',
+  reasons: {},           // key -> ข้อความ Reason ในเอกสาร
+  transferNo: '',
+  company: {},           // { name, address } ใช้ร่วมทุกเครื่อง
   unsub: [],
   manualPicked: null,
   modalOpen: false,
@@ -1424,10 +1590,12 @@ function fmtClock(ms) {
 }
 function fmtNum(n) {
   if (n === null || n === undefined || !isFinite(n)) return '-';
+  if (Object.is(n, -0)) n = 0;        // ผลต่างติดลบคูณราคา 0 ได้ -0 ซึ่งพิมพ์ออกมาเป็น "-0"
   return Number(n).toLocaleString('th-TH', { maximumFractionDigits: 3 });
 }
 function fmtMoney(n) {
   if (n === null || n === undefined || !isFinite(n)) return '-';
+  if (Object.is(n, -0)) n = 0;
   return Number(n).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 function fmtPercent(n) {
@@ -2117,7 +2285,10 @@ function renderMaster() {
    ============================================================ */
 
 function blankGroup() {
-  return { sysQty: 0, actQty: 0, skuTotal: 0, skuMatch: 0, skuShort: 0, skuOver: 0, sysValue: 0, actValue: 0 };
+  return {
+    sysQty: 0, actQty: 0, skuTotal: 0, skuMatch: 0, skuShort: 0, skuOver: 0,
+    pcMatch: 0, pcShort: 0, pcOver: 0, sysValue: 0, actValue: 0
+  };
 }
 
 function summaryData() {
@@ -2142,12 +2313,17 @@ function summaryData() {
       if (act === sys) g.skuMatch++;
       else if (act < sys) g.skuShort++;
       else g.skuOver++;
+      /* นับเป็นชิ้นด้วย: ตรงกันกี่ชิ้น ขาดกี่ชิ้น เกินกี่ชิ้น */
+      g.pcMatch += Math.min(sys, act);
+      g.pcShort += Math.max(0, sys - act);
+      g.pcOver += Math.max(0, act - sys);
       g.sysValue += sys * price;
       g.actValue += act * price;
     });
 
     rows.push({
       key: key, code: p.code, name: p.name, unit: p.unit || '', type: bucket,
+      category: p.category || '',
       sys: sys, act: act, diff: act - sys, price: price,
       scanQty: Number(state.scanQty[key]) || 0,
       manualQty: Number(state.manualQty[key]) || 0
@@ -2323,6 +2499,306 @@ function exportExcel() {
   var a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = 'stocktake_' + safeName + '_' + stamp + '.xlsx';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+  toast('ดาวน์โหลดไฟล์ Excel แล้ว');
+}
+
+/* ============================================================
+   14b. หน้าเอกสาร Transfer (A4 สำหรับพิมพ์ / บันทึกเป็น PDF)
+        ใช้ตัวพิมพ์ของเบราว์เซอร์ล้วน ๆ ไม่มีไลบรารี PDF
+        เพราะไลบรารี PDF ฝั่งเบราว์เซอร์ต้องฝังฟอนต์ไทยเอง
+        ไม่งั้นสระลอยและวรรณยุกต์เพี้ยนทั้งเอกสาร
+   ============================================================ */
+
+var SIGN_ROLES = [
+  'Operation Manager', 'Area ประจำสาขา',
+  'พนักงานประจำสาขา (1)', 'พนักงานประจำสาขา (2)', 'พนักงานประจำสาขา (3)',
+  'พนักงาน Warehouse (1)', 'พนักงาน Warehouse (2)', 'พนักงาน Warehouse (3)'
+];
+
+function thaiDate(ms) {
+  return new Date(ms || Date.now()).toLocaleDateString('th-TH',
+    { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+function docCell(row, text, cls) {
+  var td = document.createElement('td');
+  if (cls) td.className = cls;
+  td.textContent = text;
+  row.appendChild(td);
+  return td;
+}
+
+function saveReason(key, value) {
+  var patch = {};
+  patch['reasons/' + key] = value || null;
+  return db.update('rounds/' + state.roundId, patch);
+}
+
+function saveTransferNo(value) {
+  var patch = { transferNo: value || null };
+  return db.update('rounds/' + state.roundId, patch);
+}
+
+function saveCompany(field, value) {
+  var patch = {};
+  patch[field] = value || null;
+  return db.update('settings/company', patch);
+}
+
+function renderDocDashboard(data) {
+  var body = $('docDashBody');
+  body.innerHTML = '';
+  ['product', 'notProduct', 'total'].forEach(function (name) {
+    var g = data.groups[name];
+    var tr = document.createElement('tr');
+    tr.setAttribute('data-group', name);
+    if (name === 'total') tr.className = 'total-row';
+    var dift = g.actQty - g.sysQty;
+    var diffValue = g.actValue - g.sysValue;
+    var pct = g.sysQty > 0 ? (g.actQty / g.sysQty) * 100 : null;
+
+    docCell(tr, GROUP_LABEL[name]);
+    docCell(tr, fmtNum(g.sysQty), 'num');
+    docCell(tr, fmtNum(g.actQty), 'num');
+    docCell(tr, fmtNum(g.pcMatch), 'num');
+    docCell(tr, fmtNum(g.pcShort), 'num');
+    docCell(tr, fmtNum(g.pcOver), 'num');
+    docCell(tr, (dift > 0 ? '+' : '') + fmtNum(dift), 'num ' + (dift > 0 ? 'pos' : (dift < 0 ? 'neg' : '')));
+    docCell(tr, fmtPercent(pct), 'num');
+    docCell(tr, fmtMoney(g.sysValue), 'num');
+    docCell(tr, fmtMoney(g.actValue), 'num');
+    docCell(tr, (diffValue > 0 ? '+' : '') + fmtMoney(diffValue),
+      'num ' + (diffValue > 0 ? 'pos' : (diffValue < 0 ? 'neg' : '')));
+    docCell(tr, fmtNum(g.skuMatch) + ' / ' + fmtNum(g.skuShort) + ' / ' +
+                fmtNum(g.skuOver) + ' / ' + fmtNum(g.skuTotal), 'mid');
+    body.appendChild(tr);
+  });
+}
+
+/* วาดโดนัทด้วย SVG ตรง ๆ — stroke-dasharray บนวงกลม ไม่ต้องพึ่งไลบรารีกราฟ */
+function renderDonut(pct) {
+  var r = 52;
+  var circumference = 2 * Math.PI * r;
+  var value = (pct === null || !isFinite(pct)) ? 0 : Math.max(0, Math.min(100, pct));
+  var arc = circumference * value / 100;
+  $('donutArc').setAttribute('stroke-dasharray', arc.toFixed(2) + ' ' + (circumference - arc).toFixed(2));
+  $('donutPct').textContent = fmtPercent(pct);
+
+  var legend = $('donutLegend');
+  legend.innerHTML = '';
+  [['#0f766e', 'นับตรงกับระบบ', pct === null ? '–' : fmtPercent(value)],
+   ['#e2e8f0', 'ส่วนที่ยังไม่ตรง', pct === null ? '–' : fmtPercent(100 - value)]
+  ].forEach(function (item) {
+    var d = document.createElement('div');
+    var k = document.createElement('span');
+    k.className = 'k';
+    k.style.background = item[0];
+    d.appendChild(k);
+    d.appendChild(document.createTextNode(item[1] + ' — ' + item[2]));
+    legend.appendChild(d);
+  });
+}
+
+var DOC_ITEM_HEAD = ['#', 'รูป', 'รหัสสินค้า', 'ชื่อสินค้า', 'หมวดหมู่', 'Type', 'จำนวน (ระบบ)',
+  'ยิงจริง', 'Dift', 'ราคา/ตัว', 'มูลค่ารวม (ระบบ)', 'มูลค่าจริง', 'ผลต่าง (มูลค่า)', 'Reason'];
+
+function buildDocItemTable(title, rows) {
+  var box = document.createElement('div');
+  var h = document.createElement('div');
+  h.className = 'tbl-title';
+  h.textContent = title + ' — ' + fmtNum(rows.length) + ' รายการ';
+  box.appendChild(h);
+
+  if (!rows.length) {
+    var none = document.createElement('div');
+    none.style.fontSize = '10pt';
+    none.style.color = '#475569';
+    none.textContent = 'ไม่มีรายการในกลุ่มนี้';
+    box.appendChild(none);
+    return box;
+  }
+
+  var table = document.createElement('table');
+  table.className = 'items';
+  table.setAttribute('data-doc-table', title);
+
+  /* กว้างรวม 100% พอดีหน้ากระดาษเสมอ ไม่ว่าชื่อสินค้าจะยาวแค่ไหน */
+  var widths = [3, 5, 11, 15, 8, 6, 6, 5, 5, 6, 7, 7, 7, 9];
+  var colgroup = document.createElement('colgroup');
+  widths.forEach(function (w) {
+    var col = document.createElement('col');
+    col.style.width = w + '%';
+    colgroup.appendChild(col);
+  });
+  table.appendChild(colgroup);
+
+  var thead = document.createElement('thead');
+  var htr = document.createElement('tr');
+  DOC_ITEM_HEAD.forEach(function (t) {
+    var th = document.createElement('th');
+    th.textContent = t;
+    htr.appendChild(th);
+  });
+  thead.appendChild(htr);
+  table.appendChild(thead);
+
+  var tbody = document.createElement('tbody');
+  rows.forEach(function (r, i) {
+    var tr = document.createElement('tr');
+    tr.setAttribute('data-code', r.code);
+    docCell(tr, String(i + 1), 'mid');
+
+    var imgTd = document.createElement('td');
+    imgTd.className = 'mid';
+    var frame = document.createElement('div');
+    frame.className = 'img-box';
+    imgTd.appendChild(frame);      // เว้นกรอบว่างไว้ก่อน เดี๋ยวต่อรูปทีหลัง
+    tr.appendChild(imgTd);
+
+    docCell(tr, r.code);
+    docCell(tr, r.name);
+    docCell(tr, r.category || '-');
+    docCell(tr, r.type === 'notProduct' ? 'Not Product' : 'Product', 'mid');
+    docCell(tr, fmtNum(r.sys), 'num');
+    docCell(tr, fmtNum(r.act), 'num');
+    docCell(tr, (r.diff > 0 ? '+' : '') + fmtNum(r.diff),
+      'num ' + (r.diff > 0 ? 'pos' : (r.diff < 0 ? 'neg' : '')));
+    docCell(tr, fmtMoney(r.price), 'num');
+    docCell(tr, fmtMoney(r.sys * r.price), 'num');
+    docCell(tr, fmtMoney(r.act * r.price), 'num');
+    var dv = (r.act - r.sys) * r.price;
+    docCell(tr, (dv > 0 ? '+' : '') + fmtMoney(dv),
+      'num ' + (dv > 0 ? 'pos' : (dv < 0 ? 'neg' : '')));
+
+    var rtd = document.createElement('td');
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'reason-in';
+    input.setAttribute('data-reason', r.key);
+    input.value = state.reasons[r.key] || '';
+    input.onchange = function () { saveReason(r.key, input.value.trim()); };
+    rtd.appendChild(input);
+    tr.appendChild(rtd);
+
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  box.appendChild(table);
+  return box;
+}
+
+function renderDocSigns() {
+  var box = $('docSigns');
+  box.innerHTML = '';
+  SIGN_ROLES.forEach(function (role) {
+    var d = document.createElement('div');
+    d.className = 'sign-box';
+    var r = document.createElement('div');
+    r.className = 's-role';
+    r.textContent = role;
+    var l1 = document.createElement('div');
+    l1.className = 's-line';
+    l1.textContent = 'ลงชื่อ';
+    var l2 = document.createElement('div');
+    l2.className = 's-line';
+    l2.style.marginTop = '14px';
+    l2.textContent = 'วันที่';
+    d.appendChild(r); d.appendChild(l1); d.appendChild(l2);
+    box.appendChild(d);
+  });
+}
+
+function renderDoc() {
+  var round = state.roundIndex[state.roundId] || { name: '-', branch: '-' };
+  var data = summaryData();
+
+  $('docCoName').textContent = state.company.name || '(ยังไม่ได้ใส่ชื่อบริษัท)';
+  $('docFoot').textContent = state.company.address || '(ยังไม่ได้ใส่ที่อยู่บริษัท)';
+  $('docDate').textContent = 'วันที่ ' + thaiDate(Date.now());
+  $('docSubject').textContent = 'เรื่อง  Transfer สินค้าสาขา ' + (round.branch || '-') + ' กลับคลังสินค้า';
+  $('docTfShow').textContent = state.transferNo || '—';
+
+  document.querySelectorAll('[data-docprice]').forEach(function (b) {
+    b.className = 'btn sm ' + (b.getAttribute('data-docprice') === state.priceField ? '' : 'grey');
+  });
+
+  renderDocDashboard(data);
+  var total = data.groups.total;
+  renderDonut(total.skuTotal > 0 ? (total.skuMatch / total.skuTotal) * 100 : null);
+
+  var short = data.rows.filter(function (r) { return r.diff < 0; });
+  var over = data.rows.filter(function (r) { return r.diff > 0; });
+  var match = data.rows.filter(function (r) { return r.diff === 0; });
+
+  var host = $('docItemTables');
+  host.innerHTML = '';
+  host.appendChild(buildDocItemTable('รายการสินค้า (ขาด)', short));
+  host.appendChild(buildDocItemTable('รายการสินค้า (เกิน)', over));
+  host.appendChild(buildDocItemTable('รายการสินค้า (ตรง)', match));
+
+  renderDocSigns();
+}
+
+function exportDocExcel() {
+  var round = state.roundIndex[state.roundId] || { name: 'stocktake', branch: '' };
+  var data = summaryData();
+  var priceLabel = state.priceField === 'costPrice' ? 'ราคาต้นทุน' : 'ราคาขาย';
+
+  var s1 = [['กลุ่ม', 'จำนวนในระบบ', 'จำนวนจริง', 'ตรง (ชิ้น)', 'ขาด (ชิ้น)', 'เกิน (ชิ้น)', 'Dift',
+             '%Success', 'มูลค่าระบบ', 'มูลค่าจริง', 'ผลต่างมูลค่า',
+             'SKU ตรง', 'SKU ขาด', 'SKU เกิน', 'SKU รวม']];
+  ['product', 'notProduct', 'total'].forEach(function (name) {
+    var g = data.groups[name];
+    s1.push([GROUP_LABEL[name], g.sysQty, g.actQty, g.pcMatch, g.pcShort, g.pcOver,
+             g.actQty - g.sysQty,
+             g.sysQty > 0 ? Math.round((g.actQty / g.sysQty) * 1000) / 10 : '',
+             Math.round(g.sysValue * 100) / 100, Math.round(g.actValue * 100) / 100,
+             Math.round((g.actValue - g.sysValue) * 100) / 100,
+             g.skuMatch, g.skuShort, g.skuOver, g.skuTotal]);
+  });
+  s1.push([]);
+  s1.push(['เลขที่ Transfer', state.transferNo || '-']);
+  s1.push(['สาขา', round.branch || '-']);
+  s1.push(['รอบนับ', round.name || '-']);
+  s1.push(['คิดมูลค่าด้วย', priceLabel]);
+  s1.push(['วันที่ออกเอกสาร', thaiDate(Date.now())]);
+
+  var s2 = [['#', 'รหัสสินค้า', 'ชื่อสินค้า', 'หมวดหมู่', 'Type', 'จำนวน (ระบบ)', 'ยิงจริง', 'Dift',
+             priceLabel + '/ตัว', 'มูลค่ารวม (ระบบ)', 'มูลค่าจริง', 'ผลต่าง (มูลค่า)',
+             'จากการยิง', 'จากการกรอกมือ', 'สถานะ', 'Reason']];
+  data.rows.forEach(function (r, i) {
+    s2.push([i + 1, r.code, r.name, r.category || '', r.type === 'notProduct' ? 'Not Product' : 'Product',
+             r.sys, r.act, r.diff, r.price,
+             Math.round(r.sys * r.price * 100) / 100, Math.round(r.act * r.price * 100) / 100,
+             Math.round((r.act - r.sys) * r.price * 100) / 100,
+             r.scanQty, r.manualQty,
+             r.diff === 0 ? 'ตรง' : (r.diff < 0 ? 'ขาด' : 'เกิน'),
+             state.reasons[r.key] || '']);
+  });
+
+  var s3 = [['วันเวลา', 'ค่าที่ยิงได้', 'โซน', 'ผู้ยิง']];
+  Object.keys(state.unknown).sort(function (a, b) {
+    return (state.unknown[b].ts || 0) - (state.unknown[a].ts || 0);
+  }).forEach(function (id) {
+    var u = state.unknown[id];
+    s3.push([fmtTime(u.ts), u.value, u.zoneName || zoneName(u.zone), u.user]);
+  });
+
+  var blob = buildXlsx([
+    { name: 'สรุป', rows: s1, widths: [16, 13, 12, 11, 11, 11, 10, 11, 14, 14, 14, 10, 10, 10, 10] },
+    { name: 'รายการทั้งหมด', rows: s2, widths: [5, 18, 36, 18, 12, 12, 10, 9, 12, 15, 14, 14, 11, 14, 9, 28] },
+    { name: 'บาร์โค้ดไม่พบ', rows: s3, widths: [22, 24, 18, 14] }
+  ]);
+
+  var safeBranch = String(round.branch || round.name || 'stocktake').replace(/[\\\/:*?"<>|]/g, '_').slice(0, 40);
+  var d = new Date();
+  var stamp = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'stocktake_' + safeBranch + '_' + stamp + '.xlsx';
   document.body.appendChild(a);
   a.click();
   setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
@@ -2528,7 +3004,7 @@ function sessionReady() { return startBlockers().length === 0; }
 
 function showPage(name) {
   state.page = name;
-  ['Start', 'Scan', 'Master', 'Summary'].forEach(function (p) {
+  ['Start', 'Scan', 'Master', 'Summary', 'Doc'].forEach(function (p) {
     var key = p.charAt(0).toLowerCase() + p.slice(1);
     $('page' + p).classList.toggle('active', key === name);
     $('nav' + p).classList.toggle('on', key === name);
@@ -2537,12 +3013,14 @@ function showPage(name) {
   if (name === 'summary') renderSummary();
   if (name === 'master') renderMaster();
   if (name === 'scan') renderScanPage();
+  if (name === 'doc') renderDoc();
 }
 
 function refreshNav() {
   var ready = sessionReady();
   $('navScan').disabled = !ready;
   $('navSummary').disabled = !state.roundId;
+  $('navDoc').disabled = !state.roundId;
   $('btnStart').disabled = !ready;
 
   var blockers = startBlockers();
@@ -2646,6 +3124,8 @@ function selectRound(id) {
   state.zones = {};
   state.systemQty = {};
   state.lastImport = null;
+  state.reasons = {};
+  state.transferNo = '';
   resetRoundAggregates();
   clearSubs();
   $('recentList').innerHTML = '';
@@ -2666,6 +3146,7 @@ function selectRound(id) {
       state.systemQty = data || {};
       renderStart();
       if (state.page === 'summary') renderSummary();
+      if (state.page === 'doc') renderDoc();
     }));
 
     /* ต่อท้ายอย่างเดียว จึงรับเฉพาะลูกที่เพิ่มใหม่ ไม่ดึงทั้งก้อนทุกครั้งที่มีคนยิง */
@@ -2677,6 +3158,19 @@ function selectRound(id) {
     state.unsub.push(db.subscribeChildren('rounds/' + id + '/unknown', function (uid, rec) {
       state.unknown[uid] = rec;
       if (state.page === 'scan') renderSyncBar();
+    }));
+
+    state.unsub.push(db.subscribe('rounds/' + id + '/reasons', function (data) {
+      state.reasons = data || {};
+      /* อย่าวาดตารางใหม่ขณะที่คนกำลังพิมพ์ Reason อยู่ ไม่งั้นโฟกัสหลุดกลางคำ */
+      var el = document.activeElement;
+      if (state.page === 'doc' && !(el && el.classList && el.classList.contains('reason-in'))) renderDoc();
+    }));
+
+    state.unsub.push(db.subscribe('rounds/' + id + '/transferNo', function (value) {
+      state.transferNo = value || '';
+      if ($('docTransferNo') !== document.activeElement) $('docTransferNo').value = state.transferNo;
+      $('docTfShow').textContent = state.transferNo || '—';
     }));
   });
 
@@ -2784,10 +3278,42 @@ function init() {
   });
 
   /* ---- สรุป ---- */
+  /* ปุ่มสลับราคาใช้ค่าเดียวกันทั้งหน้าสรุปและหน้าเอกสาร กดที่ไหนก็เปลี่ยนตามกันหมด */
+  function setPriceField(field) {
+    state.priceField = field;
+    if (state.page === 'summary') renderSummary();
+    if (state.page === 'doc') renderDoc();
+    document.querySelectorAll('[data-price]').forEach(function (x) {
+      x.className = 'btn sm ' + (x.getAttribute('data-price') === field ? '' : 'grey');
+    });
+    document.querySelectorAll('[data-docprice]').forEach(function (x) {
+      x.className = 'btn sm ' + (x.getAttribute('data-docprice') === field ? '' : 'grey');
+    });
+  }
   document.querySelectorAll('[data-price]').forEach(function (b) {
-    b.onclick = function () { state.priceField = b.getAttribute('data-price'); renderSummary(); };
+    b.onclick = function () { setPriceField(b.getAttribute('data-price')); };
+  });
+  document.querySelectorAll('[data-docprice]').forEach(function (b) {
+    b.onclick = function () { setPriceField(b.getAttribute('data-docprice')); };
   });
   $('btnExport').onclick = exportExcel;
+
+  /* ---- เอกสาร ---- */
+  $('navDoc').onclick = function () { if (state.roundId) showPage('doc'); };
+  $('btnPrint').onclick = function () { window.print(); };
+  $('btnDocExcel').onclick = exportDocExcel;
+  $('docTransferNo').addEventListener('change', function () {
+    saveTransferNo(this.value.trim()).then(function () { toast('บันทึกเลขที่ Transfer แล้ว'); });
+  });
+  $('docCompany').addEventListener('change', function () { saveCompany('name', this.value.trim()); });
+  $('docAddress').addEventListener('change', function () { saveCompany('address', this.value.trim()); });
+
+  db.subscribe('settings/company', function (data) {
+    state.company = data || {};
+    if ($('docCompany') !== document.activeElement) $('docCompany').value = state.company.name || '';
+    if ($('docAddress') !== document.activeElement) $('docAddress').value = state.company.address || '';
+    if (state.page === 'doc') renderDoc();
+  });
 
   /* ---- คิวเขียนข้อมูล ---- */
   window.addEventListener('online', flushQueue);
@@ -2821,6 +3347,20 @@ init();
   ====================================================================
   สรุปการเปลี่ยนแปลง
   ====================================================================
+
+  v1.3.0 — หน้าออกเอกสาร Transfer (พิมพ์เป็น PDF + Excel)
+    - หน้าเอกสาร A4 แนวตั้ง พิมพ์ด้วยตัวพิมพ์ของเบราว์เซอร์ ไม่มีไลบรารี PDF
+      (ไลบรารี PDF ฝั่งเบราว์เซอร์ต้องฝังฟอนต์ไทยเอง ไม่งั้นสระลอยทั้งฉบับ)
+      @media print ซ่อนแถบหัว แท็บล่าง และปุ่มทั้งหมด
+      หัวตารางซ้ำทุกหน้าด้วย display:table-header-group และไม่ตัดกลางแถว
+    - โครงเอกสาร: หัวจดหมาย + วันที่ พ.ศ. / เรียน / เรื่อง Transfer สาขา /
+      เลขที่ Transfer (แก้ในแอปได้) / ตาราง Dashboard / กราฟโดนัท %Success /
+      ตารางรายการ ขาด-เกิน-ตรง พร้อมช่อง Reason ที่พิมพ์ติดไปในเอกสาร /
+      ช่องลงชื่อ 8 ช่อง / ที่อยู่บริษัทท้ายกระดาษ
+    - กราฟโดนัทวาดด้วย SVG stroke-dasharray ไม่ใช้ไลบรารีกราฟ
+    - Excel 3 ชีท: สรุป / รายการทั้งหมด / บาร์โค้ดไม่พบ
+      ใช้ตัวเขียน .xlsx ที่มีอยู่ในไฟล์ตั้งแต่ v1.0.0 ไม่ได้เพิ่มไลบรารีใหม่
+    - ปุ่มสลับราคาขาย/ต้นทุนใช้ค่าเดียวกันทั้งหน้าสรุปและหน้าเอกสาร
 
   v1.2.0 — รื้อเป็นแบบยิงบาร์โค้ด (scan-first) + แยกข้อมูล 3 ชั้น
     - แยก products (Master ถาวร) / rounds/{id}/systemQty (ยอดระบบรายรอบ)
