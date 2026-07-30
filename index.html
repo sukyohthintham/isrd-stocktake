@@ -9362,14 +9362,23 @@ init();
 
 
 <!--
-  Firebase Realtime Database Rules — ฉบับใช้งานจริง (v1.9.0 มีล็อกอินแล้ว)
-  (คัดลอกทั้งก้อนไปวางใน Firebase Console > Realtime Database > Rules แล้วกด Publish)
+  Firebase Realtime Database Rules — ฉบับใช้งานจริง v2.0.0
+  (คัดลอกทั้งก้อนไปวางทับใน Firebase Console > Realtime Database > Rules แล้วกด Publish)
 
-  โปรเจกต์นี้ใช้ร่วมกับ WMS Dashboard ที่เก็บข้อมูลใต้ wms2026
-  กฎชุดนี้จึงต้องคลุมทั้งสองฝั่ง และต้องไม่ทำของเดิมพัง
+  ไล่จากโค้ดจริงแล้วว่าแอปเขียนลง path ไหนบ้าง ณ v2.0.0 — 13 จุด:
+    roundIndex · roundIndex/{id} · rounds/{id}/{zones,schema,systemQty,scans,
+    reasons,docType,docNo,transferNo,deductTransfer} · rounds/{id}/transfers ·
+    products · branches · locations/{set} · settings · settings/company ·
+    users · docCounters/{branch}/{kind}
 
-  ⚠ อ่าน "ลำดับการเปิดใช้" ท้ายไฟล์นี้ก่อนกด Publish
-    ถ้าวางกฎก่อนสร้างบัญชีและล็อกอินให้ได้ จะล็อกตัวเองออกจากระบบทันที
+  หมายเหตุเรื่อง cycle: ไม่มี node ชื่อ cycles ในฐานข้อมูล
+  cycle คำนวณจาก branchCode + ปีเดือน แล้วเก็บเป็นฟิลด์ cycleId บน roundIndex/{id}
+  จึงไม่ต้องมีกฎแยก — คุมด้วยกฎของ roundIndex อยู่แล้ว
+
+  ⚠ ก่อน Publish: ต้องมีบัญชีของคุณอยู่ใน stocktake2026/users/{uid}
+    ที่ role = "admin" และ active = true เสียก่อน ไม่งั้นจะล็อกตัวเองออก
+    (Rules ชั่วคราวที่ใช้อยู่ตอนนี้เปิดเขียนหมด แอปน่าจะสร้างเรคอร์ดให้แล้ว
+     เข้า Console > Realtime Database > Data กางดู stocktake2026/users ยืนยันก่อน)
 
   {
     "rules": {
@@ -9389,7 +9398,7 @@ init();
           ".read": "auth != null",
           "$uid": {
             ".write": "auth != null && ((root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin') || (!root.child('stocktake2026/users').exists() && $uid === auth.uid && newData.child('role').val() === 'admin' && newData.child('active').val() === true))",
-            ".validate": "newData.hasChildren(['name','role','active'])",
+            ".validate": "!newData.exists() || newData.hasChildren(['name','role','active'])",
             "name":   { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length < 120" },
             "role":   { ".validate": "newData.isString() && newData.val().matches(/^(admin|counter|viewer)$/)" },
             "active": { ".validate": "newData.isBoolean()" },
@@ -9397,10 +9406,21 @@ init();
           }
         },
 
-        "settings":    { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin'" },
-        "locations":   { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin'" },
-        "products":    { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin'" },
-        "branches":    { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin'" },
+        "products": {
+          ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin'"
+        },
+
+        "branches": {
+          ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin'"
+        },
+
+        "locations": {
+          ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin'"
+        },
+
+        "settings": {
+          ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin'"
+        },
 
         "docCounters": {
           "$branch": { "$kind": { "$yearMonth": {
@@ -9410,23 +9430,28 @@ init();
 
         "roundIndex": {
           "$roundId": {
-            ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && (!data.exists() || data.child('status').val() !== 'closed' || root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin')",
+            ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && (!data.exists() || data.child('status').val() !== 'closed' || root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin') && (newData.exists() || root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin')",
             ".validate": "!newData.exists() || newData.hasChildren(['jobCode','branchCode','status'])",
-            "status":    { ".validate": "newData.isString() && newData.val().matches(/^(counting|reviewing|closed)$/)" },
-            "closedAt":  { ".validate": "newData.isNumber()" },
-            "createdAt": { ".validate": "newData.isNumber()" }
+            "status":     { ".validate": "newData.isString() && newData.val().matches(/^(counting|reviewing|closed)$/)" },
+            "storeType":  { ".validate": "newData.isString() && newData.val().length < 24" },
+            "cycleId":    { ".validate": "newData.isString() && newData.val().length < 64" },
+            "closedAt":   { ".validate": "newData.isNumber()" },
+            "createdAt":  { ".validate": "newData.isNumber()" },
+            "importedAt": { ".validate": "newData.isNumber()" }
           }
         },
 
         "rounds": {
           "$roundId": {
-            "zones":      { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/)" },
-            "schema":     { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/)" },
-            "systemQty":  { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting'" },
-            "reasons":    { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() !== 'closed'" },
-            "docType":    { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() !== 'closed'" },
-            "docNo":      { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() !== 'closed'" },
-            "transferNo": { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() !== 'closed'" },
+            "zones":            { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/)" },
+            "schema":           { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/)" },
+            "systemQty":        { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting'" },
+            "transfers":        { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting'" },
+            "reasons":          { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() !== 'closed'" },
+            "docType":          { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() !== 'closed'" },
+            "docNo":            { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() !== 'closed'" },
+            "transferNo":       { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() !== 'closed'" },
+            "deductTransfer":   { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() !== 'closed'", ".validate": "newData.isBoolean()" },
 
             "scans": {
               "$scanId": {
@@ -9452,179 +9477,141 @@ init();
   }
 
   ====================================================================
-  กฎนี้ทำอะไรบ้าง
+  ทำไมถึงไม่มี ".write": true อยู่เลยสักที่
   ====================================================================
 
-  1. ปิด root — เดิมทั้งฐานเปิด public ใครก็ยิง GET /.json ดูดข้อมูลทั้งก้อน
-     หรือ PUT /.json ลบทิ้งทั้งฐานได้ ตอนนี้ทำไม่ได้แล้ว
-     WMS ไม่ได้เขียนที่ root จึงไม่กระทบ
+  Firebase ตรวจสิทธิ์แบบ "อนุญาตแล้วห้ามไม่ได้" — ถ้า node แม่ให้เขียนได้
+  ลูกทุกตัวจะเขียนได้ตามไปด้วย ปิดทีหลังไม่ได้
 
-  2. stocktake2026 อ่านได้เฉพาะคนที่ล็อกอินแล้ว และมีเรคอร์ดใน users
-     ที่ active = true เท่านั้น ปิดบัญชีใครก็หมดสิทธิ์ทันที ไม่ต้องเปลี่ยนรหัสผ่าน
-     (ปิดที่ Console ก็ได้ แต่ปิดที่นี่เร็วกว่าและมีประวัติว่าใครปิด)
+  ที่อันตรายจริงคือ rounds และ rounds/$roundId เพราะข้างใต้มี scans
+  ถ้าเผลอใส่ .write ที่สองชั้นนี้ ใครก็เขียนทับยอดที่นับไปแล้วได้ทันที
+  กฎชุดนี้จึงไม่มี .write ที่สองชั้นนั้นเลย ให้สิทธิ์ทีละ node ลูกแทน
+  (zones · schema · systemQty · transfers · reasons · docType · docNo ·
+   transferNo · deductTransfer · scans/$scanId · unknown/$id)
 
-  3. สิทธิ์ 3 ระดับ อ่านจาก users/{uid}/role ฝั่งเซิร์ฟเวอร์เสมอ
-     ไม่ได้เชื่อค่าที่ส่งมาจากเบราว์เซอร์
-       admin    เขียนได้ทุก node รวม users / products / branches / settings
-                และเป็นคนเดียวที่เปลี่ยน closed กลับเป็น counting ได้
-       counter  เขียน Job / zones / systemQty / scans / เอกสาร ได้
-                แต่แตะ users / products / branches / settings ไม่ได้เลย
-       viewer   เขียนไม่ได้เลยสักที่ อ่านอย่างเดียว
-
-  4. scans เขียนได้เฉพาะตอนสร้างใหม่ และเฉพาะตอน Job อยู่สถานะ counting
-     แก้หรือลบแถวเดิมไม่ได้เลยทุกกรณี แม้แต่ admin (!data.exists())
-     แก้ยอดผิดต้องเขียนแถวใหม่ delta ติดลบ ตามที่แอปทำอยู่
-
-  5. items / counts ของโครงสร้างเดิม v1.1 ล็อกอ่านอย่างเดียวถาวร
-
-  6. ตัวนับเลขที่เอกสารเพิ่มได้อย่างเดียว ลดไม่ได้
-     เลขที่ออกไปแล้วจะไม่ถูกใช้ซ้ำแม้มีคนพยายามรีเซ็ต
-
-  7. users อ่านได้ทุกคนที่ล็อกอินแล้ว (ต้องอ่านเพื่อรู้สิทธิ์ตัวเอง)
-     แต่เขียนได้เฉพาะ admin — ยกเว้นกรณีเดียวคือตอนตั้งต้นระบบ (ดูข้อถัดไป)
+  ส่วน products / branches / locations / settings / users มี .write ที่ระดับ node
+  แต่เป็น "เงื่อนไข admin" ไม่ใช่ true และข้างใต้ไม่มีอะไรที่ต้องเข้มกว่านั้น
+  จึงไม่มีปัญหาเรื่อง cascade
 
   ====================================================================
-  ผู้ดูแลคนแรก — กลไกตั้งต้นที่ปิดตัวเองอัตโนมัติ
+  สิทธิ์สรุปเป็นตาราง
   ====================================================================
 
-  เงื่อนไขใน users/$uid มีวงเล็บที่สองว่า
-
-    (!root.child('stocktake2026/users').exists() && $uid === auth.uid
-      && newData.child('role').val() === 'admin' && newData.child('active').val() === true)
-
-  แปลว่า "ถ้าในฐานยังไม่มี users เลย ให้คนที่ล็อกอินอยู่เขียนเรคอร์ดของตัวเองได้
-  หนึ่งครั้ง และต้องเป็น admin ที่ active เท่านั้น"
-
-  พอเขียนเสร็จ users ก็ไม่ว่างอีกต่อไป เงื่อนไขนี้จึงเป็นเท็จตลอดกาล
-  ไม่ต้องไปปิดเองทีหลัง และคนที่สองเป็นต้นไปต้องให้ admin เพิ่มให้เท่านั้น
-
-  ถ้าอยากปิดช่องนี้ให้สนิทหลังตั้งระบบเสร็จ ลบวงเล็บที่สองทั้งก้อนทิ้งได้เลย
-
-  ====================================================================
-  ลำดับการเปิดใช้ — ทำตามนี้เป๊ะ ๆ ไม่งั้นล็อกตัวเองออก
-  ====================================================================
-
-  1) เปิดวิธีล็อกอินก่อน
-     Firebase Console > เมนูซ้าย Build > Authentication
-     ถ้ายังไม่เคยใช้ กด "Get started" ก่อน
-     ไปแท็บ "Sign-in method" > กด Email/Password > สวิตช์ Enable ตัวบน > Save
-     (สวิตช์ตัวล่าง "Email link (passwordless sign-in)" ไม่ต้องเปิด)
-
-  2) สร้างบัญชีของตัวเอง
-     แท็บ "Users" > ปุ่ม "Add user" > ใส่อีเมลกับรหัสผ่าน > Add user
-
-  3) หา User UID ของบัญชีที่เพิ่งสร้าง
-     อยู่ในตารางแท็บ Users คอลัมน์ขวาสุดชื่อ "User UID"
-     เอาเมาส์ไปวางจะมีไอคอนคัดลอกขึ้นมา — ค่านี้คือสิ่งที่ต้องใช้
-     ในหน้า Master > ผู้ใช้ ของแอป ตอนเพิ่มคนอื่นเข้าระบบ
-
-  4) เข้าแอปแล้วล็อกอินด้วยบัญชีนั้น ตอนนี้ยังไม่ได้วางกฎใหม่
-     ฐานยังไม่มี users เลย แอปจะสร้างเรคอร์ดให้คุณเป็น admin อัตโนมัติ
-     ต้องเห็นชื่อและป้าย "ผู้ดูแลระบบ" ที่หน้า Master ก่อน จึงไปขั้นต่อไปได้
-
-  5) ค่อยวางกฎชุดนี้แล้วกด Publish
-     ถ้าวางกฎก่อนทำข้อ 4 จะไม่มีใครเป็น admin เลย และ users ก็เขียนไม่ได้
-     เพราะยังไม่มีใครมีสิทธิ์ — ต้องกลับไปวางกฎเก่าเพื่อแก้
-
-  6) เพิ่มคนอื่นเข้าระบบ — ตั้งแต่ v1.9.1 ทำในแอปได้เลย ไม่ต้องกลับมาที่ Console
-     แอป > Master > ผู้ใช้ > "+ เพิ่มผู้ใช้" ใส่ชื่อ อีเมล รหัสผ่าน แล้วเลือกสิทธิ์
-     ระบบสร้างบัญชีที่ Firebase และตั้งสิทธิ์ให้พร้อมกันในคำสั่งเดียว
-     เสร็จแล้วมีกล่องให้ก๊อปอีเมล+รหัสผ่านส่งไลน์ให้พนักงาน (แสดงครั้งเดียว)
-
-     Console ยังต้องใช้อยู่ 2 กรณีเท่านั้น
-       - ตั้งรหัสผ่านใหม่ให้บัญชีที่ใช้อีเมลปลอม @isrd.local (ส่งลิงก์ไม่ถึง)
-       - ลบบัญชีออกจาก Authentication จริง ๆ (ในแอปทำได้แค่ปิดการใช้งาน)
+  node                          อ่าน            เขียน
+  ----------------------------  --------------  ---------------------------
+  wms2026                       ทุกคน           ทุกคน (ของเดิม ไม่แตะ)
+  stocktake2026 (ทั้งก้อน)      active เท่านั้น  ไม่ได้ (ต้องลงไปทีละ node)
+  users                         ล็อกอินแล้ว      admin (+ คนแรกตอนตั้งระบบ)
+  products                      active          admin
+  branches                      active          admin
+  locations                     active          admin
+  settings                      active          admin
+  docCounters                   active          admin + counter (เพิ่มอย่างเดียว)
+  roundIndex/{id}               active          admin + counter
+                                                ออกจาก closed ได้เฉพาะ admin
+                                                ลบ Job ได้เฉพาะ admin
+  rounds/{id}/systemQty         active          admin + counter · เฉพาะ counting
+  rounds/{id}/transfers         active          admin + counter · เฉพาะ counting
+  rounds/{id}/scans/{id}        active          สร้างใหม่เท่านั้น · เฉพาะ counting
+                                                แก้/ลบไม่ได้ทุกกรณี แม้เป็น admin
+  rounds/{id}/reasons,docNo,    active          admin + counter · ยกเว้นตอน closed
+    docType,transferNo,
+    deductTransfer
+  rounds/{id}/zones,schema      active          admin + counter
+  rounds/{id}/items,counts      active          ไม่ได้เลย (ของเก่า v1.1 เก็บเป็นประวัติ)
 
   ====================================================================
-  คนนอกสมัครบัญชีเองได้ไหม — ได้ แต่ทำอะไรไม่ได้
+  ผู้ดูแลคนแรก — กลไกที่ปิดตัวเอง
   ====================================================================
 
-  apiKey ฝังอยู่ในหน้าเว็บ (Firebase ออกแบบมาแบบนั้น มันไม่ใช่ความลับ)
-  ใครก็ยิง accounts:signUp ตรง ๆ สมัครบัญชีเองได้ ห้ามไม่ได้จากฝั่งแอป
-
-  แต่บัญชีที่ไม่มีเรคอร์ดใน users/{uid} ทำอะไรกับข้อมูลไม่ได้เลยสักอย่าง
-    - อ่าน stocktake2026 ไม่ได้ เพราะ .read บังคับ active === true
-    - เขียนทุก node ไม่ได้ เพราะทุกเงื่อนไขอ่าน role จาก users/{uid} ที่ไม่มีอยู่
-    - อ่าน users ได้อย่างเดียว (จำเป็น ต้องอ่านเพื่อรู้สิทธิ์ตัวเอง)
-      เห็นชื่อกับอีเมลของพนักงาน แต่ไม่มีข้อมูลสต๊อกและแก้อะไรไม่ได้
-    - แอปขึ้นว่า "บัญชีนี้ยังไม่ได้รับสิทธิ์ใช้งาน" พร้อมโชว์ UID ให้ส่งแอดมิน
-    - หน้าล็อกอินไม่มีปุ่มสมัครสมาชิก และไม่มีทางไปหน้าสมัครจากในแอป
-
-  ถ้าอยากปิดช่องสมัครเองให้สนิท: Console > Authentication > Settings >
-  User actions > เอาเครื่องหมายถูกออกจาก "Enable create (sign-up)"
-
-  ⚠ แต่ปิดแล้วปุ่ม "+ เพิ่มผู้ใช้" ในแอปจะใช้ไม่ได้ตามไปด้วย เพราะใช้ endpoint
-  เดียวกัน จะปิดช่องนั้นแล้วยังสร้างบัญชีในแอปได้ ต้องมี backend ที่ใช้
-  Admin SDK ซึ่งขัดกฎ "ไม่มี backend server" ของโปรเจกต์นี้
-  เลือกเอาอย่างใดอย่างหนึ่ง — ตอนนี้เลือกไว้ที่ "สร้างในแอปได้"
+  วงเล็บที่สองใน users/$uid อนุญาตให้เขียนได้เมื่อ "ยังไม่มี users เลยในฐาน"
+  และเขียนเรคอร์ดของตัวเองเป็น admin ที่ active เท่านั้น
+  พอมีเรคอร์ดแรก users ก็ไม่ว่างอีก เงื่อนไขนี้จึงเป็นเท็จตลอดกาล
+  ถ้าอยากปิดสนิทหลังตั้งระบบเสร็จ ลบวงเล็บที่สองทั้งก้อนทิ้งได้เลย
 
   ====================================================================
-  ต้องทดสอบอะไรบ้างหลังวาง Rules
+  ต้องทดสอบอะไรหลัง Publish
   ====================================================================
 
-  ก) Rules Playground ใน Console (ยังไม่ต้อง Publish ก็ลองได้)
-     ตั้ง Authentication provider = Custom, ใส่ auth.uid = UID ของคุณ
+  ก) ก่อนกด Publish — Rules Playground
+     ตั้ง Authentication provider = Custom แล้วใส่ auth.uid = UID ของคุณ
 
-     - Location /wms2026/inbound                Type read   -> Allowed
-     - Location /wms2026/inbound                Type write  -> Allowed
-     - Location /                               Type read   -> Denied
-     - Location /                               Type write  -> Denied
-     - Location /stocktake2026/products         Type read   -> Allowed
-     - Location /stocktake2026/rounds/<id>/scans/<scanId>  Type write -> Denied
-       (ทับของเดิมไม่ได้แม้เป็น admin)
+     Location                                          Type    ต้องได้
+     ------------------------------------------------  ------  --------
+     /wms2026/inbound                                  read    Allowed
+     /wms2026/inbound                                  write   Allowed
+     /                                                 read    Denied
+     /                                                 write   Denied
+     /stocktake2026/products                           read    Allowed
+     /stocktake2026/locations/offline                  read    Allowed
+     /stocktake2026/rounds/<id>/scans/<scanId>         write   Denied
+       (ใส่ค่าอะไรก็ได้ — ทับของเดิมไม่ได้แม้เป็น admin)
+     /stocktake2026/rounds/<id>/items                  write   Denied
+     /stocktake2026/rounds/<id>                        write   Denied
+       (สำคัญ: ถ้าอันนี้ Allowed แปลว่าเผลอใส่ .write ที่ $roundId แล้ว)
 
      แล้วสลับเป็น Unauthenticated
-     - Location /stocktake2026                  Type read   -> Denied
-     - Location /stocktake2026/products         Type write  -> Denied
+     /stocktake2026                                    read    Denied
+     /stocktake2026/products                           write   Denied
 
-  ข) WMS Dashboard ของจริง — ต้องไม่กระทบเลย
-     - หน้าแรกโหลดข้อมูลขึ้นครบเหมือนเดิม (online / inbound / transport /
-       outbound / returns ต้องมีข้อมูลขึ้นทุกส่วน)
-     - ลองบันทึกรายการใหม่ 1 รายการ แล้วรีเฟรชดูว่ายังอยู่
-     - ลองแก้รายการเดิม 1 รายการ แล้วรีเฟรชดูว่าค่าเปลี่ยนตาม
-     - ถ้ามีหน้าไหนว่างเปล่า ให้ดู Console ของเบราว์เซอร์
-       ถ้าเจอ "permission_denied" ให้บอกมาว่า path ไหน จะได้เปิดเฉพาะ path นั้นเพิ่ม
+  ข) WMS Dashboard — ต้องไม่กระทบเลยแม้แต่นิด
+     - เปิดหน้าแรก ต้องมีข้อมูลขึ้นครบทุกส่วน
+       (online / inbound / transport / outbound / returns)
+     - บันทึกรายการใหม่ 1 รายการ แล้วรีเฟรชดูว่ายังอยู่
+     - แก้รายการเดิม 1 รายการ แล้วรีเฟรชดูว่าค่าเปลี่ยนตาม
+     - ถ้าหน้าไหนว่าง ให้เปิด Console ของเบราว์เซอร์ ถ้าเจอ permission_denied
+       ให้ส่ง path มา จะได้เปิดเฉพาะ path นั้นเพิ่ม
 
-  ค) ฝั่งแอปนับสต๊อก — ทดสอบด้วยบัญชี admin
-     - ปิดเบราว์เซอร์แล้วเปิดใหม่ ต้องเข้าได้เลยไม่ต้องพิมพ์รหัสซ้ำ
-     - ตัวบอกสถานะบนหัวต้องเป็นสีเขียว "ต่อฐานกลางแล้ว"
-     - สร้าง Job แล้วยิง 1 ครั้ง รีเฟรชแล้วยอดต้องยังอยู่
-     - ปิดรอบนับ แล้วลองยิงอีกครั้ง ต้องยิงไม่เข้า
+  ค) แอปนับสต๊อก — บัญชี admin
+     - ปิดเบราว์เซอร์เปิดใหม่ ต้องเข้าได้เลยไม่ต้องพิมพ์รหัสซ้ำ
+     - แถบบนหัวเป็นสีเขียว "ต่อฐานกลางแล้ว"
+     - Master > Location นำเข้าไฟล์จริง 16,076 แถว ต้องผ่านและขึ้นรายงาน
+       (ข้อนี้คือตัวที่พังแน่ถ้าลืมบรรทัด locations)
+     - Master > สินค้า แก้ราคาต้นทุนหรือ Status 1 รายการ ต้องบันทึกได้
+     - Master > ผู้ใช้ เพิ่มบัญชีใหม่ 1 คน ต้องสร้างได้และตั้ง role ได้
+     - สร้าง Job ยิง 1 ครั้ง รีเฟรชแล้วยอดยังอยู่
+     - นำเข้า TF Return ต้องได้ 37 SKU 86 ชิ้น
+     - ปิดรอบ แล้วลองยิงอีกครั้ง ต้องยิงไม่เข้า
      - กดเปิดรอบกลับพร้อมกรอกเหตุผล ต้องเปิดได้ (เพราะเป็น admin)
 
-  ง) ทดสอบด้วยบัญชี counter (สร้างจากในแอป: Master > ผู้ใช้ > + เพิ่มผู้ใช้)
-     - สร้าง 3 คนติดกันแล้วคุณต้องยังล็อกอินเป็นแอดมินอยู่เหมือนเดิม
-       ไม่เด้งออก ไม่กลายเป็นคนที่เพิ่งสร้าง
-     - กล่องสรุปอีเมล+รหัสผ่านต้องขึ้นทุกครั้ง กดปุ่มก๊อปแล้ววางในไลน์ได้จริง
-     - เอาอีเมลกับรหัสผ่านนั้นไปล็อกอินในเครื่องอื่น ต้องเข้าได้ทันที
-       โดยไม่ต้องให้แอดมินไปตั้งสิทธิ์เพิ่มอีกรอบ
-     - ยิงบาร์โค้ดได้ สร้างและปิด Job ได้
-     - หน้า Master ช่องราคาต้นทุน/ประเภท/รูป ต้องถูกล็อกกดไม่ได้
-     - ไม่เห็นแท็บ "ผู้ใช้" และไม่เห็นปุ่มเปิดรอบ/ลบ Job
-     - ปิด Job แล้วต้องเปิดกลับเองไม่ได้
+  ง) บัญชี counter (สร้างจากในแอป แล้วตั้ง role เป็น counter)
+     - ยิงบาร์โค้ดได้ · สร้างและปิด Job ได้ · ออกเลขที่เอกสารได้
+     - Master > สินค้า ช่องราคาต้นทุน / Status / รูป ต้องถูกล็อกกดไม่ได้
+     - Master ไม่เห็นแท็บ "ผู้ใช้" และ "บาร์โค้ดใหม่"
+     - นำเข้า Location ไม่ได้ (ปุ่มถูกปิด และถ้าเรียกตรง ๆ ฐานก็ปฏิเสธ)
+     - ปิด Job แล้วเปิดกลับเองไม่ได้
 
-  จ) ทดสอบด้วยบัญชี viewer
+  จ) บัญชี viewer
      - เข้าได้ ดูสรุปและพิมพ์เอกสารได้
-     - แท็บ "ยิง" กดไม่ได้ และหน้าเริ่มนับต้องบอกเหตุผลว่าสิทธิ์ไม่พอ
+     - แท็บ "ยิง" กดไม่ได้ และหน้าเริ่มนับบอกเหตุผลว่าสิทธิ์ไม่พอ
 
-  ฉ) ทดสอบการปิดบัญชี
-     - เอาบัญชี counter ไปกด "ปิดการใช้งานบัญชีนี้" ที่หน้าผู้ใช้
+  ฉ) ปิดบัญชี
+     - เอาบัญชี counter ไปกด "ปิดการใช้งานบัญชีนี้"
      - ให้เครื่องนั้นรีเฟรช ต้องเด้งออกมาหน้าล็อกอินพร้อมข้อความว่าบัญชีถูกปิด
-       แม้รหัสผ่านจะถูกต้องก็ตาม
+       แม้รหัสผ่านจะถูกต้อง
 
   ====================================================================
-  สิ่งที่กฎนี้ยัง "ไม่ได้" แก้ — ต้องรู้ไว้
+  สิ่งที่จะใช้ไม่ได้หลังวางกฎนี้ — ตั้งใจให้เป็นแบบนั้น
   ====================================================================
 
-  wms2026 ยังเปิดให้อ่านและเขียนได้โดยไม่ต้องล็อกอิน เพราะไม่รู้ว่า
-  WMS Dashboard ใช้ Firebase Auth อยู่หรือเปล่า ถ้าใส่เงื่อนไข auth ลงไป
-  แล้ว WMS ไม่ได้ล็อกอิน มันจะพังทันที กฎชุดนี้จึงเลือกไม่แตะพฤติกรรมเดิม
-  ตามที่กำหนดไว้ในข้อ C2
+  1) ปุ่ม "ย้ายข้อมูลในเครื่องขึ้นฐานกลาง" ในแท็บ Master
+     มันเขียน node บนสุดทีละก้อน (products, branches, rounds, roundIndex...)
+     ก้อน rounds จะถูกปฏิเสธ เพราะไม่มี .write ที่ระดับนั้นโดยเจตนา
+     ปุ่มนี้มีไว้ย้ายข้อมูลทดสอบจากโหมด local เท่านั้น ใช้งานจริงไม่ต้องใช้
 
-  พอ WMS ใส่ล็อกอินได้เมื่อไหร่ ให้เปลี่ยนสองบรรทัดนี้
+  2) ลบ Job จะลบแค่ roundIndex/{id} — ยอดที่นับไปแล้วใต้ rounds/{id} ยังอยู่
+     เป็นพฤติกรรมตั้งแต่ v1.9.0 ตามกฎ "ห้ามลบยอดที่นับไปแล้ว"
 
+  ====================================================================
+  สิ่งที่กฎนี้ยัง "ไม่ได้" แก้
+  ====================================================================
+
+  wms2026 ยังเปิดอ่านเขียนโดยไม่ต้องล็อกอิน เพราะระบบเดิมไม่มีล็อกอิน
+  ตามที่กำหนดไว้ ห้ามแตะ
+
+  พอ WMS ใส่ล็อกอินได้เมื่อไหร่ ให้เปลี่ยนบรรทัดเดียว
      "wms2026": { ".read": "auth != null", ".write": "auth != null" },
 
-  ระหว่างที่ยังไม่ได้ทำ ข้อมูลใต้ wms2026 ยังเปิดอยู่เหมือนเดิม
+  ระหว่างนี้ ข้อมูลใต้ wms2026 ยังเปิดอยู่เหมือนเดิม
   แต่ข้อมูลของแอปนับสต๊อกใต้ stocktake2026 ถูกปิดสนิทแล้ว
 -->
