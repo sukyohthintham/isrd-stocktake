@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="1.9.2">
+<meta name="version" content="1.9.3">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v1.9.2</title>
+<title>ISRD Stocktake v1.9.3</title>
 
 <style>
 :root{
@@ -184,6 +184,9 @@ body.locked .topbar,body.locked .wrap,body.locked .nav{display:none}
 }
 .scan-stage.hit{background:var(--over-bg);border-color:var(--over)}
 .scan-stage.miss{background:var(--short-bg);border-color:var(--short)}
+/* ส้ม = บันทึกยอดสำเร็จแล้ว แต่ไม่มีในระบบ ต้องตรวจทีหลัง — ไม่ใช่ความผิดพลาด */
+.scan-stage.newcode{background:var(--warn-bg);border-color:var(--warn)}
+.scan-newcode{font-family:ui-monospace,Consolas,monospace;font-size:17px;font-weight:700;color:#92400e}
 .scan-total{font-size:52px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;text-align:center}
 .scan-total-lab{text-align:center;font-size:13px;color:var(--muted);margin-top:4px}
 #scanInput{
@@ -307,6 +310,10 @@ table.grid td.neg{color:var(--short);font-weight:700}
   border:2px solid var(--line);background:#fff;
 }
 .jobbar.show{display:flex}
+/* กดได้จากทุกหน้า — เปิดเมนูจัดการรอบนับชุดเดียวกับกล่องท้ายหน้าสรุป */
+.jobbar[role=button]{cursor:pointer;-webkit-tap-highlight-color:transparent}
+.jobbar[role=button]:active{transform:scale(.995)}
+.jobbar .jb-more{font-weight:700;font-size:13px;opacity:.85;white-space:nowrap}
 .jobbar .jb-code{font-weight:800;font-size:16px;letter-spacing:.3px}
 .jobbar.counting{border-color:var(--over);background:var(--over-bg);color:#14532d}
 .jobbar.reviewing{border-color:var(--warn);background:var(--warn-bg);color:#78350f}
@@ -406,16 +413,19 @@ table.grid td.neg{color:var(--short);font-weight:700}
   font-size:9pt;padding:2px 3px;background:transparent;font-family:inherit;
 }
 .doc .reason-in:focus{outline:none;background:#fef9c3}
-/* กราฟโดนัทสองวง — ทั้งบล็อกอยู่กึ่งกลางหน้ากระดาษ และห้ามถูกตัดข้ามหน้า
-   บนจอมือถือเรียงลงมาแนวตั้ง แต่ตอนพิมพ์บังคับเรียงแนวนอนเสมอ (ดูบล็อก @media print) */
-.donut-block{text-align:center;margin:14px 0 6px;page-break-inside:avoid;break-inside:avoid}
-.donut-block .tbl-title{text-align:center;margin:0 0 10px}
-.donut-pair{display:flex;flex-direction:column;gap:16px;align-items:center}
+/* กราฟโดนัท 2 บล็อก (Product / Not Product) บล็อกละ 2 วง
+   แต่ละบล็อกห้ามถูกตัดข้ามหน้า และวงต้องเรียงแนวนอนเสมอตอนพิมพ์
+   บนจอมือถือเรียงลงมาแนวตั้ง (ดูบล็อก @media print ที่บังคับกลับเป็นแนวนอน) */
+#donutTitle{text-align:center}
+.donut-block{text-align:center;margin:10px 0;page-break-inside:avoid;break-inside:avoid}
+.donut-block .donut-head{font-weight:800;font-size:10.5pt;margin:0 0 6px}
+.donut-pair{display:flex;flex-direction:column;gap:14px;align-items:center}
 /* บนจอกินเต็มความกว้างทีละวง ห้ามให้ flex ย่อความสูงของ svg ที่ล็อกไว้เป็น mm */
 .donut-cell{flex:0 0 auto;width:100%;min-width:0;display:flex;flex-direction:column;align-items:center}
-.donut-cap{font-weight:700;font-size:10pt;margin-bottom:6px}
-.donut-svg{width:38mm;height:38mm;display:block;margin:0 auto}
-.donut-note{margin-top:8px;font-size:9pt;color:#334155;line-height:1.4}
+.donut-cap{font-weight:700;font-size:9.5pt;margin-bottom:4px}
+/* 32mm เพราะมี 4 วงแล้ว ต้องเหลือที่ให้ตารางในหน้าเดียวกัน */
+.donut-svg{width:32mm;height:32mm;display:block;margin:0 auto}
+.donut-note{margin-top:6px;font-size:8.5pt;color:#334155;line-height:1.35}
 .sign-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px 14px;margin-top:10px}
 .sign-box{border:1px solid #94a3b8;border-radius:4px;padding:8px 10px 6px;font-size:9.5pt}
 .sign-box .s-role{font-weight:700;margin-bottom:26px}
@@ -583,6 +593,14 @@ table.grid td.neg{color:var(--short);font-weight:700}
       </div>
       <div class="sl-qty" id="slQty"></div>
     </div>
+    <!-- ช่องคำอธิบายบาร์โค้ดที่ไม่มีในระบบ — ไม่บังคับ ข้ามได้ทันที ห้ามขวางจังหวะยิง -->
+    <div id="unknownNote" style="display:none;margin-top:10px">
+      <input type="text" id="unknownNoteInput" autocomplete="off"
+             placeholder="พิมพ์ชื่อของหรือคำอธิบายสั้น ๆ (ไม่ใส่ก็ได้ ยิงต่อได้เลย)">
+      <div class="hint" style="color:var(--muted);font-weight:400">
+        กด Enter เพื่อบันทึกคำอธิบาย · ไม่พิมพ์ก็ยิงตัวถัดไปได้เลย
+      </div>
+    </div>
   </div>
 
   <div class="row" style="margin:12px 0">
@@ -637,6 +655,7 @@ table.grid td.neg{color:var(--short);font-weight:700}
     <div class="filters" id="masterTabs">
       <button class="btn sm" data-mtab="products">สินค้า</button>
       <button class="btn sm grey" data-mtab="branches">คลังสินค้า/สาขา</button>
+      <button class="btn sm grey" data-mtab="newcodes" id="tabNewcodes" style="display:none">บาร์โค้ดใหม่</button>
       <button class="btn sm grey" data-mtab="users" id="tabUsers" style="display:none">ผู้ใช้</button>
     </div>
   </div>
@@ -689,6 +708,14 @@ table.grid td.neg{color:var(--short);font-weight:700}
       <div class="muted" id="branchCount"></div>
     </div>
     <div class="clist" id="branchList"></div>
+  </div>
+
+  <div id="masterNewcodes" style="display:none">
+    <div class="card">
+      <h3>บาร์โค้ดที่ไม่มีในระบบ <span class="chip" id="ncChip">0</span></h3>
+      <div class="muted" id="ncHint" style="margin-bottom:10px"></div>
+    </div>
+    <div class="clist" id="ncList"></div>
   </div>
 
   <div id="masterUsers" style="display:none">
@@ -778,6 +805,18 @@ table.grid td.neg{color:var(--short);font-weight:700}
 <!-- ============ PAGE 4 : SUMMARY ============ -->
 <section class="page" id="pageSummary">
   <div class="banner info" id="sumHead"></div>
+
+  <!-- อยู่บนสุดเพราะเป็นสิ่งที่คนเปิดหน้านี้ตั้งใจมาทำ ไม่ใช่สิ่งที่ทำหลังอ่านตารางจบ -->
+  <div class="card" id="jobManageCard">
+    <h3>จัดการรอบนับ</h3>
+    <div id="closeHint" class="muted" style="margin-bottom:10px"></div>
+    <button class="btn ghost block" id="btnReview">→ ส่งเข้าขั้นตรวจสอบ</button>
+    <button class="btn block" id="btnClose" style="margin-top:10px">🔒 ปิดรอบนับ</button>
+    <button class="btn grey block" id="btnReopen" style="margin-top:10px;display:none">🔓 เปิดรอบนับกลับมาแก้</button>
+    <button class="btn grey block" id="btnDeleteJob" style="margin-top:10px;display:none">🗑 ลบ Job นี้ (ผู้ดูแลระบบ)</button>
+    <div id="statusLogBox" style="margin-top:14px"></div>
+  </div>
+
   <div class="filters">
     <button class="btn sm" data-price="sellPrice">ราคาขาย</button>
     <button class="btn sm grey" data-price="costPrice">ราคาต้นทุน</button>
@@ -796,7 +835,8 @@ table.grid td.neg{color:var(--short);font-weight:700}
   <div class="muted" id="costNote" style="margin-bottom:14px"></div>
 
   <div class="card">
-    <h3>บาร์โค้ดไม่พบในระบบ <span class="chip" id="unknownChip">0</span></h3>
+    <h3>บาร์โค้ดที่ไม่มีในระบบ <span class="chip" id="unknownChip">0</span></h3>
+    <div class="muted" id="unknownHint" style="margin-bottom:10px"></div>
     <div class="clist" id="unknownList"></div>
   </div>
 
@@ -806,15 +846,6 @@ table.grid td.neg{color:var(--short);font-weight:700}
   </div>
 
   <button class="btn big block" id="btnExport">⬇ ดาวน์โหลด Excel (ฉบับเต็ม)</button>
-
-  <div class="card" style="margin-top:14px">
-    <h3>จัดการรอบนับ</h3>
-    <div id="closeHint" class="muted" style="margin-bottom:10px"></div>
-    <button class="btn ghost block" id="btnReview">→ ส่งเข้าขั้นตรวจสอบ</button>
-    <button class="btn block" id="btnClose" style="margin-top:10px">🔒 ปิดรอบนับ</button>
-    <button class="btn grey block" id="btnReopen" style="margin-top:10px;display:none">🔓 เปิดรอบนับกลับมาแก้ (Admin)</button>
-    <button class="btn grey block" id="btnDeleteJob" style="margin-top:10px;display:none">🗑 ลบ Job นี้ (ผู้ดูแลระบบ)</button>
-  </div>
 </section>
 
 <!-- ============ PAGE 5 : DOCUMENT ============ -->
@@ -905,36 +936,9 @@ table.grid td.neg{color:var(--short);font-weight:700}
         </table>
       </div>
 
-      <div class="doc-sec donut-block">
-        <div class="tbl-title">Stock Counting Accuracy</div>
-        <div class="donut-pair">
-          <div class="donut-cell">
-            <div class="donut-cap">%Success (ชิ้น)</div>
-            <svg class="donut-svg" viewBox="0 0 120 120" role="img" aria-label="%Success (ชิ้น)">
-              <circle cx="60" cy="60" r="50" fill="none" stroke="#e2e8f0" stroke-width="17"></circle>
-              <circle id="donutArcPc" cx="60" cy="60" r="50" fill="none" stroke="#0f766e" stroke-width="17"
-                      stroke-dasharray="0 999" transform="rotate(-90 60 60)"></circle>
-              <text x="60" y="57" text-anchor="middle" dominant-baseline="central"
-                    font-size="23" font-weight="800" fill="#0f172a" id="donutPctPc">0%</text>
-              <text x="60" y="79" text-anchor="middle" dominant-baseline="central"
-                    font-size="8.5" fill="#64748b">Success</text>
-            </svg>
-            <div class="donut-note" id="donutNotePc"></div>
-          </div>
-          <div class="donut-cell">
-            <div class="donut-cap">%Success (SKU) — Product</div>
-            <svg class="donut-svg" viewBox="0 0 120 120" role="img" aria-label="%Success (SKU) Product">
-              <circle cx="60" cy="60" r="50" fill="none" stroke="#e2e8f0" stroke-width="17"></circle>
-              <circle id="donutArcSku" cx="60" cy="60" r="50" fill="none" stroke="#0f766e" stroke-width="17"
-                      stroke-dasharray="0 999" transform="rotate(-90 60 60)"></circle>
-              <text x="60" y="57" text-anchor="middle" dominant-baseline="central"
-                    font-size="23" font-weight="800" fill="#0f172a" id="donutPctSku">0%</text>
-              <text x="60" y="79" text-anchor="middle" dominant-baseline="central"
-                    font-size="8.5" fill="#64748b">Success</text>
-            </svg>
-            <div class="donut-note" id="donutNoteSku"></div>
-          </div>
-        </div>
+      <div class="doc-sec">
+        <div class="tbl-title" id="donutTitle">Stock Counting Accuracy</div>
+        <div id="donutGroups"></div>
       </div>
 
       <div class="doc-sec" id="docItemTables"></div>
@@ -984,7 +988,7 @@ table.grid td.neg{color:var(--short);font-weight:700}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '1.9.2';
+var APP_VERSION = '1.9.3';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -2201,7 +2205,9 @@ var state = {
   zoneTotals: {},        // zoneId -> จำนวนชิ้นในโซนนั้น
   manualLog: [],
   scanLog: [],           // ทุกแถว สำหรับ export
-  unknown: {},           // pushId -> {value, zone, user, ts}
+  unknown: {},           // รอบเก่าก่อน v1.9.3: pushId -> {value, zone, user, ts}
+  unknownKeys: {},       // safeKey(บาร์โค้ด) -> { value, qty, note, firstTs, zone, user }
+  noteOpen: false,       // กำลังพิมพ์คำอธิบายบาร์โค้ดที่ไม่รู้จักอยู่
   appliedScanIds: Object.create(null),
   undoStack: [],
   scanIndex: null,       // Map: บาร์โค้ด/รหัส (ตัวพิมพ์ใหญ่) -> key
@@ -2351,9 +2357,76 @@ function applyScanRecord(id, rec) {
   } else {
     state.scanQty[key] = (state.scanQty[key] || 0) + delta;
   }
+
+  /* บาร์โค้ดที่ไม่มีใน Master — เก็บข้อมูลสรุปไว้ต่อหนึ่งบาร์โค้ด
+     ทุกอย่างคำนวณจาก scan ล้วน ๆ ไม่ต้องมีตารางแยกให้ไม่ตรงกัน */
+  if (rec.unknown) {
+    var u = state.unknownKeys[key];
+    if (!u) {
+      u = state.unknownKeys[key] = {
+        key: key, value: rec.raw || rec.code, qty: 0,
+        firstTs: rec.ts, zone: rec.zoneName || rec.zone || '', user: rec.user || '', note: ''
+      };
+    }
+    u.qty += delta;
+    if (rec.ts && rec.ts < u.firstTs) {
+      u.firstTs = rec.ts;
+      u.zone = rec.zoneName || rec.zone || '';
+      u.user = rec.user || '';
+    }
+    /* คำอธิบายล่าสุดชนะ — แถวก่อนหน้ายังอยู่ครบในประวัติ */
+    if (rec.mode === 'note' && rec.reason && (!u.noteTs || rec.ts >= u.noteTs)) {
+      u.note = rec.reason;
+      u.noteTs = rec.ts;
+    }
+  }
+
   state.scanLog.push({ id: id, rec: rec });
   delete state.jobStats[state.roundId];   // ความคืบหน้าที่แคชไว้เก่าแล้ว
   return true;
+}
+
+/* บาร์โค้ดที่ยังไม่ถูกจัดการ = ยังไม่มีสินค้าที่ผูกกับค่านี้ และยอดยังเหลืออยู่
+   ผูกกับสินค้าอื่นแล้วยอดจะถูกย้ายจนเหลือ 0 · สร้างเป็นสินค้าใหม่แล้ว products จะมีคีย์นี้ */
+function unknownResolved(u) {
+  if (state.products[u.key]) return true;
+  if (state.scanIndex && state.scanIndex.get(String(u.value).toUpperCase())) return true;
+  return u.qty <= 0;
+}
+
+function unknownRows(includeResolved) {
+  var rows = Object.keys(state.unknownKeys).map(function (k) {
+    var u = state.unknownKeys[k];
+    return {
+      key: u.key, value: u.value, qty: u.qty, note: u.note || '',
+      firstTs: u.firstTs, zone: u.zone, user: u.user,
+      resolved: unknownResolved(u), legacy: false
+    };
+  });
+  /* รอบเก่าก่อน v1.9.3 เก็บไว้ที่ unknown/ โดยไม่มียอด — ยังต้องเห็นในรายงาน */
+  var seen = {};
+  rows.forEach(function (r) { seen[String(r.value).toUpperCase()] = 1; });
+  Object.keys(state.unknown).forEach(function (id) {
+    var u = state.unknown[id] || {};
+    var v = String(u.value || '');
+    if (!v || seen[v.toUpperCase()]) return;
+    seen[v.toUpperCase()] = 1;
+    rows.push({
+      key: safeKey(v), value: v, qty: 0, note: '',
+      firstTs: u.ts, zone: u.zoneName || u.zone || '', user: u.user || '',
+      resolved: false, legacy: true
+    });
+  });
+  if (!includeResolved) rows = rows.filter(function (r) { return !r.resolved; });
+  return rows.sort(function (a, b) { return (a.firstTs || 0) - (b.firstTs || 0); });
+}
+
+function unknownPending() { return unknownRows(false).length; }
+
+/* ใช้ในชุดทดสอบเพื่อยืนยันว่าบาร์โค้ดสำรองถูกใส่เข้า index แล้วจริง */
+function scanIndexHas(value) {
+  if (!state.scanIndex) buildScanIndex();
+  return !!state.scanIndex.get(String(value).toUpperCase());
 }
 
 function resetRoundAggregates() {
@@ -2364,8 +2437,16 @@ function resetRoundAggregates() {
   state.manualLog = [];
   state.scanLog = [];
   state.unknown = {};
+  state.unknownKeys = {};
   state.appliedScanIds = Object.create(null);
   state.undoStack = [];
+}
+
+function altBarcodes(p) {
+  var raw = (p && p.altBarcodes) || null;
+  if (!raw) return [];
+  if (Object.prototype.toString.call(raw) === '[object Array]') return raw;
+  return Object.keys(raw).map(function (k) { return raw[k]; });   // Firebase คืน object ได้
 }
 
 function buildScanIndex() {
@@ -2373,6 +2454,11 @@ function buildScanIndex() {
   Object.keys(state.products).forEach(function (key) {
     var bc = String(state.products[key].barcode || '').trim().toUpperCase();
     if (bc) map.set(bc, key);
+    /* บาร์โค้ดสำรองที่แอดมินผูกเข้ามาทีหลัง ต้องยิงติดเหมือนบาร์โค้ดหลัก */
+    altBarcodes(state.products[key]).forEach(function (alt) {
+      var a = String(alt || '').trim().toUpperCase();
+      if (a) map.set(a, key);
+    });
   });
   /* ใส่รหัสสินค้าทีหลัง เพื่อให้ชนะบาร์โค้ดของตัวอื่นเมื่อค่าชนกัน */
   Object.keys(state.products).forEach(function (key) {
@@ -2572,19 +2658,23 @@ function createZone(roundId, name) {
   return db.update('rounds/' + roundId, patch).then(function () { return id; });
 }
 
-function writeScan(key, delta, mode, reason) {
+function writeScan(key, delta, mode, reason, extra) {
   var product = state.products[key] || { code: key };
   var id = db.newKey();
+  /* zone ต้องมีค่าเสมอ — Database Rules บังคับ hasChildren(['code','zone','delta','user','ts'])
+     และ Firebase ตัดคีย์ที่เป็น undefined ทิ้ง แถวที่เขียนจากหน้า Master (ตอนจัดการ
+     บาร์โค้ดใหม่) อาจยังไม่ได้เลือกโซน ถ้าปล่อยว่างจะถูกฐานปฏิเสธทั้งแถว */
   var rec = {
     code: product.code || key,
-    zone: state.zoneId,
-    zoneName: zoneName(state.zoneId),
-    user: state.counter,
+    zone: state.zoneId || 'no-zone',
+    zoneName: state.zoneId ? zoneName(state.zoneId) : '(ไม่ระบุโซน)',
+    user: state.counter || 'ไม่ระบุ',
     ts: Date.now(),
     delta: delta,
     mode: mode
   };
   if (reason) rec.reason = reason;
+  if (extra) Object.keys(extra).forEach(function (f) { rec[f] = extra[f]; });
 
   applyScanRecord(id, rec);                       // นับในเครื่องทันที ไม่รอเน็ต
   var patch = {};
@@ -2593,13 +2683,17 @@ function writeScan(key, delta, mode, reason) {
   return { id: id, rec: rec };
 }
 
-function writeUnknown(value) {
-  var id = db.newKey();
-  var rec = { value: value, zone: state.zoneId, zoneName: zoneName(state.zoneId), user: state.counter, ts: Date.now() };
-  state.unknown[id] = rec;
-  var patch = {};
-  patch['unknown/' + id] = rec;
-  enqueueWrite('rounds/' + state.roundId, patch);
+/* บาร์โค้ดที่ไม่มีใน Master = ของจริงที่เจอบนชั้น ต้องนับเข้าไปด้วย
+   เขียนเป็น scan ปกติทุกอย่าง ต่างแค่ติดธง unknown:true และ code คือค่าที่ยิงมาดิบ ๆ
+   ยิงซ้ำจึงบวกเป็น 2, 3 เหมือนสินค้าทั่วไป เพราะรวมยอดจากผลรวม delta เหมือนกัน */
+function writeUnknownScan(value) {
+  return writeScan(safeKey(value), 1, 'scan', null, { unknown: true, raw: value });
+}
+
+/* คำอธิบายที่พนักงานกรอกทีหลัง — เขียนเป็นแถวใหม่ delta 0 ไม่แก้แถวเดิม
+   (Database Rules ห้ามแก้ scan อยู่แล้ว และกฎบ้านห้ามลบยอดที่นับไปแล้ว) */
+function writeUnknownNote(value, note) {
+  return writeScan(safeKey(value), 0, 'note', note, { unknown: true, raw: value });
 }
 
 /* ข้อ 4: import ห้ามล้างค่าที่คนแก้ไว้ */
@@ -2765,11 +2859,20 @@ function vibrate(pattern) {
 var flashTimer = null;
 function flashStage(cls) {
   var el = $('scanStage');
-  el.classList.remove('hit', 'miss');
+  el.classList.remove('hit', 'miss', 'newcode');
   void el.offsetWidth;                 // บังคับให้เบราว์เซอร์เริ่ม transition ใหม่
   el.classList.add(cls);
   clearTimeout(flashTimer);
   flashTimer = setTimeout(function () { el.classList.remove(cls); }, 300);
+}
+
+/* เสียงสามแบบ ต้องแยกออกจากกันได้ด้วยหูโดยไม่ต้องมองจอ
+   สำเร็จ  = สั้นสูง แหลม (square 1180Hz)
+   ผิดพลาด = ยาวต่ำ หยาบ (sawtooth 180Hz)
+   ของใหม่ = สองโน้ตไล่ลง นุ่มกว่า (triangle 880 -> 620Hz) */
+function beepNewCode() {
+  beep(880, 90, 'triangle');
+  setTimeout(function () { beep(620, 140, 'triangle'); }, 110);
 }
 
 /* ============================================================
@@ -3015,7 +3118,7 @@ function handleImageImport(file) {
    ============================================================ */
 
 function focusScan() {
-  if (state.page !== 'scan' || state.modalOpen || state.manualOpen) return;
+  if (state.page !== 'scan' || state.modalOpen || state.manualOpen || state.noteOpen) return;
   var el = $('scanInput');
   if (el && document.activeElement !== el) el.focus();
 }
@@ -3034,15 +3137,23 @@ function handleScanValue(raw) {
 
   var key = state.scanIndex.get(value.toUpperCase());
   if (!key) {
-    writeUnknown(value);
-    flashStage('miss');
-    beep(180, 260, 'sawtooth');
-    vibrate([80, 60, 80]);
-    showScanMiss(value);
+    /* ของจริงที่เจอบนชั้นแต่ไม่มีในระบบ — นับเข้าไปเหมือนสินค้าปกติ
+       ไม่ใช่ error จึงใช้สีส้มกับเสียงคนละแบบ แล้วไปตรวจสอบทีหลัง */
+    var newRec = writeUnknownScan(value);
+    var newKey = safeKey(value);
+    state.undoStack.push({ key: newKey, id: newRec.id });
+    flashStage('newcode');
+    beepNewCode();
+    vibrate([40, 50, 40]);
+    showScanNewCode(value, newKey);
+    pushRecent(value, 1, newRec.rec.ts);
+    renderScanTotals();
     renderSyncBar();
+    $('btnUndo').disabled = false;
     return;
   }
 
+  hideUnknownNote();
   var written = writeScan(key, 1, 'scan', null);
   state.undoStack.push({ key: key, id: written.id });
   flashStage('hit');
@@ -3052,6 +3163,31 @@ function handleScanValue(raw) {
   pushRecent(state.products[key].name, 1, written.rec.ts);
   renderScanTotals();
   $('btnUndo').disabled = false;
+}
+
+/* ช่องคำอธิบาย — โผล่ใต้การ์ด แต่โฟกัสยังอยู่ที่ช่องยิงเสมอ
+   พนักงานจะยิงตัวถัดไปต่อได้ทันทีโดยไม่ต้องกดปิดอะไรเลย */
+function showUnknownNote(value) {
+  var box = $('unknownNote');
+  var input = $('unknownNoteInput');
+  box.style.display = 'block';
+  box.setAttribute('data-code', value);
+  var current = (state.unknownKeys[safeKey(value)] || {}).note || '';
+  input.value = current;
+}
+function hideUnknownNote() {
+  $('unknownNote').style.display = 'none';
+  $('unknownNote').removeAttribute('data-code');
+  state.noteOpen = false;
+}
+function saveUnknownNote() {
+  var value = $('unknownNote').getAttribute('data-code');
+  var note = $('unknownNoteInput').value.trim();
+  if (!value || !note) { hideUnknownNote(); focusScan(); return; }
+  writeUnknownNote(value, note);
+  hideUnknownNote();
+  toast('บันทึกคำอธิบายของ ' + value + ' แล้ว');
+  focusScan();
 }
 
 /* เปลี่ยนเฉพาะกรอบรูป ไม่วาดการ์ดใหม่ทั้งใบ ยิงรัวจะได้ไม่หน่วง */
@@ -3072,13 +3208,19 @@ function showScanHit(key) {
   $('slQty').textContent = fmtNum(state.counts[key] || 0);
 }
 
-function showScanMiss(value) {
+function showScanNewCode(value, key) {
   swapScanImage(null);
-  $('slImage').textContent = '❌';
-  $('slName').textContent = 'ไม่พบบาร์โค้ดนี้ในระบบ';
-  $('slName').className = 'sl-name scan-miss-code';
-  $('slMeta').textContent = 'ค่าที่ยิงได้: ' + value + ' — บันทึกไว้แล้ว ยิงตัวถัดไปต่อได้เลย';
-  $('slQty').textContent = '';
+  $('slImage').textContent = '🆕';
+  $('slName').textContent = 'บันทึกแล้ว · ไม่มีในระบบ ต้องตรวจสอบภายหลัง';
+  $('slName').className = 'sl-name';
+  $('slMeta').innerHTML = '';
+  var code = document.createElement('span');
+  code.className = 'scan-newcode';
+  code.textContent = value;
+  $('slMeta').appendChild(code);
+  $('slMeta').appendChild(document.createTextNode(' — ยิงตัวถัดไปต่อได้เลย'));
+  $('slQty').textContent = fmtNum(state.counts[key] || 0);
+  showUnknownNote(value);
 }
 
 /* ต่อหัวรายการแล้วตัดตัวที่ 6 ทิ้ง — ไม่วาดรายการใหม่ทั้งชุดทุกครั้งที่ยิง */
@@ -3133,8 +3275,8 @@ function renderSyncBar() {
   $('syncText').textContent = pending
     ? 'ยังไม่ได้ส่งขึ้นระบบ ' + fmtNum(pending) + ' รายการ — ยิงต่อได้ เดี๋ยวส่งให้เอง'
     : 'ข้อมูลถูกบันทึกครบแล้ว';
-  var unknownN = Object.keys(state.unknown).length;
-  $('unknownCount').textContent = unknownN ? 'บาร์โค้ดไม่พบ ' + fmtNum(unknownN) : '';
+  var unknownN = unknownPending();
+  $('unknownCount').textContent = unknownN ? 'ไม่มีในระบบ ' + fmtNum(unknownN) + ' บาร์โค้ด' : '';
 }
 
 function undoLastScan() {
@@ -3620,8 +3762,10 @@ function renderMaster() {
   var tab = state.masterTab;
   $('masterProducts').style.display = tab === 'products' ? 'block' : 'none';
   $('masterBranches').style.display = tab === 'branches' ? 'block' : 'none';
+  $('masterNewcodes').style.display = tab === 'newcodes' ? 'block' : 'none';
   $('masterUsers').style.display = tab === 'users' ? 'block' : 'none';
   if (tab === 'branches') { renderBranchMaster(); return; }
+  if (tab === 'newcodes') { renderNewCodes(); return; }
   if (tab === 'users') { refreshUsers().then(renderUsers); return; }
 
   /* สินค้าเป็นข้อมูลกลาง แก้ได้เฉพาะ admin — คนอื่นดูได้แต่ช่องกรอกถูกล็อก */
@@ -3761,9 +3905,18 @@ function summaryData() {
 
   var rows = [];
   Object.keys(keys).forEach(function (key) {
-    var p = state.products[key] || { code: key, name: key, type: 'product' };
+    var unknownInfo = state.unknownKeys[key];
+    var p = state.products[key] ||
+      (unknownInfo
+        /* บาร์โค้ดที่ไม่มีในระบบ = ยอดระบบ 0 · จัดเป็นกลุ่ม Product ตามค่าเริ่มต้น */
+        ? { code: unknownInfo.value, name: unknownInfo.note || ('ไม่มีในระบบ — ' + unknownInfo.value),
+            type: 'product', unit: '' }
+        : { code: key, name: key, type: 'product' });
     var sys = Number(state.systemQty[key]) || 0;
     var act = Number(state.counts[key]) || 0;
+    /* ยอดถูกย้ายออกไปหมดแล้ว (ผูกกับสินค้าอื่น) และไม่มียอดระบบ = ไม่ใช่แถวจริง
+       ถ้าไม่ตัดออก SKU รวมจะถูกนับเกินและ %Success จะเพี้ยน */
+    if (!sys && !act && !state.products[key]) return;
     var price = Number(p[priceField]) || 0;      // ยังไม่กรอกต้นทุน = คิดเป็น 0
     var bucket = p.type === 'notProduct' ? 'notProduct' : 'product';
 
@@ -3863,17 +4016,18 @@ function renderSummary() {
      viewer ไม่ต้องเห็นปุ่มที่กดไปก็โดนปฏิเสธ · เปิดรอบ/ลบ Job เป็นของ admin เท่านั้น */
   var st = jobStatus();
   var notScanned = Object.keys(state.systemQty).filter(function (k) { return !state.counts[k]; }).length;
-  var unknownLeft = Object.keys(state.unknown).length;
+  var unknownLeft = unknownPending();
   $('btnReview').style.display = (isStaff() && st !== 'closed') ? 'flex' : 'none';
   $('btnReview').textContent = st === 'reviewing' ? '← กลับไปขั้นนับ' : '→ ส่งเข้าขั้นตรวจสอบ';
   $('btnClose').style.display = (isStaff() && st !== 'closed') ? 'flex' : 'none';
   $('btnReopen').style.display = (isAdmin() && st === 'closed') ? 'flex' : 'none';
   $('btnDeleteJob').style.display = isAdmin() ? 'flex' : 'none';
+  renderStatusLog(round);
   $('closeHint').textContent = st === 'closed'
     ? ('ปิดโดย ' + (round.closedBy || 'ไม่ระบุ') + ' เมื่อ ' + fmtTime(round.closedAt))
     : ('สถานะตอนนี้: ' + JOB_STATUS_TEXT[st] +
        (notScanned ? ' · ยังไม่ถูกยิงเลย ' + fmtNum(notScanned) + ' รายการ' : '') +
-       (unknownLeft ? ' · บาร์โค้ดไม่พบค้าง ' + fmtNum(unknownLeft) + ' รายการ' : ''));
+       (unknownLeft ? ' · บาร์โค้ดที่ไม่มีในระบบยังไม่ได้จัดการ ' + fmtNum(unknownLeft) + ' รายการ' : ''));
 
   var noCost = Object.keys(state.products).filter(function (k) {
     var c = state.products[k].costPrice;
@@ -3884,24 +4038,29 @@ function renderSummary() {
               : 'กรอกราคาต้นทุนครบทุกรายการแล้ว')
     : 'กำลังคิดมูลค่าด้วยราคาขาย' + (noCost ? ' — ยังไม่ได้กรอกราคาต้นทุน ' + fmtNum(noCost) + ' รายการ' : '');
 
-  /* บาร์โค้ดไม่พบในระบบ */
-  var unknownIds = Object.keys(state.unknown).sort(function (a, b) {
-    return (state.unknown[b].ts || 0) - (state.unknown[a].ts || 0);
-  });
-  $('unknownChip').textContent = fmtNum(unknownIds.length);
+  /* บาร์โค้ดที่ไม่มีในระบบ — นับเข้าไปแล้ว แต่ยังต้องมีคนมาจัดการ */
+  var pendingUnknown = unknownRows(false);
+  $('unknownChip').textContent = fmtNum(pendingUnknown.length);
+  $('unknownChip').className = 'chip ' + (pendingUnknown.length ? 'warn' : 'ok');
+  $('unknownHint').textContent = pendingUnknown.length
+    ? ('ยิงเจอแล้วนับเข้าไปแล้ว รวม ' +
+       fmtNum(pendingUnknown.reduce(function (s, r) { return s + r.qty; }, 0)) +
+       ' ชิ้น — ยังต้องผูกกับสินค้าหรือสร้างเป็นสินค้าใหม่ที่แท็บ Master')
+    : 'ไม่มีบาร์โค้ดที่ต้องจัดการ';
   var ul = $('unknownList');
   ul.innerHTML = '';
-  if (!unknownIds.length) {
-    ul.innerHTML = '<div class="empty">ไม่มีบาร์โค้ดที่หาไม่เจอ</div>';
+  if (!pendingUnknown.length) {
+    ul.innerHTML = '<div class="empty">ไม่มีบาร์โค้ดที่ไม่มีในระบบค้างอยู่</div>';
   } else {
-    unknownIds.forEach(function (id) {
-      var u = state.unknown[id];
+    pendingUnknown.forEach(function (u) {
       var d = document.createElement('div');
       d.className = 'rep-line';
+      d.setAttribute('data-unknown', u.value);
       var s = document.createElement('span');
-      s.textContent = u.value + ' · ' + zoneLabel(u.zoneName || zoneName(u.zone)) + ' · ' + (u.user || '-');
+      s.textContent = u.value + (u.note ? ' · ' + u.note : '') +
+        ' · ' + zoneLabel(u.zone) + ' · ' + (u.user || '-') + ' · ' + fmtClock(u.firstTs);
       var b = document.createElement('b');
-      b.textContent = fmtClock(u.ts);
+      b.textContent = u.legacy ? 'รอบเก่า' : fmtNum(u.qty) + ' ชิ้น';
       d.appendChild(s); d.appendChild(b);
       ul.appendChild(d);
     });
@@ -3972,17 +4131,14 @@ function exportExcel() {
              s.rec.reason || '', s.id]);
   });
 
-  var s4 = [['วันเวลา', 'ค่าที่ยิงได้', 'โซน', 'ผู้ยิง']];
-  Object.keys(state.unknown).forEach(function (id) {
-    var u = state.unknown[id];
-    s4.push([fmtTime(u.ts), u.value, u.zoneName || zoneName(u.zone), u.user]);
-  });
+  var s4 = [UNKNOWN_HEAD.slice()];
+  unknownRows(true).forEach(function (u, i) { s4.push(unknownExcelRow(u, i)); });
 
   var blob = buildXlsx([
     { name: 'สรุป', rows: s1, widths: [16, 12, 12, 13, 10, 10, 10, 14, 14, 14, 14, 14] },
     { name: 'รายสินค้า', rows: s2, widths: [18, 36, 10, 12, 12, 12, 10, 11, 14, 12, 14, 14] },
     { name: 'ประวัติการนับ', rows: s3, widths: [22, 18, 36, 16, 14, 10, 13, 22, 24] },
-    { name: 'บาร์โค้ดไม่พบ', rows: s4, widths: [22, 24, 16, 14] }
+    { name: 'ไม่มีในระบบ', rows: s4, widths: [5, 24, 28, 12, 16, 14, 22, 24, 14] }
   ]);
 
   var safeName = String(round.name).replace(/[\\\/:*?"<>|]/g, '_').slice(0, 40);
@@ -4180,34 +4336,111 @@ function renderDocDashboard(data) {
 }
 
 /* วาดโดนัทด้วย SVG ตรง ๆ — stroke-dasharray บนวงกลม ไม่ต้องพึ่งไลบรารีกราฟ */
-function drawArc(arcId, pctId, pct) {
-  var r = 50;                              // ต้องตรงกับ r ของวงกลมใน SVG
-  var circumference = 2 * Math.PI * r;
+var DONUT_R = 50;                          // ต้องตรงกับ r ของวงกลมใน SVG
+
+function donutCell(caption, pct, note, tag) {
   var value = (pct === null || !isFinite(pct)) ? 0 : Math.max(0, Math.min(100, pct));
+  var circumference = 2 * Math.PI * DONUT_R;
   var arc = circumference * value / 100;
-  $(arcId).setAttribute('stroke-dasharray', arc.toFixed(2) + ' ' + (circumference - arc).toFixed(2));
-  $(pctId).textContent = fmtPercent(pct);
-  return value;
+
+  var cell = document.createElement('div');
+  cell.className = 'donut-cell';
+  cell.setAttribute('data-donut', tag);
+
+  var cap = document.createElement('div');
+  cap.className = 'donut-cap';
+  cap.textContent = caption;
+
+  var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'donut-svg');
+  svg.setAttribute('viewBox', '0 0 120 120');
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', caption);
+  svg.innerHTML =
+    '<circle cx="60" cy="60" r="50" fill="none" stroke="#e2e8f0" stroke-width="17"></circle>' +
+    '<circle cx="60" cy="60" r="50" fill="none" stroke="#0f766e" stroke-width="17" ' +
+      'stroke-dasharray="' + arc.toFixed(2) + ' ' + (circumference - arc).toFixed(2) + '" ' +
+      'transform="rotate(-90 60 60)"></circle>' +
+    '<text x="60" y="57" text-anchor="middle" dominant-baseline="central" ' +
+      'font-size="23" font-weight="800" fill="#0f172a" class="d-pct"></text>' +
+    '<text x="60" y="79" text-anchor="middle" dominant-baseline="central" ' +
+      'font-size="8.5" fill="#64748b">Success</text>';
+  svg.querySelector('.d-pct').textContent = fmtPercent(pct);
+
+  var nt = document.createElement('div');
+  nt.className = 'donut-note';
+  nt.textContent = note;
+
+  cell.appendChild(cap); cell.appendChild(svg); cell.appendChild(nt);
+  return cell;
 }
 
-/* สองวง: ซ้าย = ชิ้น ของแถวรวมทั้งหมด · ขวา = SKU ของแถว Product เท่านั้น
-   ขวาตั้งใจไม่ใช้แถวรวม เพราะ Not Product เป็นทรัพย์สินและของใช้สิ้นเปลือง
-   เอามาปนแล้วตัวเลขความแม่นของสินค้าขายจะเพี้ยน */
+/* 2 บล็อกตามกลุ่ม บล็อกละ 2 วง — ตัวเลขทุกวงมาจาก "แถวเดียวกัน" ในตาราง Dashboard
+   ตั้งใจไม่ใช้แถวรวมทั้งหมดในกราฟเลย เพราะตัวเลขรวมมีในตารางอยู่แล้ว
+   และ Not Product (ทรัพย์สินบริษัท/วัสดุสิ้นเปลือง) ปนเข้ามาจะทำให้อ่านผิด */
+var DONUT_GROUPS = [
+  { key: 'product', label: 'Product' },
+  { key: 'notProduct', label: 'Not Product' }
+];
+
 function renderDonuts(data) {
-  var total = data.groups.total;
-  var product = data.groups.product;
+  var host = $('donutGroups');
+  host.innerHTML = '';
 
-  var pcValue = drawArc('donutArcPc', 'donutPctPc', pctPiecesOf(total));
-  var pcNull = pctPiecesOf(total) === null;
-  $('donutNotePc').textContent = pcNull
-    ? 'ยังไม่มียอดระบบให้เทียบ'
-    : ('นับตรงกับระบบ ' + fmtPercent(pcValue) + ' · ส่วนที่ยังไม่ตรง ' + fmtPercent(100 - pcValue));
+  DONUT_GROUPS.forEach(function (g) {
+    var row = data.groups[g.key];
+    var block = document.createElement('div');
+    block.className = 'donut-block';
+    block.setAttribute('data-donut-group', g.key);
 
-  drawArc('donutArcSku', 'donutPctSku', pctSkuOf(product));
-  $('donutNoteSku').textContent = product.skuTotal
-    ? ('SKU ที่ตรง ' + fmtNum(product.skuMatch) + ' รายการ จากทั้งหมด ' +
-       fmtNum(product.skuTotal) + ' รายการ')
-    : 'ยังไม่มีสินค้าในกลุ่ม Product';
+    var head = document.createElement('div');
+    head.className = 'donut-head';
+    head.textContent = g.label;
+    block.appendChild(head);
+
+    var pair = document.createElement('div');
+    pair.className = 'donut-pair';
+
+    var pcPct = pctPiecesOf(row);
+    var pcValue = (pcPct === null || !isFinite(pcPct)) ? 0 : Math.max(0, Math.min(100, pcPct));
+    pair.appendChild(donutCell('%Success (ชิ้น)', pcPct,
+      pcPct === null
+        ? 'ยังไม่มียอดระบบให้เทียบ'
+        : ('นับตรงกับระบบ ' + fmtPercent(pcValue) + ' · ส่วนที่ยังไม่ตรง ' + fmtPercent(100 - pcValue)),
+      g.key + '-pieces'));
+
+    pair.appendChild(donutCell('%Success (SKU)', pctSkuOf(row),
+      row.skuTotal
+        ? ('SKU ที่ตรง ' + fmtNum(row.skuMatch) + ' รายการ จากทั้งหมด ' + fmtNum(row.skuTotal) + ' รายการ')
+        : 'ยังไม่มีรายการในกลุ่มนี้',
+      g.key + '-sku'));
+
+    block.appendChild(pair);
+    host.appendChild(block);
+  });
+}
+
+/* ตัวเลขชุดเดียวกับกราฟ ใช้ทั้งใน Excel และในเทสต์ที่เทียบกราฟกับตาราง */
+function donutFigures(data) {
+  return DONUT_GROUPS.map(function (g) {
+    var row = data.groups[g.key];
+    return {
+      key: g.key, label: g.label,
+      pieces: pctPiecesOf(row), sku: pctSkuOf(row),
+      skuMatch: row.skuMatch, skuTotal: row.skuTotal
+    };
+  });
+}
+
+/* ---------- ตาราง "รายการที่พบแต่ไม่มีในระบบ" ---------- */
+var UNKNOWN_HEAD = ['#', 'บาร์โค้ดที่ยิง', 'คำอธิบายที่กรอก', 'จำนวนที่พบ',
+                    'โซน', 'ผู้นับ', 'เวลาแรกที่พบ', 'Reason', 'สถานะ'];
+
+function unknownExcelRow(u, i) {
+  return [i + 1, u.value, u.note || '', u.qty,
+          zoneLabel(u.zone), u.user || '', fmtTime(u.firstTs),
+          state.reasons[u.key] || '',
+          u.legacy ? 'รอบเก่า (ไม่มียอด)' : (u.resolved ? 'จัดการแล้ว' : 'ยังไม่ได้จัดการ')];
 }
 
 var DOC_ITEM_HEAD = ['#', 'รูป', 'รหัสสินค้า', 'ชื่อสินค้า', 'หมวดหมู่', 'Type', 'จำนวน (ระบบ)',
@@ -4304,6 +4537,78 @@ function buildDocItemTable(title, rows) {
   return box;
 }
 
+/* ตาราง "รายการที่พบแต่ไม่มีในระบบ" — ไม่มีรายการเลยให้ซ่อนทั้งตาราง */
+function buildUnknownDocTable() {
+  var rows = unknownRows(true);
+  if (!rows.length) return null;
+
+  var box = document.createElement('div');
+  box.setAttribute('data-unknown-table', '1');
+  var h = document.createElement('div');
+  h.className = 'tbl-title';
+  h.textContent = 'รายการที่พบแต่ไม่มีในระบบ — ' + fmtNum(rows.length) + ' รายการ';
+  box.appendChild(h);
+
+  var table = document.createElement('table');
+  table.className = 'items';
+  table.setAttribute('data-doc-table', 'ไม่มีในระบบ');
+
+  /* # บาร์โค้ด คำอธิบาย จำนวน โซน ผู้นับ เวลาแรกที่พบ Reason สถานะ */
+  var widths = [3, 16, 18, 7, 11, 10, 13, 13, 9];
+  var colgroup = document.createElement('colgroup');
+  widths.forEach(function (w) {
+    var col = document.createElement('col');
+    col.style.width = w + '%';
+    colgroup.appendChild(col);
+  });
+  table.appendChild(colgroup);
+
+  var thead = document.createElement('thead');
+  var htr = document.createElement('tr');
+  UNKNOWN_HEAD.forEach(function (t) {
+    var th = document.createElement('th');
+    th.textContent = t;
+    htr.appendChild(th);
+  });
+  thead.appendChild(htr);
+  table.appendChild(thead);
+
+  var tbody = document.createElement('tbody');
+  rows.forEach(function (u, i) {
+    var tr = document.createElement('tr');
+    tr.setAttribute('data-unknown-code', u.value);
+    docCell(tr, String(i + 1), 'mid');
+    docCell(tr, u.value);
+    docCell(tr, u.note || '-');
+    docCell(tr, fmtNum(u.qty), 'num ' + (u.qty > 0 ? 'pos' : ''));
+    docCell(tr, zoneLabel(u.zone) || '-');
+    docCell(tr, u.user || '-');
+    docCell(tr, fmtTime(u.firstTs));
+
+    var rtd = document.createElement('td');
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'reason-in';
+    input.setAttribute('data-reason', u.key);
+    input.value = state.reasons[u.key] || '';
+    var printed = document.createElement('span');
+    printed.className = 'reason-print';
+    printed.setAttribute('data-reason-print', u.key);
+    printed.textContent = input.value;
+    input.oninput = function () { printed.textContent = input.value; };
+    input.onchange = function () { saveReason(u.key, input.value.trim()); };
+    rtd.appendChild(input);
+    rtd.appendChild(printed);
+    tr.appendChild(rtd);
+
+    docCell(tr, u.legacy ? 'รอบเก่า' : (u.resolved ? 'จัดการแล้ว' : 'ยังไม่ได้จัดการ'), 'mid');
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  box.appendChild(table);
+  return box;
+}
+
 function renderDocSigns() {
   var box = $('docSigns');
   box.innerHTML = '';
@@ -4375,6 +4680,9 @@ function renderDoc() {
   host.innerHTML = '';
   host.appendChild(buildDocItemTable('รายการสินค้า (ขาด)', short));
   host.appendChild(buildDocItemTable('รายการสินค้า (เกิน)', over));
+  /* วางต่อจากตารางสินค้าเกิน เพราะเป็นของที่เจอเกินมาเหมือนกัน */
+  var unknownTable = buildUnknownDocTable();
+  if (unknownTable) host.appendChild(unknownTable);
   host.appendChild(buildDocItemTable('รายการสินค้า (ตรง)', match));
 
   renderDocSigns();
@@ -4401,6 +4709,19 @@ function exportDocExcel() {
              Math.round(g.sysValue * 100) / 100, Math.round(g.actValue * 100) / 100,
              Math.round((g.actValue - g.sysValue) * 100) / 100]);
   });
+  /* Stock Counting Accuracy — โครงเดียวกับกราฟใน PDF: 2 บล็อก บล็อกละ 2 ตัวเลข
+     Excel ได้เป็นตัวเลขไม่ใช่วงกลม เพราะการฝังกราฟจริงต้องเขียน chart XML
+     กับ drawing rels เพิ่มอีกชุด ซึ่งเสี่ยงทำให้ไฟล์เสียโดยไม่ได้ข้อมูลเพิ่ม */
+  s1.push([]);
+  s1.push(['Stock Counting Accuracy']);
+  s1.push(['กลุ่ม', '%Success (ชิ้น)', '%Success (SKU)', 'SKU ที่ตรง', 'SKU ทั้งหมด']);
+  donutFigures(data).forEach(function (f) {
+    s1.push([f.label,
+             f.pieces === null ? '' : Math.round(f.pieces * 10) / 10,
+             f.sku === null ? '' : Math.round(f.sku * 10) / 10,
+             f.skuMatch, f.skuTotal]);
+  });
+
   var spec = docSpec();
   s1.push([]);
   s1.push(['ประเภทเอกสาร', spec.label]);
@@ -4424,18 +4745,13 @@ function exportDocExcel() {
              state.reasons[r.key] || '']);
   });
 
-  var s3 = [['วันเวลา', 'ค่าที่ยิงได้', 'โซน', 'ผู้ยิง']];
-  Object.keys(state.unknown).sort(function (a, b) {
-    return (state.unknown[b].ts || 0) - (state.unknown[a].ts || 0);
-  }).forEach(function (id) {
-    var u = state.unknown[id];
-    s3.push([fmtTime(u.ts), u.value, u.zoneName || zoneName(u.zone), u.user]);
-  });
+  var s3 = [UNKNOWN_HEAD.slice()];
+  unknownRows(true).forEach(function (u, i) { s3.push(unknownExcelRow(u, i)); });
 
   var blob = buildXlsx([
     { name: 'สรุป', rows: s1, widths: [16, 13, 12, 11, 11, 11, 10, 11, 14, 14, 14, 10, 10, 10, 10] },
     { name: 'รายการทั้งหมด', rows: s2, widths: [5, 18, 36, 18, 12, 12, 10, 9, 12, 15, 14, 14, 11, 14, 9, 28] },
-    { name: 'บาร์โค้ดไม่พบ', rows: s3, widths: [22, 24, 18, 14] }
+    { name: 'ไม่มีในระบบ', rows: s3, widths: [5, 24, 28, 12, 16, 14, 22, 24, 14] }
   ]);
 
   /* ชื่อไฟล์ใช้รหัสสาขา อ่านง่ายและไม่ยาวเกินเวลาส่งต่อกัน */
@@ -4699,7 +5015,74 @@ function renderJobBar() {
   status.textContent = st === 'closed' ? 'รอบนี้ปิดแล้ว แก้ไขไม่ได้' : JOB_STATUS_TEXT[st];
 
   bar.appendChild(code); bar.appendChild(branch); bar.appendChild(status);
+
+  /* กดแถบนี้ = เปิดเมนูจัดการรอบนับได้จากทุกหน้า ไม่ต้องเลื่อนหาในหน้าสรุป */
+  var more = document.createElement('span');
+  more.className = 'jb-more';
+  more.setAttribute('data-jobmenu', '1');
+  more.textContent = 'แตะเพื่อจัดการรอบ ▾';
+  bar.appendChild(more);
+  bar.setAttribute('role', 'button');
+  bar.setAttribute('tabindex', '0');
+  bar.onclick = openJobMenu;
+  bar.onkeydown = function (e) {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openJobMenu(); }
+  };
   renderReopenBanner();
+}
+
+/* ---------- เมนูจัดการรอบนับ — ใช้ร่วมกันทุกที่ ----------
+   แสดงเฉพาะปุ่มที่ "ทำได้จริง" ตามสถานะและสิทธิ์ ไม่โชว์ปุ่มที่กดแล้วเด้ง error
+   ปุ่มชุดเดียวกับกล่องท้ายหน้าสรุป เรียกฟังก์ชันตัวเดียวกัน ไม่ได้เขียนซ้ำ */
+function jobActions() {
+  var job = currentJob();
+  if (!job) return [];
+  var st = job.status || 'counting';
+  var acts = [];
+  if (isStaff() && st === 'counting') {
+    acts.push({ id: 'review', label: '→ ส่งเข้าขั้นตรวจสอบ', cls: 'ghost', run: sendToReview });
+  }
+  if (isStaff() && st === 'reviewing') {
+    acts.push({ id: 'back', label: '← กลับไปขั้นนับ (ยิงต่อได้)', cls: '', run: backToCounting });
+  }
+  if (isStaff() && st !== 'closed') {
+    acts.push({ id: 'close', label: '🔒 ปิดรอบนับ', cls: 'grey', run: closeRound });
+  }
+  if (isAdmin() && st === 'closed') {
+    acts.push({ id: 'reopen', label: '🔓 เปิดรอบนับกลับมาแก้', cls: '', run: reopenRound });
+  }
+  acts.push({ id: 'summary', label: '📊 ไปหน้าสรุปผล', cls: 'grey', run: function () { showPage('summary'); } });
+  acts.push({ id: 'doc', label: '📄 ไปหน้าเอกสาร', cls: 'grey', run: function () { showPage('doc'); } });
+  if (isAdmin()) {
+    acts.push({ id: 'delete', label: '🗑 ลบ Job นี้', cls: 'grey', run: deleteJob });
+  }
+  return acts;
+}
+
+function openJobMenu() {
+  var job = currentJob();
+  if (!job) return;
+  var st = job.status || 'counting';
+  var box = document.createElement('div');
+  var acts = jobActions();
+
+  acts.forEach(function (a, i) {
+    var b = document.createElement('button');
+    b.className = 'btn block ' + a.cls;
+    if (i) b.style.marginTop = '10px';
+    b.setAttribute('data-jobact', a.id);
+    b.textContent = a.label;
+    b.onclick = function () {
+      $('modalOk').click();              // ปิดเมนูก่อน แล้วค่อยทำงานที่อาจเปิดกล่องใหม่
+      setTimeout(a.run, 60);
+    };
+    box.appendChild(b);
+  });
+
+  ask('จัดการรอบนับ',
+      (job.jobCode || '') + ' · ' + jobBranchLabel(job) + '\nสถานะตอนนี้: ' + JOB_STATUS_TEXT[st] +
+      (st === 'closed' && !isAdmin() ? '\n\nรอบนี้ปิดแล้ว ต้องให้ผู้ดูแลระบบเปิดกลับมาให้' : ''),
+      'ปิดเมนู', { hideCancel: true, detail: box });
 }
 
 function reopenList(job) {
@@ -4842,6 +5225,44 @@ function renderJobs() {
     bar.appendChild(fill);
 
     card.appendChild(top); card.appendChild(meta); card.appendChild(prog); card.appendChild(bar);
+
+    /* เปลี่ยนสถานะได้จากการ์ดเลย ไม่ต้องเข้า Job แล้วเลื่อนหาปุ่มในหน้าสรุป
+       ปุ่มนี้เปิด Job ให้ก่อนเสมอ เพราะทุกฟังก์ชันทำงานกับ Job ที่เลือกอยู่ */
+    var jstatus = j.status || 'counting';
+    var quick = null;
+    if (isStaff() && jstatus === 'counting') quick = { id: 'review', label: '→ ส่งตรวจสอบ', run: sendToReview };
+    else if (isStaff() && jstatus === 'reviewing') quick = { id: 'back', label: '← กลับไปขั้นนับ', run: backToCounting };
+    else if (isAdmin() && jstatus === 'closed') quick = { id: 'reopen', label: '🔓 เปิดกลับมาแก้', run: reopenRound };
+
+    var acts = document.createElement('div');
+    acts.className = 'row';
+    acts.style.marginTop = '10px';
+    if (quick) {
+      var qb = document.createElement('button');
+      qb.className = 'btn sm ghost';
+      qb.style.flex = '1';
+      qb.setAttribute('data-cardact', quick.id);
+      qb.textContent = quick.label;
+      qb.onclick = function (e) {
+        e.stopPropagation();
+        if (state.roundId !== id) selectRound(id);
+        setTimeout(quick.run, 120);      // รอให้ Job ถูกเลือกก่อน ฟังก์ชันอ่านจาก currentJob()
+      };
+      acts.appendChild(qb);
+    }
+    var mb = document.createElement('button');
+    mb.className = 'btn sm grey';
+    mb.style.flex = quick ? '0 0 auto' : '1';
+    mb.setAttribute('data-cardact', 'menu');
+    mb.textContent = 'จัดการ ▾';
+    mb.onclick = function (e) {
+      e.stopPropagation();
+      if (state.roundId !== id) selectRound(id);
+      setTimeout(openJobMenu, 120);
+    };
+    acts.appendChild(mb);
+    card.appendChild(acts);
+
     card.onclick = function () { openJob(id); };
     list.appendChild(card);
 
@@ -4872,6 +5293,25 @@ function previewJobCode() {
 
 /* ---------- ปิด / เปิดรอบนับ ---------- */
 
+/* ---------- ประวัติการเปลี่ยนสถานะ ----------
+   เก็บต่อท้ายเป็น array ใครเปลี่ยน จากอะไรเป็นอะไร เมื่อไหร่
+   ใช้ตอบคำถาม "ใครปิดรอบนี้ตอนไหน" ได้โดยไม่ต้องเดาจากเวลาแก้ล่าสุด */
+function statusLogList(job) {
+  var log = (job && job.statusLog) || [];
+  return Array.isArray(log) ? log : Object.keys(log).map(function (k) { return log[k]; });
+}
+
+function changeJobStatus(next, extra) {
+  var job = currentJob();
+  if (!job) return Promise.resolve();
+  var from = job.status || 'counting';
+  var log = statusLogList(job).slice();
+  log.push({ from: from, to: next, by: state.counter || 'ไม่ระบุ', at: Date.now() });
+  var patch = { status: next, statusLog: log };
+  if (extra) Object.keys(extra).forEach(function (f) { patch[f] = extra[f]; });
+  return db.update('roundIndex/' + state.roundId, patch);
+}
+
 function sendToReview() {
   if (!state.roundId) return;
   if (!requireStaff('เปลี่ยนสถานะ Job ไม่ได้')) return;
@@ -4880,16 +5320,17 @@ function sendToReview() {
       'หลังจากนี้จะยิงเพิ่มไม่ได้ แต่ยังแก้ Reason และออกเอกสารได้\nถ้าต้องยิงเพิ่มให้กดกลับมาเป็น "กำลังนับ" ได้เอง',
       'ส่งเข้าขั้นตรวจสอบ').then(function (ok) {
     if (!ok) return;
-    db.update('roundIndex/' + state.roundId, { status: 'reviewing' })
-      .then(function () { toast('ส่งเข้าขั้นตรวจสอบแล้ว'); });
+    changeJobStatus('reviewing').then(function () { toast('ส่งเข้าขั้นตรวจสอบแล้ว'); });
   });
 }
 
 function backToCounting() {
   if (!state.roundId || jobStatus() !== 'reviewing') return;
   if (!requireStaff('เปลี่ยนสถานะ Job ไม่ได้')) return;
-  db.update('roundIndex/' + state.roundId, { status: 'counting' })
-    .then(function () { toast('กลับมาขั้นนับแล้ว'); });
+  changeJobStatus('counting').then(function () {
+    toast('กลับมาขั้นนับแล้ว ยิงต่อได้เลย');
+    refreshNav();
+  });
 }
 
 function closeRound() {
@@ -4898,10 +5339,10 @@ function closeRound() {
   if (jobStatus() === 'closed') { toast('รอบนี้ปิดไปแล้ว', true); return; }
 
   var notScanned = Object.keys(state.systemQty).filter(function (k) { return !state.counts[k]; }).length;
-  var unknownN = Object.keys(state.unknown).length;
+  var unknownN = unknownPending();
   var warn = '';
   if (notScanned) warn += '\n• ยังมีสินค้าที่ไม่ถูกยิงเลย ' + fmtNum(notScanned) + ' รายการ';
-  if (unknownN) warn += '\n• ยังมีบาร์โค้ดที่หาไม่เจอค้างอยู่ ' + fmtNum(unknownN) + ' รายการ';
+  if (unknownN) warn += '\n• ยังมี ' + fmtNum(unknownN) + ' บาร์โค้ดที่ไม่มีในระบบ ยังไม่ได้จัดการ';
 
   ask('ตรวจก่อนปิดรอบนับ',
       (warn ? 'พบเรื่องที่ควรดูก่อนปิด:' + warn + '\n\n' : 'ตรวจแล้วไม่พบเรื่องค้าง\n\n') +
@@ -4913,8 +5354,8 @@ function closeRound() {
       '\n\nยืนยันปิดรอบนับนี้',
       'ยืนยันปิดรอบนับ', { danger: true }).then(function (ok2) {
       if (!ok2) return;
-      return db.update('roundIndex/' + state.roundId, {
-        status: 'closed', closedBy: state.counter || 'ไม่ระบุ', closedAt: Date.now()
+      return changeJobStatus('closed', {
+        closedBy: state.counter || 'ไม่ระบุ', closedAt: Date.now()
       }).then(function () { toast('ปิดรอบนับแล้ว'); });
     });
   });
@@ -4936,9 +5377,8 @@ function reopenRound() {
     log.push({ by: state.counter || 'ไม่ระบุ', at: Date.now(), reason: v.reason });
     /* reopenCount เป็นตัวเลขคู่กับ reopenLog เพราะ Database Rules นับสมาชิกใน array ไม่ได้
        กฎฝั่งเซิร์ฟเวอร์จึงใช้ตัวนี้บังคับว่า "ออกจาก closed ได้ต่อเมื่อมีการบันทึกเหตุผลเพิ่ม" */
-    db.update('roundIndex/' + state.roundId, {
-      status: 'counting', reopenLog: log, reopenCount: log.length
-    }).then(function () { toast('เปิดรอบนับกลับมาแล้ว — บันทึกเหตุผลไว้แล้ว'); })
+    changeJobStatus('counting', { reopenLog: log, reopenCount: log.length })
+      .then(function () { toast('เปิดรอบนับกลับมาแล้ว — บันทึกเหตุผลไว้แล้ว'); })
       .catch(function () {
         /* กฎฝั่งฐานข้อมูลอาจตั้งไว้ไม่ให้ออกจาก closed ได้เลย ซึ่งแรงกว่าปุ่มในแอป */
         ask('เปิดรอบนับไม่ได้',
@@ -5061,6 +5501,9 @@ function refreshNav() {
       li.textContent = b;
       ul.appendChild(li);
     });
+    /* หลักการ: ทุกที่ที่บอกว่าทำไม่ได้ ต้องมีปุ่มพาไปทำสิ่งที่ทำได้
+       ไม่ใช่บอกเฉย ๆ แล้วปล่อยให้ไปหาปุ่มเอง */
+    appendFixButtons(box);
   }
 
   /* รหัส Job ต้องอ่านได้จากระยะแขน กันยิงผิด Job ตอนมีหลายสาขาพร้อมกัน */
@@ -5070,6 +5513,71 @@ function refreshNav() {
     ? (jobBranchLabel(round) +
        (state.zoneId ? ' · ' + zoneName(state.zoneId) : '') + (state.counter ? ' · ' + state.counter : ''))
     : 'ยังไม่ได้เลือก Job';
+}
+
+function renderStatusLog(job) {
+  var host = $('statusLogBox');
+  host.innerHTML = '';
+  var log = statusLogList(job).slice().sort(function (a, b) { return (b.at || 0) - (a.at || 0); });
+  var head = document.createElement('div');
+  head.className = 'muted';
+  head.style.fontWeight = '700';
+  head.textContent = 'ประวัติการเปลี่ยนสถานะ' + (log.length ? ' (' + fmtNum(log.length) + ' ครั้ง)' : '');
+  host.appendChild(head);
+
+  if (!log.length) {
+    var none = document.createElement('div');
+    none.className = 'muted';
+    none.setAttribute('data-statuslog', 'empty');
+    none.textContent = 'ยังไม่เคยเปลี่ยนสถานะ';
+    host.appendChild(none);
+    return;
+  }
+  log.forEach(function (e) {
+    var d = document.createElement('div');
+    d.className = 'rep-line';
+    d.setAttribute('data-statuslog', (e.from || '') + '>' + (e.to || ''));
+    var s = document.createElement('span');
+    s.textContent = (JOB_STATUS_TEXT[e.from] || e.from || '-') + ' → ' +
+                    (JOB_STATUS_TEXT[e.to] || e.to || '-') + ' · โดย ' + (e.by || 'ไม่ระบุ');
+    var b = document.createElement('b');
+    b.textContent = fmtTime(e.at);
+    d.appendChild(s); d.appendChild(b);
+    host.appendChild(d);
+  });
+}
+
+/* ปุ่มทางออกในกล่องเตือน — เลือกให้ตรงกับสาเหตุที่ยิงไม่ได้จริง ๆ */
+function appendFixButtons(box) {
+  var st = jobStatus();
+  var acts = [];
+  if (!state.roundId) {
+    acts.push({ id: 'gojobs', label: '→ ไปเลือก Job', cls: '', run: function () { showPage('jobs'); } });
+  } else if (isStaff() && st === 'reviewing') {
+    acts.push({ id: 'back', label: '← กลับไปขั้นนับ (ยิงต่อได้)', cls: '', run: backToCounting });
+  } else if (isAdmin() && st === 'closed') {
+    acts.push({ id: 'reopen', label: '🔓 เปิดรอบนับกลับมาแก้', cls: '', run: reopenRound });
+  } else if (state.roundId && st === 'closed') {
+    acts.push({ id: 'gojobs', label: '→ ไปเลือก Job อื่น', cls: 'grey', run: function () { showPage('jobs'); } });
+  }
+  if (state.roundId && st !== 'closed' && !Object.keys(state.systemQty).length && isStaff()) {
+    acts.push({ id: 'import', label: '📄 นำเข้ายอดระบบ', cls: 'grey',
+                run: function () { $('fileInput').click(); } });
+  }
+  if (!acts.length) return;
+
+  var row = document.createElement('div');
+  row.style.marginTop = '10px';
+  acts.forEach(function (a, i) {
+    var b = document.createElement('button');
+    b.className = 'btn block ' + a.cls;
+    if (i) b.style.marginTop = '8px';
+    b.setAttribute('data-fixact', a.id);
+    b.textContent = a.label;
+    b.onclick = a.run;
+    row.appendChild(b);
+  });
+  box.appendChild(row);
 }
 
 function renderStart() {
@@ -5393,7 +5901,235 @@ function renderAccount() {
   $('meRole').textContent = (ROLE_LABEL[me.role] || '—') + ' · ' + (ROLE_HELP[me.role] || '');
   $('meRole').className = 'chip ' + (me.role === 'admin' ? 'ok' : (me.role === 'viewer' ? 'warn' : ''));
   $('tabUsers').style.display = isAdmin() ? '' : 'none';
-  if (!isAdmin() && state.masterTab === 'users') state.masterTab = 'products';
+  $('tabNewcodes').style.display = isAdmin() ? '' : 'none';
+  if (!isAdmin() && (state.masterTab === 'users' || state.masterTab === 'newcodes')) {
+    state.masterTab = 'products';
+  }
+}
+
+/* ============================================================
+   จัดการบาร์โค้ดที่ไม่มีในระบบ (admin เท่านั้น)
+
+   ทั้งสองทางเลือกเขียนเป็นเรคอร์ดใหม่เสมอ ไม่ลบ scan เดิมสักแถว
+   ตรงตามกฎบ้าน "ห้ามลบยอดที่นับไปแล้ว" และ Database Rules ก็ห้ามอยู่แล้ว
+   ============================================================ */
+
+/* ผูกกับสินค้าที่มีอยู่ — ย้ายยอดด้วยสองแถว: ลบออกจากบาร์โค้ดใหม่ บวกเข้าสินค้าปลายทาง */
+function linkUnknownToProduct(u, targetKey) {
+  if (!requireAdmin('จัดการบาร์โค้ดใหม่ไม่ได้')) return Promise.resolve();
+  if (!canEdit()) { toast(blockedMessage(), true); return Promise.resolve(); }
+  var p = state.products[targetKey];
+  if (!p) { toast('ไม่พบสินค้าปลายทาง', true); return Promise.resolve(); }
+
+  var alts = altBarcodes(p).slice();
+  if (alts.indexOf(u.value) < 0) alts.push(u.value);
+
+  /* 1) เพิ่มเป็นบาร์โค้ดสำรองของสินค้านั้นถาวร (อยู่ที่ Master ใช้ได้ทุกรอบต่อไป) */
+  var patch = {};
+  patch[targetKey + '/altBarcodes'] = alts;
+  patch[targetKey + '/updatedAt'] = Date.now();
+  return db.update('products', patch).then(function () {
+    if (state.products[targetKey]) {
+      state.products[targetKey].altBarcodes = alts;
+      state.products[targetKey].updatedAt = Date.now();
+    }
+    buildScanIndex();
+    /* 2) ย้ายยอดในรอบนี้ — สองแถวใหม่ ไม่แตะแถวเดิม */
+    if (u.qty > 0) {
+      writeScan(u.key, -u.qty, 'resolve', 'ย้ายไปรวมกับ ' + p.code, { unknown: true, raw: u.value });
+      writeScan(targetKey, u.qty, 'resolve', 'ย้ายมาจากบาร์โค้ด ' + u.value);
+    }
+    renderNewCodes();
+    if (state.page === 'summary') renderSummary();
+    if (state.page === 'doc') renderDoc();
+    toast('ผูก ' + u.value + ' กับ ' + p.code + ' แล้ว ย้ายยอด ' + fmtNum(u.qty) + ' ชิ้น');
+  }).catch(function () {
+    toast('บันทึกไม่สำเร็จ ฐานข้อมูลปฏิเสธการเขียน หรือเน็ตหลุด', true);
+  });
+}
+
+/* สร้างเป็นสินค้าใหม่ — คีย์เท่ากับ safeKey(บาร์โค้ด) ยอดที่ยิงไว้จึงเกาะเข้ามาเอง */
+function createProductFromUnknown(u, name, sellPrice) {
+  if (!requireAdmin('สร้างสินค้าใหม่ไม่ได้')) return Promise.resolve();
+  var rec = {
+    code: u.value,
+    name: name,
+    barcode: u.value,
+    category: 'เพิ่มระหว่างนับสต๊อก',
+    unit: '',
+    type: 'product',
+    typeSource: 'manual',
+    needsReview: false,
+    createdFrom: 'stocktake',
+    updatedAt: Date.now()
+  };
+  if (sellPrice !== null) rec.sellPrice = sellPrice;
+  var patch = {};
+  patch[u.key] = rec;
+  return db.update('products', patch).then(function () {
+    state.products[u.key] = rec;
+    buildScanIndex();
+    /* บันทึกไว้ในประวัติของรอบว่าใครตัดสินใจอะไร ไม่ได้แตะยอดเดิม */
+    writeScan(u.key, 0, 'resolve', 'สร้างเป็นสินค้าใหม่: ' + name, { unknown: true, raw: u.value });
+    renderNewCodes();
+    if (state.page === 'summary') renderSummary();
+    if (state.page === 'doc') renderDoc();
+    toast('สร้างสินค้า ' + u.value + ' แล้ว');
+  }).catch(function () {
+    toast('สร้างสินค้าไม่สำเร็จ ฐานข้อมูลปฏิเสธการเขียน หรือเน็ตหลุด', true);
+  });
+}
+
+function renderNewCodes() {
+  if (!isAdmin()) return;
+  var host = $('ncList');
+  host.innerHTML = '';
+
+  if (!state.roundId) {
+    $('ncChip').textContent = '0';
+    $('ncHint').textContent = 'เลือก Job ก่อน บาร์โค้ดกลุ่มนี้ผูกอยู่กับรอบนับ';
+    host.innerHTML = '<div class="empty">ยังไม่ได้เลือก Job</div>';
+    return;
+  }
+
+  var rows = unknownRows(true);
+  var pending = rows.filter(function (r) { return !r.resolved; });
+  $('ncChip').textContent = fmtNum(pending.length);
+  $('ncChip').className = 'chip ' + (pending.length ? 'warn' : 'ok');
+  $('ncHint').textContent = rows.length
+    ? ('รอบนี้เจอ ' + fmtNum(rows.length) + ' บาร์โค้ด · ยังไม่ได้จัดการ ' + fmtNum(pending.length) +
+       ' · ยอดที่นับไว้ถูกบันทึกแล้วทั้งหมด ไม่หายไปไหน')
+    : 'รอบนี้ยังไม่เจอบาร์โค้ดที่ไม่มีในระบบ';
+  if (!rows.length) {
+    host.innerHTML = '<div class="empty">ไม่มีรายการ</div>';
+    return;
+  }
+
+  rows.forEach(function (u) {
+    var card = document.createElement('div');
+    card.className = 'mrow';
+    card.setAttribute('data-newcode', u.value);
+    card.setAttribute('data-resolved', u.resolved ? '1' : '0');
+
+    var top = document.createElement('div');
+    top.className = 'm-top';
+    var left = document.createElement('div');
+    var cd = document.createElement('div');
+    cd.className = 'm-name';
+    cd.textContent = u.value;
+    var meta = document.createElement('div');
+    meta.className = 'm-cat';
+    meta.textContent = (u.note ? u.note + ' · ' : '') +
+      'พบ ' + fmtNum(u.qty) + ' ชิ้น · ' + zoneLabel(u.zone) + ' · ' + (u.user || '-') +
+      ' · ' + fmtClock(u.firstTs);
+    left.appendChild(cd); left.appendChild(meta);
+    var right = document.createElement('div');
+    right.style.textAlign = 'right';
+    var chip = document.createElement('span');
+    chip.className = 'chip ' + (u.resolved ? 'ok' : 'warn');
+    chip.textContent = u.legacy ? 'รอบเก่า' : (u.resolved ? 'จัดการแล้ว' : 'รอจัดการ');
+    right.appendChild(chip);
+    top.appendChild(left); top.appendChild(right);
+    card.appendChild(top);
+
+    if (!u.resolved && !u.legacy) {
+      var act = document.createElement('div');
+      act.style.marginTop = '10px';
+
+      var bLink = document.createElement('button');
+      bLink.className = 'btn ghost sm block';
+      bLink.setAttribute('data-action', 'link');
+      bLink.textContent = '🔗 ผูกกับสินค้าที่มีอยู่';
+      bLink.onclick = function () { openLinkPicker(u); };
+
+      var bNew = document.createElement('button');
+      bNew.className = 'btn grey sm block';
+      bNew.style.marginTop = '8px';
+      bNew.setAttribute('data-action', 'new');
+      bNew.textContent = '➕ เป็นสินค้าใหม่';
+      bNew.onclick = function () { openNewProduct(u); };
+
+      act.appendChild(bLink); act.appendChild(bNew);
+      card.appendChild(act);
+    }
+    host.appendChild(card);
+  });
+}
+
+/* เลือกสินค้าปลายทาง — ค้นหาแล้วกดเลือก */
+function openLinkPicker(u) {
+  var box = document.createElement('div');
+  var lab = document.createElement('label');
+  lab.className = 'fld';
+  lab.innerHTML = '<span>ค้นหาด้วยรหัส ชื่อ หรือบาร์โค้ด</span>';
+  var search = document.createElement('input');
+  search.type = 'text';
+  search.id = 'ncSearch';
+  search.placeholder = 'พิมพ์เพื่อค้นหา';
+  lab.appendChild(search);
+  var results = document.createElement('div');
+  results.className = 'picklist';
+  results.id = 'ncResults';
+  box.appendChild(lab); box.appendChild(results);
+
+  var picked = null;
+  function draw() {
+    var term = search.value.trim().toLowerCase();
+    results.innerHTML = '';
+    if (!term) { results.innerHTML = '<div class="empty">พิมพ์เพื่อค้นหาสินค้า</div>'; return; }
+    var hits = Object.keys(state.products).filter(function (k) {
+      var p = state.products[k];
+      return String(p.code || '').toLowerCase().indexOf(term) >= 0 ||
+             String(p.name || '').toLowerCase().indexOf(term) >= 0 ||
+             String(p.barcode || '').toLowerCase().indexOf(term) >= 0;
+    }).slice(0, 20);
+    if (!hits.length) { results.innerHTML = '<div class="empty">ไม่พบสินค้าที่ตรง</div>'; return; }
+    hits.forEach(function (k) {
+      var p = state.products[k];
+      var b = document.createElement('button');
+      b.className = 'pick' + (picked === k ? ' sel' : '');
+      b.setAttribute('data-pick', p.code);
+      b.innerHTML = '<div class="pick-title"></div><div class="pick-sub"></div>';
+      b.querySelector('.pick-title').textContent = p.name || p.code;
+      b.querySelector('.pick-sub').textContent = p.code + (p.barcode ? ' · ' + p.barcode : '');
+      b.onclick = function () { picked = k; draw(); };
+      results.appendChild(b);
+    });
+  }
+  search.addEventListener('input', draw);
+  draw();
+
+  ask('ผูก ' + u.value + ' กับสินค้าที่มีอยู่',
+      'ยอด ' + fmtNum(u.qty) + ' ชิ้นจะถูกย้ายไปรวมกับสินค้าที่เลือก\n' +
+      'และบาร์โค้ดนี้จะถูกเพิ่มเป็นบาร์โค้ดสำรองของสินค้านั้นถาวร',
+      'ผูกกับสินค้านี้', { detail: box }).then(function (ok) {
+    if (!ok) return;
+    if (!picked) { toast('ยังไม่ได้เลือกสินค้าปลายทาง', true); return; }
+    linkUnknownToProduct(u, picked);
+  });
+}
+
+function openNewProduct(u) {
+  ask('สร้างสินค้าใหม่จาก ' + u.value,
+      'ยอด ' + fmtNum(u.qty) + ' ชิ้นที่นับไว้จะกลายเป็นยอดจริงของสินค้านี้\n' +
+      'ยอดระบบเป็น 0 เพราะไม่มีในไฟล์ที่นำเข้า',
+      'สร้างสินค้า',
+      { fields: [
+        { key: 'name', label: 'ชื่อสินค้า', type: 'text', placeholder: u.note || 'เช่น ถุงหิ้วลายใหม่' },
+        { key: 'price', label: 'ราคาขาย (ไม่ใส่ก็ได้)', type: 'text', placeholder: '0.00' }
+      ] }).then(function (v) {
+    if (!v) return;
+    var name = String(v.name || '').trim();
+    if (!name) { toast('ใส่ชื่อสินค้าก่อน', true); return; }
+    var raw = String(v.price || '').trim().replace(/,/g, '');
+    var price = null;
+    if (raw !== '') {
+      var n = Number(raw);
+      if (!isFinite(n) || n < 0) { toast('ราคาขายต้องเป็นตัวเลขไม่ติดลบ', true); return; }
+      price = n;
+    }
+    createProductFromUnknown(u, name, price);
+  });
 }
 
 /* ---------- ช่วยกรอกฟอร์มบนมือถือ ---------- */
@@ -5961,6 +6697,17 @@ function init() {
   scanInput.addEventListener('blur', function () { setTimeout(focusScan, 30); });
   document.addEventListener('visibilitychange', function () { if (!document.hidden) focusScan(); });
 
+  /* ช่องคำอธิบายบาร์โค้ดใหม่ — โฟกัสมาที่นี่ได้โดยไม่ถูกช่องยิงดึงกลับ */
+  $('unknownNoteInput').addEventListener('focus', function () { state.noteOpen = true; });
+  $('unknownNoteInput').addEventListener('blur', function () {
+    state.noteOpen = false;
+    setTimeout(focusScan, 30);
+  });
+  $('unknownNoteInput').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); saveUnknownNote(); }
+    if (e.key === 'Escape') { e.preventDefault(); hideUnknownNote(); focusScan(); }
+  });
+
   $('btnUndo').onclick = undoLastScan;
   $('btnManual').onclick = openManual;
   $('btnManualClose').onclick = closeManual;
@@ -6165,6 +6912,58 @@ init();
   ====================================================================
   สรุปการเปลี่ยนแปลง
   ====================================================================
+
+  v1.9.3 — กราฟแยกตามกลุ่ม + นับสินค้าที่ไม่มีในระบบ
+
+    A) กราฟโดนัทแยกเป็น 2 บล็อกตามกลุ่ม บล็อกละ 2 วง (รวม 4 วง)
+       บล็อก Product     : %Success (ชิ้น) และ %Success (SKU) ของแถว Product
+       บล็อก Not Product : %Success (ชิ้น) และ %Success (SKU) ของแถว Not Product
+       ไม่ใช้แถว "รวมทั้งหมด" ในกราฟเลย เพราะตัวเลขรวมมีในตารางอยู่แล้ว
+
+       ต้นเหตุที่ระบุไว้ในข้อ A5 (ฟังก์ชันวาดกราฟถูกเรียกสองครั้งด้วยข้อมูลชุดเดียวกัน)
+       ตรวจแล้วไม่ตรงกับโค้ดใน repo — v1.9.2 มีบล็อกเดียว 2 วง (ชิ้นของแถวรวม +
+       SKU ของแถว Product) ไม่มีบล็อก Product/Not Product ให้ซ้ำกันตั้งแต่แรก
+       แต่โครงเดิมมีจุดอ่อนจริงคือ id ของ svg ถูกฮาร์ดโค้ดไว้ในหน้า HTML
+       ซึ่งพอมีหลายวงจะเขียนทับกันแน่นอน จึงเปลี่ยนเป็นสร้าง DOM จากฟังก์ชัน
+       donutCell(caption, pct, note, tag) ที่รับค่าเข้ามาเป็นพารามิเตอร์ทุกตัว
+       และ renderDonuts() วนตาม DONUT_GROUPS — ไม่มี id ซ้ำได้อีก
+
+       - ป้ายวงขวาเหลือแค่ "%Success (SKU)" เพราะหัวบล็อกบอกกลุ่มอยู่แล้ว
+       - บรรทัดใต้กราฟใช้ตัวเลขของกลุ่มตัวเอง Product ขึ้น 297 · Not Product ขึ้น 110
+         (ตัวเลขจะขยับตามของที่นับเจอแต่ไม่มีในระบบ ดูข้อ B)
+       - ลดวงเหลือ 32mm เพราะมี 4 วง ยังพิมพ์ลง A4 แนวตั้งครบ แต่ละวงครึ่งหน้ากระดาษ
+       - ทั้ง 2 บล็อกห้ามถูกตัดข้ามหน้า
+       - Excel ชีท "สรุป" มีบล็อก Stock Counting Accuracy โครงเดียวกัน
+         (กลุ่ม / %ชิ้น / %SKU / SKU ตรง / SKU ทั้งหมด) เป็นตัวเลข ไม่ใช่วงกลม
+         การฝังกราฟจริงลง xlsx ต้องเขียน chart XML กับ drawing rels เพิ่มอีกชุด
+         เสี่ยงทำให้ไฟล์เสียโดยไม่ได้ข้อมูลเพิ่ม — ตัวเลขคือสิ่งที่ต้องอ่าน
+
+    B) บาร์โค้ดที่ไม่มีในระบบ = นับเข้าไปด้วย ไม่ใช่แค่เตือน
+       - ยิงแล้วเขียนเป็น scan ปกติทุกอย่าง ต่างแค่ธง unknown:true และ code
+         คือค่าที่ยิงมาดิบ ๆ ยิงซ้ำจึงบวกเป็น 2, 3 เหมือนสินค้าทั่วไป
+         เลิกเขียน node unknown/ แบบเดิม (ยังอ่านของรอบเก่ามาแสดงได้)
+       - พื้นหลังส้ม (ไม่ใช่แดง) · เสียงสองโน้ตไล่ลง triangle 880→620Hz
+         แยกจากเสียงสำเร็จ (square 1180Hz สั้น) และเสียงผิดพลาด (sawtooth 180Hz ยาว)
+       - ข้อความ "บันทึกแล้ว · ไม่มีในระบบ ต้องตรวจสอบภายหลัง" พร้อมยอดสะสม
+       - ช่องพิมพ์คำอธิบายไม่บังคับ โฟกัสยังอยู่ที่ช่องยิง ยิงตัวถัดไปได้ทันที
+         คำอธิบายเขียนเป็นแถวใหม่ delta 0 mode 'note' ไม่แก้แถวเดิม
+       - ตัวเลขรวมบนหัวจอนับรวมกลุ่มนี้ด้วย
+       - ในรายงาน: ยอดระบบ 0 · ยอดจริง = ที่ยิงได้ · ผลต่างเป็นบวก
+         นับรวมในกลุ่ม "เกิน" ทั้งฝั่งชิ้นและ SKU · อยู่กลุ่ม Product เป็นค่าเริ่มต้น
+         %Success ลดลงตามสูตรค่าสัมบูรณ์เดิม ซึ่งถูกต้องแล้ว
+       - เอกสารมีตาราง "รายการที่พบแต่ไม่มีในระบบ" ต่อจากตารางสินค้าเกิน
+         (# · บาร์โค้ด · คำอธิบาย · จำนวน · โซน · ผู้นับ · เวลาแรกที่พบ · Reason · สถานะ)
+         ไม่มีรายการเลยจะซ่อนทั้งตาราง
+       - แท็บ Master > "บาร์โค้ดใหม่" (admin เท่านั้น) มี 2 ทางเลือกต่อรายการ
+         ผูกกับสินค้าที่มีอยู่ → เพิ่มเป็นบาร์โค้ดสำรองถาวรใน products/{key}/altBarcodes
+           แล้วย้ายยอดด้วยสองแถวใหม่ (ลบออกจากบาร์โค้ด บวกเข้าสินค้าปลายทาง)
+         เป็นสินค้าใหม่ → สร้างใน Master ด้วยคีย์เดียวกับบาร์โค้ด ยอดที่ยิงไว้เกาะมาเอง
+         ทั้งสองทางเขียนแต่เรคอร์ดใหม่ ไม่ลบ scan เดิมสักแถว
+       - หน้าสรุปโชว์จำนวนที่ยังไม่ได้จัดการเด่นชัด และตอนปิดรอบเตือนว่า
+         "ยังมี N บาร์โค้ดที่ไม่มีในระบบ ยังไม่ได้จัดการ" แต่ยืนยันแล้วปิดได้
+
+       หมายเหตุ: buildScanIndex อ่าน altBarcodes ด้วยแล้ว บาร์โค้ดที่เคยผูกไว้
+       จะยิงติดทันทีในรอบถัดไปโดยไม่ต้องผูกซ้ำ
 
   v1.9.2 — กราฟโดนัทในเอกสารเป็นสองวง
 
