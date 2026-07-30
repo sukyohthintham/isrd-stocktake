@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="1.9.1">
+<meta name="version" content="1.9.2">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v1.9.1</title>
+<title>ISRD Stocktake v1.9.2</title>
 
 <style>
 :root{
@@ -406,15 +406,16 @@ table.grid td.neg{color:var(--short);font-weight:700}
   font-size:9pt;padding:2px 3px;background:transparent;font-family:inherit;
 }
 .doc .reason-in:focus{outline:none;background:#fef9c3}
-/* กราฟโดนัท — ทั้งบล็อกอยู่กึ่งกลางหน้ากระดาษ และห้ามถูกตัดข้ามหน้า */
+/* กราฟโดนัทสองวง — ทั้งบล็อกอยู่กึ่งกลางหน้ากระดาษ และห้ามถูกตัดข้ามหน้า
+   บนจอมือถือเรียงลงมาแนวตั้ง แต่ตอนพิมพ์บังคับเรียงแนวนอนเสมอ (ดูบล็อก @media print) */
 .donut-block{text-align:center;margin:14px 0 6px;page-break-inside:avoid;break-inside:avoid}
-.donut-block .tbl-title{text-align:center;margin:0 0 8px}
-.donut-svg{width:45mm;height:45mm;display:block;margin:0 auto}
-.donut-legend{
-  margin-top:8px;display:flex;justify-content:center;align-items:center;
-  gap:20px;flex-wrap:wrap;font-size:9pt;
-}
-.donut-legend .k{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+.donut-block .tbl-title{text-align:center;margin:0 0 10px}
+.donut-pair{display:flex;flex-direction:column;gap:16px;align-items:center}
+/* บนจอกินเต็มความกว้างทีละวง ห้ามให้ flex ย่อความสูงของ svg ที่ล็อกไว้เป็น mm */
+.donut-cell{flex:0 0 auto;width:100%;min-width:0;display:flex;flex-direction:column;align-items:center}
+.donut-cap{font-weight:700;font-size:10pt;margin-bottom:6px}
+.donut-svg{width:38mm;height:38mm;display:block;margin:0 auto}
+.donut-note{margin-top:8px;font-size:9pt;color:#334155;line-height:1.4}
 .sign-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px 14px;margin-top:10px}
 .sign-box{border:1px solid #94a3b8;border-radius:4px;padding:8px 10px 6px;font-size:9.5pt}
 .sign-box .s-role{font-weight:700;margin-bottom:26px}
@@ -445,7 +446,10 @@ table.grid td.neg{color:var(--short);font-weight:700}
   thead{display:table-header-group}
   tfoot{display:table-footer-group}
   tr{page-break-inside:avoid;page-break-after:auto}
-  .doc-sec,.sign-grid,.sign-box,.donut-wrap,.doc-foot{page-break-inside:avoid}
+  .doc-sec,.sign-grid,.sign-box,.donut-wrap,.donut-block,.doc-foot{page-break-inside:avoid;break-inside:avoid}
+  /* ตอนพิมพ์สองวงต้องอยู่เคียงกันเสมอ กว้างเท่ากันคนละครึ่งหน้ากระดาษ */
+  .donut-pair{flex-direction:row;gap:0;align-items:flex-start}
+  .donut-cell{width:50%;flex:0 0 50%}
   .doc .reason-in{display:none !important}
   .doc .reason-print{display:block !important}
   .doc table th{-webkit-print-color-adjust:exact;print-color-adjust:exact}
@@ -903,16 +907,34 @@ table.grid td.neg{color:var(--short);font-weight:700}
 
       <div class="doc-sec donut-block">
         <div class="tbl-title">Stock Counting Accuracy</div>
-        <svg class="donut-svg" viewBox="0 0 120 120" role="img" aria-label="Stock Counting Accuracy">
-          <circle cx="60" cy="60" r="50" fill="none" stroke="#e2e8f0" stroke-width="17"></circle>
-          <circle id="donutArc" cx="60" cy="60" r="50" fill="none" stroke="#0f766e" stroke-width="17"
-                  stroke-dasharray="0 999" transform="rotate(-90 60 60)"></circle>
-          <text x="60" y="57" text-anchor="middle" dominant-baseline="central"
-                font-size="23" font-weight="800" fill="#0f172a" id="donutPct">0%</text>
-          <text x="60" y="79" text-anchor="middle" dominant-baseline="central"
-                font-size="8.5" fill="#64748b">Success</text>
-        </svg>
-        <div class="donut-legend" id="donutLegend"></div>
+        <div class="donut-pair">
+          <div class="donut-cell">
+            <div class="donut-cap">%Success (ชิ้น)</div>
+            <svg class="donut-svg" viewBox="0 0 120 120" role="img" aria-label="%Success (ชิ้น)">
+              <circle cx="60" cy="60" r="50" fill="none" stroke="#e2e8f0" stroke-width="17"></circle>
+              <circle id="donutArcPc" cx="60" cy="60" r="50" fill="none" stroke="#0f766e" stroke-width="17"
+                      stroke-dasharray="0 999" transform="rotate(-90 60 60)"></circle>
+              <text x="60" y="57" text-anchor="middle" dominant-baseline="central"
+                    font-size="23" font-weight="800" fill="#0f172a" id="donutPctPc">0%</text>
+              <text x="60" y="79" text-anchor="middle" dominant-baseline="central"
+                    font-size="8.5" fill="#64748b">Success</text>
+            </svg>
+            <div class="donut-note" id="donutNotePc"></div>
+          </div>
+          <div class="donut-cell">
+            <div class="donut-cap">%Success (SKU) — Product</div>
+            <svg class="donut-svg" viewBox="0 0 120 120" role="img" aria-label="%Success (SKU) Product">
+              <circle cx="60" cy="60" r="50" fill="none" stroke="#e2e8f0" stroke-width="17"></circle>
+              <circle id="donutArcSku" cx="60" cy="60" r="50" fill="none" stroke="#0f766e" stroke-width="17"
+                      stroke-dasharray="0 999" transform="rotate(-90 60 60)"></circle>
+              <text x="60" y="57" text-anchor="middle" dominant-baseline="central"
+                    font-size="23" font-weight="800" fill="#0f172a" id="donutPctSku">0%</text>
+              <text x="60" y="79" text-anchor="middle" dominant-baseline="central"
+                    font-size="8.5" fill="#64748b">Success</text>
+            </svg>
+            <div class="donut-note" id="donutNoteSku"></div>
+          </div>
+        </div>
       </div>
 
       <div class="doc-sec" id="docItemTables"></div>
@@ -962,7 +984,7 @@ table.grid td.neg{color:var(--short);font-weight:700}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '1.9.1';
+var APP_VERSION = '1.9.2';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -4158,27 +4180,34 @@ function renderDocDashboard(data) {
 }
 
 /* วาดโดนัทด้วย SVG ตรง ๆ — stroke-dasharray บนวงกลม ไม่ต้องพึ่งไลบรารีกราฟ */
-function renderDonut(pct) {
+function drawArc(arcId, pctId, pct) {
   var r = 50;                              // ต้องตรงกับ r ของวงกลมใน SVG
   var circumference = 2 * Math.PI * r;
   var value = (pct === null || !isFinite(pct)) ? 0 : Math.max(0, Math.min(100, pct));
   var arc = circumference * value / 100;
-  $('donutArc').setAttribute('stroke-dasharray', arc.toFixed(2) + ' ' + (circumference - arc).toFixed(2));
-  $('donutPct').textContent = fmtPercent(pct);
+  $(arcId).setAttribute('stroke-dasharray', arc.toFixed(2) + ' ' + (circumference - arc).toFixed(2));
+  $(pctId).textContent = fmtPercent(pct);
+  return value;
+}
 
-  var legend = $('donutLegend');
-  legend.innerHTML = '';
-  [['#0f766e', 'นับตรงกับระบบ', pct === null ? '–' : fmtPercent(value)],
-   ['#e2e8f0', 'ส่วนที่ยังไม่ตรง', pct === null ? '–' : fmtPercent(100 - value)]
-  ].forEach(function (item) {
-    var d = document.createElement('div');
-    var k = document.createElement('span');
-    k.className = 'k';
-    k.style.background = item[0];
-    d.appendChild(k);
-    d.appendChild(document.createTextNode(item[1] + ' — ' + item[2]));
-    legend.appendChild(d);
-  });
+/* สองวง: ซ้าย = ชิ้น ของแถวรวมทั้งหมด · ขวา = SKU ของแถว Product เท่านั้น
+   ขวาตั้งใจไม่ใช้แถวรวม เพราะ Not Product เป็นทรัพย์สินและของใช้สิ้นเปลือง
+   เอามาปนแล้วตัวเลขความแม่นของสินค้าขายจะเพี้ยน */
+function renderDonuts(data) {
+  var total = data.groups.total;
+  var product = data.groups.product;
+
+  var pcValue = drawArc('donutArcPc', 'donutPctPc', pctPiecesOf(total));
+  var pcNull = pctPiecesOf(total) === null;
+  $('donutNotePc').textContent = pcNull
+    ? 'ยังไม่มียอดระบบให้เทียบ'
+    : ('นับตรงกับระบบ ' + fmtPercent(pcValue) + ' · ส่วนที่ยังไม่ตรง ' + fmtPercent(100 - pcValue));
+
+  drawArc('donutArcSku', 'donutPctSku', pctSkuOf(product));
+  $('donutNoteSku').textContent = product.skuTotal
+    ? ('SKU ที่ตรง ' + fmtNum(product.skuMatch) + ' รายการ จากทั้งหมด ' +
+       fmtNum(product.skuTotal) + ' รายการ')
+    : 'ยังไม่มีสินค้าในกลุ่ม Product';
 }
 
 var DOC_ITEM_HEAD = ['#', 'รูป', 'รหัสสินค้า', 'ชื่อสินค้า', 'หมวดหมู่', 'Type', 'จำนวน (ระบบ)',
@@ -4336,8 +4365,7 @@ function renderDoc() {
   });
 
   renderDocDashboard(data);
-  var total = data.groups.total;
-  renderDonut(total.skuTotal > 0 ? (total.skuMatch / total.skuTotal) * 100 : null);
+  renderDonuts(data);
 
   var short = data.rows.filter(function (r) { return r.diff < 0; });
   var over = data.rows.filter(function (r) { return r.diff > 0; });
@@ -6137,6 +6165,25 @@ init();
   ====================================================================
   สรุปการเปลี่ยนแปลง
   ====================================================================
+
+  v1.9.2 — กราฟโดนัทในเอกสารเป็นสองวง
+
+    - แยกเป็นสองวงวางเคียงกัน แทนวงเดียวที่โชว์แต่ %Success (SKU) ของแถวรวม
+      ซ้าย  %Success (ชิ้น)        ใช้ค่าแถว "รวมทั้งหมด"
+            ใต้วง: นับตรงกับระบบ X% · ส่วนที่ยังไม่ตรง Y%
+      ขวา   %Success (SKU) — Product  ใช้ค่าแถว Product เท่านั้น
+            ใต้วง: SKU ที่ตรง A รายการ จากทั้งหมด B รายการ
+
+      ที่วงขวาใช้แถว Product ไม่ใช่แถวรวม เพราะ Not Product คือทรัพย์สินบริษัท
+      และวัสดุสิ้นเปลือง เอามาปนแล้วตัวเลขความแม่นของสินค้าที่ขายจริงจะเพี้ยน
+
+    - ลดขนาดวงจาก 45mm เหลือ 38mm เพราะมีสองวง แต่ละวงกว้างครึ่งหน้ากระดาษพอดี
+      ตัวเลข % อยู่กลางวง ตัวหนา ใต้ตัวเลขมีคำว่า Success ตัวเล็กเหมือนเดิม
+    - หัวข้อรวม "Stock Counting Accuracy" ยังอยู่บนสุด จัดกึ่งกลาง
+    - บนจอมือถือเรียงลงมาแนวตั้ง (flex-direction:column) แต่ใน @media print
+      บังคับกลับเป็นแนวนอนเสมอ วงละ 50% ของความกว้าง
+    - ทั้งบล็อกยังห้ามถูกตัดข้ามหน้า เพิ่ม .donut-block เข้าไปในรายการ
+      page-break-inside:avoid ของ @media print ด้วย (เดิมมีแต่ใน CSS ปกติ)
 
   v1.9.1 — สร้างบัญชีผู้ใช้ได้จากในแอป ไม่ต้องเข้า Firebase Console
 
