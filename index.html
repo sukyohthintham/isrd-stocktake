@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="1.9.3">
+<meta name="version" content="2.0.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v1.9.3</title>
+<title>ISRD Stocktake v2.0.0</title>
 
 <style>
 :root{
@@ -186,7 +186,58 @@ body.locked .topbar,body.locked .wrap,body.locked .nav{display:none}
 .scan-stage.miss{background:var(--short-bg);border-color:var(--short)}
 /* ส้ม = บันทึกยอดสำเร็จแล้ว แต่ไม่มีในระบบ ต้องตรวจทีหลัง — ไม่ใช่ความผิดพลาด */
 .scan-stage.newcode{background:var(--warn-bg);border-color:var(--warn)}
+/* ม่วง = ยิงติดปกติแต่สินค้ามี status พิเศษ ต้องสะดุดตาโดยไม่ดูเหมือน error */
+.scan-stage.special{background:#f3e8ff;border-color:#a855f7}
 .scan-newcode{font-family:ui-monospace,Consolas,monospace;font-size:17px;font-weight:700;color:#92400e}
+/* ---------- การ์ดสินค้าตอนยิง (เต็มความกว้าง รูปใหญ่ซ้าย ข้อมูลขวา) ---------- */
+.prodcard{display:flex;gap:14px;align-items:flex-start;margin-top:14px;min-height:120px}
+/* กรอบรูปขนาดคงที่ ไม่มีรูปก็กินที่เท่ากัน การ์ดจะได้ไม่กระตุกตอนยิงรัว */
+.prodcard .pc-img{
+  width:112px;height:112px;flex:0 0 112px;border-radius:12px;font-size:34px;
+  border:1px solid var(--line);background:#fff;
+}
+.prodcard .pc-info{flex:1 1 auto;min-width:0}
+.pc-code{font-family:ui-monospace,Consolas,monospace;font-size:14px;font-weight:700;color:var(--muted)}
+.pc-cat{font-size:13px;color:var(--muted);margin-top:2px;overflow-wrap:break-word}
+.pc-badges{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.pc-badges:empty{display:none}
+.badge{
+  display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:9px;
+  font-size:13px;font-weight:700;border:2px solid;line-height:1.2;
+}
+.badge.loc{background:#f1f5f9;color:#334155;border-color:#cbd5e1;font-family:ui-monospace,Consolas,monospace}
+.badge.ok{background:var(--over-bg);color:var(--over);border-color:var(--over)}
+.badge.warn{background:var(--warn-bg);color:#92400e;border-color:var(--warn)}
+.badge.red{background:var(--short-bg);color:var(--short);border-color:var(--short)}
+.badge.rose{background:#ffe4e6;color:#9f1239;border-color:#fda4af}
+.badge.purple{background:#f3e8ff;color:#6b21a8;border-color:#d8b4fe}
+.badge.blue{background:#e0f2fe;color:#075985;border-color:#7dd3fc}
+.badge.grey{background:var(--line-soft);color:var(--muted);border-color:var(--line)}
+.pc-nums{display:flex;gap:10px;margin-top:10px;flex-wrap:wrap}
+.pc-num{background:var(--line-soft);border-radius:10px;padding:6px 12px;font-size:13px}
+.pc-num span{color:var(--muted);margin-right:6px}
+.pc-num b{font-size:19px;font-variant-numeric:tabular-nums}
+.pc-num.hi{background:var(--brand-light);color:var(--brand-dark)}
+kbd{
+  font-family:ui-monospace,Consolas,monospace;font-size:11px;border:1px solid var(--line);
+  border-bottom-width:2px;border-radius:5px;padding:1px 5px;background:#fff;color:var(--muted);
+}
+/* ---------- เลย์เอาต์สองคอลัมน์บน Laptop ---------- */
+.scan-split{display:block}
+.scan-col-side{display:none}
+.livewrap{max-height:52vh;overflow:auto;border:1px solid var(--line);border-radius:10px}
+.livewrap table{font-size:13px}
+.live-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.live-cell{background:var(--line-soft);border-radius:10px;padding:10px 12px}
+.live-cell span{display:block;font-size:12px;color:var(--muted)}
+.live-cell b{font-size:22px;font-variant-numeric:tabular-nums}
+@media (min-width:1024px){
+  .wrap{max-width:1360px}
+  .scan-split{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;align-items:start}
+  .scan-col-side{display:block}
+  .prodcard .pc-img{width:140px;height:140px;flex:0 0 140px}
+  .live-grid{grid-template-columns:repeat(4,1fr)}
+}
 .scan-total{font-size:52px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;text-align:center}
 .scan-total-lab{text-align:center;font-size:13px;color:var(--muted);margin-top:4px}
 #scanInput{
@@ -324,6 +375,16 @@ table.grid td.neg{color:var(--short);font-weight:700}
 }
 .reopen-banner b{display:block;margin-bottom:4px}
 .reopen-banner ul{margin:4px 0 0;padding-left:20px}
+
+/* ---------- หัวกลุ่มรอบนับของสาขา (cycle) ---------- */
+.cycle-head{
+  display:flex;justify-content:space-between;align-items:center;gap:10px;
+  background:var(--brand-light);border:2px solid var(--brand);border-radius:12px;
+  padding:10px 14px;margin:14px 0 8px;
+}
+.cycle-head.done{background:var(--line-soft);border-color:var(--line)}
+.cycle-head .cy-code{font-weight:800;font-size:15px;letter-spacing:.3px}
+.cycle-head .cy-sub{font-size:13px;color:var(--muted);margin-top:2px}
 
 /* ---------- หน้ารายการ Job ---------- */
 .jobcard{
@@ -537,6 +598,17 @@ table.grid td.neg{color:var(--short);font-weight:700}
       <input type="text" id="newJobAbbr" placeholder="อักษรย่อสาขา">
       <input type="text" id="newRoundName" placeholder="ชื่อรอบ เช่น รอบนับ ก.ค. 2569">
     </div>
+    <label class="fld" style="margin-bottom:8px">
+      <span>ประเภทคลังย่อย</span>
+      <select id="newJobStoreType"></select>
+    </label>
+    <label class="fld" style="margin-bottom:8px">
+      <span>รอบนี้ใช้ Location ชุดไหน</span>
+      <select id="newJobLocSet">
+        <option value="offline">Offline (หน้าร้าน)</option>
+        <option value="online">Online (คลังออนไลน์)</option>
+      </select>
+    </label>
     <button class="btn ghost block" id="btnAddRound">+ สร้าง Job</button>
     <div class="hint" id="jobCodePreview" style="display:none"></div>
   </div>
@@ -558,6 +630,25 @@ table.grid td.neg{color:var(--short);font-weight:700}
 
   <div class="card">
     <h3>2. ยอดในระบบ</h3>
+    <div class="filters" id="importTabs">
+      <button class="btn sm" data-imptab="stock">Stock Check (สต๊อกสาขา)</button>
+      <button class="btn sm grey" data-imptab="tf">TF Return (โอนกลับ)</button>
+    </div>
+
+    <div id="impTf" style="display:none">
+      <div id="tfStatus" class="muted" style="margin-bottom:12px">ยังไม่ได้นำเข้ารายการโอนกลับ</div>
+      <input type="file" id="tfFile" accept=".csv,.xlsx" style="display:none">
+      <button class="btn ghost block" id="btnImportTf">📄 นำเข้าไฟล์รายการโอนสินค้า (Excel / CSV)</button>
+      <p class="muted" style="margin:12px 0 0">
+        อ่านจากชีต <b>รายการโอนสินค้า</b> · 13 คอลัมน์ · ข้ามแถวชื่อเรื่องให้อัตโนมัติ<br>
+        จำเป็น: <b>หมายเลขรายการ</b>, <b>รหัสสินค้า</b>, <b>จำนวน</b><br>
+        ใส่หรือไม่ใส่ก็ได้: ประเภท · วันที่ทำรายการ · วันที่สร้าง · หมายเหตุ ·
+        สถานะรายการ · จาก · ไป · ชื่อสินค้า · Barcode<br>
+        หนึ่งไฟล์มีได้หลายหมายเลขรายการ · นำเข้าหมายเลขเดิมซ้ำจะแทนที่ยอดของใบนั้นทั้งก้อน
+      </p>
+    </div>
+
+    <div id="impStock">
     <div id="importStatus" class="muted" style="margin-bottom:12px">ยังไม่ได้นำเข้ายอดระบบของรอบนี้</div>
     <button class="btn ghost sm block" id="btnImportReport" style="display:none;margin-bottom:12px">ดูรายละเอียดการนำเข้าล่าสุด</button>
     <input type="file" id="fileInput" accept=".csv,.xlsx" style="display:none">
@@ -567,6 +658,7 @@ table.grid td.neg{color:var(--short);font-weight:700}
       จำเป็น: <b>รหัสสินค้า</b>, <b>จำนวน</b><br>
       ใส่หรือไม่ใส่ก็ได้: ชื่อสินค้า · หมวดหมู่ · หมวดหมู่ย่อย · Tag · ราคาขาย · หน่วยสินค้า · Barcode
     </p>
+    </div>
   </div>
 
   <button class="btn big block" id="btnStart" disabled>เริ่มนับ</button>
@@ -580,33 +672,70 @@ table.grid td.neg{color:var(--short);font-weight:700}
     <button class="btn sm grey" id="btnChangeSession" style="flex:0 0 auto">เปลี่ยน</button>
   </div>
 
-  <div class="scan-stage" id="scanStage">
-    <div class="scan-total" id="scanTotal">0</div>
-    <div class="scan-total-lab" id="scanTotalLab">ชิ้นที่ยิงแล้วในโซนนี้</div>
-    <input type="text" id="scanInput" inputmode="none" autocomplete="off"
-           autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="ยิงบาร์โค้ดได้เลย">
-    <div class="scan-last" id="scanLast">
-      <div class="imgbox noimg" id="slImage">📦</div>
-      <div style="flex:1 1 auto">
-        <div class="sl-name" id="slName">พร้อมรับการยิง</div>
-        <div class="sl-meta" id="slMeta">ยิง 1 ครั้ง = นับเพิ่ม 1 ชิ้น</div>
-      </div>
-      <div class="sl-qty" id="slQty"></div>
-    </div>
-    <!-- ช่องคำอธิบายบาร์โค้ดที่ไม่มีในระบบ — ไม่บังคับ ข้ามได้ทันที ห้ามขวางจังหวะยิง -->
-    <div id="unknownNote" style="display:none;margin-top:10px">
-      <input type="text" id="unknownNoteInput" autocomplete="off"
-             placeholder="พิมพ์ชื่อของหรือคำอธิบายสั้น ๆ (ไม่ใส่ก็ได้ ยิงต่อได้เลย)">
-      <div class="hint" style="color:var(--muted);font-weight:400">
-        กด Enter เพื่อบันทึกคำอธิบาย · ไม่พิมพ์ก็ยิงตัวถัดไปได้เลย
-      </div>
-    </div>
-  </div>
+  <div class="scan-split">
+   <div class="scan-col-main">
+    <div class="scan-stage" id="scanStage">
+      <div class="scan-total" id="scanTotal">0</div>
+      <div class="scan-total-lab" id="scanTotalLab">ชิ้นที่ยิงแล้วในโซนนี้</div>
+      <input type="text" id="scanInput" inputmode="none" autocomplete="off"
+             autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="ยิงบาร์โค้ดได้เลย">
 
-  <div class="row" style="margin:12px 0">
-    <button class="btn grey sm" id="btnUndo" disabled>↶ ยกเลิกการยิงล่าสุด</button>
-    <button class="btn grey sm" id="btnManual">✎ กรอกมือ</button>
-    <button class="btn grey sm" id="btnKeyboard">⌨ เปิดแป้นพิมพ์</button>
+      <!-- การ์ดสินค้าเต็มความกว้าง: รูปใหญ่ซ้าย ข้อมูลขวา -->
+      <div class="prodcard" id="scanLast">
+        <div class="pc-img imgbox noimg" id="slImage">📦</div>
+        <div class="pc-info">
+          <div class="pc-code" id="slCode"></div>
+          <div class="sl-name" id="slName">พร้อมรับการยิง</div>
+          <div class="pc-cat" id="slCat"></div>
+          <div class="pc-badges" id="slBadges"></div>
+          <div class="pc-nums">
+            <div class="pc-num"><span>ยอดระบบ</span><b id="slSys">–</b></div>
+            <div class="pc-num hi"><span>ยิงสะสม</span><b id="slQty">–</b></div>
+          </div>
+          <div class="sl-meta" id="slMeta">ยิง 1 ครั้ง = นับเพิ่ม 1 ชิ้น</div>
+        </div>
+      </div>
+
+      <!-- ช่องคำอธิบายบาร์โค้ดที่ไม่มีในระบบ — ไม่บังคับ ข้ามได้ทันที ห้ามขวางจังหวะยิง -->
+      <div id="unknownNote" style="display:none;margin-top:10px">
+        <input type="text" id="unknownNoteInput" autocomplete="off"
+               placeholder="พิมพ์ชื่อของหรือคำอธิบายสั้น ๆ (ไม่ใส่ก็ได้ ยิงต่อได้เลย)">
+        <div class="hint" style="color:var(--muted);font-weight:400">
+          กด Enter เพื่อบันทึกคำอธิบาย · ไม่พิมพ์ก็ยิงตัวถัดไปได้เลย
+        </div>
+      </div>
+    </div>
+
+    <div class="row" style="margin:12px 0">
+      <button class="btn grey sm" id="btnUndo" disabled>↶ ยกเลิกการยิงล่าสุด <kbd>F3</kbd></button>
+      <button class="btn grey sm" id="btnManual">✎ กรอกมือ <kbd>F2</kbd></button>
+      <button class="btn grey sm" id="btnKeyboard">⌨ เปิดแป้นพิมพ์</button>
+    </div>
+
+    <label class="fld" style="margin-bottom:12px">
+      <span>เก็บทีละโซน — แสดงเฉพาะ Location ที่ขึ้นต้นด้วย</span>
+      <input type="text" id="locFilter" placeholder="เช่น A หรือ B4" autocomplete="off"
+             autocapitalize="characters" spellcheck="false">
+    </label>
+    <div class="muted" id="locFilterInfo" style="margin-bottom:12px"></div>
+   </div>
+
+   <!-- คอลัมน์ขวา: เห็นเฉพาะจอกว้าง (>=1024px) — ดูรายการที่ยิงไปแล้วทั้งรอบ -->
+   <div class="scan-col-side">
+    <div class="card">
+      <h3>สรุปสด</h3>
+      <div class="live-grid" id="liveStats"></div>
+    </div>
+    <div class="card">
+      <h3>ยิงไปแล้วในรอบนี้ <span class="chip" id="liveChip">0</span></h3>
+      <div class="livewrap">
+        <table class="grid" id="liveTable">
+          <thead><tr><th>เวลา</th><th>รหัส</th><th>ชื่อสินค้า</th><th>Location</th><th>+/-</th><th>ผู้ยิง</th></tr></thead>
+          <tbody id="liveBody"></tbody>
+        </table>
+      </div>
+    </div>
+   </div>
   </div>
 
   <div class="card" id="manualPanel" style="display:none">
@@ -655,6 +784,7 @@ table.grid td.neg{color:var(--short);font-weight:700}
     <div class="filters" id="masterTabs">
       <button class="btn sm" data-mtab="products">สินค้า</button>
       <button class="btn sm grey" data-mtab="branches">คลังสินค้า/สาขา</button>
+      <button class="btn sm grey" data-mtab="locations">Location</button>
       <button class="btn sm grey" data-mtab="newcodes" id="tabNewcodes" style="display:none">บาร์โค้ดใหม่</button>
       <button class="btn sm grey" data-mtab="users" id="tabUsers" style="display:none">ผู้ใช้</button>
     </div>
@@ -708,6 +838,37 @@ table.grid td.neg{color:var(--short);font-weight:700}
       <div class="muted" id="branchCount"></div>
     </div>
     <div class="clist" id="branchList"></div>
+  </div>
+
+  <div id="masterLocations" style="display:none">
+    <div class="card">
+      <h3>Master Location สินค้า</h3>
+      <div class="muted" id="locStatus" style="margin-bottom:12px">ยังไม่ได้นำเข้าข้อมูล Location</div>
+      <input type="file" id="locFile" accept=".csv,.xlsx" style="display:none">
+      <label class="fld" style="margin-bottom:10px">
+        <span>ไฟล์นี้เป็น Location ชุดไหน</span>
+        <select id="locSetPick">
+          <option value="offline">Offline (หน้าร้าน)</option>
+          <option value="online">Online (คลังออนไลน์)</option>
+        </select>
+      </label>
+      <button class="btn ghost block" id="btnImportLoc">📄 นำเข้า Location (Excel / CSV)</button>
+      <p class="muted" style="margin:12px 0 0">
+        อ่านจากชีท <b>Locations</b> · จับคอลัมน์จากชื่อหัวตาราง<br>
+        ต้องมี <b>SKU</b> และอย่างน้อยหนึ่งใน <b>Location (หยิบ)</b> / <b>Location (เติม)</b><br>
+        ค่า <b>--</b> ถือว่าว่าง · นำเข้าซ้ำทับด้วย SKU · สองชุดแยกกัน ไม่ทับกัน
+      </p>
+      <label class="fld" style="margin:14px 0 8px">
+        <span>ค้นหา SKU หรือ Location</span>
+        <input type="text" id="locSearch" placeholder="พิมพ์เพื่อค้นหา" autocomplete="off">
+      </label>
+      <div class="filters">
+        <button class="btn sm" data-lset="offline">Offline</button>
+        <button class="btn sm grey" data-lset="online">Online</button>
+      </div>
+      <div class="muted" id="locCount"></div>
+    </div>
+    <div class="clist" id="locList"></div>
   </div>
 
   <div id="masterNewcodes" style="display:none">
@@ -804,6 +965,44 @@ table.grid td.neg{color:var(--short);font-weight:700}
 
 <!-- ============ PAGE 4 : SUMMARY ============ -->
 <section class="page" id="pageSummary">
+  <div class="filters" id="sumTabs">
+    <button class="btn sm" data-sumtab="overview">ภาพรวมทุกสาขา</button>
+    <button class="btn sm grey" data-sumtab="job">สรุปรอบนี้</button>
+  </div>
+
+  <div id="sumOverview">
+    <div class="card">
+      <h3>ภาพรวมทุกสาขา</h3>
+      <div class="filters">
+        <button class="btn sm" data-ostatus="all">ทั้งหมด</button>
+        <button class="btn sm grey" data-ostatus="counting">กำลังนับ</button>
+        <button class="btn sm grey" data-ostatus="reviewing">รอตรวจสอบ</button>
+        <button class="btn sm grey" data-ostatus="closed">ปิดแล้ว</button>
+      </div>
+      <div class="row" style="margin-bottom:8px">
+        <label class="fld" style="margin:0"><span>ตั้งแต่วันที่</span>
+          <input type="date" id="ovFrom"></label>
+        <label class="fld" style="margin:0"><span>ถึงวันที่</span>
+          <input type="date" id="ovTo"></label>
+      </div>
+      <button class="btn grey sm block" id="btnOvClear">ล้างตัวกรองวันที่</button>
+      <div class="muted" id="ovCount" style="margin-top:10px"></div>
+    </div>
+    <div class="tablewrap">
+      <table class="grid" id="ovTable">
+        <thead><tr>
+          <th>รหัสสาขา</th><th>ชื่อสาขา</th><th>สถานะ Job</th>
+          <th>SKU ที่ยิงแล้ว</th><th>ชิ้นที่ยิงได้</th>
+          <th>%Success (ชิ้น)</th><th>%Success (SKU)</th>
+          <th>ผลต่างมูลค่า</th><th>อัปเดตล่าสุด</th>
+        </tr></thead>
+        <tbody id="ovBody"></tbody>
+      </table>
+    </div>
+    <div class="muted" style="margin-top:10px">แตะแถวไหนเพื่อเข้าไปดูสรุปของสาขานั้น</div>
+  </div>
+
+ <div id="sumJob">
   <div class="banner info" id="sumHead"></div>
 
   <!-- อยู่บนสุดเพราะเป็นสิ่งที่คนเปิดหน้านี้ตั้งใจมาทำ ไม่ใช่สิ่งที่ทำหลังอ่านตารางจบ -->
@@ -821,6 +1020,20 @@ table.grid td.neg{color:var(--short);font-weight:700}
     <button class="btn sm" data-price="sellPrice">ราคาขาย</button>
     <button class="btn sm grey" data-price="costPrice">ราคาต้นทุน</button>
   </div>
+  <div class="card" id="tfCard">
+    <h3>รายการโอนกลับในรอบนี้ <span class="chip" id="tfChip">0</span></h3>
+    <div class="muted" id="tfSummaryHint" style="margin-bottom:10px"></div>
+    <label style="display:flex;align-items:flex-start;gap:10px;font-size:14px;margin-bottom:6px">
+      <input type="checkbox" id="deductTf" style="width:20px;height:20px;min-height:0;flex:0 0 auto">
+      <span><b>หักรายการรอโอนออกจากยอดระบบ</b></span>
+    </label>
+    <div class="muted" style="margin-bottom:10px">
+      เปิดเมื่อของกองที่รอโอนถูกแยกออกไปแล้วและไม่ได้นับรวมในรอบนี้ —
+      ผลต่างและ %Success จะคิดจาก (ยอดระบบ − ยอดรอโอน)
+    </div>
+    <div class="clist" id="tfList"></div>
+  </div>
+
   <div class="tablewrap">
     <table class="grid" id="sumTable">
       <thead><tr>
@@ -841,11 +1054,24 @@ table.grid td.neg{color:var(--short);font-weight:700}
   </div>
 
   <div class="card">
+    <h3>ผู้ยิงในรอบนี้ <span class="chip" id="scannerChip">0</span></h3>
+    <div class="muted" style="margin-bottom:10px">กดชื่อเพื่อดูว่าคนนั้นยิงโซนไหนไปเท่าไร</div>
+    <div class="clist" id="scannerList"></div>
+  </div>
+
+  <div class="card">
+    <h3>สินค้าสถานะพิเศษที่ยิงเจอ <span class="chip" id="statusChip">0</span></h3>
+    <div class="muted" id="statusHint" style="margin-bottom:10px"></div>
+    <div class="clist" id="statusList"></div>
+  </div>
+
+  <div class="card">
     <h3>ยอดที่กรอกมือ <span class="chip" id="manualChip">0</span></h3>
     <div class="clist" id="manualList"></div>
   </div>
 
   <button class="btn big block" id="btnExport">⬇ ดาวน์โหลด Excel (ฉบับเต็ม)</button>
+ </div>
 </section>
 
 <!-- ============ PAGE 5 : DOCUMENT ============ -->
@@ -858,6 +1084,21 @@ table.grid td.neg{color:var(--short);font-weight:700}
     <div class="filters" id="docTypeFilters" style="margin-bottom:14px">
       <button class="btn sm" data-doctype="stockTake">Stock Take</button>
       <button class="btn sm grey" data-doctype="transfer">Transfer</button>
+    </div>
+    <label class="fld" style="margin-bottom:6px">
+      <span>ขอบเขตรายงาน</span>
+    </label>
+    <div class="filters" id="docScopeFilters" style="margin-bottom:8px">
+      <button class="btn sm" data-docscope="job">เฉพาะ Job นี้</button>
+      <button class="btn sm grey" data-docscope="cycle">รวมทั้งสาขา</button>
+    </div>
+    <div class="muted" id="docScopeInfo" style="margin-bottom:8px"></div>
+    <label class="fld" style="margin-bottom:6px">
+      <span>รายการสินค้าในเอกสาร</span>
+    </label>
+    <div class="filters" id="itemTabs" style="margin-bottom:14px">
+      <button class="btn sm" data-itemtab="stock">สต๊อกสาขา</button>
+      <button class="btn sm grey" data-itemtab="tf">รายการโอนกลับ</button>
     </div>
     <label class="fld" style="margin-bottom:8px">
       <span id="docNoLabel">เลขที่เอกสาร</span>
@@ -901,6 +1142,8 @@ table.grid td.neg{color:var(--short);font-weight:700}
         <div class="subject" id="docSubject"></div>
         <div class="doc-ref" id="docBranchLine"></div>
         <div class="doc-ref" id="docRefLine"></div>
+        <div class="doc-ref" id="docScanners"></div>
+        <div class="doc-ref" id="docBasis"></div>
         <div class="tf-line">
           <span class="doc-lab" id="docNoLabelPrint">เลขที่เอกสาร:</span>
           <span class="tf-box" id="docNoShow">—</span>
@@ -988,7 +1231,7 @@ table.grid td.neg{color:var(--short);font-weight:700}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '1.9.3';
+var APP_VERSION = '2.0.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -1957,7 +2200,8 @@ var COLUMN_ALIASES = {
   qtyReady:    ['จำนวนพร้อมขาย', 'availableqty'],
   sellPrice:   ['ราคาขาย', 'sellprice', 'price'],
   unit:        ['หน่วยสินค้า', 'หน่วย', 'หน่วยนับ', 'unit', 'uom'],
-  barcode:     ['barcode', 'บาร์โค้ด']
+  barcode:     ['barcode', 'บาร์โค้ด'],
+  status:      ['status', 'สถานะ', 'สถานะสินค้า', 'productstatus']
 };
 
 /* ยอดระบบใช้คอลัมน์ "จำนวน" ไม่ใช่ "จำนวนพร้อมขาย" — จำนวนพร้อมขายหักของที่จองไว้แล้ว
@@ -2032,6 +2276,91 @@ function safeKey(code) {
   return String(code).replace(/[.$#\[\]\/\x00-\x1F\x7F]/g, '_');
 }
 
+/* ============================================================
+   Status ของสินค้า
+   ค่าเริ่มต้นคือ Normal · ค่าอื่นถือว่า "พิเศษ" ต้องเด้งป้ายตอนยิง
+   แอดมินเพิ่มค่าใหม่เองได้ เก็บที่ settings/productStatuses
+   ============================================================ */
+/* ============================================================
+   ประเภทคลังย่อยของ Job + รอบนับของสาขา (cycle)
+   1 สาขาเปิดได้หลาย Job ในเดือนเดียวกัน แล้วรวมรายงานได้
+   ============================================================ */
+var BUILTIN_STORE_TYPES = [
+  { key: 'SHOW', label: 'Show (สินค้าโชว์หน้าร้าน)' },
+  { key: 'STOCK', label: 'Stock (สต๊อกหลังร้าน)' }
+];
+var DEFAULT_STORE_TYPE = 'STOCK';     // Job เก่าที่ไม่มีฟิลด์นี้ถือเป็น Stock (ข้อ E1)
+
+function storeTypeList() {
+  var extra = state.customStoreTypes || [];
+  var seen = {}, out = [];
+  BUILTIN_STORE_TYPES.forEach(function (t) { seen[t.key] = 1; out.push(t); });
+  extra.forEach(function (t) {
+    var key = String((t && t.key) || t || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    var label = String((t && t.label) || t || '').trim();
+    if (!key || seen[key]) return;
+    seen[key] = 1;
+    out.push({ key: key, label: label || key });
+  });
+  return out;
+}
+function storeTypeOf(job) {
+  var t = String((job && job.storeType) || '').trim().toUpperCase();
+  return t || DEFAULT_STORE_TYPE;
+}
+function storeTypeLabel(key) {
+  var hit = storeTypeList().filter(function (t) { return t.key === key; })[0];
+  return hit ? hit.label : key;
+}
+
+/* cycle = รหัสสาขา + ปีเดือน เช่น LKB01-202607
+   Job ในสาขาและเดือนเดียวกันเข้า cycle เดียวกันเอง แก้ทีหลังได้เผื่อคร่อมเดือน */
+function cycleIdFor(branchCode, at) {
+  var d = new Date(at || Date.now());
+  var ym = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0');
+  return branchCodeCompact(branchCode || 'NA') + '-' + ym;
+}
+function cycleOf(job) {
+  if (!job) return '';
+  return job.cycleId || cycleIdFor(job.branchCode, job.createdAt);
+}
+
+var DEFAULT_STATUS = 'Normal';
+var BUILTIN_STATUSES = [
+  'Normal', 'GWP (แถม)', 'New CI', 'Dead Stock', 'ปิดใช้งาน',
+  'สินค้าคืน (ปกติ)', 'รอตรวจสอบ', 'Discount Sale 50%', 'SALE_ROUND1_BAR_CATE'
+];
+/* สีป้ายต่อ status — ตัวที่ไม่ได้ระบุใช้สีเทาอำพัน ให้ยังเห็นว่าไม่ปกติ */
+var STATUS_TONE = {
+  'Normal': 'ok',
+  'GWP (แถม)': 'purple',
+  'New CI': 'blue',
+  'Dead Stock': 'red',
+  'ปิดใช้งาน': 'grey',
+  'สินค้าคืน (ปกติ)': 'blue',
+  'รอตรวจสอบ': 'warn',
+  'Discount Sale 50%': 'rose',
+  'SALE_ROUND1_BAR_CATE': 'rose'
+};
+
+function statusList() {
+  var extra = state.customStatuses || [];
+  var seen = {}, out = [];
+  BUILTIN_STATUSES.concat(extra).forEach(function (s) {
+    var v = String(s || '').trim();
+    if (!v || seen[v]) return;
+    seen[v] = 1;
+    out.push(v);
+  });
+  return out;
+}
+function productStatus(p) {
+  var s = String((p && p.status) || '').trim();
+  return s || DEFAULT_STATUS;
+}
+function isSpecialStatus(s) { return String(s || DEFAULT_STATUS).trim() !== DEFAULT_STATUS; }
+function statusTone(s) { return STATUS_TONE[s] || 'warn'; }
+
 /* ---------- กฎแยก Product / Not Product ----------
    ระบุจากฝั่ง Not Product เท่านั้น และห้ามใช้คอลัมน์ Tag เพราะข้อมูลไม่นิ่ง */
 var NOT_PRODUCT_CATEGORIES = ['ทรัพย์สินบริษัท', 'วัสดุของใช้สิ้นเปลือง'];
@@ -2094,7 +2423,7 @@ function parseProductFile(parsed) {
     blank: 0, noCode: [], afterFooter: 0, footerRowNum: null, footerReason: null,
     merged: [], badQty: [], imported: 0,
     noCategory: 0, noBarcode: 0, noUnit: 0, zeroPrice: 0, noSubCategory: 0,
-    product: 0, notProduct: 0, needsReview: 0
+    product: 0, notProduct: 0, needsReview: 0, specialStatus: 0
   };
 
   var stopped = false;
@@ -2164,8 +2493,11 @@ function parseProductFile(parsed) {
       tag: idx.tag === undefined ? '' : cellText(row[idx.tag]),
       unit: unit,
       barcode: barcode,
-      sellPrice: sellPrice
+      sellPrice: sellPrice,
+      /* ไฟล์ไม่มีคอลัมน์ Status ก็ได้ ปล่อยว่างแล้วให้ค่าที่คนตั้งไว้เดิมชนะ (ดู buildProductPatch) */
+      status: idx.status === undefined ? '' : cellText(row[idx.status])
     };
+    if (products[key].status && isSpecialStatus(products[key].status)) stat.specialStatus++;
     systemQty[key] = qtyCell.value;
     firstRowOf[key] = num;
   }
@@ -2205,6 +2537,23 @@ var state = {
   zoneTotals: {},        // zoneId -> จำนวนชิ้นในโซนนั้น
   manualLog: [],
   scanLog: [],           // ทุกแถว สำหรับ export
+  locations: { offline: {}, online: {} },   // ชุด -> safeKey(sku) -> {sku,name,pick,refill}
+  locationSet: 'offline',                   // ชุดที่รอบนับนี้ใช้
+  locationFilter: '',                       // กรองเฉพาะ Location ที่ขึ้นต้นด้วย...
+  customStatuses: [],                       // ค่า status ที่แอดมินเพิ่มเอง
+  customStoreTypes: [],                     // ประเภทคลังย่อยที่แอดมินเพิ่มเอง
+  docScope: 'job',                          // เอกสาร: 'job' = เฉพาะ Job นี้ · 'cycle' = รวมทั้งสาขา
+  cycleData: null,                          // แคชยอดรวมทั้ง cycle
+  transfers: {},                            // safeKey(tfNo) -> ใบโอนของรอบนี้
+  transferQty: {},                          // safeKey(sku) -> ยอดรอโอนรวม
+  deductTransfer: false,                    // หักรายการรอโอนออกจากยอดระบบไหม
+  importTab: 'stock',                       // แท็บนำเข้า: stock / tf
+  itemTab: 'stock',                         // แท็บรายการสินค้า: stock / tf
+  overviewStatus: 'all',                    // ตัวกรองหน้าภาพรวมทุกสาขา
+  overviewFrom: '', overviewTo: '',
+  overviewRows: [],
+  scannerOpen: null,                        // ชื่อผู้ยิงที่กางดูรายโซนอยู่
+  summaryTab: 'overview',                   // แท็บสรุป: ภาพรวมทุกสาขา / รอบนี้
   unknown: {},           // รอบเก่าก่อน v1.9.3: pushId -> {value, zone, user, ts}
   unknownKeys: {},       // safeKey(บาร์โค้ด) -> { value, qty, note, firstTs, zone, user }
   noteOpen: false,       // กำลังพิมพ์คำอธิบายบาร์โค้ดที่ไม่รู้จักอยู่
@@ -2436,6 +2785,8 @@ function resetRoundAggregates() {
   state.zoneTotals = {};
   state.manualLog = [];
   state.scanLog = [];
+  state.transfers = {};
+  state.transferQty = {};
   state.unknown = {};
   state.unknownKeys = {};
   state.appliedScanIds = Object.create(null);
@@ -2563,11 +2914,14 @@ function jobBranchLabel(round) {
   return (code ? code + ' · ' : '') + jobBranchName(round);
 }
 
-function makeJobCode(abbr, when) {
+/* รูปแบบ [ย่อสาขา]-[ประเภทคลัง]-[YYYYMMDD]-[ลำดับ]
+   เช่น LKB01-SHOW-20260730-01 — อ่านออกทันทีว่าใบไหนคือคลังไหน */
+function makeJobCode(abbr, when, storeType) {
   var d = new Date(when || Date.now());
   var day = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
   var prefix = String(abbr || 'JOB').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6) || 'JOB';
-  var base = prefix + '-' + day + '-';
+  var st = String(storeType || DEFAULT_STORE_TYPE).toUpperCase().replace(/[^A-Z0-9]/g, '') || DEFAULT_STORE_TYPE;
+  var base = prefix + '-' + st + '-' + day + '-';
   var used = Object.keys(state.roundIndex)
     .map(function (id) { return (state.roundIndex[id] || {}).jobCode || ''; })
     .filter(function (c) { return c.indexOf(base) === 0; });
@@ -2576,19 +2930,55 @@ function makeJobCode(abbr, when) {
   return base + String(next).padStart(2, '0');
 }
 
-function createRound(name, branch, abbr) {
+function createRound(name, branch, abbr, locationSet, storeType) {
   var id = db.newKey();
+  var now = Date.now();
+  var st = String(storeType || DEFAULT_STORE_TYPE).toUpperCase();
   var patch = {};
   patch[id] = {
-    jobCode: makeJobCode(abbr || branchCodeCompact(branch.code) || suggestAbbr(branch.name)),
+    locationSet: locationSet === 'online' ? 'online' : 'offline',
+    storeType: st,
+    cycleId: cycleIdFor(branch.code, now),
+    jobCode: makeJobCode(abbr || branchCodeCompact(branch.code) || suggestAbbr(branch.name), now, st),
     name: name,
     branchCode: branch.code,
     branchName: branch.name,
     branch: branch.name,          // คงชื่อฟิลด์เดิมไว้ ให้ Job เก่ายังอ่านเข้ากันได้
-    createdAt: Date.now(), createdBy: state.counter || 'ไม่ระบุ',
+    createdAt: now, createdBy: state.counter || 'ไม่ระบุ',
     status: 'counting'
   };
   return db.update('roundIndex', patch).then(function () { return id; });
+}
+
+/* ---------- cycle: กลุ่มของ Job ในสาขา+เดือนเดียวกัน ---------- */
+function cycleGroups() {
+  var groups = {};
+  Object.keys(state.roundIndex).forEach(function (id) {
+    var j = state.roundIndex[id] || {};
+    var cid = cycleOf(j);
+    var g = groups[cid] || (groups[cid] = {
+      id: cid, branchCode: j.branchCode || '', branchName: j.branchName || j.branch || '',
+      jobs: [], createdAt: 0
+    });
+    g.jobs.push(id);
+    if ((j.createdAt || 0) > g.createdAt) g.createdAt = j.createdAt || 0;
+  });
+  Object.keys(groups).forEach(function (cid) {
+    var g = groups[cid];
+    /* สถานะรวม: ปิดครบทุก Job จึงถือว่ารอบนั้นปิด */
+    g.allClosed = g.jobs.every(function (id) { return (state.roundIndex[id] || {}).status === 'closed'; });
+    g.openCount = g.jobs.filter(function (id) {
+      return (state.roundIndex[id] || {}).status !== 'closed';
+    }).length;
+  });
+  return groups;
+}
+function jobsInCycle(cid) {
+  return Object.keys(state.roundIndex).filter(function (id) {
+    return cycleOf(state.roundIndex[id]) === cid;
+  }).sort(function (a, b) {
+    return (state.roundIndex[a].createdAt || 0) - (state.roundIndex[b].createdAt || 0);
+  });
 }
 
 /* ---------- สถานะ Job ----------
@@ -2716,6 +3106,12 @@ function buildProductPatch(incoming) {
       updatedAt: Date.now()
     };
 
+    /* Status: ไฟล์ทับได้เฉพาะเมื่อมีคอลัมน์นี้จริงและมีค่า
+       ไฟล์ Zort ปกติไม่มีคอลัมน์นี้ ค่าที่แอดมินตั้งเองไว้จึงต้องอยู่ครบ */
+    if (fresh.status) next.status = fresh.status;
+    else if (old && old.status) next.status = old.status;
+    else next.status = DEFAULT_STATUS;
+
     if (old && old.typeSource === 'manual') {
       /* คนตัดสินใจไว้แล้ว ห้ามให้ไฟล์มาทับ */
       next.type = old.type;
@@ -2739,6 +3135,28 @@ function buildProductPatch(incoming) {
   return { patch: patch, added: added, updated: updated, keptManual: keptManual };
 }
 
+/* ข้อ D1 — ไฟล์ยอดระบบไฟล์เดิมถูกนำเข้าไปแล้วใน Job อื่นของ cycle เดียวกันหรือยัง
+   ถ้าเบิ้ล ยอดระบบของรายงานรวมจะเป็นสองเท่าทันที ต้องให้คนกดยืนยันเอง
+   เทียบด้วยลายเซ็น: จำนวน SKU + ผลรวมยอด + รหัสสินค้าตัวแรก/ตัวท้าย */
+function importFingerprint(systemQty) {
+  var keys = Object.keys(systemQty).sort();
+  var total = keys.reduce(function (s, k) { return s + (Number(systemQty[k]) || 0); }, 0);
+  return keys.length + ':' + total + ':' + (keys[0] || '') + ':' + (keys[keys.length - 1] || '');
+}
+
+function findDuplicateImport(fingerprint) {
+  var cid = cycleOf(currentJob());
+  var hits = [];
+  jobsInCycle(cid).forEach(function (id) {
+    if (id === state.roundId) return;
+    var j = state.roundIndex[id] || {};
+    if (j.importFingerprint && j.importFingerprint === fingerprint) {
+      hits.push(j.jobCode || id);
+    }
+  });
+  return hits;
+}
+
 function applyImport(roundId, parsedResult) {
   var productDiff = buildProductPatch(parsedResult.products);
   var sysPatch = {}, removed = 0;
@@ -2752,6 +3170,13 @@ function applyImport(roundId, parsedResult) {
 
   return db.update('products', productDiff.patch)
     .then(function () { return db.update('rounds/' + roundId, sysPatch); })
+    .then(function () {
+      /* บันทึกลายเซ็นไฟล์ไว้กับ Job เพื่อให้ Job อื่นใน cycle ตรวจซ้ำได้ */
+      return db.update('roundIndex/' + roundId, {
+        importFingerprint: importFingerprint(parsedResult.systemQty),
+        importedAt: Date.now()
+      }).catch(function () { /* ไม่สำคัญพอจะทำให้การนำเข้าล้ม */ });
+    })
     .then(function () {
       return {
         added: productDiff.added, updated: productDiff.updated,
@@ -2859,7 +3284,7 @@ function vibrate(pattern) {
 var flashTimer = null;
 function flashStage(cls) {
   var el = $('scanStage');
-  el.classList.remove('hit', 'miss', 'newcode');
+  el.classList.remove('hit', 'miss', 'newcode', 'special');
   void el.offsetWidth;                 // บังคับให้เบราว์เซอร์เริ่ม transition ใหม่
   el.classList.add(cls);
   clearTimeout(flashTimer);
@@ -2873,6 +3298,11 @@ function flashStage(cls) {
 function beepNewCode() {
   beep(880, 90, 'triangle');
   setTimeout(function () { beep(620, 140, 'triangle'); }, 110);
+}
+/* สินค้าสถานะพิเศษ = สองโน้ตไล่ขึ้น sine ต่างจากทั้งสามเสียงที่มีอยู่ */
+function beepSpecial() {
+  beep(660, 80, 'sine');
+  setTimeout(function () { beep(990, 130, 'sine'); }, 95);
 }
 
 /* ============================================================
@@ -2965,6 +3395,262 @@ function waitForImages(root, maxMs) {
       setTimeout(poll, 200);
     })();
   });
+}
+
+/* ============================================================
+   ไฟล์ TF Return (รายการโอนสินค้า)
+   ชีท "รายการโอนสินค้า" · r1 ชื่อเรื่อง · r2 หัวคอลัมน์ · r3+ ข้อมูล · 13 คอลัมน์
+
+   ระวัง: ช่อง "#" ในไฟล์นี้ไม่ใช่เลขลำดับแถว แต่เป็นเลขที่รายการโอนที่ซ้ำกันทุกแถว
+   เงื่อนไขตัดท้ายไฟล์จึงใช้แค่ "ช่องนี้ว่าง" ห้ามคาดหวังว่าตัวเลขจะไล่ขึ้น
+   ============================================================ */
+var TRANSFER_COLUMNS = {
+  seq:     ['#', 'ลำดับ', 'no'],
+  type:    ['ประเภท', 'type'],
+  tfNo:    ['หมายเลขรายการ', 'เลขที่รายการ', 'transferno', 'documentno'],
+  date:    ['วันที่ทำรายการ', 'transferdate'],
+  created: ['วันที่สร้าง', 'createddate'],
+  note:    ['หมายเหตุ', 'note', 'remark'],
+  status:  ['สถานะรายการ', 'สถานะ', 'status'],
+  from:    ['จาก', 'from', 'ต้นทาง'],
+  to:      ['ไป', 'to', 'ปลายทาง'],
+  code:    ['รหัสสินค้า', 'รหัส', 'sku', 'code'],
+  name:    ['ชื่อสินค้า', 'ชื่อ', 'name'],
+  qty:     ['จำนวน', 'qty', 'quantity'],
+  barcode: ['barcode', 'บาร์โค้ด']
+};
+var TRANSFER_REQUIRED = [
+  { field: 'tfNo', label: 'หมายเลขรายการ' },
+  { field: 'code', label: 'รหัสสินค้า' },
+  { field: 'qty', label: 'จำนวน' }
+];
+
+function parseTransferFile(parsed) {
+  var rows = (parsed && parsed.rows) || [];
+  var rowNums = (parsed && parsed.rowNums) || [];
+  if (!rows.length) throw new Error('EMPTY_FILE');
+
+  /* จับหัวตารางจากชื่อ ไม่ใช่ตำแหน่ง — หาแถวที่มีทั้งรหัสสินค้าและหมายเลขรายการ */
+  var alias = {};
+  Object.keys(TRANSFER_COLUMNS).forEach(function (f) {
+    alias[f] = TRANSFER_COLUMNS[f].map(normText);
+  });
+  var headerRow = -1, idx = null, seen = [], checked = 0;
+  for (var r = 0; r < rows.length && checked < 10; r++) {
+    if (!rowHasContent(rows[r])) continue;
+    checked++;
+    var found = {};
+    for (var c = 0; c < rows[r].length; c++) {
+      var cell = cellText(rows[r][c]);
+      if (!cell) continue;
+      Object.keys(alias).forEach(function (f) {
+        if (found[f] === undefined && headerMatches(cell, alias[f])) found[f] = c;
+      });
+    }
+    if (found.code !== undefined && found.tfNo !== undefined) { headerRow = r; idx = found; break; }
+    rows[r].forEach(function (cell) { var t = cellText(cell); if (t) seen.push(t); });
+  }
+  if (headerRow < 0) {
+    var err = new Error('NO_TRANSFER_HEADER');
+    err.headers = seen.slice(0, 14);
+    throw err;
+  }
+  var missing = TRANSFER_REQUIRED
+    .filter(function (col) { return idx[col.field] === undefined; })
+    .map(function (col) { return col.label; });
+  if (missing.length) throw missingColumnsError(missing);
+
+  var lastReal = rows.length - 1;
+  while (lastReal > headerRow && !rowHasContent(rows[lastReal])) lastReal--;
+
+  var transfers = {};
+  var stat = { rows: 0, items: 0, skus: 0, pieces: 0, noCode: 0, stopped: null, froms: {} };
+  var stopped = false;
+
+  for (var i = headerRow + 1; i <= lastReal; i++) {
+    var row = rows[i] || [];
+    if (stopped) continue;
+    if (!rowHasContent(row)) continue;
+
+    /* ตัดท้ายไฟล์เมื่อช่อง # ว่าง (ค่าในช่องนี้คือเลขที่รายการ ซ้ำกันทุกแถว) */
+    if (idx.seq !== undefined && cellText(row[idx.seq]) === '') {
+      stopped = true;
+      stat.stopped = rowNums[i] || i + 1;
+      continue;
+    }
+    var firstText = '';
+    for (var fc = 0; fc < row.length && !firstText; fc++) firstText = cellText(row[fc]);
+    if (isExportFooter(firstText)) { stopped = true; stat.stopped = rowNums[i] || i + 1; continue; }
+
+    stat.rows++;
+    var tfNo = cellText(row[idx.tfNo]);
+    var code = cellText(row[idx.code]);
+    if (!tfNo || !code) { stat.noCode++; continue; }
+
+    var tKey = safeKey(tfNo);
+    var t = transfers[tKey];
+    if (!t) {
+      t = transfers[tKey] = {
+        tfNo: tfNo,
+        type: idx.type === undefined ? '' : cellText(row[idx.type]),
+        status: idx.status === undefined ? '' : cellText(row[idx.status]),
+        from: idx.from === undefined ? '' : cellText(row[idx.from]),
+        to: idx.to === undefined ? '' : cellText(row[idx.to]),
+        date: idx.date === undefined ? '' : cellText(row[idx.date]),
+        createdDate: idx.created === undefined ? '' : cellText(row[idx.created]),
+        note: idx.note === undefined ? '' : cellText(row[idx.note]),
+        items: {}
+      };
+    }
+    if (t.from) stat.froms[t.from] = 1;
+
+    var qty = parseNumberCell(row[idx.qty]).value;
+    var key = safeKey(code);
+    if (t.items[key]) t.items[key].qty += qty;      // รหัสซ้ำในใบเดียวกัน = รวมยอด
+    else {
+      t.items[key] = {
+        code: code,
+        name: idx.name === undefined ? code : (cellText(row[idx.name]) || code),
+        barcode: idx.barcode === undefined ? '' : cellText(row[idx.barcode]),
+        qty: qty
+      };
+    }
+  }
+
+  Object.keys(transfers).forEach(function (k) {
+    var keys = Object.keys(transfers[k].items);
+    transfers[k].skuCount = keys.length;
+    transfers[k].pieces = keys.reduce(function (s, x) { return s + transfers[k].items[x].qty; }, 0);
+    stat.skus += transfers[k].skuCount;
+    stat.pieces += transfers[k].pieces;
+    stat.items += keys.length;
+  });
+  if (!Object.keys(transfers).length) throw new Error('NO_ROWS');
+  return { transfers: transfers, stat: stat };
+}
+
+/* ยอดรอโอนรายตัว รวมทุกใบในรอบนี้ */
+function transferQtyMap() {
+  var out = {};
+  Object.keys(state.transfers).forEach(function (tk) {
+    var items = (state.transfers[tk] || {}).items || {};
+    Object.keys(items).forEach(function (k) {
+      out[k] = (out[k] || 0) + (Number(items[k].qty) || 0);
+    });
+  });
+  return out;
+}
+function pendingTransferQty(key) { return (state.transferQty || {})[key] || 0; }
+
+/* ============================================================
+   Master Location สินค้า
+   ไฟล์จริงมี 16,076 แถว เก็บแยก 2 ชุด offline / online
+   สินค้าตัวเดียวกันมี Location ได้ทั้งสองชุดพร้อมกัน ไม่ทับกัน
+   ============================================================ */
+var LOCATION_SETS = [
+  { key: 'offline', label: 'Offline (หน้าร้าน)' },
+  { key: 'online', label: 'Online (คลังออนไลน์)' }
+];
+var LOCATION_COLUMNS = {
+  sku:    ['sku', 'รหัสสินค้า', 'รหัส', 'code', 'itemcode'],
+  name:   ['ชื่อสินค้า', 'ชื่อ', 'name', 'itemname', 'productname'],
+  pick:   ['location(หยิบ)', 'locationหยิบ', 'ตำแหน่งหยิบ', 'locationpick', 'pick', 'pickinglocation'],
+  refill: ['location(เติม)', 'locationเติม', 'ตำแหน่งเติม', 'locationrefill', 'refill', 'replenishlocation']
+};
+
+/* ไฟล์จริงใส่ "--" แทนช่องว่าง ต้องถือว่าไม่มีค่า ไม่ใช่ Location ชื่อ "--" */
+function locationCell(v) {
+  var s = cellText(v);
+  return (!s || /^-+$/.test(s)) ? '' : s;
+}
+
+function parseLocationFile(parsed) {
+  var rows = (parsed && parsed.rows) || [];
+  if (!rows.length) throw new Error('EMPTY_FILE');
+
+  /* จับคอลัมน์จากชื่อหัวตารางเท่านั้น ไม่เดาตำแหน่ง (บทเรียนจาก v1.8.1) */
+  var alias = {};
+  Object.keys(LOCATION_COLUMNS).forEach(function (f) {
+    alias[f] = LOCATION_COLUMNS[f].map(normText);
+  });
+  var headerRow = -1, idx = null, seen = [], checked = 0;
+  for (var r = 0; r < rows.length && checked < 10; r++) {
+    if (!rowHasContent(rows[r])) continue;
+    checked++;
+    var found = {};
+    for (var c = 0; c < rows[r].length; c++) {
+      var cell = cellText(rows[r][c]);
+      if (!cell) continue;
+      ['sku', 'name', 'pick', 'refill'].forEach(function (f) {
+        if (found[f] === undefined && headerMatches(cell, alias[f])) found[f] = c;
+      });
+    }
+    if (found.sku !== undefined && (found.pick !== undefined || found.refill !== undefined)) {
+      headerRow = r; idx = found; break;
+    }
+    rows[r].forEach(function (cell) { var t = cellText(cell); if (t) seen.push(t); });
+  }
+  if (headerRow < 0) {
+    var err = new Error('NO_LOCATION_HEADER');
+    err.headers = seen.slice(0, 12);
+    throw err;
+  }
+
+  var map = {};
+  var stat = { rows: 0, imported: 0, noSku: 0, bothBlank: 0, duplicates: 0, withPick: 0, withRefill: 0 };
+  for (var i = headerRow + 1; i < rows.length; i++) {
+    var row = rows[i] || [];
+    if (!rowHasContent(row)) continue;
+    stat.rows++;
+    var sku = cellText(row[idx.sku]);
+    if (!sku) { stat.noSku++; continue; }
+    var pick = idx.pick === undefined ? '' : locationCell(row[idx.pick]);
+    var refill = idx.refill === undefined ? '' : locationCell(row[idx.refill]);
+    if (!pick && !refill) { stat.bothBlank++; continue; }
+    var key = safeKey(sku);
+    if (map[key]) stat.duplicates++;      // upsert: แถวหลังชนะ
+    else stat.imported++;
+    map[key] = {
+      sku: sku,
+      name: idx.name === undefined ? '' : cellText(row[idx.name]),
+      pick: pick, refill: refill
+    };
+  }
+  Object.keys(map).forEach(function (k) {
+    if (map[k].pick) stat.withPick++;
+    if (map[k].refill) stat.withRefill++;
+  });
+  if (!stat.imported) throw new Error('NO_ROWS');
+  return { map: map, stat: stat };
+}
+
+/* ไฟล์จริง 16,076 แถว — เขียนทีเดียวจะได้ payload ใหญ่มากและพังง่ายเวลาเน็ตไม่ดี
+   ตัดเป็นก้อนละ 500 แล้วส่งต่อกัน แต่ละก้อนเป็น PATCH รายเรคอร์ดตามกฎบ้าน */
+function writeLocationChunks(setKey, map, onProgress) {
+  var keys = Object.keys(map);
+  var CHUNK = 500;
+  var done = 0;
+  function step(i) {
+    if (i >= keys.length) return Promise.resolve(done);
+    var patch = {};
+    keys.slice(i, i + CHUNK).forEach(function (k) { patch[k] = map[k]; });
+    return db.update('locations/' + setKey, patch).then(function () {
+      done += Object.keys(patch).length;
+      if (onProgress) onProgress(done, keys.length);
+      return step(i + CHUNK);
+    });
+  }
+  return step(0);
+}
+
+function locationOf(key) {
+  var set = state.locationSet || 'offline';
+  return (state.locations[set] || {})[key] || null;
+}
+function locationText(key) {
+  var l = locationOf(key);
+  if (!l) return '';
+  return [l.pick, l.refill].filter(Boolean).join(' / ');
 }
 
 /* ---------- นำเข้าลิงก์รูปสินค้า ----------
@@ -3148,6 +3834,7 @@ function handleScanValue(raw) {
     showScanNewCode(value, newKey);
     pushRecent(value, 1, newRec.rec.ts);
     renderScanTotals();
+    renderLivePanel();
     renderSyncBar();
     $('btnUndo').disabled = false;
     return;
@@ -3156,12 +3843,17 @@ function handleScanValue(raw) {
   hideUnknownNote();
   var written = writeScan(key, 1, 'scan', null);
   state.undoStack.push({ key: key, id: written.id });
-  flashStage('hit');
-  beep(1180, 70, 'square');
-  vibrate(40);
+
+  /* status พิเศษ = เตือนให้รู้ตัว แต่ยังบันทึกตามปกติ ห้ามขวางจังหวะยิง */
+  var special = isSpecialStatus(productStatus(state.products[key]));
+  flashStage(special ? 'special' : 'hit');
+  if (special) beepSpecial(); else beep(1180, 70, 'square');
+  vibrate(special ? [30, 40, 30, 40, 30] : 40);
+
   showScanHit(key);
   pushRecent(state.products[key].name, 1, written.rec.ts);
   renderScanTotals();
+  renderLivePanel();
   $('btnUndo').disabled = false;
 }
 
@@ -3195,32 +3887,143 @@ function swapScanImage(url) {
   var old = $('slImage');
   var next = imageBox(url);
   next.id = 'slImage';
+  /* imageBox() คืนกล่องคลาส imgbox ล้วน ต้องใส่ pc-img กลับ ไม่งั้นรูปจะเล็กจิ๋ว
+     เพราะขนาด 112/140px อยู่ในกฎ .prodcard .pc-img เท่านั้น */
+  next.classList.add('pc-img');
   old.parentNode.replaceChild(next, old);
+}
+
+function makeBadge(text, tone) {
+  var b = document.createElement('span');
+  b.className = 'badge ' + tone;
+  b.setAttribute('data-badge', tone);
+  b.textContent = text;
+  return b;
 }
 
 function showScanHit(key) {
   var p = state.products[key];
   swapScanImage(p.imageUrl);
+  $('slCode').textContent = p.code + (p.unit ? ' · ' + p.unit : '');
+  $('slCode').className = 'pc-code';
   $('slName').textContent = p.name;
   $('slName').className = 'sl-name';
-  $('slMeta').textContent = p.code + (p.unit ? ' · ' + p.unit : '') +
-    ' · ยอดระบบ ' + fmtNum(state.systemQty[key] || 0);
+  $('slCat').textContent = [p.category, p.subCategory].filter(Boolean).join(' · ') || '(ไม่มีหมวดหมู่)';
+
+  var badges = $('slBadges');
+  badges.innerHTML = '';
+  var loc = locationOf(key);
+  if (loc && loc.pick) badges.appendChild(makeBadge('📍 หยิบ ' + loc.pick, 'loc'));
+  if (loc && loc.refill) badges.appendChild(makeBadge('📦 เติม ' + loc.refill, 'loc'));
+  if (!loc) badges.appendChild(makeBadge('📍 ไม่มี Location', 'grey'));
+
+  var st = productStatus(p);
+  badges.appendChild(makeBadge(st, statusTone(st)));
+  /* ข้อ C3 — ของกองนี้เตรียมส่งกลับแล้ว คนนับต้องรู้ */
+  var pend = pendingTransferQty(key);
+  if (pend) badges.appendChild(makeBadge('🔁 รอโอน ' + fmtNum(pend), 'blue'));
+
+  $('slSys').textContent = fmtNum(state.systemQty[key] || 0);
   $('slQty').textContent = fmtNum(state.counts[key] || 0);
+  $('slMeta').textContent = isSpecialStatus(st)
+    ? '⚠ สินค้าสถานะพิเศษ — บันทึกแล้ว แต่ควรแจ้งหัวหน้าตอนปิดรอบ'
+    : 'ยิงตัวถัดไปต่อได้เลย';
 }
 
 function showScanNewCode(value, key) {
   swapScanImage(null);
   $('slImage').textContent = '🆕';
+  $('slCode').textContent = value;
+  $('slCode').className = 'pc-code scan-newcode';
   $('slName').textContent = 'บันทึกแล้ว · ไม่มีในระบบ ต้องตรวจสอบภายหลัง';
   $('slName').className = 'sl-name';
-  $('slMeta').innerHTML = '';
-  var code = document.createElement('span');
-  code.className = 'scan-newcode';
-  code.textContent = value;
-  $('slMeta').appendChild(code);
-  $('slMeta').appendChild(document.createTextNode(' — ยิงตัวถัดไปต่อได้เลย'));
+  $('slCat').textContent = '';
+  var badges = $('slBadges');
+  badges.innerHTML = '';
+  badges.appendChild(makeBadge('ไม่มีในระบบ', 'warn'));
+  $('slSys').textContent = '0';
   $('slQty').textContent = fmtNum(state.counts[key] || 0);
+  $('slMeta').textContent = 'ยิงตัวถัดไปต่อได้เลย';
   showUnknownNote(value);
+}
+
+/* ---------- คอลัมน์ขวาบน Laptop: รายการที่ยิงแล้ว + สรุปสด ----------
+   วาดเฉพาะตอนจอกว้างพอ จอมือถือไม่ต้องเสียแรงวาดของที่ไม่มีใครเห็น */
+var LIVE_LIMIT = 200;
+
+function sidePanelVisible() {
+  return $('scanCol') ? true : $('liveBody') && $('liveBody').offsetParent !== null;
+}
+
+function renderLivePanel() {
+  var body = $('liveBody');
+  if (!body || body.offsetParent === null) return;
+
+  var rows = state.scanLog.slice().reverse().slice(0, LIVE_LIMIT);
+  $('liveChip').textContent = fmtNum(state.scanLog.length);
+  body.innerHTML = '';
+  rows.forEach(function (s) {
+    var key = safeKey(s.rec.code);
+    var p = state.products[key] || {};
+    var tr = document.createElement('tr');
+    [fmtClock(s.rec.ts), s.rec.code, p.name || (s.rec.unknown ? '(ไม่มีในระบบ)' : s.rec.code),
+     locationText(key) || '-', (s.rec.delta > 0 ? '+' : '') + s.rec.delta, s.rec.user || '-'
+    ].forEach(function (t, i) {
+      var td = document.createElement('td');
+      td.textContent = t;
+      if (i === 4) td.style.textAlign = 'right';
+      tr.appendChild(td);
+    });
+    if (s.rec.delta < 0) tr.style.opacity = '.6';
+    body.appendChild(tr);
+  });
+
+  var pieces = 0, skus = 0;
+  Object.keys(state.counts).forEach(function (k) {
+    if (!state.counts[k]) return;
+    pieces += state.counts[k];
+    skus++;
+  });
+  var host = $('liveStats');
+  host.innerHTML = '';
+  [['ชิ้นที่ยิงได้', fmtNum(pieces)],
+   ['SKU ที่ยิงแล้ว', fmtNum(skus) + ' / ' + fmtNum(Object.keys(state.systemQty).length)],
+   ['ไม่มีในระบบ', fmtNum(unknownPending())],
+   ['ค้างส่ง', fmtNum(pendingCount())]
+  ].forEach(function (c) {
+    var d = document.createElement('div');
+    d.className = 'live-cell';
+    var s = document.createElement('span'); s.textContent = c[0];
+    var b = document.createElement('b'); b.textContent = c[1];
+    d.appendChild(s); d.appendChild(b);
+    host.appendChild(d);
+  });
+}
+
+/* ตัวกรอง Location — ให้คนนับไล่เก็บทีละโซนโดยรู้ว่าเหลืออีกกี่ตัวในโซนนั้น */
+function renderLocFilter() {
+  var term = String(state.locationFilter || '').trim().toUpperCase();
+  var info = $('locFilterInfo');
+  if (!term) {
+    info.textContent = Object.keys(state.locations[state.locationSet] || {}).length
+      ? 'ปล่อยว่าง = นับทั้งรอบ · ใส่ตัวอักษรเพื่อไล่เก็บทีละโซน'
+      : 'รอบนี้ยังไม่มีข้อมูล Location — นำเข้าที่แท็บ Master';
+    return;
+  }
+  var total = 0, done = 0, pieces = 0;
+  Object.keys(state.systemQty).forEach(function (k) {
+    var l = locationOf(k);
+    if (!l) return;
+    var hit = (l.pick && l.pick.toUpperCase().indexOf(term) === 0) ||
+              (l.refill && l.refill.toUpperCase().indexOf(term) === 0);
+    if (!hit) return;
+    total++;
+    if (state.counts[k]) { done++; pieces += state.counts[k]; }
+  });
+  info.textContent = total
+    ? ('โซน "' + term + '": ยิงแล้ว ' + fmtNum(done) + ' / ' + fmtNum(total) + ' SKU · ' +
+       fmtNum(pieces) + ' ชิ้น · เหลืออีก ' + fmtNum(total - done) + ' SKU')
+    : ('ไม่พบสินค้าที่ Location ขึ้นต้นด้วย "' + term + '" ในชุด ' + state.locationSet);
 }
 
 /* ต่อหัวรายการแล้วตัดตัวที่ 6 ทิ้ง — ไม่วาดรายการใหม่ทั้งชุดทุกครั้งที่ยิง */
@@ -3300,6 +4103,8 @@ function renderScanPage() {
     ' · ผู้นับ ' + state.counter;
   renderScanTotals();
   renderSyncBar();
+  renderLivePanel();
+  renderLocFilter();
   focusScan();
 }
 
@@ -3762,9 +4567,11 @@ function renderMaster() {
   var tab = state.masterTab;
   $('masterProducts').style.display = tab === 'products' ? 'block' : 'none';
   $('masterBranches').style.display = tab === 'branches' ? 'block' : 'none';
+  $('masterLocations').style.display = tab === 'locations' ? 'block' : 'none';
   $('masterNewcodes').style.display = tab === 'newcodes' ? 'block' : 'none';
   $('masterUsers').style.display = tab === 'users' ? 'block' : 'none';
   if (tab === 'branches') { renderBranchMaster(); return; }
+  if (tab === 'locations') { renderLocationMaster(); return; }
   if (tab === 'newcodes') { renderNewCodes(); return; }
   if (tab === 'users') { refreshUsers().then(renderUsers); return; }
 
@@ -3872,14 +4679,43 @@ function renderMaster() {
     };
     imgLab.appendChild(imgIn);
 
+    var stLab = document.createElement('label');
+    stLab.className = 'full';
+    stLab.innerHTML = '<span>Status</span>';
+    var stSel = document.createElement('select');
+    stSel.setAttribute('data-field', 'status');
+    var cur = productStatus(p);
+    statusList().forEach(function (s) {
+      var o = document.createElement('option');
+      o.value = s; o.textContent = s;
+      if (s === cur) o.selected = true;
+      stSel.appendChild(o);
+    });
+    var addOpt = document.createElement('option');
+    addOpt.value = '__add__';
+    addOpt.textContent = '+ เพิ่มค่าใหม่...';
+    stSel.appendChild(addOpt);
+    stSel.onchange = function () {
+      if (stSel.value === '__add__') {
+        stSel.value = cur;
+        ask('เพิ่มค่า Status ใหม่', 'ค่าใหม่จะใช้ได้กับสินค้าทุกตัว', 'เพิ่มค่านี้',
+            { fields: [{ key: 'v', label: 'ชื่อ Status', type: 'text', placeholder: 'เช่น Damaged' }] })
+          .then(function (v) { if (v && v.v) addCustomStatus(v.v); });
+        return;
+      }
+      saveProductEdit(key, 'status', stSel.value)
+        .then(function () { toast('ตั้ง Status ' + p.code + ' เป็น ' + stSel.value); });
+    };
+    stLab.appendChild(stSel);
+
     /* Master เป็นข้อมูลกลางของทุกสาขา แก้ได้เฉพาะ admin (ข้อ B1)
        ล็อกช่องให้เห็นชัดว่าแก้ไม่ได้ ดีกว่าปล่อยให้พิมพ์แล้วค่อยเด้ง error */
     if (!isAdmin()) {
-      costIn.disabled = true; typeBtn.disabled = true; imgIn.disabled = true;
+      costIn.disabled = true; typeBtn.disabled = true; imgIn.disabled = true; stSel.disabled = true;
       costIn.title = typeBtn.title = imgIn.title = roleBlockMessage('แก้ข้อมูลสินค้าไม่ได้');
     }
 
-    edit.appendChild(costLab); edit.appendChild(typeLab); edit.appendChild(imgLab);
+    edit.appendChild(costLab); edit.appendChild(typeLab); edit.appendChild(stLab); edit.appendChild(imgLab);
     card.appendChild(top); card.appendChild(edit);
     list.appendChild(card);
   });
@@ -3912,11 +4748,14 @@ function summaryData() {
         ? { code: unknownInfo.value, name: unknownInfo.note || ('ไม่มีในระบบ — ' + unknownInfo.value),
             type: 'product', unit: '' }
         : { code: key, name: key, type: 'product' });
-    var sys = Number(state.systemQty[key]) || 0;
+    var rawSys = Number(state.systemQty[key]) || 0;
+    var pending = pendingTransferQty(key);
+    /* ข้อ D2 — เปิดสวิตช์แล้วคิดผลต่างจาก (ยอดระบบ − ยอดรอโอน) */
+    var sys = state.deductTransfer ? Math.max(0, rawSys - pending) : rawSys;
     var act = Number(state.counts[key]) || 0;
     /* ยอดถูกย้ายออกไปหมดแล้ว (ผูกกับสินค้าอื่น) และไม่มียอดระบบ = ไม่ใช่แถวจริง
        ถ้าไม่ตัดออก SKU รวมจะถูกนับเกินและ %Success จะเพี้ยน */
-    if (!sys && !act && !state.products[key]) return;
+    if (!rawSys && !act && !state.products[key]) return;
     var price = Number(p[priceField]) || 0;      // ยังไม่กรอกต้นทุน = คิดเป็น 0
     var bucket = p.type === 'notProduct' ? 'notProduct' : 'product';
 
@@ -3938,12 +4777,118 @@ function summaryData() {
     rows.push({
       key: key, code: p.code, name: p.name, unit: p.unit || '', type: bucket,
       category: p.category || '',
+      status: productStatus(p),
+      location: locationText(key),
+      rawSys: rawSys, pending: pending,
       sys: sys, act: act, diff: act - sys, price: price,
       scanQty: Number(state.scanQty[key]) || 0,
       manualQty: Number(state.manualQty[key]) || 0
     });
   });
 
+  rows.sort(function (a, b) { return String(a.code).localeCompare(String(b.code), 'th'); });
+  return { groups: groups, rows: rows };
+}
+
+/* ---------- รวมทุก Job ใน cycle เดียวกัน (ข้อ C2) ----------
+   บวกยอดระบบและยอดนับ "รายตัวตามรหัสสินค้า" แล้วค่อยคำนวณ %Success ใหม่จากยอดรวม
+   ห้ามเอา % ของแต่ละ Job มาเฉลี่ยกัน เพราะขนาดของแต่ละ Job ไม่เท่ากัน
+   SKU ที่อยู่ทั้ง Show และ Stock จึงถูกยุบเป็น SKU เดียวโดยอัตโนมัติ */
+function loadCycleRaw(cid) {
+  var ids = jobsInCycle(cid);
+  return Promise.all(ids.map(function (id) {
+    return Promise.all([
+      db.get('rounds/' + id + '/systemQty'),
+      db.get('rounds/' + id + '/scans')
+    ]).then(function (res) { return { id: id, sys: res[0] || {}, scans: res[1] || {} }; });
+  }));
+}
+
+function buildCycleData(parts) {
+  var sysAll = {}, countAll = {}, jobsPerSku = {}, perJob = [];
+
+  parts.forEach(function (p) {
+    var job = state.roundIndex[p.id] || {};
+    var counts = {}, users = {};
+    Object.keys(p.scans).forEach(function (sid) {
+      var rec = p.scans[sid];
+      if (!rec) return;
+      var k = safeKey(rec.code);
+      counts[k] = (counts[k] || 0) + (Number(rec.delta) || 0);
+      if (rec.user) users[rec.user] = 1;
+    });
+    Object.keys(p.sys).forEach(function (k) {
+      sysAll[k] = (sysAll[k] || 0) + (Number(p.sys[k]) || 0);
+    });
+    Object.keys(counts).forEach(function (k) {
+      countAll[k] = (countAll[k] || 0) + counts[k];
+      if (counts[k]) (jobsPerSku[k] = jobsPerSku[k] || {})[p.id] = 1;
+    });
+
+    /* ข้อ C3 — ตารางย่อยแยกตาม Job ให้เห็นว่าฝั่งไหนแม่นกว่ากัน */
+    var keys = {};
+    Object.keys(p.sys).forEach(function (k) { keys[k] = 1; });
+    Object.keys(counts).forEach(function (k) { keys[k] = 1; });
+    var all = Object.keys(keys).filter(function (k) {
+      return (Number(p.sys[k]) || 0) !== 0 || (counts[k] || 0) !== 0;
+    });
+    var sysQty = 0, absDiff = 0, pieces = 0;
+    all.forEach(function (k) {
+      var s = Number(p.sys[k]) || 0, a = counts[k] || 0;
+      sysQty += s; absDiff += Math.abs(a - s); pieces += a;
+    });
+    perJob.push({
+      id: p.id,
+      jobCode: job.jobCode || p.id,
+      storeType: storeTypeLabel(storeTypeOf(job)),
+      status: JOB_STATUS_TEXT[job.status || 'counting'],
+      skuTotal: all.length,
+      pieces: pieces,
+      pctPieces: sysQty > 0 ? ((sysQty - absDiff) / sysQty) * 100 : null,
+      users: Object.keys(users).length
+    });
+  });
+
+  return { sys: sysAll, counts: countAll, jobsPerSku: jobsPerSku, perJob: perJob };
+}
+
+/* ทำให้หน้าตาเหมือน summaryData() เป๊ะ เพื่อให้ตาราง/กราฟ/Excel ใช้โค้ดชุดเดิมได้หมด */
+function summaryDataFrom(sysMap, countMap, jobsPerSku) {
+  var priceField = state.priceField;
+  var groups = { product: blankGroup(), notProduct: blankGroup(), total: blankGroup() };
+  var keys = {};
+  Object.keys(sysMap).forEach(function (k) { keys[k] = 1; });
+  Object.keys(countMap).forEach(function (k) { keys[k] = 1; });
+
+  var rows = [];
+  Object.keys(keys).forEach(function (key) {
+    var p = state.products[key];
+    var sys = Number(sysMap[key]) || 0;
+    var act = Number(countMap[key]) || 0;
+    if (!sys && !act && !p) return;
+    if (!p) p = { code: key, name: 'ไม่มีในระบบ — ' + key, type: 'product', unit: '' };
+    var price = Number(p[priceField]) || 0;
+    var bucket = p.type === 'notProduct' ? 'notProduct' : 'product';
+
+    [groups[bucket], groups.total].forEach(function (g) {
+      g.sysQty += sys; g.actQty += act; g.skuTotal++;
+      if (act === sys) g.skuMatch++; else if (act < sys) g.skuShort++; else g.skuOver++;
+      g.pcMatch += Math.min(sys, act);
+      g.pcShort += Math.max(0, sys - act);
+      g.pcOver += Math.max(0, act - sys);
+      g.sysValue += sys * price;
+      g.actValue += act * price;
+    });
+
+    rows.push({
+      key: key, code: p.code, name: p.name, unit: p.unit || '', type: bucket,
+      category: p.category || '', status: productStatus(p), location: locationText(key),
+      sys: sys, act: act, diff: act - sys, price: price,
+      scanQty: act, manualQty: 0,
+      /* ข้อ D2 — SKU นี้ถูกยิงจากกี่ Job */
+      jobCount: Object.keys((jobsPerSku || {})[key] || {}).length
+    });
+  });
   rows.sort(function (a, b) { return String(a.code).localeCompare(String(b.code), 'th'); });
   return { groups: groups, rows: rows };
 }
@@ -4066,6 +5011,10 @@ function renderSummary() {
     });
   }
 
+  renderTransfers();
+  renderScanners();
+  renderSpecialStatus();
+
   /* ยอดที่กรอกมือ */
   var manual = state.manualLog.slice().sort(function (a, b) { return (b.rec.ts || 0) - (a.rec.ts || 0); });
   $('manualChip').textContent = fmtNum(manual.length);
@@ -4115,10 +5064,12 @@ function exportExcel() {
   s1.push(['คิดมูลค่าด้วย', priceLabel]);
   s1.push(['สาขา', jobBranchLabel(round)]);
 
-  var s2 = [['รหัสสินค้า', 'ชื่อสินค้า', 'หน่วย', 'ประเภท', 'จำนวนระบบ', 'จำนวนจริง', 'ผลต่าง',
+  var s2 = [['รหัสสินค้า', 'ชื่อสินค้า', 'Location', 'Status', 'หน่วย', 'ประเภท',
+             'จำนวนระบบ', 'จำนวนจริง', 'ผลต่าง',
              'จากการยิง', 'จากการกรอกมือ', priceLabel, 'มูลค่าระบบ', 'มูลค่าจริง']];
   data.rows.forEach(function (r) {
-    s2.push([r.code, r.name, r.unit, r.type === 'notProduct' ? 'Not Product' : 'Product',
+    s2.push([r.code, r.name, r.location || '', r.status || DEFAULT_STATUS, r.unit,
+             r.type === 'notProduct' ? 'Not Product' : 'Product',
              r.sys, r.act, r.diff, r.scanQty, r.manualQty, r.price,
              Math.round(r.sys * r.price * 100) / 100, Math.round(r.act * r.price * 100) / 100]);
   });
@@ -4136,7 +5087,7 @@ function exportExcel() {
 
   var blob = buildXlsx([
     { name: 'สรุป', rows: s1, widths: [16, 12, 12, 13, 10, 10, 10, 14, 14, 14, 14, 14] },
-    { name: 'รายสินค้า', rows: s2, widths: [18, 36, 10, 12, 12, 12, 10, 11, 14, 12, 14, 14] },
+    { name: 'รายสินค้า', rows: s2, widths: [18, 34, 16, 18, 10, 12, 12, 12, 10, 11, 14, 12, 14, 14] },
     { name: 'ประวัติการนับ', rows: s3, widths: [22, 18, 36, 16, 14, 10, 13, 22, 24] },
     { name: 'ไม่มีในระบบ', rows: s4, widths: [5, 24, 28, 12, 16, 14, 22, 24, 14] }
   ]);
@@ -4255,7 +5206,9 @@ function saveDocNo(value) {
 function allocateDocNo() {
   var round = currentJob();
   if (!round) return Promise.resolve(null);
-  var kind = docType() === 'transfer' ? 'TF' : 'ST';
+  /* ข้อ C4 — รายงานรวมทั้งสาขาจองเลขคนละชุดกับเลขของ Job
+     รูปแบบเดิมทุกอย่าง ต่างแค่ kind มี C ต่อท้าย และผูกกับ cycle ไม่ใช่ Job */
+  var kind = (docType() === 'transfer' ? 'TF' : 'ST') + (state.docScope === 'cycle' ? 'C' : '');
   var branchKey = safeKey(round.branchCode || 'NA');
   var ym = beYearMonth();
   var path = 'docCounters/' + branchKey + '/' + kind;
@@ -4443,8 +5396,9 @@ function unknownExcelRow(u, i) {
           u.legacy ? 'รอบเก่า (ไม่มียอด)' : (u.resolved ? 'จัดการแล้ว' : 'ยังไม่ได้จัดการ')];
 }
 
-var DOC_ITEM_HEAD = ['#', 'รูป', 'รหัสสินค้า', 'ชื่อสินค้า', 'หมวดหมู่', 'Type', 'จำนวน (ระบบ)',
-  'ยิงจริง', 'Dift', 'ราคา/ตัว', 'มูลค่ารวม (ระบบ)', 'มูลค่าจริง', 'ผลต่าง (มูลค่า)', 'Reason'];
+var DOC_ITEM_HEAD = ['#', 'รูป', 'รหัสสินค้า', 'ชื่อสินค้า', 'Location', 'Status', 'หมวดหมู่', 'Type',
+  'ยอดระบบ', 'ยอดรอโอน', 'ยิงจริง', 'ผลต่าง', 'ราคา/ตัว', 'มูลค่ารวม (ระบบ)', 'มูลค่าจริง',
+  'ผลต่าง (มูลค่า)', 'Reason'];
 
 function buildDocItemTable(title, rows) {
   var box = document.createElement('div');
@@ -4466,9 +5420,10 @@ function buildDocItemTable(title, rows) {
   table.className = 'items';
   table.setAttribute('data-doc-table', title);
 
-  /* กว้างรวม 100% พอดีหน้ากระดาษเสมอ ไม่ว่าชื่อสินค้าจะยาวแค่ไหน */
-  /* # รูป รหัส ชื่อ หมวด Type ระบบ ยิงจริง Dift ราคา มูลค่าระบบ มูลค่าจริง ผลต่าง Reason */
-  var widths = [3, 4, 11, 14, 8, 7, 6, 5, 5, 6, 7, 7, 7, 10];
+  /* กว้างรวม 100% พอดีหน้ากระดาษเสมอ ไม่ว่าชื่อสินค้าจะยาวแค่ไหน
+     # รูป รหัส ชื่อ Location Status หมวด Type ยอดระบบ รอโอน ยิงจริง ผลต่าง
+     ราคา มูลค่าระบบ มูลค่าจริง ผลต่างมูลค่า Reason */
+  var widths = [2.5, 3.5, 8.5, 11, 7.5, 7.5, 6.5, 5, 5, 5, 4.5, 4.5, 4.5, 5.5, 5.5, 5.5, 8];
   var colgroup = document.createElement('colgroup');
   widths.forEach(function (w) {
     var col = document.createElement('col');
@@ -4501,9 +5456,12 @@ function buildDocItemTable(title, rows) {
 
     docCell(tr, r.code);
     docCell(tr, r.name);
+    docCell(tr, locationText(r.key) || '-');
+    docCell(tr, r.status || DEFAULT_STATUS, 'mid');
     docCell(tr, r.category || '-');
     docCell(tr, r.type === 'notProduct' ? 'Not Product' : 'Product', 'mid');
-    docCell(tr, fmtNum(r.sys), 'num');
+    docCell(tr, fmtNum(r.rawSys === undefined ? r.sys : r.rawSys), 'num');
+    docCell(tr, fmtNum(r.pending || 0), 'num');
     docCell(tr, fmtNum(r.act), 'num');
     docCell(tr, (r.diff > 0 ? '+' : '') + fmtNum(r.diff),
       'num ' + (r.diff > 0 ? 'pos' : (r.diff < 0 ? 'neg' : '')));
@@ -4530,6 +5488,145 @@ function buildDocItemTable(title, rows) {
     rtd.appendChild(printed);
     tr.appendChild(rtd);
 
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  box.appendChild(table);
+  return box;
+}
+
+var TRANSFER_DOC_HEAD = ['#', 'หมายเลขรายการ', 'สถานะ', 'ปลายทาง', 'จำนวน SKU', 'จำนวนชิ้น'];
+
+function buildTransferDocTable() {
+  var list = transferList();
+  if (!list.length) return null;
+  var box = document.createElement('div');
+  box.setAttribute('data-tf-table', '1');
+  var h = document.createElement('div');
+  h.className = 'tbl-title';
+  h.textContent = 'รายการโอนกลับที่เกี่ยวข้องกับรอบนี้ — ' + fmtNum(list.length) + ' ใบ';
+  box.appendChild(h);
+
+  var table = document.createElement('table');
+  table.className = 'items';
+  table.setAttribute('data-doc-table', 'รายการโอนกลับ');
+  var colgroup = document.createElement('colgroup');
+  [4, 30, 18, 26, 11, 11].forEach(function (w) {
+    var col = document.createElement('col'); col.style.width = w + '%'; colgroup.appendChild(col);
+  });
+  table.appendChild(colgroup);
+  var thead = document.createElement('thead');
+  var htr = document.createElement('tr');
+  TRANSFER_DOC_HEAD.forEach(function (t) {
+    var th = document.createElement('th'); th.textContent = t; htr.appendChild(th);
+  });
+  thead.appendChild(htr);
+  table.appendChild(thead);
+  var tbody = document.createElement('tbody');
+  list.forEach(function (t, i) {
+    var tr = document.createElement('tr');
+    tr.setAttribute('data-tfrow', t.tfNo);
+    docCell(tr, String(i + 1), 'mid');
+    docCell(tr, t.tfNo);
+    docCell(tr, t.status || '-', 'mid');
+    docCell(tr, t.to || '-');
+    docCell(tr, fmtNum(t.skuCount || 0), 'num');
+    docCell(tr, fmtNum(t.pieces || 0), 'num');
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  box.appendChild(table);
+  return box;
+}
+
+/* ข้อ C2 — จัดกลุ่มตามหมายเลขรายการ หัวกลุ่มบอกครบตามสเปก */
+function buildTransferItemTable(t) {
+  var box = document.createElement('div');
+  box.setAttribute('data-tfgroup', t.tfNo);
+  var h = document.createElement('div');
+  h.className = 'tbl-title';
+  h.textContent = t.tfNo + ' · ' + (t.status || 'ไม่ระบุสถานะ') +
+    ' · ปลายทาง ' + (t.to || '-') +
+    ' · ' + fmtNum(t.skuCount || 0) + ' SKU · ' + fmtNum(t.pieces || 0) + ' ชิ้น';
+  box.appendChild(h);
+
+  var table = document.createElement('table');
+  table.className = 'items';
+  table.setAttribute('data-doc-table', 'โอนกลับ ' + t.tfNo);
+  var colgroup = document.createElement('colgroup');
+  [4, 16, 34, 14, 10, 10, 12].forEach(function (w) {
+    var col = document.createElement('col'); col.style.width = w + '%'; colgroup.appendChild(col);
+  });
+  table.appendChild(colgroup);
+  var thead = document.createElement('thead');
+  var htr = document.createElement('tr');
+  ['#', 'รหัสสินค้า', 'ชื่อสินค้า', 'Barcode', 'จำนวนที่โอน', 'ยิงจริง', 'Location']
+    .forEach(function (x) { var th = document.createElement('th'); th.textContent = x; htr.appendChild(th); });
+  thead.appendChild(htr);
+  table.appendChild(thead);
+
+  var tbody = document.createElement('tbody');
+  Object.keys(t.items || {}).sort().forEach(function (k, i) {
+    var it = t.items[k];
+    var tr = document.createElement('tr');
+    tr.setAttribute('data-tfitem', it.code);
+    docCell(tr, String(i + 1), 'mid');
+    docCell(tr, it.code);
+    docCell(tr, it.name || it.code);
+    docCell(tr, it.barcode || '-');
+    docCell(tr, fmtNum(it.qty), 'num');
+    docCell(tr, fmtNum(state.counts[k] || 0), 'num');
+    docCell(tr, locationText(k) || '-');
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  box.appendChild(table);
+  return box;
+}
+
+var CYCLE_JOB_HEAD = ['#', 'รหัส Job', 'ประเภทคลัง', 'สถานะ', 'จำนวน SKU', 'ชิ้นที่ยิงได้',
+                      '%Success (ชิ้น)', 'ผู้นับ'];
+
+function buildCycleJobTable(perJob) {
+  if (!perJob || !perJob.length) return null;
+  var box = document.createElement('div');
+  box.setAttribute('data-cyclejob-table', '1');
+  var h = document.createElement('div');
+  h.className = 'tbl-title';
+  h.textContent = 'แยกตาม Job ในรอบนี้ — ' + fmtNum(perJob.length) + ' Job';
+  box.appendChild(h);
+
+  var table = document.createElement('table');
+  table.className = 'items';
+  table.setAttribute('data-doc-table', 'แยกตาม Job');
+  var colgroup = document.createElement('colgroup');
+  [4, 24, 16, 11, 10, 11, 12, 12].forEach(function (w) {
+    var col = document.createElement('col');
+    col.style.width = w + '%';
+    colgroup.appendChild(col);
+  });
+  table.appendChild(colgroup);
+
+  var thead = document.createElement('thead');
+  var htr = document.createElement('tr');
+  CYCLE_JOB_HEAD.forEach(function (t) {
+    var th = document.createElement('th'); th.textContent = t; htr.appendChild(th);
+  });
+  thead.appendChild(htr);
+  table.appendChild(thead);
+
+  var tbody = document.createElement('tbody');
+  perJob.forEach(function (j, i) {
+    var tr = document.createElement('tr');
+    tr.setAttribute('data-cyclejob', j.jobCode);
+    docCell(tr, String(i + 1), 'mid');
+    docCell(tr, j.jobCode);
+    docCell(tr, j.storeType);
+    docCell(tr, j.status, 'mid');
+    docCell(tr, fmtNum(j.skuTotal), 'num');
+    docCell(tr, fmtNum(j.pieces), 'num');
+    docCell(tr, fmtPercent(j.pctPieces), 'num');
+    docCell(tr, fmtNum(j.users) + ' คน', 'num');
     tbody.appendChild(tr);
   });
   table.appendChild(tbody);
@@ -4630,9 +5727,47 @@ function renderDocSigns() {
   });
 }
 
+/* เอกสารโหมด "รวมทั้งสาขา" ต้องอ่านทุก Job ใน cycle ก่อน จึงแคชไว้แล้ววาดซ้ำ */
+function ensureCycleData() {
+  var cid = cycleOf(currentJob());
+  if (state.cycleData && state.cycleData.cid === cid) return Promise.resolve(state.cycleData);
+  return loadCycleRaw(cid).then(function (parts) {
+    var raw = buildCycleData(parts);
+    state.cycleData = {
+      cid: cid, raw: raw,
+      data: summaryDataFrom(raw.sys, raw.counts, raw.jobsPerSku)
+    };
+    return state.cycleData;
+  });
+}
+
 function renderDoc() {
   var round = state.roundIndex[state.roundId] || { name: '-', branch: '-' };
-  var data = summaryData();
+  var cycleMode = state.docScope === 'cycle';
+  var cid = cycleOf(round);
+
+  document.querySelectorAll('[data-docscope]').forEach(function (b) {
+    b.className = 'btn sm ' + (b.getAttribute('data-docscope') === state.docScope ? '' : 'grey');
+  });
+
+  if (cycleMode && (!state.cycleData || state.cycleData.cid !== cid)) {
+    /* ยังไม่มีข้อมูลรวม — โหลดแล้วค่อยวาดใหม่ทั้งหน้า */
+    $('docScopeInfo').textContent = 'กำลังรวมข้อมูลทุก Job ในรอบ ' + cid + ' ...';
+    ensureCycleData().then(renderDoc);
+    return;
+  }
+
+  var data = cycleMode ? state.cycleData.data : summaryData();
+
+  if (cycleMode) {
+    var g = cycleGroups()[cid] || { jobs: [], openCount: 0 };
+    /* ข้อ D3 — ออกเอกสารได้ แต่ต้องบอกว่ารอบนี้ยังนับไม่ครบทุกคลัง */
+    $('docScopeInfo').textContent = 'รวม ' + fmtNum(g.jobs.length) + ' Job ในรอบ ' + cid +
+      (g.openCount ? ' · ⚠ ยังมี ' + fmtNum(g.openCount) + ' Job ที่ยังไม่ปิด รอบนี้ยังนับไม่ครบทุกคลัง'
+                   : ' · ปิดครบทุก Job แล้ว');
+  } else {
+    $('docScopeInfo').textContent = 'เอกสารนี้นับเฉพาะ Job ' + (round.jobCode || '') + ' เท่านั้น';
+  }
 
   /* Job ที่เคยถูกเปิดแก้หลังปิด ต้องเตือนติดไปกับเอกสารด้วย ไม่ใช่เห็นแค่ในแอป */
   var reopens = reopenList(round);
@@ -4656,6 +5791,17 @@ function renderDoc() {
   $('docSubject').textContent = spec.subject(round);
   $('docBranchLine').textContent = 'สาขา: ' + jobBranchLabel(round);
   $('docRefLine').textContent = spec.refLine(round);
+  var who = scannerStats();
+  $('docScanners').textContent = who.length
+    ? ('ผู้นับในรอบนี้ ' + fmtNum(who.length) + ' คน: ' +
+       who.map(function (w) { return w.user + ' (' + fmtNum(w.pieces) + ' ชิ้น)'; }).join(' · '))
+    : 'ยังไม่มีผู้นับในรอบนี้';
+  /* ข้อ D4 — ระบุในเอกสารว่า %Success คิดจากฐานไหน */
+  var tfPieces = transferList().reduce(function (s, t) { return s + (t.pieces || 0); }, 0);
+  $('docBasis').textContent = 'ฐานคำนวณ %Success: ' +
+    (state.deductTransfer ? 'ยอดระบบหักรายการรอโอนแล้ว' : 'ยอดระบบเต็ม ไม่หักรายการรอโอน') +
+    (tfPieces ? ' · รอบนี้มีของรอโอน ' + fmtNum(tfPieces) + ' ชิ้น' : '') +
+    (state.docScope === 'cycle' ? ' · ขอบเขต: รวมทั้งสาขา' : ' · ขอบเขต: เฉพาะ Job นี้');
   $('docNoLabelPrint').textContent = spec.noLabel + ':';
   $('docNoShow').textContent = currentDocNo() || '—';
   $('docNoLabel').textContent = spec.noLabel;
@@ -4678,6 +5824,34 @@ function renderDoc() {
 
   var host = $('docItemTables');
   host.innerHTML = '';
+
+  document.querySelectorAll('[data-itemtab]').forEach(function (b) {
+    b.className = 'btn sm ' + (b.getAttribute('data-itemtab') === state.itemTab ? '' : 'grey');
+  });
+
+  /* ข้อ D3 — ตารางรายการโอนกลับที่เกี่ยวข้องกับรอบนี้ (แสดงทั้งสองแท็บ) */
+  var tfTable = buildTransferDocTable();
+  if (tfTable) host.appendChild(tfTable);
+
+  /* ข้อ C1/C2 — แท็บ "รายการโอนกลับ" แสดงรายการแยกตามหมายเลขรายการ */
+  if (state.itemTab === 'tf') {
+    var tfl = transferList();
+    if (!tfl.length) {
+      var none = document.createElement('div');
+      none.className = 'empty';
+      none.textContent = 'รอบนี้ยังไม่มีรายการโอนกลับ';
+      host.appendChild(none);
+    } else {
+      tfl.forEach(function (t) { host.appendChild(buildTransferItemTable(t)); });
+    }
+    renderDocSigns();
+    return;
+  }
+  /* ข้อ C3 — ตารางย่อยแยกตาม Job ให้เห็นว่าฝั่งไหนแม่นกว่ากัน */
+  if (cycleMode) {
+    var jt = buildCycleJobTable(state.cycleData.raw.perJob);
+    if (jt) host.appendChild(jt);
+  }
   host.appendChild(buildDocItemTable('รายการสินค้า (ขาด)', short));
   host.appendChild(buildDocItemTable('รายการสินค้า (เกิน)', over));
   /* วางต่อจากตารางสินค้าเกิน เพราะเป็นของที่เจอเกินมาเหมือนกัน */
@@ -4732,11 +5906,13 @@ function exportDocExcel() {
   s1.push(['คิดมูลค่าด้วย', priceLabel]);
   s1.push(['วันที่ออกเอกสาร', thaiDate(Date.now())]);
 
-  var s2 = [['#', 'รหัสสินค้า', 'ชื่อสินค้า', 'หมวดหมู่', 'Type', 'จำนวน (ระบบ)', 'ยิงจริง', 'Dift',
+  var s2 = [['#', 'รหัสสินค้า', 'ชื่อสินค้า', 'Location', 'Status', 'หมวดหมู่', 'Type',
+             'จำนวน (ระบบ)', 'ยิงจริง', 'Dift',
              priceLabel + '/ตัว', 'มูลค่ารวม (ระบบ)', 'มูลค่าจริง', 'ผลต่าง (มูลค่า)',
-             'จากการยิง', 'จากการกรอกมือ', 'สถานะ', 'Reason']];
+             'จากการยิง', 'จากการกรอกมือ', 'สถานะการนับ', 'Reason']];
   data.rows.forEach(function (r, i) {
-    s2.push([i + 1, r.code, r.name, r.category || '', r.type === 'notProduct' ? 'Not Product' : 'Product',
+    s2.push([i + 1, r.code, r.name, r.location || '', r.status || DEFAULT_STATUS,
+             r.category || '', r.type === 'notProduct' ? 'Not Product' : 'Product',
              r.sys, r.act, r.diff, r.price,
              Math.round(r.sys * r.price * 100) / 100, Math.round(r.act * r.price * 100) / 100,
              Math.round((r.act - r.sys) * r.price * 100) / 100,
@@ -4750,7 +5926,7 @@ function exportDocExcel() {
 
   var blob = buildXlsx([
     { name: 'สรุป', rows: s1, widths: [16, 13, 12, 11, 11, 11, 10, 11, 14, 14, 14, 10, 10, 10, 10] },
-    { name: 'รายการทั้งหมด', rows: s2, widths: [5, 18, 36, 18, 12, 12, 10, 9, 12, 15, 14, 14, 11, 14, 9, 28] },
+    { name: 'รายการทั้งหมด', rows: s2, widths: [5, 18, 34, 16, 18, 18, 12, 12, 10, 9, 12, 15, 14, 14, 11, 14, 9, 28] },
     { name: 'ไม่มีในระบบ', rows: s3, widths: [5, 24, 28, 12, 16, 14, 22, 24, 14] }
   ]);
 
@@ -4914,6 +6090,112 @@ function confirmBranch(stat) {
     'ยืนยันว่าถูกต้อง แล้วนำเข้าต่อ', { cancelLabel: 'ยกเลิก', danger: true });
 }
 
+/* ---------- นำเข้าไฟล์ TF Return ---------- */
+function handleTransferImport(file) {
+  if (!state.roundId) { toast('เลือก Job ก่อนนำเข้าไฟล์', true); return; }
+  if (!canScan()) { toast(blockedMessage() + ' — นำเข้าไฟล์ไม่ได้', true); return; }
+
+  var isXlsx = /\.xlsx$/i.test(file.name);
+  $('btnImportTf').disabled = true;
+  $('tfStatus').textContent = 'กำลังอ่านไฟล์...';
+
+  file.arrayBuffer().then(function (buf) {
+    return isXlsx ? parseXlsx(buf, 'รายการโอนสินค้า') : Promise.resolve(parseCsv(decodeTextFile(buf)));
+  }).then(function (parsed) {
+    var res = parseTransferFile(parsed);
+    return confirmTransferBranch(res.stat).then(function (ok) {
+      if (!ok) { toast('ยกเลิกการนำเข้า ข้อมูลเดิมไม่ถูกแตะ'); return; }
+      /* หมายเลขเดิมซ้ำ = แทนที่ทั้งก้อน ไม่บวกเพิ่ม (PATCH ที่ระดับพ่อ ลูกทั้งก้อนถูกแทนที่) */
+      var patch = {};
+      Object.keys(res.transfers).forEach(function (k) {
+        var t = res.transfers[k];
+        t.importedAt = Date.now();
+        t.importedBy = state.counter || 'ไม่ระบุ';
+        patch[k] = t;
+      });
+      return db.update('rounds/' + state.roundId + '/transfers', patch).then(function () {
+        Object.keys(patch).forEach(function (k) { state.transfers[k] = patch[k]; });
+        state.transferQty = transferQtyMap();
+        state.cycleData = null;
+        renderStart();
+        if (state.page === 'summary') renderSummary();
+
+        var box = document.createElement('div');
+        var sec = repSection('ผลการนำเข้ารายการโอนกลับ');
+        repLine(sec, 'อ่านทั้งหมด', fmtNum(res.stat.rows) + ' แถว');
+        repLine(sec, 'รายการโอน', fmtNum(Object.keys(res.transfers).length) + ' ใบ');
+        repLine(sec, 'รวม SKU', fmtNum(res.stat.skus) + ' รายการ');
+        repLine(sec, 'รวมจำนวน', fmtNum(res.stat.pieces) + ' ชิ้น');
+        if (res.stat.noCode) repLine(sec, 'ข้ามเพราะไม่มีรหัสหรือเลขที่', fmtNum(res.stat.noCode) + ' แถว', true);
+        if (res.stat.stopped) repNote(sec, 'ตัดท้ายไฟล์ที่แถว ' + res.stat.stopped + ' เพราะช่อง "#" ว่าง');
+        Object.keys(res.transfers).forEach(function (k) {
+          var t = res.transfers[k];
+          repLine(sec, t.tfNo, fmtNum(t.skuCount) + ' SKU · ' + fmtNum(t.pieces) + ' ชิ้น' +
+            (t.to ? ' → ' + t.to : ''));
+        });
+        box.appendChild(sec);
+        ask('นำเข้ารายการโอนกลับเรียบร้อย',
+            'รอบนี้มีรายการโอน ' + fmtNum(Object.keys(state.transfers).length) + ' ใบ',
+            'ปิด', { hideCancel: true, detail: box });
+      });
+    });
+  }).catch(function (err) {
+    var code = err && err.message;
+    if (code === 'MISSING_COLUMNS') { showMissingColumnsHelp(err.missing); return; }
+    if (code === 'NO_TRANSFER_HEADER') {
+      var found = (err.headers || []).filter(Boolean);
+      ask('อ่านไฟล์รายการโอนนี้ไม่ได้',
+          'ต้องมีหัวตาราง หมายเลขรายการ และ รหัสสินค้า อยู่ในแถวเดียวกัน\n\n' +
+          (found.length ? 'ในไฟล์เจอหัวตารางว่า: ' + found.join(' · ')
+                        : 'ในไฟล์ไม่มีข้อความให้อ่านเลยในสิบแถวแรก') +
+          '\n\nถ้าไฟล์มีหลายชีท ระบบจะอ่านชีทชื่อ "รายการโอนสินค้า" ก่อน',
+          'รับทราบ', { hideCancel: true });
+      return;
+    }
+    var messages = {
+      EMPTY_FILE: 'ไฟล์นี้ว่างเปล่า กรุณาตรวจไฟล์แล้วอัปโหลดใหม่',
+      NO_ROWS: 'ไม่พบรายการโอนในไฟล์ กรุณาตรวจว่ามีข้อมูลอยู่ใต้หัวตาราง',
+      NO_SHEET: 'อ่านไฟล์ Excel นี้ไม่ได้ กรุณาบันทึกเป็น .xlsx หรือ CSV แล้วอัปโหลดใหม่',
+      BAD_ZIP: 'ไฟล์ Excel นี้เสียหรือไม่ใช่ไฟล์ .xlsx กรุณาบันทึกเป็น CSV แล้วอัปโหลดใหม่',
+      NO_INFLATE: 'เครื่องนี้อ่านไฟล์ .xlsx ไม่ได้ กรุณาบันทึกเป็น CSV แล้วอัปโหลดใหม่'
+    };
+    toast(messages[code] || 'นำเข้ารายการโอนไม่สำเร็จ กรุณาตรวจไฟล์แล้วลองใหม่', true);
+  }).then(function () {
+    $('btnImportTf').disabled = false;
+    renderStart();
+  });
+}
+
+/* ข้อ B5 — ใช้คอลัมน์ "จาก" ตรวจสาขา เชื่อถือได้กว่าการอ่านชื่อเรื่องแถวแรก */
+function confirmTransferBranch(stat) {
+  var froms = Object.keys(stat.froms || {});
+  var job = currentJob() || {};
+  var expected = jobBranchName(job);
+  if (!froms.length) {
+    return ask('ไฟล์นี้ไม่มีคอลัมน์ "จาก"',
+      'ตรวจสาขาให้ไม่ได้ ระบบจะนำเข้าตามที่เลือกไว้\nสาขาของรอบนับนี้คือ ' + expected,
+      'เข้าใจแล้ว นำเข้าต่อ', { cancelLabel: 'ยกเลิก' });
+  }
+  var match = froms.some(function (f) { return normText(f) === normText(expected); });
+  if (match && froms.length === 1) return Promise.resolve(true);
+  return ask('สาขาต้นทางไม่ตรงกัน',
+    'คอลัมน์ "จาก" ในไฟล์ระบุว่า:\n' + froms.join('\n') + '\n\n' +
+    'แต่รอบนับที่เลือกอยู่คือสาขา:\n' + expected + '\n\n' +
+    'ถ้านำเข้าต่อ รายการโอนเหล่านี้จะถูกผูกกับรอบนับของสาขาข้างบน',
+    'ยืนยันว่าถูกต้อง แล้วนำเข้าต่อ', { cancelLabel: 'ยกเลิก', danger: true });
+}
+
+/* ข้อ D1 — เตือนถ้าไฟล์นี้ถูกนำเข้าไปแล้วใน Job อื่นของรอบเดียวกัน */
+function confirmDuplicateImport(result) {
+  var hits = findDuplicateImport(importFingerprint(result.systemQty));
+  if (!hits.length) return Promise.resolve(true);
+  return ask('ไฟล์นี้ถูกนำเข้าไปแล้วใน Job อื่นของรอบนี้',
+    'เจอไฟล์ยอดระบบชุดเดียวกันอยู่ใน:\n' + hits.join('\n') + '\n\n' +
+    'ถ้านำเข้าซ้ำที่ Job นี้ด้วย ยอดระบบในรายงาน "รวมทั้งสาขา" จะถูกนับสองรอบ\n' +
+    'ให้ทำต่อเฉพาะกรณีที่ของสองคลังนี้ใช้ไฟล์ยอดเดียวกันจริง ๆ',
+    'เข้าใจแล้ว นำเข้าต่อ', { cancelLabel: 'ยกเลิก', danger: true });
+}
+
 function handleImport(file) {
   if (!state.roundId) { toast('เลือก Job ก่อนนำเข้าไฟล์', true); return; }
   if (!canScan()) { toast(blockedMessage() + ' — นำเข้าไฟล์ไม่ได้', true); return; }
@@ -4928,14 +6210,22 @@ function handleImport(file) {
     var result = parseProductFile(parsed);
     return confirmBranch(result.stat).then(function (ok) {
       if (!ok) { toast('ยกเลิกการนำเข้า ข้อมูลเดิมไม่ถูกแตะ'); return; }
+      return confirmDuplicateImport(result).then(function (ok2) {
+        if (!ok2) { toast('ยกเลิกการนำเข้า ข้อมูลเดิมไม่ถูกแตะ'); return; }
+        return doImport(result);
+      });
+    });
+
+    function doImport(result) {
       return applyImport(state.roundId, result).then(function (diff) {
         state.lastImport = { stat: result.stat, diff: diff };
+        state.cycleData = null;      // ยอดรวมของ cycle เปลี่ยนแล้ว ต้องโหลดใหม่
         return Promise.all([refreshProducts(), refreshSystemQty()]).then(function () {
           renderStart();
           showImportReport();
         });
       });
-    });
+    }
   }).catch(function (err) {
     var code = err && err.message;
     if (code === 'MISSING_COLUMNS') { showMissingColumnsHelp(err.missing); return; }
@@ -4980,17 +6270,149 @@ function loadJobStats(id) {
     var keys = {};
     Object.keys(sys).forEach(function (k) { keys[k] = 1; });
     Object.keys(counts).forEach(function (k) { keys[k] = 1; });
-    var all = Object.keys(keys);
+    /* ตัดแถวผีออกเหมือน summaryData: ไม่มียอดระบบและยอดนับเหลือ 0 = ไม่ใช่แถวจริง */
+    var all = Object.keys(keys).filter(function (k) {
+      return (Number(sys[k]) || 0) !== 0 || (counts[k] || 0) !== 0;
+    });
     var match = all.filter(function (k) { return (Number(sys[k]) || 0) === (counts[k] || 0); }).length;
+
+    /* ตัวเลขชุดเดียวกับหน้าสรุป — %ชิ้นใช้สูตรค่าสัมบูรณ์ และมูลค่าคิดด้วยราคาที่เลือกอยู่ */
+    var sysQty = 0, absDiff = 0, sysValue = 0, actValue = 0, lastTs = 0;
+    all.forEach(function (k) {
+      var s = Number(sys[k]) || 0, a = counts[k] || 0;
+      var p = state.products[k] || {};
+      var price = Number(p[state.priceField]) || 0;
+      sysQty += s;
+      absDiff += Math.abs(a - s);
+      sysValue += s * price;
+      actValue += a * price;
+    });
+    Object.keys(scans).forEach(function (sid) {
+      var t = (scans[sid] || {}).ts || 0;
+      if (t > lastTs) lastTs = t;
+    });
+
     var stat = {
       skuTotal: Object.keys(sys).length,
       skuScanned: Object.keys(counts).filter(function (k) { return counts[k] !== 0; }).length,
       pieces: Object.keys(counts).reduce(function (s, k) { return s + counts[k]; }, 0),
-      success: all.length ? (match / all.length) * 100 : null
+      success: all.length ? (match / all.length) * 100 : null,
+      pctPieces: sysQty > 0 ? ((sysQty - absDiff) / sysQty) * 100 : null,
+      diffValue: actValue - sysValue,
+      lastTs: lastTs
     };
     state.jobStats[id] = stat;
     return stat;
   }).catch(function () { return null; });
+}
+
+/* ---------- A: ภาพรวมทุกสาขา ----------
+   ดึงสถิติของทุก Job ที่ผ่านตัวกรอง แล้ววางเป็นตารางแถวละสาขา
+   ใช้ loadJobStats ตัวเดียวกับการ์ดหน้า Job — ตัวเลขจึงตรงกันเสมอ */
+function overviewJobs() {
+  var from = state.overviewFrom ? new Date(state.overviewFrom + 'T00:00:00').getTime() : 0;
+  var to = state.overviewTo ? new Date(state.overviewTo + 'T23:59:59').getTime() : Infinity;
+  return Object.keys(state.roundIndex).filter(function (id) {
+    var j = state.roundIndex[id] || {};
+    var st = j.status || 'counting';
+    if (state.overviewStatus !== 'all' && st !== state.overviewStatus) return false;
+    var at = j.createdAt || 0;
+    return at >= from && at <= to;
+  }).sort(function (a, b) {
+    return String((state.roundIndex[a] || {}).branchCode || '')
+      .localeCompare(String((state.roundIndex[b] || {}).branchCode || ''), 'th');
+  });
+}
+
+function renderOverview() {
+  document.querySelectorAll('[data-ostatus]').forEach(function (b) {
+    b.className = 'btn sm ' + (b.getAttribute('data-ostatus') === state.overviewStatus ? '' : 'grey');
+  });
+  var ids = overviewJobs();
+  var body = $('ovBody');
+  body.innerHTML = '';
+  $('ovCount').textContent = ids.length
+    ? ('แสดง ' + fmtNum(ids.length) + ' รอบนับ จากทั้งหมด ' + fmtNum(Object.keys(state.roundIndex).length))
+    : 'ไม่มีรอบนับที่ตรงกับตัวกรอง';
+  if (!ids.length) return;
+
+  var cells = {};
+  ids.forEach(function (id) {
+    var j = state.roundIndex[id] || {};
+    var tr = document.createElement('tr');
+    tr.setAttribute('data-ovrow', id);
+    tr.style.cursor = 'pointer';
+    tr.onclick = function () { openJob(id); showPage('summary'); setSummaryTab('job'); };
+    var vals = [
+      j.branchCode || '-', j.branchName || j.branch || '-',
+      JOB_STATUS_TEXT[j.status || 'counting'],
+      '…', '…', '…', '…', '…', '…'
+    ];
+    vals.forEach(function (v, i) {
+      var td = document.createElement('td');
+      td.textContent = v;
+      if (i >= 3) { td.style.textAlign = 'right'; td.setAttribute('data-ovcol', String(i)); }
+      tr.appendChild(td);
+    });
+    cells[id] = tr;
+    body.appendChild(tr);
+  });
+
+  /* แถวรวมท้ายตาราง — รวมเฉพาะรอบที่กำลังนับอยู่ตามข้อ A2 */
+  var totalRow = document.createElement('tr');
+  totalRow.className = 'total-row';
+  totalRow.setAttribute('data-ovtotal', '1');
+  ['รวม', 'ทุกสาขาที่กำลังนับ', '-', '…', '…', '…', '…', '…', '-'].forEach(function (v, i) {
+    var td = document.createElement('td');
+    td.textContent = v;
+    if (i >= 3) { td.style.textAlign = 'right'; td.setAttribute('data-ovtcol', String(i)); }
+    totalRow.appendChild(td);
+  });
+  body.appendChild(totalRow);
+
+  var agg = { skuScanned: 0, skuTotal: 0, pieces: 0, sysQty: 0, absDiff: 0, diffValue: 0 };
+  var pending = ids.length;
+  ids.forEach(function (id) {
+    loadJobStats(id).then(function (s) {
+      pending--;
+      var tr = cells[id];
+      if (s && tr) {
+        var tds = tr.querySelectorAll('[data-ovcol]');
+        tds[0].textContent = fmtNum(s.skuScanned) + ' / ' + fmtNum(s.skuTotal);
+        tds[1].textContent = fmtNum(s.pieces);
+        tds[2].textContent = fmtPercent(s.pctPieces);
+        tds[3].textContent = fmtPercent(s.success);
+        tds[4].textContent = fmtMoney(s.diffValue);
+        tds[4].className = s.diffValue > 0 ? 'pos' : (s.diffValue < 0 ? 'neg' : '');
+        tds[4].style.textAlign = 'right';
+        tds[5].textContent = s.lastTs ? fmtTime(s.lastTs) : '-';
+        if ((state.roundIndex[id] || {}).status === 'counting') {
+          agg.skuScanned += s.skuScanned;
+          agg.skuTotal += s.skuTotal;
+          agg.pieces += s.pieces;
+          agg.diffValue += s.diffValue;
+        }
+      }
+      if (pending === 0) {
+        var t = totalRow.querySelectorAll('[data-ovtcol]');
+        t[0].textContent = fmtNum(agg.skuScanned) + ' / ' + fmtNum(agg.skuTotal);
+        t[1].textContent = fmtNum(agg.pieces);
+        t[2].textContent = '–';
+        t[3].textContent = agg.skuTotal ? fmtPercent(agg.skuScanned / agg.skuTotal * 100) : '–';
+        t[4].textContent = fmtMoney(agg.diffValue);
+      }
+    });
+  });
+}
+
+function setSummaryTab(tab) {
+  state.summaryTab = tab;
+  document.querySelectorAll('[data-sumtab]').forEach(function (b) {
+    b.className = 'btn sm ' + (b.getAttribute('data-sumtab') === tab ? '' : 'grey');
+  });
+  $('sumOverview').style.display = tab === 'overview' ? 'block' : 'none';
+  $('sumJob').style.display = tab === 'job' ? 'block' : 'none';
+  if (tab === 'overview') renderOverview();
 }
 
 function renderJobBar() {
@@ -5006,15 +6428,20 @@ function renderJobBar() {
   code.className = 'jb-code';
   code.setAttribute('data-jobcode', job.jobCode || '');
   code.textContent = job.jobCode || '(ไม่มีรหัส)';
+  var stype = document.createElement('span');
+  stype.className = 'chip';
+  stype.setAttribute('data-storetype', storeTypeOf(job));
+  stype.textContent = storeTypeLabel(storeTypeOf(job));
   var branch = document.createElement('span');
   branch.textContent = jobBranchLabel(job);
+  bar.appendChild(code); bar.appendChild(stype);
   var status = document.createElement('span');
   status.style.marginLeft = 'auto';
   status.style.fontWeight = '800';
   status.setAttribute('data-jobstatus', st);
   status.textContent = st === 'closed' ? 'รอบนี้ปิดแล้ว แก้ไขไม่ได้' : JOB_STATUS_TEXT[st];
 
-  bar.appendChild(code); bar.appendChild(branch); bar.appendChild(status);
+  bar.appendChild(branch); bar.appendChild(status);
 
   /* กดแถบนี้ = เปิดเมนูจัดการรอบนับได้จากทุกหน้า ไม่ต้องเลื่อนหาในหน้าสรุป */
   var more = document.createElement('span');
@@ -5153,7 +6580,46 @@ function renderJobs() {
     return;
   }
 
+  /* จัดกลุ่มตาม cycle (สาขา + เดือน) — หัวกลุ่มบอกสถานะรวมของรอบนั้น */
+  var groups = cycleGroups();
+  var order = [];
+  var seenCycle = {};
   shown.forEach(function (id) {
+    var cid = cycleOf(state.roundIndex[id]);
+    if (seenCycle[cid]) return;
+    seenCycle[cid] = 1;
+    order.push(cid);
+  });
+
+  var host = list;
+  order.forEach(function (cid) {
+    var g = groups[cid] || { jobs: [], branchCode: '', branchName: '' };
+    var head = document.createElement('div');
+    head.className = 'cycle-head' + (g.allClosed ? ' done' : '');
+    head.setAttribute('data-cycle', cid);
+    var left = document.createElement('div');
+    var t = document.createElement('div');
+    t.className = 'cy-code';
+    t.textContent = cid;
+    var s = document.createElement('div');
+    s.className = 'cy-sub';
+    s.textContent = (g.branchCode ? g.branchCode + ' · ' : '') + (g.branchName || '-') +
+      ' · ' + fmtNum(g.jobs.length) + ' Job';
+    left.appendChild(t); left.appendChild(s);
+    var chip = document.createElement('span');
+    chip.className = 'chip ' + (g.allClosed ? 'ok' : 'warn');
+    chip.setAttribute('data-cyclestatus', g.allClosed ? 'closed' : 'open');
+    chip.textContent = g.allClosed ? 'รอบนี้ปิดครบแล้ว' : ('ยังไม่ปิด ' + fmtNum(g.openCount) + ' Job');
+    head.appendChild(left); head.appendChild(chip);
+    host.appendChild(head);
+
+    shown.filter(function (id) { return cycleOf(state.roundIndex[id]) === cid; })
+      .forEach(function (id) { renderJobCard(id, host); });
+  });
+}
+
+function renderJobCard(id, list) {
+  [id].forEach(function (id) {
     var j = state.roundIndex[id];
     var st = j.status || 'counting';
     var card = document.createElement('div');
@@ -5170,7 +6636,12 @@ function renderJobs() {
     var br = document.createElement('div');
     br.className = 'j-branch';
     br.textContent = jobBranchLabel(j);
-    left.appendChild(code); left.appendChild(br);
+    var sty = document.createElement('span');
+    sty.className = 'chip';
+    sty.style.marginTop = '4px';
+    sty.setAttribute('data-cardstoretype', storeTypeOf(j));
+    sty.textContent = storeTypeLabel(storeTypeOf(j));
+    left.appendChild(code); left.appendChild(br); left.appendChild(sty);
 
     var right = document.createElement('div');
     right.style.textAlign = 'right';
@@ -5283,12 +6754,30 @@ function openJob(id) {
   showPage('start');
 }
 
+function renderStoreTypePicker() {
+  var sel = $('newJobStoreType');
+  var keep = sel.value;
+  sel.innerHTML = '';
+  storeTypeList().forEach(function (t) {
+    var o = document.createElement('option');
+    o.value = t.key; o.textContent = t.label;
+    sel.appendChild(o);
+  });
+  var add = document.createElement('option');
+  add.value = '__add__';
+  add.textContent = '+ เพิ่มประเภทใหม่... (ผู้ดูแลระบบ)';
+  sel.appendChild(add);
+  sel.value = keep && keep !== '__add__' ? keep : DEFAULT_STORE_TYPE;
+}
+
 function previewJobCode() {
   var box = $('jobCodePreview');
   if (!state.newBranch) { box.style.display = 'none'; return; }
   var abbr = $('newJobAbbr').value.trim() || branchCodeCompact(state.newBranch.code);
+  var st = $('newJobStoreType').value;
   box.style.display = 'block';
-  box.textContent = 'รหัส Job ที่จะได้: ' + makeJobCode(abbr);
+  box.textContent = 'รหัส Job ที่จะได้: ' + makeJobCode(abbr, null, st) +
+    ' · รอบนับของสาขา: ' + cycleIdFor(state.newBranch.code);
 }
 
 /* ---------- ปิด / เปิดรอบนับ ---------- */
@@ -5466,7 +6955,7 @@ function showPage(name) {
   });
   window.scrollTo(0, 0);
   if (name === 'jobs') renderJobs();
-  if (name === 'summary') renderSummary();
+  if (name === 'summary') { renderSummary(); setSummaryTab(state.summaryTab); }
   if (name === 'master') renderMaster();
   if (name === 'scan') renderScanPage();
   if (name === 'doc') { renderDoc(); refreshDocMeta(); }
@@ -5513,6 +7002,167 @@ function refreshNav() {
     ? (jobBranchLabel(round) +
        (state.zoneId ? ' · ' + zoneName(state.zoneId) : '') + (state.counter ? ' · ' + state.counter : ''))
     : 'ยังไม่ได้เลือก Job';
+}
+
+/* ---------- รายการโอนกลับในรอบนี้ ---------- */
+function transferList() {
+  return Object.keys(state.transfers).map(function (k) { return state.transfers[k]; })
+    .sort(function (a, b) { return String(a.tfNo).localeCompare(String(b.tfNo)); });
+}
+
+function renderTransfers() {
+  var list = transferList();
+  $('tfChip').textContent = fmtNum(list.length);
+  $('deductTf').checked = !!state.deductTransfer;
+  var pieces = list.reduce(function (s, t) { return s + (t.pieces || 0); }, 0);
+  var skus = Object.keys(state.transferQty || {}).length;
+  $('tfSummaryHint').textContent = list.length
+    ? ('รวม ' + fmtNum(skus) + ' SKU · ' + fmtNum(pieces) + ' ชิ้น · ฐานที่ใช้คิดตอนนี้: ' +
+       (state.deductTransfer ? 'ยอดระบบ − ยอดรอโอน' : 'ยอดระบบเต็ม'))
+    : 'ยังไม่ได้นำเข้ารายการโอนกลับ — นำเข้าที่หน้าตั้งค่า แท็บ TF Return';
+  var host = $('tfList');
+  host.innerHTML = '';
+  if (!list.length) { host.innerHTML = '<div class="empty">ไม่มีรายการโอน</div>'; return; }
+  list.forEach(function (t) {
+    var d = document.createElement('div');
+    d.className = 'rep-line';
+    d.setAttribute('data-tf', t.tfNo);
+    var s = document.createElement('span');
+    s.textContent = t.tfNo + (t.status ? ' · ' + t.status : '') + (t.to ? ' → ' + t.to : '');
+    var b = document.createElement('b');
+    b.textContent = fmtNum(t.skuCount || 0) + ' SKU · ' + fmtNum(t.pieces || 0) + ' ชิ้น';
+    d.appendChild(s); d.appendChild(b);
+    host.appendChild(d);
+  });
+}
+
+/* ---------- ใครยิงไปเท่าไรใน Job นี้ ----------
+   คิดจาก scanLog ตรง ๆ ไม่ต้องเก็บตัวนับแยกให้ไม่ตรงกัน */
+function scannerStats() {
+  var byUser = {};
+  state.scanLog.forEach(function (s) {
+    var u = s.rec.user || 'ไม่ระบุ';
+    var key = safeKey(s.rec.code);
+    var d = Number(s.rec.delta) || 0;
+    var e = byUser[u] || (byUser[u] = { user: u, pieces: 0, skus: {}, last: 0, zones: {} });
+    e.pieces += d;
+    if (d > 0) e.skus[key] = 1;
+    if ((s.rec.ts || 0) > e.last) e.last = s.rec.ts;
+    var zn = s.rec.zoneName || zoneName(s.rec.zone) || '(ไม่ระบุโซน)';
+    e.zones[zn] = (e.zones[zn] || 0) + d;
+  });
+  return Object.keys(byUser).map(function (u) {
+    var e = byUser[u];
+    return { user: u, pieces: e.pieces, skus: Object.keys(e.skus).length, last: e.last, zones: e.zones };
+  }).sort(function (a, b) { return b.pieces - a.pieces; });
+}
+
+var MEDALS = ['🥇', '🥈', '🥉'];
+
+function renderScanners() {
+  var rows = scannerStats();
+  $('scannerChip').textContent = fmtNum(rows.length);
+  var host = $('scannerList');
+  host.innerHTML = '';
+  if (!rows.length) {
+    host.innerHTML = '<div class="empty">ยังไม่มีใครยิงในรอบนี้</div>';
+    return;
+  }
+  rows.forEach(function (r, i) {
+    var card = document.createElement('div');
+    card.className = 'mrow';
+    card.setAttribute('data-scanner', r.user);
+
+    var top = document.createElement('div');
+    top.className = 'm-top';
+    top.style.cursor = 'pointer';
+    var left = document.createElement('div');
+    var nm = document.createElement('div');
+    nm.className = 'm-name';
+    nm.textContent = (MEDALS[i] || (i + 1) + '.') + ' ' + r.user +
+      (r.user === state.counter ? ' (คุณ)' : '');
+    var meta = document.createElement('div');
+    meta.className = 'm-cat';
+    meta.textContent = 'ยิงล่าสุด ' + (r.last ? fmtTime(r.last) : '-');
+    left.appendChild(nm); left.appendChild(meta);
+
+    var right = document.createElement('div');
+    right.style.textAlign = 'right';
+    var pc = document.createElement('div');
+    pc.style.fontWeight = '800';
+    pc.style.fontSize = '19px';
+    pc.setAttribute('data-pieces', String(r.pieces));
+    pc.textContent = fmtNum(r.pieces) + ' ชิ้น';
+    var sk = document.createElement('div');
+    sk.className = 'm-cat';
+    sk.setAttribute('data-skus', String(r.skus));
+    sk.textContent = fmtNum(r.skus) + ' SKU';
+    right.appendChild(pc); right.appendChild(sk);
+    top.appendChild(left); top.appendChild(right);
+    card.appendChild(top);
+
+    /* กดชื่อแล้วกางดูรายโซนของคนนั้น */
+    var detail = document.createElement('div');
+    detail.setAttribute('data-zones', r.user);
+    detail.style.display = state.scannerOpen === r.user ? 'block' : 'none';
+    detail.style.marginTop = '10px';
+    Object.keys(r.zones).sort(function (a, b) { return r.zones[b] - r.zones[a]; })
+      .forEach(function (z) {
+        var d = document.createElement('div');
+        d.className = 'rep-line';
+        var s = document.createElement('span'); s.textContent = zoneLabel(z);
+        var b = document.createElement('b'); b.textContent = fmtNum(r.zones[z]) + ' ชิ้น';
+        d.appendChild(s); d.appendChild(b);
+        detail.appendChild(d);
+      });
+    card.appendChild(detail);
+    top.onclick = function () {
+      state.scannerOpen = state.scannerOpen === r.user ? null : r.user;
+      renderScanners();
+    };
+    host.appendChild(card);
+  });
+}
+
+/* F5 — สินค้า status พิเศษที่ยิงเจอในรอบนี้ */
+function specialStatusRows() {
+  var out = [];
+  Object.keys(state.counts).forEach(function (k) {
+    if (!state.counts[k]) return;
+    var p = state.products[k];
+    if (!p) return;
+    var st = productStatus(p);
+    if (!isSpecialStatus(st)) return;
+    out.push({ key: k, code: p.code, name: p.name, status: st, qty: state.counts[k] });
+  });
+  return out.sort(function (a, b) { return b.qty - a.qty; });
+}
+
+function renderSpecialStatus() {
+  var rows = specialStatusRows();
+  $('statusChip').textContent = fmtNum(rows.length);
+  $('statusChip').className = 'chip ' + (rows.length ? 'warn' : 'ok');
+  $('statusHint').textContent = rows.length
+    ? ('ยิงเจอสินค้าที่สถานะไม่ใช่ ' + DEFAULT_STATUS + ' รวม ' +
+       fmtNum(rows.reduce(function (s, r) { return s + r.qty; }, 0)) + ' ชิ้น')
+    : 'ไม่เจอสินค้าสถานะพิเศษในรอบนี้';
+  var host = $('statusList');
+  host.innerHTML = '';
+  if (!rows.length) {
+    host.innerHTML = '<div class="empty">ไม่มี</div>';
+    return;
+  }
+  rows.forEach(function (r) {
+    var d = document.createElement('div');
+    d.className = 'rep-line';
+    d.setAttribute('data-special', r.code);
+    var s = document.createElement('span');
+    s.textContent = r.code + ' · ' + r.name + ' — ' + r.status;
+    var b = document.createElement('b');
+    b.textContent = fmtNum(r.qty) + ' ชิ้น';
+    d.appendChild(s); d.appendChild(b);
+    host.appendChild(d);
+  });
 }
 
 function renderStatusLog(job) {
@@ -5616,6 +7266,23 @@ function renderStart() {
   }
   $('importStatus').textContent = status;
   $('importStatus').style.whiteSpace = 'pre-line';
+
+  /* แท็บนำเข้า: Stock Check / TF Return */
+  document.querySelectorAll('[data-imptab]').forEach(function (b) {
+    b.className = 'btn sm ' + (b.getAttribute('data-imptab') === state.importTab ? '' : 'grey');
+  });
+  $('impStock').style.display = state.importTab === 'stock' ? 'block' : 'none';
+  $('impTf').style.display = state.importTab === 'tf' ? 'block' : 'none';
+  var tfl = transferList();
+  var tfPieces = tfl.reduce(function (s, t) { return s + (t.pieces || 0); }, 0);
+  var lastTf = tfl.reduce(function (m, t) { return Math.max(m, t.importedAt || 0); }, 0);
+  $('tfStatus').textContent = tfl.length
+    ? ('รอบนี้มีรายการโอน ' + fmtNum(tfl.length) + ' ใบ · ' +
+       fmtNum(Object.keys(state.transferQty || {}).length) + ' SKU · ' + fmtNum(tfPieces) + ' ชิ้น' +
+       (lastTf ? '\nนำเข้าล่าสุด ' + fmtTime(lastTf) : ''))
+    : 'ยังไม่ได้นำเข้ารายการโอนกลับ';
+  $('tfStatus').style.whiteSpace = 'pre-line';
+  $('btnImportTf').disabled = !state.roundId;
   $('btnImportReport').style.display = (state.roundId && state.lastImport) ? 'flex' : 'none';
   $('btnImport').disabled = !state.roundId;
   $('btnAddZone').disabled = !state.roundId;
@@ -5698,6 +7365,94 @@ function refreshBranches() {
   }).catch(function () { /* ปล่อยให้ใช้ค่าเดิม */ });
 }
 
+function refreshTransfers() {
+  if (!state.roundId) return Promise.resolve();
+  var id = state.roundId;
+  return Promise.all([
+    db.get('rounds/' + id + '/transfers'),
+    db.get('rounds/' + id + '/deductTransfer')
+  ]).then(function (res) {
+    if (state.roundId !== id) return;
+    state.transfers = res[0] || {};
+    state.transferQty = transferQtyMap();
+    state.deductTransfer = res[1] === true;
+    if ($('deductTf')) $('deductTf').checked = state.deductTransfer;
+    renderStart();
+    if (state.page === 'summary') renderSummary();
+    if (state.page === 'doc') renderDoc();
+  }).catch(function () { /* ปล่อยให้ใช้ค่าเดิม */ });
+}
+
+function saveDeductTransfer(on) {
+  state.deductTransfer = !!on;
+  state.cycleData = null;
+  if (state.page === 'summary') renderSummary();
+  if (state.page === 'doc') renderDoc();
+  if (!state.roundId) return Promise.resolve();
+  return db.update('rounds/' + state.roundId, { deductTransfer: !!on })
+    .catch(function () { toast('บันทึกสวิตช์ไม่สำเร็จ แต่หน้าจอคิดให้แล้ว', true); });
+}
+
+function refreshLocations() {
+  return db.get('locations').then(function (data) {
+    state.locations = {
+      offline: (data && data.offline) || {},
+      online: (data && data.online) || {}
+    };
+    if (state.page === 'master') renderMaster();
+    if (state.page === 'scan') { renderLocFilter(); renderLivePanel(); }
+  }).catch(function () { /* ปล่อยให้ใช้ค่าเดิม */ });
+}
+
+function refreshStatuses() {
+  return db.get('settings/productStatuses').then(function (data) {
+    state.customStatuses = Array.isArray(data) ? data
+      : (data ? Object.keys(data).map(function (k) { return data[k]; }) : []);
+    if (state.page === 'master') renderMaster();
+  }).catch(function () { /* ปล่อยให้ใช้ค่าเดิม */ });
+}
+
+function addCustomStatus(value) {
+  if (!requireAdmin('เพิ่มค่า Status ไม่ได้')) return Promise.resolve();
+  var v = String(value || '').trim();
+  if (!v) return Promise.resolve();
+  if (statusList().indexOf(v) >= 0) { toast('มีค่านี้อยู่แล้ว', true); return Promise.resolve(); }
+  var next = (state.customStatuses || []).concat([v]);
+  return db.update('settings', { productStatuses: next }).then(function () {
+    state.customStatuses = next;
+    renderMaster();
+    toast('เพิ่มค่า Status "' + v + '" แล้ว');
+  }).catch(function () { toast('บันทึกไม่สำเร็จ', true); });
+}
+
+function refreshStoreTypes() {
+  return db.get('settings/storeTypes').then(function (data) {
+    var arr = Array.isArray(data) ? data
+      : (data ? Object.keys(data).map(function (k) { return data[k]; }) : []);
+    state.customStoreTypes = arr;
+    renderStoreTypePicker();
+    previewJobCode();
+  }).catch(function () { /* ปล่อยให้ใช้ค่าเดิม */ });
+}
+
+function addStoreType(key, label) {
+  if (!requireAdmin('เพิ่มประเภทคลังไม่ได้')) return Promise.resolve();
+  var k = String(key || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  var l = String(label || '').trim() || k;
+  if (!k) { toast('ตัวย่อต้องเป็น A-Z หรือ 0-9 อย่างน้อย 1 ตัว', true); return Promise.resolve(); }
+  if (storeTypeList().some(function (t) { return t.key === k; })) {
+    toast('มีประเภทนี้อยู่แล้ว', true); return Promise.resolve();
+  }
+  var next = (state.customStoreTypes || []).concat([{ key: k, label: l }]);
+  return db.update('settings', { storeTypes: next }).then(function () {
+    state.customStoreTypes = next;
+    renderStoreTypePicker();
+    $('newJobStoreType').value = k;
+    previewJobCode();
+    toast('เพิ่มประเภทคลัง ' + k + ' แล้ว');
+  }).catch(function () { toast('บันทึกไม่สำเร็จ', true); });
+}
+
 function refreshCompany() {
   return db.get('settings/company').then(function (data) {
     if (!data) return;
@@ -5723,6 +7478,11 @@ function selectRound(id) {
   state.docNo = {};
   state.legacyTransferNo = '';
   state.jobConfirmed = false;      // เปลี่ยน Job แล้วต้องยืนยันใหม่ก่อนยิง
+  /* Job เก่าก่อน v2.0.0 ไม่มีฟิลด์นี้ ให้ตกไปที่ offline ตามค่าเริ่มต้น */
+  state.locationSet = ((state.roundIndex[id] || {}).locationSet === 'online') ? 'online' : 'offline';
+  state.locationFilter = '';
+  if ($('locFilter')) $('locFilter').value = '';
+  state.scannerOpen = null;
   delete state.jobStats[id];
   resetRoundAggregates();
   clearSubs();
@@ -5736,6 +7496,7 @@ function selectRound(id) {
 
     refreshZones();
     refreshSystemQty();
+    refreshTransfers();
 
     /* ต่อท้ายอย่างเดียว จึงรับเฉพาะลูกที่เพิ่มใหม่ ไม่ดึงทั้งก้อนทุกครั้งที่มีคนยิง */
     state.unsub.push(db.subscribeChildren('rounds/' + id + '/scans', function (scanId, rec) {
@@ -5905,6 +7666,129 @@ function renderAccount() {
   if (!isAdmin() && (state.masterTab === 'users' || state.masterTab === 'newcodes')) {
     state.masterTab = 'products';
   }
+}
+
+/* ---------- หน้า Master Location ---------- */
+var LOC_RENDER_LIMIT = 200;
+var locViewSet = 'offline';
+
+function renderLocationMaster() {
+  document.querySelectorAll('[data-lset]').forEach(function (b) {
+    b.className = 'btn sm ' + (b.getAttribute('data-lset') === locViewSet ? '' : 'grey');
+  });
+  $('btnImportLoc').disabled = !isAdmin();
+
+  var counts = LOCATION_SETS.map(function (s) {
+    return s.label + ' ' + fmtNum(Object.keys(state.locations[s.key] || {}).length) + ' SKU';
+  }).join(' · ');
+  $('locStatus').textContent = counts;
+
+  var map = state.locations[locViewSet] || {};
+  var term = String($('locSearch').value || '').trim().toUpperCase();
+  var keys = Object.keys(map).filter(function (k) {
+    if (!term) return true;
+    var l = map[k];
+    return String(l.sku).toUpperCase().indexOf(term) >= 0 ||
+           String(l.pick || '').toUpperCase().indexOf(term) >= 0 ||
+           String(l.refill || '').toUpperCase().indexOf(term) >= 0 ||
+           String(l.name || '').toUpperCase().indexOf(term) >= 0;
+  }).sort();
+  var shown = keys.slice(0, LOC_RENDER_LIMIT);
+  $('locCount').textContent = Object.keys(map).length
+    ? ('พบ ' + fmtNum(keys.length) + ' จาก ' + fmtNum(Object.keys(map).length) + ' SKU' +
+       (keys.length > shown.length ? ' — แสดง ' + fmtNum(shown.length) + ' รายการแรก' : ''))
+    : 'ชุดนี้ยังไม่มีข้อมูล';
+
+  var host = $('locList');
+  host.innerHTML = '';
+  shown.forEach(function (k) {
+    var l = map[k];
+    var row = document.createElement('div');
+    row.className = 'mrow';
+    row.setAttribute('data-loc', l.sku);
+    var top = document.createElement('div');
+    top.className = 'm-top';
+    var left = document.createElement('div');
+    var nm = document.createElement('div');
+    nm.className = 'm-name';
+    nm.textContent = l.sku;
+    var sub = document.createElement('div');
+    sub.className = 'm-cat';
+    sub.textContent = l.name || '(ไม่มีชื่อในไฟล์)';
+    left.appendChild(nm); left.appendChild(sub);
+    var right = document.createElement('div');
+    right.style.textAlign = 'right';
+    if (l.pick) right.appendChild(makeBadge('📍 ' + l.pick, 'loc'));
+    if (l.refill) right.appendChild(makeBadge('📦 ' + l.refill, 'loc'));
+    top.appendChild(left); top.appendChild(right);
+    row.appendChild(top);
+    host.appendChild(row);
+  });
+}
+
+function handleLocationImport(file) {
+  if (!requireAdmin('นำเข้า Location ไม่ได้')) return;
+  var setKey = $('locSetPick').value === 'online' ? 'online' : 'offline';
+  var isXlsx = /\.xlsx$/i.test(file.name);
+  $('btnImportLoc').disabled = true;
+  $('locStatus').textContent = 'กำลังอ่านไฟล์...';
+
+  file.arrayBuffer().then(function (buf) {
+    return isXlsx ? parseXlsx(buf, 'Locations') : Promise.resolve(parseCsv(decodeTextFile(buf)));
+  }).then(function (parsed) {
+    var res = parseLocationFile(parsed);
+    var total = Object.keys(res.map).length;
+    $('locStatus').textContent = 'กำลังบันทึก 0 / ' + fmtNum(total) + ' ...';
+    return writeLocationChunks(setKey, res.map, function (done, all) {
+      $('locStatus').textContent = 'กำลังบันทึก ' + fmtNum(done) + ' / ' + fmtNum(all) + ' ...';
+    }).then(function () {
+      Object.keys(res.map).forEach(function (k) { state.locations[setKey][k] = res.map[k]; });
+      var box = document.createElement('div');
+      var sec = repSection('ผลการนำเข้า Location — ชุด ' + setKey);
+      repLine(sec, 'อ่านทั้งหมด', fmtNum(res.stat.rows) + ' แถว');
+      repLine(sec, 'เข้าระบบ', fmtNum(res.stat.imported) + ' SKU');
+      repLine(sec, 'มี Location หยิบ', fmtNum(res.stat.withPick) + ' SKU');
+      repLine(sec, 'มี Location เติม', fmtNum(res.stat.withRefill) + ' SKU');
+      if (res.stat.noSku) repLine(sec, 'ข้ามเพราะไม่มี SKU', fmtNum(res.stat.noSku) + ' แถว', true);
+      if (res.stat.bothBlank) {
+        repLine(sec, 'ข้ามเพราะไม่มี Location เลย', fmtNum(res.stat.bothBlank) + ' แถว', true);
+        repNote(sec, 'นับรวมแถวที่ใส่ "--" ไว้ทั้งสองช่อง');
+      }
+      if (res.stat.duplicates) {
+        repLine(sec, 'SKU ซ้ำในไฟล์', fmtNum(res.stat.duplicates) + ' แถว');
+        repNote(sec, 'ใช้แถวหลังสุดที่เจอ');
+      }
+      repNote(sec, 'อีกชุดหนึ่งไม่ถูกแตะ — สินค้าตัวเดียวกันมี Location ได้ทั้งสองชุด');
+      box.appendChild(sec);
+      ask('นำเข้า Location เรียบร้อย',
+          'ชุด ' + setKey + ' มีทั้งหมด ' + fmtNum(Object.keys(state.locations[setKey]).length) + ' SKU',
+          'ปิด', { hideCancel: true, detail: box });
+    });
+  }).catch(function (err) {
+    var code = err && err.message;
+    if (code === 'NO_LOCATION_HEADER') {
+      var found = (err.headers || []).filter(Boolean);
+      ask('อ่านไฟล์ Location นี้ไม่ได้',
+          'ต้องมีหัวตาราง SKU และอย่างน้อยหนึ่งใน Location (หยิบ) / Location (เติม)\n\n' +
+          (found.length ? 'ในไฟล์เจอหัวตารางว่า: ' + found.join(' · ')
+                        : 'ในไฟล์ไม่มีข้อความให้อ่านเลยในสิบแถวแรก') +
+          '\n\nถ้าไฟล์มีหลายชีท ระบบจะอ่านชีทชื่อ "Locations" ก่อน',
+          'รับทราบ', { hideCancel: true });
+      return;
+    }
+    var messages = {
+      EMPTY_FILE: 'ไฟล์นี้ว่างเปล่า กรุณาตรวจไฟล์แล้วอัปโหลดใหม่',
+      NO_ROWS: 'เจอหัวตารางแล้วแต่ไม่มีแถวไหนมี Location เลย',
+      NO_SHEET: 'อ่านไฟล์ Excel นี้ไม่ได้ กรุณาบันทึกเป็น .xlsx หรือ CSV แล้วอัปโหลดใหม่',
+      BAD_ZIP: 'ไฟล์ Excel นี้เสียหรือไม่ใช่ไฟล์ .xlsx กรุณาบันทึกเป็น CSV แล้วอัปโหลดใหม่',
+      NO_INFLATE: 'เครื่องนี้อ่านไฟล์ .xlsx ไม่ได้ กรุณาบันทึกเป็น CSV แล้วอัปโหลดใหม่'
+    };
+    toast(messages[code] || 'นำเข้า Location ไม่สำเร็จ กรุณาตรวจไฟล์แล้วลองใหม่', true);
+  }).then(function () {
+    $('btnImportLoc').disabled = false;
+    renderLocationMaster();
+    if (state.page === 'scan') { renderLocFilter(); renderLivePanel(); }
+  });
 }
 
 /* ============================================================
@@ -6616,6 +8500,20 @@ function init() {
   $('branchSearch').addEventListener('input', renderBranchPicker);
   $('branchShowClosed').addEventListener('change', renderBranchPicker);
   $('newJobAbbr').addEventListener('input', previewJobCode);
+  renderStoreTypePicker();
+  $('newJobStoreType').addEventListener('change', function () {
+    if (this.value === '__add__') {
+      this.value = DEFAULT_STORE_TYPE;
+      if (!requireAdmin('เพิ่มประเภทคลังไม่ได้')) { previewJobCode(); return; }
+      ask('เพิ่มประเภทคลังย่อย', 'ใช้ได้กับทุกสาขา และจะไปอยู่ในรหัส Job ด้วย', 'เพิ่มประเภทนี้',
+          { fields: [
+            { key: 'key', label: 'ตัวย่อสำหรับรหัส Job (A-Z 0-9)', type: 'text', placeholder: 'เช่น WH' },
+            { key: 'label', label: 'ชื่อที่แสดง', type: 'text', placeholder: 'เช่น Warehouse (คลังใหญ่)' }
+          ] }).then(function (v) { if (v) addStoreType(v.key, v.label); });
+      return;
+    }
+    previewJobCode();
+  });
 
   $('btnAddRound').onclick = function () {
     var name = $('newRoundName').value.trim();
@@ -6623,7 +8521,8 @@ function init() {
     if (!requireStaff('สร้าง Job ไม่ได้')) return;
     if (!state.newBranch) { toast('เลือกสาขาจากทะเบียนก่อน', true); return; }
     if (!name) { toast('ตั้งชื่อรอบนับก่อน', true); return; }
-    createRound(name, state.newBranch, abbr).then(function (id) {
+    createRound(name, state.newBranch, abbr, $('newJobLocSet').value,
+                $('newJobStoreType').value).then(function (id) {
       $('newRoundName').value = '';
       $('newJobAbbr').value = '';
       $('branchSearch').value = '';
@@ -6670,6 +8569,19 @@ function init() {
     $('zoneHint').style.display = (this.value.trim() && state.roundId) ? 'block' : 'none';
   });
 
+  document.querySelectorAll('[data-imptab]').forEach(function (b) {
+    b.onclick = function () { state.importTab = b.getAttribute('data-imptab'); renderStart(); };
+  });
+  $('btnImportTf').onclick = function () { $('tfFile').click(); };
+  $('tfFile').addEventListener('change', function () {
+    if (this.files && this.files[0]) handleTransferImport(this.files[0]);
+    this.value = '';
+  });
+  $('deductTf').addEventListener('change', function () { saveDeductTransfer(this.checked); });
+  document.querySelectorAll('[data-itemtab]').forEach(function (b) {
+    b.onclick = function () { state.itemTab = b.getAttribute('data-itemtab'); renderDoc(); };
+  });
+
   $('btnImport').onclick = function () { $('fileInput').click(); };
   $('btnImportReport').onclick = showImportReport;
   $('fileInput').addEventListener('change', function () {
@@ -6708,6 +8620,24 @@ function init() {
     if (e.key === 'Escape') { e.preventDefault(); hideUnknownNote(); focusScan(); }
   });
 
+  $('locFilter').addEventListener('input', function () {
+    state.locationFilter = this.value;
+    renderLocFilter();
+  });
+
+  /* ปุ่มลัดสำหรับ Laptop + เครื่องยิง USB — F2 กรอกมือ · F3 ยกเลิกการยิงล่าสุด
+     ดักที่ document เพราะโฟกัสอยู่ที่ช่องยิงตลอดเวลา */
+  document.addEventListener('keydown', function (e) {
+    if (state.page !== 'scan' || state.modalOpen) return;
+    if (e.key === 'F2') {
+      e.preventDefault();
+      if (state.manualOpen) closeManual(); else openManual();
+    } else if (e.key === 'F3') {
+      e.preventDefault();
+      if (!$('btnUndo').disabled) undoLastScan();
+    }
+  });
+
   $('btnUndo').onclick = undoLastScan;
   $('btnManual').onclick = openManual;
   $('btnManualClose').onclick = closeManual;
@@ -6743,6 +8673,20 @@ function init() {
     if (this.files && this.files[0]) handleBranchImport(this.files[0]);
     this.value = '';
   });
+  /* ---- Master Location ---- */
+  $('btnImportLoc').onclick = function () {
+    if (!requireAdmin('นำเข้า Location ไม่ได้')) return;
+    $('locFile').click();
+  };
+  $('locFile').addEventListener('change', function () {
+    if (this.files && this.files[0]) handleLocationImport(this.files[0]);
+    this.value = '';
+  });
+  $('locSearch').addEventListener('input', renderLocationMaster);
+  document.querySelectorAll('[data-lset]').forEach(function (b) {
+    b.onclick = function () { locViewSet = b.getAttribute('data-lset'); renderLocationMaster(); };
+  });
+
   $('branchMasterSearch').addEventListener('input', renderBranchMaster);
   document.querySelectorAll('[data-bfilter]').forEach(function (b) {
     b.onclick = function () { state.branchFilter = b.getAttribute('data-bfilter'); renderBranchMaster(); };
@@ -6769,6 +8713,21 @@ function init() {
   });
   $('btnExport').onclick = exportExcel;
 
+  /* ---- ภาพรวมทุกสาขา ---- */
+  document.querySelectorAll('[data-sumtab]').forEach(function (b) {
+    b.onclick = function () { setSummaryTab(b.getAttribute('data-sumtab')); };
+  });
+  document.querySelectorAll('[data-ostatus]').forEach(function (b) {
+    b.onclick = function () { state.overviewStatus = b.getAttribute('data-ostatus'); renderOverview(); };
+  });
+  $('ovFrom').addEventListener('change', function () { state.overviewFrom = this.value; renderOverview(); });
+  $('ovTo').addEventListener('change', function () { state.overviewTo = this.value; renderOverview(); });
+  $('btnOvClear').onclick = function () {
+    state.overviewFrom = ''; state.overviewTo = '';
+    $('ovFrom').value = ''; $('ovTo').value = '';
+    renderOverview();
+  };
+
   /* ---- เอกสาร ---- */
   $('navDoc').onclick = function () { if (state.roundId) showPage('doc'); };
   /* ดึงรูปที่ยังไม่โหลดขึ้นมาก่อนพิมพ์ ไม่งั้นเอกสารออกมาเป็นกรอบเปล่า
@@ -6791,6 +8750,13 @@ function init() {
   $('btnDocExcel').onclick = exportDocExcel;
   document.querySelectorAll('[data-doctype]').forEach(function (b) {
     b.onclick = function () { saveDocType(b.getAttribute('data-doctype')); };
+  });
+  document.querySelectorAll('[data-docscope]').forEach(function (b) {
+    b.onclick = function () {
+      state.docScope = b.getAttribute('data-docscope');
+      state.cycleData = null;      // บังคับโหลดใหม่ เผื่อมีคนยิงเพิ่มระหว่างนี้
+      renderDoc();
+    };
   });
   $('docNo').addEventListener('change', function () {
     var label = docSpec().noLabel;
@@ -6883,6 +8849,9 @@ function startApp() {
   refreshProducts();
   refreshBranches();
   refreshCompany();
+  refreshLocations();
+  refreshStatuses();
+  refreshStoreTypes();
   if (isAdmin()) refreshUsers().then(renderUsers);
 
   db.subscribe('roundIndex', function (data) {
@@ -6912,6 +8881,107 @@ init();
   ====================================================================
   สรุปการเปลี่ยนแปลง
   ====================================================================
+
+  v2.0.0 — Location · Status · ภาพรวมทุกสาขา · เลย์เอาต์ Laptop
+
+    A) หน้าภาพรวมทุกสาขา — เป็นแท็บแรกของหน้าสรุป
+       ตารางแถวละรอบนับ: รหัสสาขา · ชื่อสาขา · สถานะ Job · SKU ที่ยิงแล้ว/ทั้งหมด ·
+       ชิ้นที่ยิงได้ · %Success (ชิ้น) · %Success (SKU) · ผลต่างมูลค่า · อัปเดตล่าสุด
+       - แถวรวมท้ายตารางรวมเฉพาะรอบที่ "กำลังนับ" ตามข้อ A2
+       - กดแถวไหนเข้าไปดูสรุปของรอบนั้นได้เลย
+       - กรองตามสถานะ Job และช่วงวันที่สร้างรอบ
+       - ใช้ loadJobStats ตัวเดียวกับการ์ดหน้า Job ตัวเลขจึงตรงกันเสมอ
+         และเพิ่ม pctPieces / diffValue / lastTs เข้าไปในสถิติชุดเดิม
+       - แก้ loadJobStats ให้ตัดแถวผี (ไม่มียอดระบบและยอดนับเหลือ 0) ออกด้วย
+         เหมือน summaryData ไม่งั้น %Success ของการ์ดกับของหน้าสรุปจะไม่ตรงกัน
+
+    B) Master Location สินค้า
+       - นำเข้าจากชีท Locations · จับคอลัมน์จากชื่อหัวตาราง ไม่เดาตำแหน่ง
+         SKU · ชื่อสินค้า · Location (หยิบ) · Location (เติม)
+       - ค่า "--" ถือว่าว่าง (regex /^-+$/) ไม่ใช่ Location ชื่อ "--"
+       - upsert ด้วย SKU นำเข้าซ้ำทับของเดิม
+       - แยก 2 ชุด offline / online เลือกตอนนำเข้า สินค้าตัวเดียวกันมีได้ทั้งสองชุด
+       - ไฟล์จริง 16,076 แถว จึงตัดเขียนเป็นก้อนละ 500 แล้วส่งต่อกัน
+         พร้อมแสดงความคืบหน้า — ยิงทีเดียวจะได้ payload ใหญ่และพังง่ายตอนเน็ตไม่ดี
+       - เลือกชุด Location ตอนสร้าง Job (Job เก่าไม่มีฟิลด์นี้ ตกไปที่ offline)
+       - ป้าย Location บนการ์ดตอนยิง แสดงทั้งหยิบและเติมถ้ามีทั้งคู่
+       - คอลัมน์ Location ต่อจากชื่อสินค้าในเอกสารและ Excel ทั้งสองไฟล์
+       - ตัวกรอง "เฉพาะ Location ที่ขึ้นต้นด้วย..." ในหน้ายิง
+         บอกด้วยว่าโซนนั้นยิงไปแล้วกี่ SKU เหลืออีกกี่ SKU
+
+    C) การ์ดสินค้าใหญ่ตอนยิง
+       รูป 112px (140px บนจอกว้าง) ด้านซ้าย ข้อมูลด้านขวา
+       รหัส · ชื่อ · หมวดหมู่ · ป้าย Location · ป้าย Status · ยอดระบบ · ยิงสะสม
+       กรอบรูปขนาดคงที่ ไม่มีรูปก็กินที่เท่าเดิม การ์ดจึงไม่กระตุกตอนยิงรัว
+
+    D) รองรับ Laptop
+       - จอกว้าง >= 1024px เป็น 2 คอลัมน์ · ซ้าย ช่องยิง+การ์ด · ขวา รายการที่ยิงแล้ว
+         (ตารางเลื่อนดูได้ 200 แถวล่าสุด) + สรุปสด 4 ช่อง
+       - จอแคบคงเลย์เอาต์เดิมคอลัมน์เดียว คอลัมน์ขวาไม่ถูกวาดเลยเพื่อไม่เสียแรง
+       - ปุ่มลัด F2 กรอกมือ · F3 ยกเลิกการยิงล่าสุด ดักที่ document
+         เพราะโฟกัสอยู่ที่ช่องยิงตลอดเวลา (เครื่องยิง USB ทำงานเหมือนคีย์บอร์ด)
+
+    E) ใครยิงไปเท่าไรใน Job เดียวกัน
+       - กล่อง "ผู้ยิงในรอบนี้" ในหน้าสรุป เรียงจากมากไปน้อย พร้อมเหรียญ 3 อันดับแรก
+         ชื่อ · จำนวนชิ้น · จำนวน SKU · ยิงล่าสุดเมื่อไหร่
+       - กดชื่อกางดูรายโซนของคนนั้น
+       - เอกสารมีบรรทัดสรุปว่ารอบนี้มีผู้นับกี่คน ใครบ้าง คนละกี่ชิ้น
+       - คิดจาก scanLog ตรง ๆ ไม่เก็บตัวนับแยกให้มีโอกาสไม่ตรงกัน
+
+    F) Status ของสินค้า
+       - ฟิลด์ status ใน Master ค่าเริ่มต้น Normal
+         ค่ามาตรฐาน 9 ค่าตามที่กำหนด และเพิ่มค่าใหม่เองได้ (เก็บที่ settings/productStatuses)
+       - แก้ทีละรายการในหน้า Master หรือใส่คอลัมน์ Status มาในไฟล์นำเข้าก็ได้
+         ไฟล์ทับได้เฉพาะเมื่อมีคอลัมน์นี้จริง ไฟล์ Zort ปกติไม่มี ค่าที่คนตั้งไว้จึงอยู่ครบ
+       - ยิงเจอ status พิเศษ = พื้นหลังม่วง + ป้ายสีบนการ์ด + เสียงสองโน้ตไล่ขึ้น
+         แต่ยังบันทึกตามปกติ ไม่มีอะไรขวางจังหวะยิง
+       - คอลัมน์ Status ในเอกสารและ Excel
+       - หน้าสรุปมีกล่องแยกว่ายิงเจอสินค้าสถานะพิเศษกี่รายการ กี่ชิ้น
+
+    G) รอบนับของสาขา — 1 สาขาเปิดได้หลาย Job แล้วรวมรายงานได้
+       - ฟิลด์ storeType ตอนสร้าง Job (Show / Stock) แอดมินเพิ่มค่าใหม่เองได้
+         เก็บที่ settings/storeTypes
+       - jobCode ต่อท้ายด้วยประเภท เช่น FCM01-SHOW-20260730-01
+       - แสดง storeType บนแถบหัว Job และบนการ์ดในหน้ารายการ Job
+       - cycle = รหัสสาขา + ปีเดือน เช่น FCM01-202607 สร้างอัตโนมัติจาก Job
+         หน้ารายการ Job จัดกลุ่มตาม cycle หัวกลุ่มบอกสาขา จำนวน Job และสถานะรวม
+         สถานะรวม = ปิดครบทุก Job จึงถือว่ารอบนั้นปิด
+       - เอกสารมีปุ่มสลับ "เฉพาะ Job นี้" / "รวมทั้งสาขา"
+         โหมดรวมบวกยอดระบบและยอดนับรายตัวตามรหัสสินค้า แล้วคำนวณ %Success ใหม่
+         จากยอดรวม ไม่ได้เอา % ของแต่ละ Job มาเฉลี่ยกัน
+         SKU ที่อยู่ทั้ง Show และ Stock จึงถูกยุบเป็น SKU เดียวโดยอัตโนมัติ
+       - เอกสารรวมมีตารางย่อยแยกตาม Job (ประเภทคลัง SKU ชิ้น %Success ผู้นับ)
+       - เลขที่เอกสารของรายงานรวมจองคนละชุด (kind ต่อท้ายด้วย C) ผูกกับ cycle
+       - ข้อ D1: จำลายเซ็นไฟล์ยอดระบบไว้กับ Job ถ้าไฟล์เดียวกันถูกนำเข้าใน Job อื่น
+         ของ cycle เดียวกัน จะเตือนพร้อมบอกว่า Job ไหน ยืนยันทับได้แต่ต้องกดเอง
+       - ข้อ D2: SKU ที่ยิงจากหลาย Job ไม่ถือว่าผิด รายงานรวมเก็บ jobCount ไว้
+       - ข้อ D3: ออกเอกสารรวมได้แม้ยังมี Job ไม่ปิด แต่ขึ้นข้อความว่ายังนับไม่ครบทุกคลัง
+       - ข้อ E1: Job เก่าที่ไม่มี storeType อ่านเป็น Stock และ cycle ถูกคำนวณย้อนหลัง
+         จากรหัสสาขา+เดือนของ Job นั้น ทำที่ชั้นอ่าน (storeTypeOf / cycleOf)
+         ไม่เขียนทับข้อมูลเดิมเลย จึงไม่มีทางทำให้ยอดที่นับไปแล้วเปลี่ยนค่า (ข้อ E2)
+
+    H) นำเข้ายอดระบบแยก 2 แท็บ + ไฟล์ TF Return
+       - แท็บ Stock Check (ไฟล์ Zort เดิม) และ TF Return (รายการโอนกลับ)
+         แต่ละแท็บบอกว่ารับไฟล์แบบไหน ต้องมีคอลัมน์อะไร และนำเข้าไปแล้วเท่าไร เมื่อไหร่
+       - ไฟล์ TF: ชีท "รายการโอนสินค้า" 13 คอลัมน์ จับจากชื่อหัวตาราง
+         ตัดท้ายไฟล์ด้วยช่อง # ว่าง — ระวังว่าช่องนี้คือเลขที่รายการโอนที่ซ้ำทุกแถว
+         ไม่ใช่เลขลำดับ จึงเช็คแค่ "ว่างหรือไม่" ห้ามคาดหวังว่าจะไล่ขึ้น
+       - หนึ่งไฟล์มีหลายหมายเลขรายการได้ เก็บแยกที่ rounds/{id}/transfers/{tfNo}
+         พร้อม สถานะ จาก ไป วันที่ หมายเหตุ และรายการสินค้าใต้มัน
+       - นำเข้าหมายเลขเดิมซ้ำ = แทนที่ยอดของใบนั้นทั้งก้อน (PATCH ที่ระดับพ่อ)
+       - ใช้คอลัมน์ "จาก" ตรวจสาขา ไม่ตรงขึ้นกล่องเตือนสีแดงก่อนเขียน
+       - ตารางรายการในเอกสารแยก 2 แท็บ "สต๊อกสาขา" / "รายการโอนกลับ"
+         แท็บโอนกลับจัดกลุ่มตามหมายเลขรายการ หัวกลุ่มบอก tfNo สถานะ ปลายทาง SKU ชิ้น
+       - สินค้าที่อยู่ในรายการโอนขึ้นป้าย "รอโอน" ตอนยิง
+       - ตารางรายการเพิ่มคอลัมน์ ยอดระบบ | ยอดรอโอน | ยิงจริง | ผลต่าง
+       - สวิตช์ "หักรายการรอโอนออกจากยอดระบบ" ค่าเริ่มต้นปิด เก็บไว้กับรอบ
+         เปิดแล้วผลต่างและ %Success คิดจาก (ยอดระบบ − ยอดรอโอน) หักได้ไม่เกินยอดระบบ
+       - เอกสารมีตาราง "รายการโอนกลับที่เกี่ยวข้องกับรอบนี้" และระบุฐานคำนวณ %Success
+
+    หมายเหตุเรื่อง Database Rules: v2.0.0 เพิ่ม node ใหม่ 2 ที่คือ
+    stocktake2026/locations/{offline|online}/{sku} กับ settings/productStatuses
+    กฎชุดเดิมคลุม settings อยู่แล้ว แต่ locations ยังไม่มีกฎ ต้องเพิ่มก่อนใช้จริง
+    (ดูบล็อก Rules ท้ายไฟล์)
 
   v1.9.3 — กราฟแยกตามกลุ่ม + นับสินค้าที่ไม่มีในระบบ
 
@@ -7326,6 +9396,7 @@ init();
         },
 
         "settings":    { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin'" },
+        "locations":   { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin'" },
         "products":    { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin'" },
         "branches":    { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin'" },
 
