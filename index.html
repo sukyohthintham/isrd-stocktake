@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="1.8.1">
+<meta name="version" content="1.9.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v1.8.1</title>
+<title>ISRD Stocktake v1.9.0</title>
 
 <style>
 :root{
@@ -61,12 +61,17 @@ h3{font-size:17px}
 /* ---------- form controls ---------- */
 label.fld{display:block;margin-bottom:14px}
 label.fld > span{display:block;font-size:14px;font-weight:600;color:var(--muted);margin-bottom:6px}
-input[type=text],select,textarea{
+/* ต้องระบุ type ให้ครบ ไม่งั้นช่องอีเมล/รหัสผ่านจะไม่ได้ความกว้างและความสูงนี้
+   แล้วกลายเป็นช่องเล็กจิ๋วบนมือถือ กดยากสำหรับคนใส่ถุงมือ */
+input[type=text],input[type=email],input[type=password],input[type=tel],
+input[type=number],input[type=search],select,textarea{
   width:100%; min-height:var(--tap); padding:12px 14px;
   font-size:17px; font-family:inherit; color:var(--text);
   background:#fff; border:2px solid var(--line); border-radius:12px;
 }
-input[type=text]:focus,select:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-light)}
+input[type=text]:focus,input[type=email]:focus,input[type=password]:focus,
+input[type=tel]:focus,input[type=number]:focus,input[type=search]:focus,
+select:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-light)}
 input.qty{font-size:26px;font-weight:700;text-align:center;letter-spacing:1px;min-height:64px}
 select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);background-position:calc(100% - 20px) 50%,calc(100% - 14px) 50%;background-size:6px 6px,6px 6px;background-repeat:no-repeat;padding-right:44px}
 
@@ -137,6 +142,39 @@ select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,va
 .hint{font-size:13px;color:var(--warn);margin-top:6px;font-weight:600}
 .hint.list{background:var(--warn-bg);border:1px solid #fcd34d;border-radius:11px;padding:10px 14px;margin-top:10px}
 .hint.list ul{margin:6px 0 0;padding-left:20px}
+
+/* ---------- หน้าล็อกอิน ----------
+   ยังไม่ล็อกอิน = ซ่อนทั้งแอปไว้ ไม่ใช่แค่ปิดปุ่ม
+   ข้อมูลจริงถูกกันด้วย Database Rules อีกชั้นอยู่แล้ว ตรงนี้กันไม่ให้เห็นหน้าจอเปล่า ๆ */
+body.locked .topbar,body.locked .wrap,body.locked .nav{display:none}
+#loginScreen{display:none}
+#loginScreen.show{
+  display:flex;position:fixed;inset:0;z-index:60;overflow-y:auto;
+  align-items:flex-start;justify-content:center;padding:24px 16px 40px;
+  background:linear-gradient(160deg,var(--brand-dark),var(--brand));
+}
+.login-card{
+  background:#fff;border-radius:18px;padding:22px 20px 24px;width:100%;max-width:420px;
+  box-shadow:0 18px 40px rgba(2,44,34,.28);margin:auto;
+}
+.login-card h2{margin:0 0 4px;font-size:21px}
+.login-card .sub{color:var(--muted);font-size:14px;margin:0 0 18px}
+.login-card .fld{margin-bottom:14px}
+#loginUid{
+  font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;font-weight:700;
+  word-break:break-all;user-select:all;background:#fff;border:1px dashed #fca5a5;
+  border-radius:8px;padding:8px 10px;margin-top:8px;
+}
+/* ---------- จัดการผู้ใช้ ---------- */
+.urow{border:1px solid var(--line);border-radius:13px;padding:12px 14px;margin-bottom:10px;background:#fff}
+.urow .u-name{font-weight:700;font-size:16px}
+.urow .u-mail{color:var(--muted);font-size:13px;word-break:break-all}
+.urow .u-uid{
+  color:var(--muted);font-size:11px;word-break:break-all;margin-top:4px;
+  font-family:ui-monospace,Menlo,Consolas,monospace;user-select:all;
+}
+.urow.off{background:var(--line-soft);opacity:.75}
+.urow .u-edit{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end;margin-top:10px}
 
 /* ---------- หน้ายิงบาร์โค้ด ---------- */
 #pageScan .wrapfix{display:flex;flex-direction:column;gap:12px}
@@ -414,6 +452,29 @@ table.grid td.neg{color:var(--short);font-weight:700}
 }
 </style>
 
+<div id="loginScreen">
+  <div class="login-card">
+    <h2>ISRD ระบบนับสต๊อก</h2>
+    <p class="sub" id="loginSub">เข้าสู่ระบบด้วยอีเมลที่ผู้ดูแลระบบสร้างให้</p>
+    <div class="banner" id="loginModeNote" style="display:none"></div>
+    <label class="fld">
+      <span>อีเมล</span>
+      <input type="email" id="loginEmail" inputmode="email" autocomplete="username"
+             placeholder="ชื่อ@บริษัท.com" autocapitalize="off" spellcheck="false">
+    </label>
+    <label class="fld">
+      <span>รหัสผ่าน</span>
+      <input type="password" id="loginPass" autocomplete="current-password" placeholder="รหัสผ่าน">
+    </label>
+    <div class="banner bad" id="loginError" style="display:none"></div>
+    <div id="loginUid" style="display:none"></div>
+    <button class="btn big block" id="btnLogin">เข้าสู่ระบบ</button>
+    <p class="muted" style="margin:14px 0 0">
+      ลืมรหัสผ่าน หรือยังไม่มีบัญชี — ติดต่อผู้ดูแลระบบให้สร้างให้
+    </p>
+  </div>
+</div>
+
 <div class="topbar">
   <div class="t-title" id="topTitle">ISRD ระบบนับสต๊อก</div>
   <div class="t-sub" id="topSub">ยังไม่ได้เลือกรอบนับ</div>
@@ -482,15 +543,7 @@ table.grid td.neg{color:var(--short);font-weight:700}
   </div>
 
   <div class="card">
-    <h3>2. ชื่อผู้นับ</h3>
-    <label class="fld">
-      <span>ใส่ชื่อของคุณ เพื่อบันทึกว่าใครเป็นคนนับ</span>
-      <input type="text" id="counterName" placeholder="เช่น สมชาย" autocomplete="name">
-    </label>
-  </div>
-
-  <div class="card">
-    <h3>3. ยอดในระบบ</h3>
+    <h3>2. ยอดในระบบ</h3>
     <div id="importStatus" class="muted" style="margin-bottom:12px">ยังไม่ได้นำเข้ายอดระบบของรอบนี้</div>
     <button class="btn ghost sm block" id="btnImportReport" style="display:none;margin-bottom:12px">ดูรายละเอียดการนำเข้าล่าสุด</button>
     <input type="file" id="fileInput" accept=".csv,.xlsx" style="display:none">
@@ -569,9 +622,18 @@ table.grid td.neg{color:var(--short);font-weight:700}
 <!-- ============ PAGE 3 : MASTER ============ -->
 <section class="page" id="pageMaster">
   <div class="card">
+    <h3>บัญชีที่ใช้งานอยู่</h3>
+    <div class="u-name" id="meName">—</div>
+    <div class="u-mail" id="meMail"></div>
+    <div style="margin:8px 0 12px"><span class="chip" id="meRole"></span></div>
+    <button class="btn grey block" id="btnLogout">ออกจากระบบ</button>
+  </div>
+
+  <div class="card">
     <div class="filters" id="masterTabs">
       <button class="btn sm" data-mtab="products">สินค้า</button>
       <button class="btn sm grey" data-mtab="branches">คลังสินค้า/สาขา</button>
+      <button class="btn sm grey" data-mtab="users" id="tabUsers" style="display:none">ผู้ใช้</button>
     </div>
   </div>
 
@@ -624,6 +686,45 @@ table.grid td.neg{color:var(--short);font-weight:700}
     </div>
     <div class="clist" id="branchList"></div>
   </div>
+
+  <div id="masterUsers" style="display:none">
+    <div class="card">
+      <h3>เพิ่มผู้ใช้เข้าระบบ</h3>
+      <p class="muted" style="margin:0 0 14px">
+        สร้างบัญชีที่ <b>Firebase Console → Authentication → Users → Add user</b> ก่อน<br>
+        แล้วคัดลอกค่าในคอลัมน์ <b>User UID</b> ของแถวนั้นมาวางที่ช่องข้างล่าง<br>
+        ผู้ใช้จะเข้าระบบไม่ได้จนกว่าจะถูกเพิ่มชื่อและสิทธิ์ที่นี่
+      </p>
+      <label class="fld" style="margin-bottom:8px">
+        <span>User UID จาก Firebase Console</span>
+        <input type="text" id="newUserUid" placeholder="เช่น 8kQ2f...zX1" autocomplete="off" spellcheck="false">
+      </label>
+      <label class="fld" style="margin-bottom:8px">
+        <span>ชื่อที่จะแสดงเป็นผู้นับ</span>
+        <input type="text" id="newUserName" placeholder="เช่น สมชาย ใจดี" autocomplete="off">
+      </label>
+      <label class="fld" style="margin-bottom:8px">
+        <span>อีเมล (ใส่ไว้ให้ดูง่าย ไม่บังคับ)</span>
+        <input type="email" id="newUserMail" placeholder="ชื่อ@บริษัท.com" autocomplete="off"
+               autocapitalize="off" spellcheck="false">
+      </label>
+      <label class="fld" style="margin-bottom:12px">
+        <span>สิทธิ์การใช้งาน</span>
+        <select id="newUserRole">
+          <option value="counter">ผู้นับสต๊อก — ยิงบาร์โค้ด สร้าง/ปิด Job (แก้ Master ไม่ได้)</option>
+          <option value="viewer">ดูอย่างเดียว — ดูและพิมพ์เอกสาร</option>
+          <option value="admin">ผู้ดูแลระบบ — ทำได้ทุกอย่าง</option>
+        </select>
+      </label>
+      <button class="btn ghost block" id="btnAddUser">+ เพิ่มผู้ใช้</button>
+    </div>
+
+    <div class="card">
+      <h3>ผู้ใช้ทั้งหมด</h3>
+      <div class="muted" id="userCount">กำลังโหลด...</div>
+    </div>
+    <div class="clist" id="userList"></div>
+  </div>
 </section>
 
 <!-- ============ PAGE 4 : SUMMARY ============ -->
@@ -664,7 +765,7 @@ table.grid td.neg{color:var(--short);font-weight:700}
     <button class="btn ghost block" id="btnReview">→ ส่งเข้าขั้นตรวจสอบ</button>
     <button class="btn block" id="btnClose" style="margin-top:10px">🔒 ปิดรอบนับ</button>
     <button class="btn grey block" id="btnReopen" style="margin-top:10px;display:none">🔓 เปิดรอบนับกลับมาแก้ (Admin)</button>
-    <button class="btn grey block" id="btnDeleteJob" style="margin-top:10px">🗑 ลบ Job นี้ (Admin)</button>
+    <button class="btn grey block" id="btnDeleteJob" style="margin-top:10px;display:none">🗑 ลบ Job นี้ (ผู้ดูแลระบบ)</button>
   </div>
 </section>
 
@@ -817,7 +918,7 @@ table.grid td.neg{color:var(--short);font-weight:700}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '1.8.1';
+var APP_VERSION = '1.9.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -840,16 +941,166 @@ var FIREBASE_CONFIG = {
    ------------------------------------------------------------ */
 var ROOT_PATH = 'stocktake2026';
 
-/* ------------------------------------------------------------
-   PIN ของแอดมิน — ใช้กับการเปิด Job ที่ปิดแล้ว และการลบ Job
+/* ============================================================
+   0. ล็อกอิน — Firebase Authentication (Email/Password) ผ่าน REST
 
-   ข้อจำกัดที่ต้องรู้: PIN ตัวนี้อยู่ในไฟล์ฝั่งเบราว์เซอร์ ใครกด View Source
-   ก็เห็น มันกันได้แค่ "การเผลอกด" ของคนหน้างานเท่านั้น ไม่ใช่ระบบความปลอดภัย
-   ตอนย้ายไป dashboard จริง ต้องเปลี่ยนไปบังคับด้วย Firebase Auth
-   แล้วเขียน Database Rules ให้เช็ค auth.uid / custom claim ที่ฝั่งเซิร์ฟเวอร์
-   ไม่ใช่เช็คในโค้ดหน้าเว็บแบบนี้
-   ------------------------------------------------------------ */
-var ADMIN_PIN = '2569';
+   ใช้ REST ตรง ๆ ไม่ได้โหลด Firebase SDK เพราะกฎห้ามเรียกไลบรารีจาก CDN
+   และ SDK ตัวเต็มก็ใหญ่เกินกว่าจะ inline ลงไฟล์เดียว
+
+   idToken มีอายุ 1 ชั่วโมง ต้องต่ออายุด้วย refreshToken ก่อนหมด
+   ไม่งั้นสาย EventSource จะถูกตัดกลางวันแล้วยิงไม่เข้าโดยไม่มีใครรู้
+   เก็บเฉพาะ refreshToken ลง localStorage (ข้อ A2 ปิดเบราว์เซอร์แล้วไม่ต้องล็อกอินซ้ำ)
+   ============================================================ */
+
+/* มี databaseURL จริง = ต่อฐานกลาง ไม่งั้นเป็นโหมดทดสอบเก็บในเครื่อง */
+var REMOTE_MODE = /^https?:\/\//.test(FIREBASE_CONFIG.databaseURL || '');
+
+var IDENTITY_SIGNIN = 'https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=';
+var IDENTITY_REFRESH = 'https://securetoken.googleapis.com/v1/token?key=';
+var AUTH_LS = 'isrd_auth';
+
+/* ข้อความ error ของ Firebase เป็นรหัสภาษาอังกฤษล้วน คนหน้างานอ่านไม่รู้เรื่อง
+   แปลเป็นไทยที่บอกว่าให้ทำอะไรต่อ ไม่ใช่แค่บอกว่าผิด */
+var AUTH_ERRORS = {
+  EMAIL_NOT_FOUND:          'อีเมลหรือรหัสผ่านไม่ถูกต้อง ลองพิมพ์ใหม่อีกครั้ง',
+  INVALID_PASSWORD:         'อีเมลหรือรหัสผ่านไม่ถูกต้อง ลองพิมพ์ใหม่อีกครั้ง',
+  INVALID_LOGIN_CREDENTIALS:'อีเมลหรือรหัสผ่านไม่ถูกต้อง ลองพิมพ์ใหม่อีกครั้ง',
+  INVALID_EMAIL:            'รูปแบบอีเมลไม่ถูกต้อง ตรวจดูว่าพิมพ์ครบทั้ง @ และชื่อโดเมน',
+  MISSING_PASSWORD:         'ยังไม่ได้ใส่รหัสผ่าน',
+  MISSING_EMAIL:            'ยังไม่ได้ใส่อีเมล',
+  USER_DISABLED:            'บัญชีนี้ถูกระงับไว้ที่ Firebase ติดต่อผู้ดูแลระบบให้เปิดให้',
+  TOO_MANY_ATTEMPTS_TRY_LATER: 'ลองผิดหลายครั้งเกินไป รอสัก 5 นาทีแล้วลองใหม่',
+  OPERATION_NOT_ALLOWED:    'ยังไม่ได้เปิดวิธีล็อกอินแบบอีเมล/รหัสผ่าน — ให้ผู้ดูแลระบบไปเปิดที่ Firebase Console → Authentication → Sign-in method',
+  CONFIGURATION_NOT_FOUND:  'ยังไม่ได้เปิดวิธีล็อกอินแบบอีเมล/รหัสผ่าน — ให้ผู้ดูแลระบบไปเปิดที่ Firebase Console → Authentication → Sign-in method',
+  TOKEN_EXPIRED:            'เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่',
+  USER_NOT_FOUND:           'บัญชีนี้ถูกลบไปแล้ว กรุณาเข้าสู่ระบบใหม่',
+  NETWORK:                  'ต่ออินเทอร์เน็ตไม่ได้ ตรวจสัญญาณแล้วลองใหม่อีกครั้ง'
+};
+function authMessage(code) {
+  return AUTH_ERRORS[code] || 'เข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง';
+}
+
+var session = (function () {
+  var idToken = '', refreshToken = '', user = null, timer = null, tokenCb = null;
+
+  function save() {
+    if (!refreshToken) { localStorage.removeItem(AUTH_LS); return; }
+    localStorage.setItem(AUTH_LS, JSON.stringify({
+      refreshToken: refreshToken, uid: user && user.uid, email: user && user.email
+    }));
+  }
+  function load() {
+    try { return JSON.parse(localStorage.getItem(AUTH_LS) || 'null'); } catch (e) { return null; }
+  }
+
+  /* Firebase คืน error เป็น { error: { message: 'INVALID_PASSWORD : ...' } } */
+  function fail(res) {
+    return res.json().catch(function () { return {}; }).then(function (body) {
+      var raw = String(((body || {}).error || {}).message || '');
+      var err = new Error(raw.split(/[ :]/)[0] || 'AUTH_FAILED');
+      err.authCode = err.message;
+      throw err;
+    });
+  }
+  function netError() { var e = new Error('NETWORK'); e.authCode = 'NETWORK'; return e; }
+  function codeError(code) { var e = new Error(code); e.authCode = code; return e; }
+
+  /* ต่ออายุก่อนหมดจริง 5 นาที — เผื่อเวลาเครื่องเพี้ยนและเผื่อสายที่ค้างอยู่ */
+  function schedule(expiresIn) {
+    clearTimeout(timer);
+    var ms = Math.max(60, (Number(expiresIn) || 3600) - 300) * 1000;
+    timer = setTimeout(function () { refresh().catch(function () {}); }, ms);
+  }
+
+  function refresh() {
+    if (!REMOTE_MODE) return Promise.resolve(idToken);
+    if (!refreshToken) return Promise.reject(new Error('NO_SESSION'));
+    return fetch(IDENTITY_REFRESH + FIREBASE_CONFIG.apiKey, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'grant_type=refresh_token&refresh_token=' + encodeURIComponent(refreshToken)
+    }).catch(function () { throw netError(); }).then(function (r) {
+      if (!r.ok) return fail(r);
+      return r.json();
+    }).then(function (d) {
+      idToken = d.id_token;
+      refreshToken = d.refresh_token || refreshToken;
+      user = { uid: d.user_id || (user && user.uid), email: user && user.email };
+      save();
+      schedule(d.expires_in);
+      if (tokenCb) tokenCb(idToken);       // สายที่ค้างอยู่ต้องต่อใหม่ด้วย token ใหม่
+      return idToken;
+    });
+  }
+
+  return {
+    get user() { return user; },
+    token: function () { return idToken; },
+    onToken: function (cb) { tokenCb = cb; },
+
+    signIn: function (email, password) {
+      email = String(email || '').trim();
+      if (!email) return Promise.reject(codeError('MISSING_EMAIL'));
+      if (!password) return Promise.reject(codeError('MISSING_PASSWORD'));
+
+      /* โหมดทดสอบไม่มี Firebase ให้ตรวจ — ใช้ uid สมมติจากอีเมล
+         เพื่อให้ระบบสิทธิ์ทั้งชุดยังทดสอบได้ครบโดยไม่แตะฐานจริง */
+      if (!REMOTE_MODE) {
+        user = { uid: 'local_' + safeKey(email.toLowerCase()), email: email };
+        refreshToken = 'local';
+        save();
+        return Promise.resolve(user);
+      }
+
+      return fetch(IDENTITY_SIGNIN + FIREBASE_CONFIG.apiKey, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email, password: password, returnSecureToken: true })
+      }).catch(function () { throw netError(); }).then(function (r) {
+        if (!r.ok) return fail(r);
+        return r.json();
+      }).then(function (d) {
+        idToken = d.idToken;
+        refreshToken = d.refreshToken;
+        user = { uid: d.localId, email: d.email || email };
+        save();
+        schedule(d.expiresIn);
+        return user;
+      });
+    },
+
+    /* เปิดแอปมาแล้วเคยล็อกอินไว้ ต้องเข้าได้เลยโดยไม่ต้องพิมพ์ใหม่ */
+    restore: function () {
+      var saved = load();
+      if (!saved || !saved.refreshToken) return Promise.resolve(null);
+      if (!REMOTE_MODE) {
+        user = { uid: saved.uid, email: saved.email };
+        refreshToken = saved.refreshToken;
+        return Promise.resolve(user);
+      }
+      refreshToken = saved.refreshToken;
+      user = { uid: saved.uid, email: saved.email };
+      return refresh().then(function () { return user; })
+        .catch(function (err) {
+          /* refreshToken ใช้ไม่ได้แล้ว (ถูกลบบัญชี / เปลี่ยนรหัสผ่าน) = ต้องล็อกอินใหม่
+             แต่ถ้าแค่เน็ตไม่มา อย่าเพิ่งล้างทิ้ง เดี๋ยวเปิดแอปตอนออฟไลน์แล้วหลุดทุกครั้ง */
+          if (err && err.authCode === 'NETWORK') throw err;
+          idToken = ''; refreshToken = ''; user = null;
+          localStorage.removeItem(AUTH_LS);
+          return null;
+        });
+    },
+
+    /* เรียกตอนโดน 401 — token อาจหมดอายุก่อนกำหนดถ้าเครื่อง sleep ไปนาน */
+    renew: refresh,
+
+    signOut: function () {
+      clearTimeout(timer);
+      idToken = ''; refreshToken = ''; user = null;
+      localStorage.removeItem(AUTH_LS);
+    }
+  };
+})();
 
 /* ============================================================
    1. STORAGE ADAPTER
@@ -908,8 +1159,6 @@ function deepSet(tree, path, value) {
   return tree;
 }
 
-var REMOTE_MODE = /^https?:\/\//.test(FIREBASE_CONFIG.databaseURL || '');
-
 var db = (function () {
   var listeners = [];   // {path, cb}
 
@@ -948,8 +1197,13 @@ var db = (function () {
 
   /* ---------- remote backend (Firebase REST) ---------- */
   var base = String(FIREBASE_CONFIG.databaseURL || '').replace(/\/+$/, '');
-  var authQS = '';
-  function url(path) { return base + '/' + scoped(path) + '.json' + authQS; }
+
+  /* ทุกคำขอต้องแนบ idToken ปัจจุบัน ไม่ใช่ค่าที่จำไว้ตอนเปิดแอป
+     เพราะ token หมุนทุกชั่วโมง ถ้าค้างของเก่าไว้จะกลายเป็น 401 กลางวัน */
+  function url(path) {
+    var t = session.token();
+    return base + '/' + scoped(path) + '.json' + (t ? '?auth=' + encodeURIComponent(t) : '');
+  }
 
   var remoteCache = {};   // mirror of every subscribed subtree, kept fresh by SSE
 
@@ -957,8 +1211,17 @@ var db = (function () {
   var statusCb = null;
   function setStatus(ok, why) { if (statusCb) statusCb(!!ok, why || ''); }
 
+  /* 401/403 = token หมดอายุหรือถูกเพิกถอน ต่ออายุแล้วลองใหม่ครั้งเดียว
+     ถ้ายังไม่ผ่านค่อยโยน error ออกไปให้คิวออฟไลน์เก็บไว้ */
+  function withAuthRetry(run) {
+    return run().then(function (r) {
+      if (r.status !== 401 && r.status !== 403) return r;
+      return session.renew().then(function () { return run(); }, function () { return r; });
+    });
+  }
+
   function remoteGet(path) {
-    return fetch(url(path)).then(function (r) {
+    return withAuthRetry(function () { return fetch(url(path)); }).then(function (r) {
       if (!r.ok) throw new Error('HTTP ' + r.status);
       setStatus(true);
       return r.json();
@@ -966,10 +1229,12 @@ var db = (function () {
   }
 
   function remoteUpdate(path, patch) {
-    return fetch(url(path), {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(patch)
+    return withAuthRetry(function () {
+      return fetch(url(path), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch)
+      });
     }).then(function (r) {
       if (!r.ok) throw new Error('HTTP ' + r.status);
       setStatus(true);
@@ -977,9 +1242,28 @@ var db = (function () {
     }).catch(function (err) { setStatus(false, String(err && err.message || err)); throw err; });
   }
 
+  /* สาย EventSource ทุกสายผูกกับ token ที่ใช้ตอนเปิด พอ token หมุนต้องเปิดใหม่ทั้งหมด
+     ไม่งั้นเซิร์ฟเวอร์จะส่ง auth_revoked แล้วตัดสาย ข้อมูลหยุดอัปเดตแบบเงียบ ๆ */
+  var liveStreams = [];
+  function trackStream(entry) {
+    liveStreams.push(entry);
+    return function () {
+      entry.stop();
+      var i = liveStreams.indexOf(entry);
+      if (i >= 0) liveStreams.splice(i, 1);
+    };
+  }
+  function reopenStreams() {
+    liveStreams.slice().forEach(function (entry) { entry.reopen(); });
+  }
+  function closeStreams() {
+    liveStreams.slice().forEach(function (entry) { entry.stop(); });
+    liveStreams.length = 0;
+    remoteCache = {};
+  }
+
   function remoteSubscribe(path, cb) {
-    var es = new EventSource(url(path));
-    var alive = true;
+    var es = null, alive = true;
     function apply(kind, msg) {
       var sub = (msg.path === '/' ? '' : msg.path);
       var full = (path + sub).replace(/\/+$/, '');
@@ -997,14 +1281,25 @@ var db = (function () {
       }
       if (alive) cb(deepGet(remoteCache, path));
     }
-    ['put', 'patch'].forEach(function (evt) {
-      es.addEventListener(evt, function (e) {
-        try { apply(evt, JSON.parse(e.data)); } catch (err) { /* ignore malformed frame */ }
+    function open() {
+      if (es) es.close();
+      es = new EventSource(url(path));
+      ['put', 'patch'].forEach(function (evt) {
+        es.addEventListener(evt, function (e) {
+          try { apply(evt, JSON.parse(e.data)); } catch (err) { /* ignore malformed frame */ }
+        });
       });
+      es.addEventListener('auth_revoked', function () {
+        session.renew().then(open, function () { setStatus(false, 'auth'); });
+      });
+      es.onopen = function () { setStatus(true); };
+      es.onerror = function () { setStatus(false, 'stream'); };   // EventSource ต่อใหม่ให้เอง
+    }
+    open();
+    return trackStream({
+      reopen: function () { if (alive) open(); },
+      stop: function () { alive = false; if (es) es.close(); }
     });
-    es.onopen = function () { setStatus(true); };
-    es.onerror = function () { setStatus(false, 'stream'); };   // EventSource ต่อใหม่ให้เอง
-    return function () { alive = false; es.close(); };
   }
 
   /* ---------- public API ---------- */
@@ -1015,6 +1310,12 @@ var db = (function () {
 
     /* หน้าจอสมัครรับสถานะการเชื่อมต่อได้ที่นี่ */
     onStatus: function (cb) { statusCb = cb; },
+
+    /* token ใหม่มาแล้ว — เปิดสายที่ค้างอยู่ใหม่ทั้งหมดด้วย token ตัวใหม่ */
+    reopenStreams: function () { if (REMOTE_MODE) reopenStreams(); },
+
+    /* ออกจากระบบ = ตัดทุกสายทิ้งและล้าง cache ไม่ให้ข้อมูลของคนก่อนค้างอยู่ */
+    closeAll: function () { if (REMOTE_MODE) closeStreams(); listeners.length = 0; },
 
     /* อ่านข้อมูลดิบทั้งก้อนที่เก็บไว้ในเครื่อง — ใช้ตอนย้ายขึ้นฐานกลางด้วยมือ */
     localSnapshot: function () { return deepGet(loadTree(), ROOT_PATH) || {}; },
@@ -1064,8 +1365,7 @@ var db = (function () {
       }
 
       if (REMOTE_MODE) {
-        var es = new EventSource(url(path));
-        var alive = true;
+        var es = null, alive = true;
         function handle(e) {
           if (!alive) return;
           var msg;
@@ -1074,11 +1374,23 @@ var db = (function () {
           if (sub === '/') emitAll(msg.data);
           else emit(sub.replace(/^\/+/, '').split('/')[0], msg.data);
         }
-        es.addEventListener('put', handle);
-        es.addEventListener('patch', handle);
-        es.onopen = function () { setStatus(true); };
-        es.onerror = function () { setStatus(false, 'stream'); };
-        return function () { alive = false; es.close(); };
+        function openChild() {
+          if (es) es.close();
+          es = new EventSource(url(path));
+          es.addEventListener('put', handle);
+          es.addEventListener('patch', handle);
+          es.addEventListener('auth_revoked', function () {
+            session.renew().then(openChild, function () { setStatus(false, 'auth'); });
+          });
+          es.onopen = function () { setStatus(true); };
+          es.onerror = function () { setStatus(false, 'stream'); };
+        }
+        openChild();
+        /* seen[] คงไว้ตอนต่อสายใหม่ ไม่งั้นจะยิงซ้ำทุกแถวที่เคยเห็นแล้ว */
+        return trackStream({
+          reopen: function () { if (alive) openChild(); },
+          stop: function () { alive = false; if (es) es.close(); }
+        });
       }
 
       var entry = { path: path, cb: function (map) { emitAll(map); } };
@@ -1758,7 +2070,9 @@ var state = {
   roundIndex: {},
   roundId: null,
   zoneId: null,
-  counter: '',
+  me: null,              // { uid, email, name, role } ของคนที่ล็อกอินอยู่
+  users: {},             // ทะเบียนผู้ใช้ทั้งหมด (โหลดเฉพาะตอน admin เปิดหน้าจัดการ)
+  counter: '',           // ชื่อผู้นับ = ชื่อจากบัญชี ไม่ใช่ช่องให้พิมพ์เองแล้ว
   page: 'jobs',          // ต้องตรงกับ section ที่ติด class active ไว้ใน HTML
   products: {},          // master ถาวร
   systemQty: {},         // ยอดระบบของรอบที่เลือก
@@ -2084,10 +2398,50 @@ function jobStatus() {
   var j = currentJob();
   return (j && j.status) || 'counting';
 }
-function canScan() { return !!state.roundId && jobStatus() === 'counting'; }
-function canEdit() { return !!state.roundId && jobStatus() !== 'closed'; }
+/* ---------- สิทธิ์ตามบทบาท ----------
+   admin    ทำได้ทุกอย่าง เปิด Job ที่ปิดแล้ว แก้ Master ลบข้อมูล จัดการผู้ใช้
+   counter  ยิง กรอกมือ สร้าง/ปิด Job ออกเอกสาร — แต่แก้ Master ไม่ได้
+   viewer   ดูและพิมพ์เอกสารอย่างเดียว
+
+   ตรงนี้เป็นแค่การซ่อนปุ่มให้ใช้งานง่าย ของจริงบังคับที่ Database Rules
+   ฝั่งเซิร์ฟเวอร์ ใครแก้ JavaScript ในเบราว์เซอร์ก็ยังเขียนไม่ผ่านอยู่ดี */
+var ROLE_LABEL = {
+  admin:   'ผู้ดูแลระบบ',
+  counter: 'ผู้นับสต๊อก',
+  viewer:  'ดูอย่างเดียว'
+};
+var ROLE_HELP = {
+  admin:   'ทำได้ทุกอย่าง รวมถึงแก้ Master และจัดการผู้ใช้',
+  counter: 'ยิงบาร์โค้ด สร้างและปิด Job ออกเอกสาร',
+  viewer:  'ดูและพิมพ์เอกสารเท่านั้น'
+};
+
+function myRole() { return (state.me && state.me.role) || null; }
+function isAdmin() { return myRole() === 'admin'; }
+function isStaff() { return myRole() === 'admin' || myRole() === 'counter'; }
+
+/* ข้อความบอกว่าทำไมทำไม่ได้ — ต้องบอกสาเหตุจริง ไม่ใช่ "ไม่มีสิทธิ์" ลอย ๆ */
+function roleBlockMessage(what) {
+  if (!state.me) return 'ยังไม่ได้เข้าสู่ระบบ';
+  return 'บัญชีนี้เป็นสิทธิ์ "' + (ROLE_LABEL[myRole()] || myRole()) + '" ' +
+         (what || 'ทำรายการนี้ไม่ได้') + ' — ให้ผู้ดูแลระบบเปลี่ยนสิทธิ์ให้ก่อน';
+}
+function requireStaff(what) {
+  if (isStaff()) return true;
+  toast(roleBlockMessage(what), true);
+  return false;
+}
+function requireAdmin(what) {
+  if (isAdmin()) return true;
+  toast(roleBlockMessage(what), true);
+  return false;
+}
+
+function canScan() { return !!state.roundId && jobStatus() === 'counting' && isStaff(); }
+function canEdit() { return !!state.roundId && jobStatus() !== 'closed' && isStaff(); }
 
 function blockedMessage() {
+  if (!isStaff()) return roleBlockMessage('ยิงบาร์โค้ดไม่ได้');
   return jobStatus() === 'closed'
     ? 'รอบนี้ปิดแล้ว แก้ไขไม่ได้'
     : 'รอบนี้อยู่ขั้นตรวจสอบ ยิงเพิ่มไม่ได้แล้ว';
@@ -3120,8 +3474,10 @@ function masterRows() {
 }
 
 function saveProductEdit(key, field, value) {
-  /* Master เป็นข้อมูลกลาง แต่ถ้ากำลังเปิด Job ที่ปิดแล้วอยู่ ให้อ่านอย่างเดียวตามกติกา */
-  if (state.roundId && !canEdit()) { toast(blockedMessage(), true); return Promise.resolve(); }
+  /* Master เป็นข้อมูลกลางของทุกสาขา — admin เท่านั้นที่แก้ได้ (ข้อ B1) */
+  if (!requireAdmin('แก้ข้อมูลสินค้าไม่ได้')) return Promise.resolve();
+  /* ถ้ากำลังเปิด Job ที่ปิดแล้วอยู่ ให้อ่านอย่างเดียวตามกติกาเดิม */
+  if (state.roundId && jobStatus() === 'closed') { toast(blockedMessage(), true); return Promise.resolve(); }
   var patch = {};
   var next = {};
   next[field] = value;
@@ -3139,13 +3495,20 @@ function saveProductEdit(key, field, value) {
 }
 
 function renderMaster() {
+  renderAccount();
   document.querySelectorAll('[data-mtab]').forEach(function (b) {
     b.className = 'btn sm ' + (b.getAttribute('data-mtab') === state.masterTab ? '' : 'grey');
   });
-  var onBranches = state.masterTab === 'branches';
-  $('masterProducts').style.display = onBranches ? 'none' : 'block';
-  $('masterBranches').style.display = onBranches ? 'block' : 'none';
-  if (onBranches) { renderBranchMaster(); return; }
+  var tab = state.masterTab;
+  $('masterProducts').style.display = tab === 'products' ? 'block' : 'none';
+  $('masterBranches').style.display = tab === 'branches' ? 'block' : 'none';
+  $('masterUsers').style.display = tab === 'users' ? 'block' : 'none';
+  if (tab === 'branches') { renderBranchMaster(); return; }
+  if (tab === 'users') { refreshUsers().then(renderUsers); return; }
+
+  /* สินค้าเป็นข้อมูลกลาง แก้ได้เฉพาะ admin — คนอื่นดูได้แต่ช่องกรอกถูกล็อก */
+  $('btnImportImages').disabled = !isAdmin();
+  $('btnUploadLocal').disabled = !isAdmin();
 
   document.querySelectorAll('[data-mfilter]').forEach(function (b) {
     b.className = 'btn sm ' + (b.getAttribute('data-mfilter') === state.masterFilter ? '' : 'grey');
@@ -3246,6 +3609,13 @@ function renderMaster() {
       saveProductEdit(key, 'imageUrl', imgIn.value.trim()).then(function () { toast('บันทึกรูป ' + p.code + ' แล้ว'); });
     };
     imgLab.appendChild(imgIn);
+
+    /* Master เป็นข้อมูลกลางของทุกสาขา แก้ได้เฉพาะ admin (ข้อ B1)
+       ล็อกช่องให้เห็นชัดว่าแก้ไม่ได้ ดีกว่าปล่อยให้พิมพ์แล้วค่อยเด้ง error */
+    if (!isAdmin()) {
+      costIn.disabled = true; typeBtn.disabled = true; imgIn.disabled = true;
+      costIn.title = typeBtn.title = imgIn.title = roleBlockMessage('แก้ข้อมูลสินค้าไม่ได้');
+    }
 
     edit.appendChild(costLab); edit.appendChild(typeLab); edit.appendChild(imgLab);
     card.appendChild(top); card.appendChild(edit);
@@ -3371,14 +3741,16 @@ function renderSummary() {
     body.appendChild(tr);
   });
 
-  /* ปุ่มจัดการรอบ — เปลี่ยนตามสถานะ Job */
+  /* ปุ่มจัดการรอบ — เปลี่ยนตามสถานะ Job และตามสิทธิ์ของคนที่ล็อกอินอยู่
+     viewer ไม่ต้องเห็นปุ่มที่กดไปก็โดนปฏิเสธ · เปิดรอบ/ลบ Job เป็นของ admin เท่านั้น */
   var st = jobStatus();
   var notScanned = Object.keys(state.systemQty).filter(function (k) { return !state.counts[k]; }).length;
   var unknownLeft = Object.keys(state.unknown).length;
-  $('btnReview').style.display = st === 'counting' ? 'flex' : (st === 'reviewing' ? 'flex' : 'none');
+  $('btnReview').style.display = (isStaff() && st !== 'closed') ? 'flex' : 'none';
   $('btnReview').textContent = st === 'reviewing' ? '← กลับไปขั้นนับ' : '→ ส่งเข้าขั้นตรวจสอบ';
-  $('btnClose').style.display = st === 'closed' ? 'none' : 'flex';
-  $('btnReopen').style.display = st === 'closed' ? 'flex' : 'none';
+  $('btnClose').style.display = (isStaff() && st !== 'closed') ? 'flex' : 'none';
+  $('btnReopen').style.display = (isAdmin() && st === 'closed') ? 'flex' : 'none';
+  $('btnDeleteJob').style.display = isAdmin() ? 'flex' : 'none';
   $('closeHint').textContent = st === 'closed'
     ? ('ปิดโดย ' + (round.closedBy || 'ไม่ระบุ') + ' เมื่อ ' + fmtTime(round.closedAt))
     : ('สถานะตอนนี้: ' + JOB_STATUS_TEXT[st] +
@@ -4378,6 +4750,7 @@ function previewJobCode() {
 
 function sendToReview() {
   if (!state.roundId) return;
+  if (!requireStaff('เปลี่ยนสถานะ Job ไม่ได้')) return;
   if (jobStatus() !== 'counting') { toast('รอบนี้ไม่ได้อยู่ขั้นนับแล้ว', true); return; }
   ask('ส่งเข้าขั้นตรวจสอบ?',
       'หลังจากนี้จะยิงเพิ่มไม่ได้ แต่ยังแก้ Reason และออกเอกสารได้\nถ้าต้องยิงเพิ่มให้กดกลับมาเป็น "กำลังนับ" ได้เอง',
@@ -4390,12 +4763,14 @@ function sendToReview() {
 
 function backToCounting() {
   if (!state.roundId || jobStatus() !== 'reviewing') return;
+  if (!requireStaff('เปลี่ยนสถานะ Job ไม่ได้')) return;
   db.update('roundIndex/' + state.roundId, { status: 'counting' })
     .then(function () { toast('กลับมาขั้นนับแล้ว'); });
 }
 
 function closeRound() {
   if (!state.roundId) return;
+  if (!requireStaff('ปิด Job ไม่ได้')) return;
   if (jobStatus() === 'closed') { toast('รอบนี้ปิดไปแล้ว', true); return; }
 
   var notScanned = Object.keys(state.systemQty).filter(function (k) { return !state.counts[k]; }).length;
@@ -4406,7 +4781,7 @@ function closeRound() {
 
   ask('ตรวจก่อนปิดรอบนับ',
       (warn ? 'พบเรื่องที่ควรดูก่อนปิด:' + warn + '\n\n' : 'ตรวจแล้วไม่พบเรื่องค้าง\n\n') +
-      'ปิดแล้วรอบนี้จะแก้ไขอะไรไม่ได้อีก ต้องใช้ PIN แอดมินเปิดกลับมาเท่านั้น',
+      'ปิดแล้วรอบนี้จะแก้ไขอะไรไม่ได้อีก ต้องให้ผู้ดูแลระบบเปิดกลับมาให้เท่านั้น',
       'เข้าใจแล้ว ไปขั้นยืนยัน', { danger: !!warn }).then(function (ok) {
     if (!ok) return;
     return ask('ยืนยันปิดรอบนับ',
@@ -4424,15 +4799,14 @@ function closeRound() {
 function reopenRound() {
   var job = currentJob();
   if (!job || job.status !== 'closed') return;
-  ask('เปิดรอบนับกลับมาแก้ (Admin)',
-      'ต้องใส่ PIN แอดมิน และระบุเหตุผล\nระบบจะบันทึกไว้ถาวร และขึ้นแถบเตือนทั้งในแอปและในเอกสาร',
+  if (!requireAdmin('เปิดรอบที่ปิดแล้วไม่ได้')) return;
+  ask('เปิดรอบนับกลับมาแก้ (ผู้ดูแลระบบ)',
+      'ต้องระบุเหตุผล\nระบบจะบันทึกชื่อคุณ เวลา และเหตุผลไว้ถาวร และขึ้นแถบเตือนทั้งในแอปและในเอกสาร',
       'เปิดรอบนับ',
       { danger: true, fields: [
-        { key: 'pin', label: 'PIN แอดมิน', type: 'pin', placeholder: '••••' },
         { key: 'reason', label: 'เหตุผลที่ต้องเปิดกลับมาแก้', type: 'text', placeholder: 'เช่น นับตกไป 1 ชั้นวาง' }
       ] }).then(function (v) {
     if (!v) return;
-    if (v.pin !== ADMIN_PIN) { toast('PIN ไม่ถูกต้อง', true); return; }
     if (!v.reason) { toast('ต้องระบุเหตุผล ข้ามไม่ได้', true); return; }
     var log = reopenList(job).slice();
     log.push({ by: state.counter || 'ไม่ระบุ', at: Date.now(), reason: v.reason });
@@ -4445,8 +4819,8 @@ function reopenRound() {
         /* กฎฝั่งฐานข้อมูลอาจตั้งไว้ไม่ให้ออกจาก closed ได้เลย ซึ่งแรงกว่าปุ่มในแอป */
         ask('เปิดรอบนับไม่ได้',
             'ฐานข้อมูลปฏิเสธการเปลี่ยนสถานะกลับจาก "ปิดแล้ว"\n\n' +
-            'แปลว่า Database Rules ตั้งไว้ห้ามเปิดรอบที่ปิดแล้วโดยเด็ดขาด\n' +
-            'ถ้าต้องการให้เปิดกลับได้ ต้องแก้ Rules ที่ Firebase Console ก่อน',
+            'ตรวจสองอย่าง: บัญชีของคุณต้องมีสิทธิ์ admin จริงในหน้า "ผู้ใช้"\n' +
+            'และ Database Rules ต้องอนุญาตให้ admin เปิดรอบที่ปิดแล้ว',
             'รับทราบ', { hideCancel: true });
       });
   });
@@ -4455,23 +4829,25 @@ function reopenRound() {
 function deleteJob() {
   var job = currentJob();
   if (!job) return;
+  if (!requireAdmin('ลบ Job ไม่ได้')) return;
   var scanCount = Object.keys(state.counts).length;
-  ask('ลบ Job นี้ (Admin)',
+  ask('ลบ Job นี้ (ผู้ดูแลระบบ)',
       'ใช้เฉพาะกรณีสร้าง Job ผิดเท่านั้น\n\n' +
       'Job: ' + (job.jobCode || '') + '\nสาขา: ' + jobBranchLabel(job) +
-      (scanCount ? '\n\n⚠ Job นี้มีการนับไปแล้ว ' + fmtNum(scanCount) + ' รายการ ลบแล้วยอดหายถาวร' : '') +
+      (scanCount ? '\n\n⚠ Job นี้มีการนับไปแล้ว ' + fmtNum(scanCount) + ' รายการ' : '') +
+      '\n\nJob จะหายไปจากรายการทั้งหมด แต่ยอดที่นับไปแล้วยังถูกเก็บไว้ในฐานข้อมูล' +
+      'เป็นหลักฐานย้อนหลัง ตามกติกา "ห้ามลบยอดที่นับไปแล้ว"' +
       '\n\nพิมพ์รหัส Job ให้ตรงเพื่อยืนยัน',
       'ลบ Job นี้',
       { danger: true, fields: [
-        { key: 'pin', label: 'PIN แอดมิน', type: 'pin', placeholder: '••••' },
         { key: 'code', label: 'พิมพ์รหัส Job ให้ตรง', type: 'text', placeholder: job.jobCode || '' }
       ] }).then(function (v) {
     if (!v) return;
-    if (v.pin !== ADMIN_PIN) { toast('PIN ไม่ถูกต้อง', true); return; }
     if (v.code !== job.jobCode) { toast('รหัส Job ไม่ตรง ยกเลิกการลบ', true); return; }
     var id = state.roundId;
-    db.update('rounds', (function () { var p = {}; p[id] = null; return p; })())
-      .then(function () { return db.update('roundIndex', (function () { var p = {}; p[id] = null; return p; })()); })
+    /* ลบเฉพาะ roundIndex — rounds/{id} ที่เก็บ scans ถูก Database Rules
+       ห้ามเขียนทับหรือลบโดยเด็ดขาด แม้แต่ admin ยอดที่นับไปแล้วจึงอยู่ครบเสมอ */
+    db.update('roundIndex', (function () { var p = {}; p[id] = null; return p; })())
       .then(function () {
         localStorage.removeItem('isrd_round');
         state.roundId = null;
@@ -4479,8 +4855,9 @@ function deleteJob() {
         delete state.jobStats[id];
         showPage('jobs');
         renderJobBar();
-        toast('ลบ Job แล้ว');
-      });
+        toast('ลบ Job ออกจากรายการแล้ว — ยอดที่นับไว้ยังเก็บเป็นหลักฐานในฐานข้อมูล');
+      })
+      .catch(function () { toast('ลบไม่สำเร็จ ฐานข้อมูลปฏิเสธ — ตรวจว่าบัญชีคุณเป็น admin จริง', true); });
   });
 }
 
@@ -4505,12 +4882,12 @@ function goScan() {
 
 function startBlockers() {
   var missing = [];
+  if (!isStaff()) missing.push(roleBlockMessage('ยิงบาร์โค้ดไม่ได้'));
   if (!state.roundId) missing.push('ยังไม่ได้เลือก Job');
   if (state.roundId && !(state.roundIndex[state.roundId] || {}).branch) missing.push('Job นี้ยังไม่ได้ระบุสาขา');
   if (!state.zoneId) missing.push('ยังไม่ได้เลือกโซน');
-  if (!state.counter) missing.push('ยังไม่ได้ใส่ชื่อผู้นับ');
   if (state.roundId && !Object.keys(state.systemQty).length) missing.push('ยังไม่ได้นำเข้ายอดระบบของ Job นี้');
-  if (state.roundId && !canScan()) missing.push(blockedMessage());
+  if (state.roundId && isStaff() && !canScan()) missing.push(blockedMessage());
   return missing;
 }
 
@@ -4748,7 +5125,301 @@ function selectRound(id) {
 }
 
 /* ============================================================
-   18. เริ่มทำงาน
+   18. ล็อกอิน + จัดการผู้ใช้
+   ============================================================ */
+
+function profileError(code) { var e = new Error(code); e.profileCode = code; return e; }
+
+function defaultNameFromEmail(email) {
+  var local = String(email || '').split('@')[0] || 'ผู้ใช้ใหม่';
+  return local.replace(/[._-]+/g, ' ').trim() || 'ผู้ใช้ใหม่';
+}
+
+function showLogin(message, uid) {
+  document.body.classList.add('locked');
+  $('loginScreen').classList.add('show');
+  $('loginError').style.display = message ? 'block' : 'none';
+  $('loginError').textContent = message || '';
+  $('loginUid').style.display = uid ? 'block' : 'none';
+  $('loginUid').textContent = uid ? ('User UID ของคุณ: ' + uid) : '';
+  $('loginPass').value = '';
+  $('btnLogin').disabled = false;
+  $('btnLogin').textContent = 'เข้าสู่ระบบ';
+  if (!db.remote) {
+    $('loginModeNote').style.display = 'block';
+    $('loginModeNote').textContent =
+      'โหมดทดสอบ — ยังไม่ได้ต่อฐานข้อมูลกลาง ระบบไม่ได้ตรวจรหัสผ่านจริง ' +
+      'ใส่อีเมลอะไรก็เข้าได้ และข้อมูลเก็บอยู่ในเครื่องนี้เท่านั้น';
+  }
+}
+
+function hideLogin() {
+  document.body.classList.remove('locked');
+  $('loginScreen').classList.remove('show');
+}
+
+/* อ่านสิทธิ์ของคนที่เพิ่งล็อกอิน — ไม่มีเรคอร์ด = เข้าใช้ไม่ได้ ยกเว้นเป็นคนแรกของระบบ */
+function loadMyProfile(user) {
+  return db.get('users/' + user.uid).then(function (rec) {
+    if (rec && rec.active === false) throw profileError('DISABLED');
+    if (rec) return setMe(user, rec);
+    return db.get('users').then(function (all) {
+      if (all && Object.keys(all).length) throw profileError('NO_ACCESS');
+      return claimFirstAdmin(user);
+    });
+  }, function () { throw profileError('READ_FAILED'); });
+}
+
+/* ข้อ B5 — ฐานยังไม่มีผู้ใช้เลย คนแรกที่ล็อกอินสำเร็จได้ admin อัตโนมัติ
+   พอเขียนเรคอร์ดแรกลงไป users ก็ไม่ว่างอีกต่อไป กลไกนี้จึงปิดตัวเองทันที
+   และ Database Rules ก็บังคับซ้ำอีกชั้นว่าเขียนได้เฉพาะตอน users ยังไม่มีอยู่จริง */
+function claimFirstAdmin(user) {
+  var rec = {
+    name: defaultNameFromEmail(user.email),
+    email: user.email || '',
+    role: 'admin',
+    active: true,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    bootstrap: true            // ทำเครื่องหมายไว้ว่าเรคอร์ดนี้เกิดจากการตั้งต้นระบบ
+  };
+  var patch = {};
+  patch[user.uid] = rec;
+  return db.update('users', patch).then(function () {
+    /* บันทึกไว้ให้ตรวจย้อนหลังได้ว่าใครเป็นคนแรก — ล้มก็ไม่เป็นไร ไม่ใช่ตัวคุมสิทธิ์ */
+    return db.update('settings', {
+      bootstrapUid: user.uid, bootstrapAt: Date.now()
+    }).catch(function () {});
+  }).then(function () {
+    return setMe(user, rec);
+  }, function () { throw profileError('BOOTSTRAP_FAILED'); });
+}
+
+function setMe(user, rec) {
+  state.me = {
+    uid: user.uid,
+    email: rec.email || user.email || '',
+    name: rec.name || defaultNameFromEmail(user.email),
+    role: rec.role === 'admin' || rec.role === 'viewer' ? rec.role : 'counter'
+  };
+  state.counter = state.me.name;      // ผู้นับ = ชื่อจากบัญชี ไม่ให้พิมพ์เอง
+  return state.me;
+}
+
+var PROFILE_MESSAGES = {
+  DISABLED:  'บัญชีนี้ถูกปิดการใช้งานอยู่ ติดต่อผู้ดูแลระบบให้เปิดให้ก่อน',
+  NO_ACCESS: 'เข้าสู่ระบบได้แล้ว แต่บัญชีนี้ยังไม่ได้รับสิทธิ์ใช้งาน — ส่ง User UID ข้างล่างนี้ให้ผู้ดูแลระบบเพิ่มชื่อและสิทธิ์ให้',
+  READ_FAILED: 'อ่านข้อมูลสิทธิ์จากฐานข้อมูลไม่ได้ ตรวจสัญญาณอินเทอร์เน็ตแล้วลองใหม่ ถ้ายังไม่ได้ให้แจ้งผู้ดูแลระบบตรวจ Database Rules',
+  BOOTSTRAP_FAILED: 'สร้างบัญชีผู้ดูแลคนแรกไม่สำเร็จ — ฐานข้อมูลปฏิเสธการเขียน ให้ตรวจ Database Rules ที่ Firebase Console'
+};
+
+function doLogin() {
+  var email = $('loginEmail').value;
+  var pass = $('loginPass').value;
+  $('btnLogin').disabled = true;
+  $('btnLogin').textContent = 'กำลังเข้าสู่ระบบ...';
+  $('loginError').style.display = 'none';
+  $('loginUid').style.display = 'none';
+
+  session.signIn(email, pass)
+    .then(function (user) {
+      return loadMyProfile(user).catch(function (err) {
+        /* ล็อกอินผ่านแต่ไม่มีสิทธิ์ — ต้องออกจากระบบ ไม่ให้ค้างครึ่ง ๆ กลาง ๆ
+           แต่คง uid ไว้โชว์ก่อน เพราะผู้ใช้ต้องส่งให้แอดมิน */
+        var uid = user.uid;
+        session.signOut();
+        err.uid = uid;
+        throw err;
+      });
+    })
+    .then(function () {
+      hideLogin();
+      startApp();
+    })
+    .catch(function (err) {
+      if (err && err.profileCode) {
+        showLogin(PROFILE_MESSAGES[err.profileCode] || 'เข้าใช้งานไม่ได้ กรุณาติดต่อผู้ดูแลระบบ',
+                  err.profileCode === 'NO_ACCESS' ? err.uid : '');
+      } else {
+        showLogin(authMessage(err && err.authCode));
+      }
+    });
+}
+
+function doLogout() {
+  ask('ออกจากระบบ?', 'ยอดที่ยังไม่ได้ส่งขึ้นฐานกลางจะยังค้างอยู่ในเครื่องนี้ ' +
+      'เข้าใหม่แล้วระบบจะส่งต่อให้เอง', 'ออกจากระบบ').then(function (ok) {
+    if (!ok) return;
+    session.signOut();
+    db.closeAll();
+    state.me = null;
+    state.counter = '';
+    state.roundId = null;
+    state.users = {};
+    localStorage.removeItem('isrd_round');
+    /* โหลดหน้าใหม่ทั้งหมด ปลอดภัยกว่าไล่ล้าง state ทีละตัวแล้วหลงเหลือของคนก่อน */
+    location.reload();
+  });
+}
+
+function renderAccount() {
+  var me = state.me || {};
+  $('meName').textContent = me.name || '—';
+  $('meMail').textContent = me.email || '';
+  $('meRole').textContent = (ROLE_LABEL[me.role] || '—') + ' · ' + (ROLE_HELP[me.role] || '');
+  $('meRole').className = 'chip ' + (me.role === 'admin' ? 'ok' : (me.role === 'viewer' ? 'warn' : ''));
+  $('tabUsers').style.display = isAdmin() ? '' : 'none';
+  if (!isAdmin() && state.masterTab === 'users') state.masterTab = 'products';
+}
+
+/* ---------- หน้าจัดการผู้ใช้ (admin เท่านั้น) ---------- */
+
+function refreshUsers() {
+  if (!isAdmin()) return Promise.resolve({});
+  return db.get('users').then(function (data) {
+    state.users = data || {};
+    return state.users;
+  }).catch(function () { return state.users; });
+}
+
+function saveUserField(uid, patchFields) {
+  if (!requireAdmin('แก้ไขผู้ใช้ไม่ได้')) return Promise.resolve();
+  var patch = {};
+  Object.keys(patchFields).forEach(function (f) { patch[uid + '/' + f] = patchFields[f]; });
+  patch[uid + '/updatedAt'] = Date.now();
+  return db.update('users', patch).then(function () {
+    if (state.users[uid]) {
+      Object.keys(patchFields).forEach(function (f) { state.users[uid][f] = patchFields[f]; });
+    }
+    if (state.me && state.me.uid === uid && patchFields.name) {
+      state.me.name = patchFields.name;
+      state.counter = patchFields.name;
+      renderAccount();
+      refreshNav();
+    }
+    renderUsers();
+  }).catch(function () {
+    toast('บันทึกไม่สำเร็จ ฐานข้อมูลปฏิเสธการเขียน หรือเน็ตหลุด', true);
+  });
+}
+
+function addUser() {
+  if (!requireAdmin('เพิ่มผู้ใช้ไม่ได้')) return;
+  var uid = $('newUserUid').value.trim();
+  var name = $('newUserName').value.trim();
+  var email = $('newUserMail').value.trim();
+  var role = $('newUserRole').value;
+  if (!uid) { toast('ใส่ User UID จาก Firebase Console ก่อน', true); return; }
+  if (uid !== safeKey(uid)) { toast('User UID มีอักขระที่ใช้เป็นคีย์ไม่ได้ ลองคัดลอกใหม่จาก Console', true); return; }
+  if (!name) { toast('ใส่ชื่อที่จะแสดงเป็นผู้นับก่อน', true); return; }
+  if (state.users[uid]) { toast('UID นี้มีอยู่ในระบบแล้ว — เลื่อนลงไปแก้ที่รายการข้างล่าง', true); return; }
+
+  var patch = {};
+  patch[uid] = {
+    name: name, email: email, role: role, active: true,
+    createdAt: Date.now(), updatedAt: Date.now(), createdBy: (state.me || {}).uid || ''
+  };
+  db.update('users', patch).then(function () {
+    state.users[uid] = patch[uid];
+    $('newUserUid').value = '';
+    $('newUserName').value = '';
+    $('newUserMail').value = '';
+    renderUsers();
+    toast('เพิ่ม ' + name + ' เป็น' + ROLE_LABEL[role] + 'แล้ว');
+  }).catch(function () {
+    toast('เพิ่มผู้ใช้ไม่สำเร็จ ฐานข้อมูลปฏิเสธการเขียน — ตรวจว่าบัญชีคุณเป็น admin จริง', true);
+  });
+}
+
+function renderUsers() {
+  if (!isAdmin()) return;
+  var host = $('userList');
+  host.innerHTML = '';
+  var uids = Object.keys(state.users).sort(function (a, b) {
+    return String((state.users[a] || {}).name || a).localeCompare(String((state.users[b] || {}).name || b), 'th');
+  });
+  $('userCount').textContent = uids.length
+    ? ('มีผู้ใช้ ' + fmtNum(uids.length) + ' คน · เปิดใช้งาน ' +
+       fmtNum(uids.filter(function (u) { return state.users[u].active !== false; }).length))
+    : 'ยังไม่มีผู้ใช้ในระบบ';
+
+  uids.forEach(function (uid) {
+    var u = state.users[uid] || {};
+    var me = (state.me || {}).uid === uid;
+    var row = document.createElement('div');
+    row.className = 'urow' + (u.active === false ? ' off' : '');
+    row.setAttribute('data-user', uid);
+
+    var nm = document.createElement('div');
+    nm.className = 'u-name';
+    nm.textContent = u.name || '(ยังไม่ได้ตั้งชื่อ)';
+    if (me) { var tag = document.createElement('span'); tag.className = 'chip ok';
+              tag.style.marginLeft = '8px'; tag.textContent = 'คุณ'; nm.appendChild(tag); }
+    var ml = document.createElement('div'); ml.className = 'u-mail'; ml.textContent = u.email || '(ไม่ได้ใส่อีเมล)';
+    var ui = document.createElement('div'); ui.className = 'u-uid'; ui.textContent = uid;
+    row.appendChild(nm); row.appendChild(ml); row.appendChild(ui);
+
+    var nameLab = document.createElement('label');
+    nameLab.className = 'fld';
+    nameLab.style.margin = '10px 0 0';
+    var nameSp = document.createElement('span'); nameSp.textContent = 'ชื่อที่แสดงเป็นผู้นับ';
+    var nameIn = document.createElement('input');
+    nameIn.type = 'text'; nameIn.value = u.name || '';
+    nameIn.setAttribute('data-action', 'name');
+    nameIn.onchange = function () {
+      var v = this.value.trim();
+      if (!v) { this.value = u.name || ''; toast('ชื่อว่างไม่ได้', true); return; }
+      saveUserField(uid, { name: v });
+    };
+    nameLab.appendChild(nameSp); nameLab.appendChild(nameIn);
+
+    var roleLab = document.createElement('label');
+    roleLab.className = 'fld';
+    roleLab.style.margin = '10px 0 0';
+    var roleSp = document.createElement('span'); roleSp.textContent = 'สิทธิ์การใช้งาน';
+    var sel = document.createElement('select');
+    sel.setAttribute('data-action', 'role');
+    ['admin', 'counter', 'viewer'].forEach(function (r) {
+      var o = document.createElement('option');
+      o.value = r; o.textContent = ROLE_LABEL[r] + ' — ' + ROLE_HELP[r];
+      if ((u.role || 'counter') === r) o.selected = true;
+      sel.appendChild(o);
+    });
+    sel.onchange = function () {
+      /* กันแอดมินคนสุดท้ายลดสิทธิ์ตัวเองจนไม่มีใครเข้าหน้านี้ได้อีก */
+      if (me && this.value !== 'admin') {
+        this.value = 'admin';
+        toast('เปลี่ยนสิทธิ์ของตัวเองไม่ได้ — ให้แอดมินอีกคนเปลี่ยนให้', true);
+        return;
+      }
+      saveUserField(uid, { role: this.value });
+    };
+    roleLab.appendChild(roleSp); roleLab.appendChild(sel);
+
+    row.appendChild(nameLab); row.appendChild(roleLab);
+
+    /* บัญชีตัวเองไม่ต้องมีปุ่มปิด — กดไปก็โดนปฏิเสธ และเป็นทางที่ล็อกตัวเองออกได้ */
+    if (!me) {
+      var act = document.createElement('button');
+      act.className = 'btn sm block ' + (u.active === false ? 'ghost' : 'grey');
+      act.style.marginTop = '10px';
+      act.setAttribute('data-action', 'active');
+      act.textContent = u.active === false ? 'เปิดใช้งานบัญชีนี้' : 'ปิดการใช้งานบัญชีนี้';
+      act.onclick = function () { saveUserField(uid, { active: u.active === false }); };
+      row.appendChild(act);
+    } else {
+      var note = document.createElement('div');
+      note.className = 'muted';
+      note.style.marginTop = '10px';
+      note.textContent = 'บัญชีที่คุณใช้อยู่ — เปลี่ยนสิทธิ์หรือปิดการใช้งานตัวเองไม่ได้';
+      row.appendChild(note);
+    }
+    host.appendChild(row);
+  });
+}
+
+/* ============================================================
+   19. เริ่มทำงาน
    ============================================================ */
 
 function init() {
@@ -4765,13 +5436,16 @@ function init() {
     $('modeBanner').appendChild(b);
   }
 
-  state.counter = localStorage.getItem('isrd_counter') || '';
-  $('counterName').value = state.counter;
-  $('counterName').addEventListener('input', function () {
-    state.counter = this.value.trim();
-    localStorage.setItem('isrd_counter', state.counter);
-    refreshNav();
+  /* ---- ล็อกอิน ---- */
+  $('btnLogin').onclick = doLogin;
+  ['loginEmail', 'loginPass'].forEach(function (id) {
+    $(id).addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); doLogin(); }
+    });
   });
+  $('btnLogout').onclick = doLogout;
+  $('btnAddUser').onclick = addUser;
+  session.onToken(function () { db.reopenStreams(); });
 
   $('branchSearch').addEventListener('input', renderBranchPicker);
   $('branchShowClosed').addEventListener('change', renderBranchPicker);
@@ -4780,6 +5454,7 @@ function init() {
   $('btnAddRound').onclick = function () {
     var name = $('newRoundName').value.trim();
     var abbr = $('newJobAbbr').value.trim();
+    if (!requireStaff('สร้าง Job ไม่ได้')) return;
     if (!state.newBranch) { toast('เลือกสาขาจากทะเบียนก่อน', true); return; }
     if (!name) { toast('ตั้งชื่อรอบนับก่อน', true); return; }
     createRound(name, state.newBranch, abbr).then(function (id) {
@@ -4879,8 +5554,14 @@ function init() {
   });
 
   /* ---- ทะเบียนสาขา ---- */
-  $('btnImportBranch').onclick = function () { $('branchFile').click(); };
-  $('btnResetBranch').onclick = resetBranchRegistry;
+  $('btnImportBranch').onclick = function () {
+    if (!requireAdmin('นำเข้าทะเบียนสาขาไม่ได้')) return;
+    $('branchFile').click();
+  };
+  $('btnResetBranch').onclick = function () {
+    if (!requireAdmin('ล้างทะเบียนสาขาไม่ได้')) return;
+    resetBranchRegistry();
+  };
   $('branchFile').addEventListener('change', function () {
     if (this.files && this.files[0]) handleBranchImport(this.files[0]);
     this.value = '';
@@ -4922,7 +5603,10 @@ function init() {
     waitForImages($('docSheet'), 8000).then(function () { window.print(); });
   };
 
-  $('btnImportImages').onclick = function () { $('imageFile').click(); };
+  $('btnImportImages').onclick = function () {
+    if (!requireAdmin('นำเข้ารูปสินค้าไม่ได้')) return;
+    $('imageFile').click();
+  };
   $('imageFile').addEventListener('change', function () {
     if (this.files && this.files[0]) handleImageImport(this.files[0]);
     this.value = '';
@@ -4959,12 +5643,15 @@ function init() {
   $('docCompany').addEventListener('change', function () { saveCompany('name', this.value.trim()); });
   $('docAddress').addEventListener('change', function () { saveCompany('address', this.value.trim()); });
 
-  /* ชื่อ/ที่อยู่บริษัทเติมจากเครื่องก่อนทันที แล้วค่อยให้ค่าจากฐานทับ
-     กรอกครั้งเดียวใช้ได้ทุก Job ทุกเอกสาร และยังขึ้นให้แม้เปิดตอนเน็ตหลุด */
+  /* ชื่อ/ที่อยู่บริษัทเติมจากเครื่องก่อนทันที แล้วค่อยให้ค่าจากฐานทับใน startApp()
+     กรอกครั้งเดียวใช้ได้ทุก Job ทุกเอกสาร และยังขึ้นให้แม้เปิดตอนเน็ตหลุด
+     ห้ามอ่านจากฐานตรงนี้ เพราะยังไม่ผ่านล็อกอิน คำขอจะไม่มี token ติดไปด้วย */
   applyCompany(loadCompanyLocal());
-  refreshCompany();
 
-  $('btnUploadLocal').onclick = uploadLocalToCloud;
+  $('btnUploadLocal').onclick = function () {
+    if (!requireAdmin('ย้ายข้อมูลขึ้นฐานกลางไม่ได้')) return;
+    uploadLocalToCloud();
+  };
 
   /* ---- คิวเขียนข้อมูล + สถานะการเชื่อมต่อ ---- */
   db.onStatus(function (ok) {
@@ -4977,17 +5664,49 @@ function init() {
   window.addEventListener('online', function () { state.connection = 'unknown'; flushQueue(); renderConnection(); });
   window.addEventListener('offline', function () { state.connection = 'offline'; renderConnection(); });
 
+  renderConnection();
+  boot();
+}
+
+/* เปิดแอปมา — มีเซสชันเดิมค้างอยู่ก็เข้าให้เลย ไม่ต้องพิมพ์ใหม่ (ข้อ A2) */
+function boot() {
+  showLogin('');
+  $('btnLogin').disabled = true;
+  $('btnLogin').textContent = 'กำลังตรวจสอบเซสชัน...';
+  session.restore().then(function (user) {
+    if (!user) { showLogin(''); return; }
+    return loadMyProfile(user).then(function () {
+      hideLogin();
+      startApp();
+    }, function (err) {
+      var uid = user.uid;
+      /* อ่านสิทธิ์ไม่ได้เพราะเน็ต — เก็บเซสชันไว้ ให้กดเข้าใหม่ได้เลยไม่ต้องพิมพ์รหัส */
+      if (!err || err.profileCode !== 'READ_FAILED') session.signOut();
+      showLogin(PROFILE_MESSAGES[(err || {}).profileCode] || 'เข้าใช้งานไม่ได้ กรุณาติดต่อผู้ดูแลระบบ',
+                (err || {}).profileCode === 'NO_ACCESS' ? uid : '');
+    });
+  }).catch(function (err) {
+    showLogin(authMessage(err && err.authCode));
+  });
+}
+
+/* โหลดข้อมูลจริงหลังผ่านล็อกอินแล้วเท่านั้น
+   ถ้าปล่อยให้ subscribe ตั้งแต่ยังไม่มี token ทุกสายจะโดน 401 แล้วรีทรายรัวไม่จบ */
+function startApp() {
+  renderAccount();
+
   var dropped = dropForeignQueue();
   if (dropped) {
     toast('ข้ามคิวเก่าจากโหมดทดสอบ ' + fmtNum(dropped) + ' รายการ ไม่ได้ส่งขึ้นฐานจริง');
   }
-  setInterval(flushQueue, 15000);
+  if (!startApp._timer) startApp._timer = setInterval(flushQueue, 15000);
   flushQueue();
   renderConnection();
 
   refreshProducts();
-
   refreshBranches();
+  refreshCompany();
+  if (isAdmin()) refreshUsers().then(renderUsers);
 
   db.subscribe('roundIndex', function (data) {
     state.roundIndex = data || {};
@@ -5016,6 +5735,54 @@ init();
   ====================================================================
   สรุปการเปลี่ยนแปลง
   ====================================================================
+
+  v1.9.0 — ล็อกอินด้วย Firebase Authentication + สิทธิ์ 3 ระดับ
+
+    A) หน้าล็อกอิน
+       - ยังไม่ล็อกอิน = ซ่อนทั้งแอป (topbar / เนื้อหา / แถบล่าง) เห็นแค่หน้าล็อกอิน
+       - ใช้ Identity Toolkit REST ตรง ๆ ไม่ได้โหลด Firebase SDK
+         เพราะกฎห้ามเรียกไลบรารีจาก CDN และ SDK ตัวเต็มใหญ่เกินกว่าจะ inline
+       - เก็บ refreshToken ไว้ในเครื่อง ปิดเบราว์เซอร์แล้วเปิดใหม่เข้าได้เลย
+         idToken อายุ 1 ชั่วโมง ต่ออายุอัตโนมัติก่อนหมด 5 นาที
+       - ต่ออายุแล้วต้องเปิดสาย EventSource ใหม่ทั้งหมดด้วย ไม่งั้นเซิร์ฟเวอร์จะส่ง
+         auth_revoked แล้วตัดสาย ข้อมูลหยุดอัปเดตแบบเงียบ ๆ กลางวัน
+       - รับ 401/403 แล้วต่ออายุ token ให้เองแล้วยิงซ้ำหนึ่งครั้ง
+       - error ทุกตัวแปลเป็นไทยที่บอกว่าต้องทำอะไรต่อ ไม่โชว์รหัสของ Firebase
+       - โหมดทดสอบ (ไม่ได้ต่อฐานกลาง) ล็อกอินด้วยอีเมลอะไรก็ได้ ไม่ตรวจรหัสผ่าน
+         มีแถบเตือนบอกชัดเจน — ทำไว้เพื่อให้ทดสอบระบบสิทธิ์ได้ครบโดยไม่แตะฐานจริง
+
+    B) ผู้ใช้และสิทธิ์
+       - เก็บที่ stocktake2026/users/{uid} = { name, role, active, email, ... }
+       - admin ทำได้ทุกอย่าง · counter ยิง/สร้าง/ปิด Job แต่แก้ Master ไม่ได้
+         · viewer ดูและพิมพ์เอกสารอย่างเดียว
+       - ชื่อผู้นับมาจากบัญชีที่ล็อกอิน เอาช่องพิมพ์ชื่อผู้นับเดิมออกแล้ว
+         หน้าเริ่มนับจึงเหลือ 2 ขั้นตอน
+       - หน้า "ผู้ใช้" ในแท็บ Master เห็นเฉพาะ admin — แก้ชื่อ แก้สิทธิ์
+         เปิด/ปิดการใช้งานได้ · กันแอดมินลดสิทธิ์หรือปิดบัญชีตัวเองจนไม่มีใครเข้าได้
+       - แอดมินสร้างบัญชีที่ Firebase Console แล้วเอา User UID มาใส่ในแอป
+         คนที่ยังไม่ถูกเพิ่มจะล็อกอินผ่านแต่เข้าไม่ได้ และแอปจะโชว์ UID ของเขา
+         ไว้ตรงหน้าล็อกอินให้ส่งมาให้แอดมิน — ไม่ต้องไปหาใน Console เอง
+       - ฐานยังไม่มีผู้ใช้เลย: คนแรกที่ล็อกอินสำเร็จได้ admin อัตโนมัติ
+         พอเขียนเรคอร์ดแรกลงไป users ก็ไม่ว่างอีก กลไกนี้จึงปิดตัวเองทันที
+         และ Rules ก็บังคับซ้ำอีกชั้นว่าเขียนได้เฉพาะตอน users ยังไม่มีอยู่จริง
+
+    C) Database Rules
+       - stocktake2026 อ่าน/เขียนได้เฉพาะ auth != null และ users/{uid}/active = true
+       - เช็ก role จากฝั่งเซิร์ฟเวอร์เสมอ ไม่เชื่อค่าที่ส่งมาจากเบราว์เซอร์
+       - wms2026 คงเดิมทุกตัวอักษร ไม่แตะ
+       - กฎเดิมอยู่ครบ: scans สร้างได้อย่างเดียว แก้/ลบไม่ได้แม้เป็น admin
+       - closed กลับเป็น counting ได้เฉพาะ admin (ข้อ C3)
+
+    D) ตามที่สั่ง
+       - ถอด PIN แอดมินออกทั้งหมด ใช้ role แทน (ADMIN_PIN ไม่มีในไฟล์แล้ว)
+       - ลำดับการเปิดใช้และที่หา User UID เขียนไว้ในบล็อก Rules ท้ายไฟล์
+
+    ผลข้างเคียงที่ต้องรู้: ปุ่ม "ลบ Job" เปลี่ยนพฤติกรรม
+       เดิมลบทั้ง roundIndex/{id} และ rounds/{id} แต่ Rules ห้ามลบ scans เด็ดขาด
+       (จะให้ลบได้ต้องเปิด .write ที่ rounds/$roundId ซึ่งจะ cascade ลงไปให้เขียนทับ
+        scans ได้ด้วย ขัดกับกฎ "ห้ามลบยอดที่นับไปแล้ว")
+       ตอนนี้จึงลบเฉพาะ roundIndex — Job หายจากรายการทั้งหมด
+       แต่ยอดที่นับไปแล้วยังอยู่ในฐานเป็นหลักฐานย้อนหลัง กล่องยืนยันบอกไว้ชัดเจน
 
   v1.8.1 — แก้บั๊กนำเข้าทะเบียนสาขา + ตาราง Dashboard ในเอกสาร
 
@@ -5215,12 +5982,16 @@ init();
     - เขียน/อ่าน .xlsx เอง · CSV รองรับ UTF-8 และ Windows-874
 -->
 
+
 <!--
-  Firebase Realtime Database Rules — ฉบับใช้งานจริง
+  Firebase Realtime Database Rules — ฉบับใช้งานจริง (v1.9.0 มีล็อกอินแล้ว)
   (คัดลอกทั้งก้อนไปวางใน Firebase Console > Realtime Database > Rules แล้วกด Publish)
 
   โปรเจกต์นี้ใช้ร่วมกับ WMS Dashboard ที่เก็บข้อมูลใต้ wms2026
   กฎชุดนี้จึงต้องคลุมทั้งสองฝั่ง และต้องไม่ทำของเดิมพัง
+
+  ⚠ อ่าน "ลำดับการเปิดใช้" ท้ายไฟล์นี้ก่อนกด Publish
+    ถ้าวางกฎก่อนสร้างบัญชีและล็อกอินให้ได้ จะล็อกตัวเองออกจากระบบทันที
 
   {
     "rules": {
@@ -5233,41 +6004,54 @@ init();
       },
 
       "stocktake2026": {
-        ".read": true,
+        ".read": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true",
+        ".write": false,
 
-        "settings": { ".write": true },
-        "products": { ".write": true },
-        "branches": { ".write": true },
+        "users": {
+          ".read": "auth != null",
+          "$uid": {
+            ".write": "auth != null && ((root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin') || (!root.child('stocktake2026/users').exists() && $uid === auth.uid && newData.child('role').val() === 'admin' && newData.child('active').val() === true))",
+            ".validate": "newData.hasChildren(['name','role','active'])",
+            "name":   { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length < 120" },
+            "role":   { ".validate": "newData.isString() && newData.val().matches(/^(admin|counter|viewer)$/)" },
+            "active": { ".validate": "newData.isBoolean()" },
+            "email":  { ".validate": "newData.isString() && newData.val().length < 200" }
+          }
+        },
+
+        "settings":    { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin'" },
+        "products":    { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin'" },
+        "branches":    { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin'" },
 
         "docCounters": {
           "$branch": { "$kind": { "$yearMonth": {
-            ".write": "newData.isNumber() && (!data.exists() || newData.val() > data.val())"
+            ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && newData.isNumber() && (!data.exists() || newData.val() > data.val())"
           } } }
         },
 
         "roundIndex": {
           "$roundId": {
-            ".write": "!data.exists() || data.child('status').val() !== 'closed'",
-            ".validate": "newData.hasChildren(['jobCode','branchCode','status'])",
-            "status": { ".validate": "newData.isString() && newData.val().matches(/^(counting|reviewing|closed)$/)" },
-            "closedAt": { ".validate": "newData.isNumber()" },
+            ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && (!data.exists() || data.child('status').val() !== 'closed' || root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin')",
+            ".validate": "!newData.exists() || newData.hasChildren(['jobCode','branchCode','status'])",
+            "status":    { ".validate": "newData.isString() && newData.val().matches(/^(counting|reviewing|closed)$/)" },
+            "closedAt":  { ".validate": "newData.isNumber()" },
             "createdAt": { ".validate": "newData.isNumber()" }
           }
         },
 
         "rounds": {
           "$roundId": {
-            "zones":      { ".write": true },
-            "schema":     { ".write": true },
-            "systemQty":  { ".write": "root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting'" },
-            "reasons":    { ".write": "root.child('stocktake2026/roundIndex').child($roundId).child('status').val() !== 'closed'" },
-            "docType":    { ".write": "root.child('stocktake2026/roundIndex').child($roundId).child('status').val() !== 'closed'" },
-            "docNo":      { ".write": "root.child('stocktake2026/roundIndex').child($roundId).child('status').val() !== 'closed'" },
-            "transferNo": { ".write": "root.child('stocktake2026/roundIndex').child($roundId).child('status').val() !== 'closed'" },
+            "zones":      { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/)" },
+            "schema":     { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/)" },
+            "systemQty":  { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting'" },
+            "reasons":    { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() !== 'closed'" },
+            "docType":    { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() !== 'closed'" },
+            "docNo":      { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() !== 'closed'" },
+            "transferNo": { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() !== 'closed'" },
 
             "scans": {
               "$scanId": {
-                ".write": "!data.exists() && newData.exists() && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting'",
+                ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && !data.exists() && newData.exists() && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting'",
                 ".validate": "newData.hasChildren(['code','zone','delta','user','ts'])",
                 "delta": { ".validate": "newData.isNumber()" },
                 "ts":    { ".validate": "newData.isNumber()" }
@@ -5276,7 +6060,7 @@ init();
 
             "unknown": {
               "$id": {
-                ".write": "!data.exists() && newData.exists() && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting'"
+                ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && !data.exists() && newData.exists() && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting'"
               }
             },
 
@@ -5296,32 +6080,126 @@ init();
      หรือ PUT /.json ลบทิ้งทั้งฐานได้ ตอนนี้ทำไม่ได้แล้ว
      WMS ไม่ได้เขียนที่ root จึงไม่กระทบ
 
-  2. scans เขียนได้เฉพาะตอนสร้างใหม่ และเฉพาะตอน Job อยู่สถานะ counting
-     แก้หรือลบแถวเดิมไม่ได้เลยทุกกรณี (!data.exists())
+  2. stocktake2026 อ่านได้เฉพาะคนที่ล็อกอินแล้ว และมีเรคอร์ดใน users
+     ที่ active = true เท่านั้น ปิดบัญชีใครก็หมดสิทธิ์ทันที ไม่ต้องเปลี่ยนรหัสผ่าน
+     (ปิดที่ Console ก็ได้ แต่ปิดที่นี่เร็วกว่าและมีประวัติว่าใครปิด)
+
+  3. สิทธิ์ 3 ระดับ อ่านจาก users/{uid}/role ฝั่งเซิร์ฟเวอร์เสมอ
+     ไม่ได้เชื่อค่าที่ส่งมาจากเบราว์เซอร์
+       admin    เขียนได้ทุก node รวม users / products / branches / settings
+                และเป็นคนเดียวที่เปลี่ยน closed กลับเป็น counting ได้
+       counter  เขียน Job / zones / systemQty / scans / เอกสาร ได้
+                แต่แตะ users / products / branches / settings ไม่ได้เลย
+       viewer   เขียนไม่ได้เลยสักที่ อ่านอย่างเดียว
+
+  4. scans เขียนได้เฉพาะตอนสร้างใหม่ และเฉพาะตอน Job อยู่สถานะ counting
+     แก้หรือลบแถวเดิมไม่ได้เลยทุกกรณี แม้แต่ admin (!data.exists())
      แก้ยอดผิดต้องเขียนแถวใหม่ delta ติดลบ ตามที่แอปทำอยู่
 
-  3. items / counts ของโครงสร้างเดิม v1.1 ล็อกอ่านอย่างเดียวถาวร
+  5. items / counts ของโครงสร้างเดิม v1.1 ล็อกอ่านอย่างเดียวถาวร
 
-  4. ตัวนับเลขที่เอกสารเพิ่มได้อย่างเดียว ลดไม่ได้
+  6. ตัวนับเลขที่เอกสารเพิ่มได้อย่างเดียว ลดไม่ได้
      เลขที่ออกไปแล้วจะไม่ถูกใช้ซ้ำแม้มีคนพยายามรีเซ็ต
 
+  7. users อ่านได้ทุกคนที่ล็อกอินแล้ว (ต้องอ่านเพื่อรู้สิทธิ์ตัวเอง)
+     แต่เขียนได้เฉพาะ admin — ยกเว้นกรณีเดียวคือตอนตั้งต้นระบบ (ดูข้อถัดไป)
+
   ====================================================================
-  ข้อ "closed กลับเป็น counting ไม่ได้" — ผลข้างเคียงที่ต้องรู้
+  ผู้ดูแลคนแรก — กลไกตั้งต้นที่ปิดตัวเองอัตโนมัติ
   ====================================================================
 
-  กฎด้านบนล็อกแข็งตามที่กำหนด: เมื่อ Job เป็น closed แล้ว จะเขียนอะไร
-  ลง roundIndex/<roundId> ไม่ได้อีกเลย รวมถึงการเปลี่ยนสถานะกลับ
+  เงื่อนไขใน users/$uid มีวงเล็บที่สองว่า
 
-  ผลคือปุ่ม "เปิดรอบนับกลับมาแก้ (Admin)" ในแอปจะกดไม่ผ่าน
-  แอปจะขึ้นกล่องบอกว่าฐานข้อมูลปฏิเสธ และแนะให้ไปแก้ Rules ก่อน — ตั้งใจให้เป็นแบบนั้น
+    (!root.child('stocktake2026/users').exists() && $uid === auth.uid
+      && newData.child('role').val() === 'admin' && newData.child('active').val() === true)
 
-  ถ้าภายหลังอยากให้เปิดกลับได้ แต่บังคับว่าต้องบันทึกเหตุผลทุกครั้ง
-  ให้เปลี่ยนบรรทัด ".write" ของ roundIndex/ เป็น
+  แปลว่า "ถ้าในฐานยังไม่มี users เลย ให้คนที่ล็อกอินอยู่เขียนเรคอร์ดของตัวเองได้
+  หนึ่งครั้ง และต้องเป็น admin ที่ active เท่านั้น"
 
-    ".write": "!data.exists() || data.child('status').val() !== 'closed' || newData.child('status').val() === 'closed' || (newData.child('reopenCount').isNumber() && ((!data.child('reopenCount').isNumber() && newData.child('reopenCount').val() === 1) || (data.child('reopenCount').isNumber() && newData.child('reopenCount').val() === data.child('reopenCount').val() + 1)))"
+  พอเขียนเสร็จ users ก็ไม่ว่างอีกต่อไป เงื่อนไขนี้จึงเป็นเท็จตลอดกาล
+  ไม่ต้องไปปิดเองทีหลัง และคนที่สองเป็นต้นไปต้องให้ admin เพิ่มให้เท่านั้น
 
-  แบบนั้นจะออกจาก closed ได้เฉพาะเมื่อ reopenCount เพิ่มขึ้น 1 พอดี
-  ซึ่งเกิดได้ทางเดียวคือผ่านปุ่มที่บังคับกรอกเหตุผลลง reopenLog
+  ถ้าอยากปิดช่องนี้ให้สนิทหลังตั้งระบบเสร็จ ลบวงเล็บที่สองทั้งก้อนทิ้งได้เลย
+
+  ====================================================================
+  ลำดับการเปิดใช้ — ทำตามนี้เป๊ะ ๆ ไม่งั้นล็อกตัวเองออก
+  ====================================================================
+
+  1) เปิดวิธีล็อกอินก่อน
+     Firebase Console > เมนูซ้าย Build > Authentication
+     ถ้ายังไม่เคยใช้ กด "Get started" ก่อน
+     ไปแท็บ "Sign-in method" > กด Email/Password > สวิตช์ Enable ตัวบน > Save
+     (สวิตช์ตัวล่าง "Email link (passwordless sign-in)" ไม่ต้องเปิด)
+
+  2) สร้างบัญชีของตัวเอง
+     แท็บ "Users" > ปุ่ม "Add user" > ใส่อีเมลกับรหัสผ่าน > Add user
+
+  3) หา User UID ของบัญชีที่เพิ่งสร้าง
+     อยู่ในตารางแท็บ Users คอลัมน์ขวาสุดชื่อ "User UID"
+     เอาเมาส์ไปวางจะมีไอคอนคัดลอกขึ้นมา — ค่านี้คือสิ่งที่ต้องใช้
+     ในหน้า Master > ผู้ใช้ ของแอป ตอนเพิ่มคนอื่นเข้าระบบ
+
+  4) เข้าแอปแล้วล็อกอินด้วยบัญชีนั้น ตอนนี้ยังไม่ได้วางกฎใหม่
+     ฐานยังไม่มี users เลย แอปจะสร้างเรคอร์ดให้คุณเป็น admin อัตโนมัติ
+     ต้องเห็นชื่อและป้าย "ผู้ดูแลระบบ" ที่หน้า Master ก่อน จึงไปขั้นต่อไปได้
+
+  5) ค่อยวางกฎชุดนี้แล้วกด Publish
+     ถ้าวางกฎก่อนทำข้อ 4 จะไม่มีใครเป็น admin เลย และ users ก็เขียนไม่ได้
+     เพราะยังไม่มีใครมีสิทธิ์ — ต้องกลับไปวางกฎเก่าเพื่อแก้
+
+  6) เพิ่มคนอื่นเข้าระบบ
+     ทำข้อ 2-3 ให้เขา แล้วเอา UID มาใส่ที่แอป หน้า Master > ผู้ใช้
+     พร้อมตั้งชื่อและเลือกสิทธิ์ ผู้ใช้ที่ยังไม่ถูกเพิ่มจะล็อกอินผ่าน
+     แต่แอปจะขึ้นข้อความว่ายังไม่ได้รับสิทธิ์ พร้อมโชว์ UID ให้เขาส่งมาให้คุณ
+
+  ====================================================================
+  ต้องทดสอบอะไรบ้างหลังวาง Rules
+  ====================================================================
+
+  ก) Rules Playground ใน Console (ยังไม่ต้อง Publish ก็ลองได้)
+     ตั้ง Authentication provider = Custom, ใส่ auth.uid = UID ของคุณ
+
+     - Location /wms2026/inbound                Type read   -> Allowed
+     - Location /wms2026/inbound                Type write  -> Allowed
+     - Location /                               Type read   -> Denied
+     - Location /                               Type write  -> Denied
+     - Location /stocktake2026/products         Type read   -> Allowed
+     - Location /stocktake2026/rounds/<id>/scans/<scanId>  Type write -> Denied
+       (ทับของเดิมไม่ได้แม้เป็น admin)
+
+     แล้วสลับเป็น Unauthenticated
+     - Location /stocktake2026                  Type read   -> Denied
+     - Location /stocktake2026/products         Type write  -> Denied
+
+  ข) WMS Dashboard ของจริง — ต้องไม่กระทบเลย
+     - หน้าแรกโหลดข้อมูลขึ้นครบเหมือนเดิม (online / inbound / transport /
+       outbound / returns ต้องมีข้อมูลขึ้นทุกส่วน)
+     - ลองบันทึกรายการใหม่ 1 รายการ แล้วรีเฟรชดูว่ายังอยู่
+     - ลองแก้รายการเดิม 1 รายการ แล้วรีเฟรชดูว่าค่าเปลี่ยนตาม
+     - ถ้ามีหน้าไหนว่างเปล่า ให้ดู Console ของเบราว์เซอร์
+       ถ้าเจอ "permission_denied" ให้บอกมาว่า path ไหน จะได้เปิดเฉพาะ path นั้นเพิ่ม
+
+  ค) ฝั่งแอปนับสต๊อก — ทดสอบด้วยบัญชี admin
+     - ปิดเบราว์เซอร์แล้วเปิดใหม่ ต้องเข้าได้เลยไม่ต้องพิมพ์รหัสซ้ำ
+     - ตัวบอกสถานะบนหัวต้องเป็นสีเขียว "ต่อฐานกลางแล้ว"
+     - สร้าง Job แล้วยิง 1 ครั้ง รีเฟรชแล้วยอดต้องยังอยู่
+     - ปิดรอบนับ แล้วลองยิงอีกครั้ง ต้องยิงไม่เข้า
+     - กดเปิดรอบกลับพร้อมกรอกเหตุผล ต้องเปิดได้ (เพราะเป็น admin)
+
+  ง) ทดสอบด้วยบัญชี counter (สร้างบัญชีที่สองแล้วตั้ง role เป็น counter)
+     - ยิงบาร์โค้ดได้ สร้างและปิด Job ได้
+     - หน้า Master ช่องราคาต้นทุน/ประเภท/รูป ต้องถูกล็อกกดไม่ได้
+     - ไม่เห็นแท็บ "ผู้ใช้" และไม่เห็นปุ่มเปิดรอบ/ลบ Job
+     - ปิด Job แล้วต้องเปิดกลับเองไม่ได้
+
+  จ) ทดสอบด้วยบัญชี viewer
+     - เข้าได้ ดูสรุปและพิมพ์เอกสารได้
+     - แท็บ "ยิง" กดไม่ได้ และหน้าเริ่มนับต้องบอกเหตุผลว่าสิทธิ์ไม่พอ
+
+  ฉ) ทดสอบการปิดบัญชี
+     - เอาบัญชี counter ไปกด "ปิดการใช้งานบัญชีนี้" ที่หน้าผู้ใช้
+     - ให้เครื่องนั้นรีเฟรช ต้องเด้งออกมาหน้าล็อกอินพร้อมข้อความว่าบัญชีถูกปิด
+       แม้รหัสผ่านจะถูกต้องก็ตาม
 
   ====================================================================
   สิ่งที่กฎนี้ยัง "ไม่ได้" แก้ — ต้องรู้ไว้
@@ -5330,44 +6208,12 @@ init();
   wms2026 ยังเปิดให้อ่านและเขียนได้โดยไม่ต้องล็อกอิน เพราะไม่รู้ว่า
   WMS Dashboard ใช้ Firebase Auth อยู่หรือเปล่า ถ้าใส่เงื่อนไข auth ลงไป
   แล้ว WMS ไม่ได้ล็อกอิน มันจะพังทันที กฎชุดนี้จึงเลือกไม่แตะพฤติกรรมเดิม
+  ตามที่กำหนดไว้ในข้อ C2
 
-  การปิดช่องนั้นจริง ๆ ต้องทำสองอย่างคู่กัน
-    1) ให้ทั้ง WMS และแอปนี้ล็อกอิน Firebase Auth (Anonymous ก็พอสำหรับเริ่มต้น)
-    2) เปลี่ยนกฎเป็น
+  พอ WMS ใส่ล็อกอินได้เมื่อไหร่ ให้เปลี่ยนสองบรรทัดนี้
 
-       "wms2026":      { ".read": "auth != null", ".write": "auth != null" },
-       "stocktake2026": { ".read": "auth != null", ... เงื่อนไขเดิมทั้งหมด ... }
+     "wms2026": { ".read": "auth != null", ".write": "auth != null" },
 
-  ระหว่างที่ยังไม่ได้ทำ ให้ถือว่า URL ของฐานข้อมูลนี้เท่ากับรหัสผ่าน
-  อย่าเผยแพร่ต่อ และอย่าใส่ข้อมูลที่หลุดไม่ได้ลงไป
-
-  ====================================================================
-  ต้องทดสอบอะไรบ้างหลังวาง Rules — เพื่อยืนยันว่า WMS ยังปกติ
-  ====================================================================
-
-  ทำตามลำดับนี้ ใช้เวลาไม่เกิน 5 นาที
-
-  ก) ก่อนกด Publish ให้กดแท็บ Rules Playground ใน Console แล้วลอง
-     - Location: /wms2026/inbound   Type: read   -> ต้องขึ้น Allowed
-     - Location: /wms2026/inbound   Type: write  -> ต้องขึ้น Allowed
-     - Location: /                  Type: read   -> ต้องขึ้น Denied
-     - Location: /                  Type: write  -> ต้องขึ้น Denied
-
-  ข) หลัง Publish เปิด WMS Dashboard ของจริงแล้วไล่ดู
-     - หน้าแรกโหลดข้อมูลขึ้นครบเหมือนเดิม (online / inbound / transport /
-       outbound / returns ต้องมีข้อมูลขึ้นทุกส่วน)
-     - ลองบันทึกรายการใหม่ 1 รายการในส่วนที่ใช้บ่อยที่สุด แล้วรีเฟรชดูว่ายังอยู่
-     - ลองแก้รายการเดิม 1 รายการ แล้วรีเฟรชดูว่าค่าเปลี่ยนตาม
-     - ถ้ามีหน้าไหนขึ้นค้างหรือว่างเปล่า ให้ดู Console ของเบราว์เซอร์
-       ถ้าเจอ "permission_denied" ให้บอกมาว่า path ไหน จะได้เปิดเฉพาะ path นั้นเพิ่ม
-
-  ค) ฝั่งแอปนับสต๊อก
-     - เปิดแอป ตัวบอกสถานะบนหัวต้องเป็นสีเขียว "ต่อฐานกลางแล้ว"
-     - สร้าง Job แล้วยิง 1 ครั้ง รีเฟรชแล้วยอดต้องยังอยู่
-     - ปิดรอบนับ แล้วลองยิงอีกครั้ง ต้องยิงไม่เข้า
-     - เปิดรอบกลับด้วย PIN พร้อมกรอกเหตุผล ต้องเปิดได้
-
-  ง) ทดสอบว่ากฎกันการแก้ scan ได้จริง (ทำผ่าน Rules Playground)
-     - Location: /stocktake2026/rounds/<roundId>/scans/<scanId>
-       Type: write  ใส่ข้อมูลอะไรก็ได้ -> ต้องขึ้น Denied
+  ระหว่างที่ยังไม่ได้ทำ ข้อมูลใต้ wms2026 ยังเปิดอยู่เหมือนเดิม
+  แต่ข้อมูลของแอปนับสต๊อกใต้ stocktake2026 ถูกปิดสนิทแล้ว
 -->
