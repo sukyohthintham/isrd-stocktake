@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="1.9.0">
+<meta name="version" content="1.9.1">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v1.9.0</title>
+<title>ISRD Stocktake v1.9.1</title>
 
 <style>
 :root{
@@ -689,34 +689,78 @@ table.grid td.neg{color:var(--short);font-weight:700}
 
   <div id="masterUsers" style="display:none">
     <div class="card">
-      <h3>เพิ่มผู้ใช้เข้าระบบ</h3>
-      <p class="muted" style="margin:0 0 14px">
-        สร้างบัญชีที่ <b>Firebase Console → Authentication → Users → Add user</b> ก่อน<br>
-        แล้วคัดลอกค่าในคอลัมน์ <b>User UID</b> ของแถวนั้นมาวางที่ช่องข้างล่าง<br>
-        ผู้ใช้จะเข้าระบบไม่ได้จนกว่าจะถูกเพิ่มชื่อและสิทธิ์ที่นี่
-      </p>
-      <label class="fld" style="margin-bottom:8px">
-        <span>User UID จาก Firebase Console</span>
-        <input type="text" id="newUserUid" placeholder="เช่น 8kQ2f...zX1" autocomplete="off" spellcheck="false">
-      </label>
-      <label class="fld" style="margin-bottom:8px">
-        <span>ชื่อที่จะแสดงเป็นผู้นับ</span>
-        <input type="text" id="newUserName" placeholder="เช่น สมชาย ใจดี" autocomplete="off">
-      </label>
-      <label class="fld" style="margin-bottom:8px">
-        <span>อีเมล (ใส่ไว้ให้ดูง่าย ไม่บังคับ)</span>
-        <input type="email" id="newUserMail" placeholder="ชื่อ@บริษัท.com" autocomplete="off"
-               autocapitalize="off" spellcheck="false">
-      </label>
-      <label class="fld" style="margin-bottom:12px">
-        <span>สิทธิ์การใช้งาน</span>
-        <select id="newUserRole">
-          <option value="counter">ผู้นับสต๊อก — ยิงบาร์โค้ด สร้าง/ปิด Job (แก้ Master ไม่ได้)</option>
-          <option value="viewer">ดูอย่างเดียว — ดูและพิมพ์เอกสาร</option>
-          <option value="admin">ผู้ดูแลระบบ — ทำได้ทุกอย่าง</option>
-        </select>
-      </label>
-      <button class="btn ghost block" id="btnAddUser">+ เพิ่มผู้ใช้</button>
+      <h3>เพิ่มผู้ใช้</h3>
+      <button class="btn ghost block" id="btnNewUser">+ เพิ่มผู้ใช้</button>
+
+      <div id="newUserForm" style="display:none;margin-top:16px">
+        <p class="muted" style="margin:0 0 14px">
+          ระบบจะสร้างบัญชีให้เลย ไม่ต้องไปสร้างที่ Firebase Console
+        </p>
+        <label class="fld" style="margin-bottom:8px">
+          <span>ชื่อ-นามสกุล</span>
+          <input type="text" id="newUserName" placeholder="เช่น สมชาย ใจดี" autocomplete="off">
+        </label>
+        <label class="fld" style="margin-bottom:4px">
+          <span>อีเมลสำหรับเข้าระบบ</span>
+          <input type="email" id="newUserMail" placeholder="ชื่อ@isrd.local" autocomplete="off"
+                 autocapitalize="off" spellcheck="false">
+        </label>
+        <p class="muted" style="margin:0 0 12px;font-size:13px">
+          ระบบเดาให้จากชื่อ แก้เป็นอีเมลจริงได้ — ใช้อีเมลจริงจะรีเซ็ตรหัสผ่านเองได้ทีหลัง
+        </p>
+        <label class="fld" style="margin-bottom:8px">
+          <span>รหัสผ่านตั้งต้น</span>
+          <input type="text" id="newUserPass" placeholder="อย่างน้อย 6 ตัว" autocomplete="off" spellcheck="false">
+        </label>
+        <div class="row" style="margin-bottom:12px">
+          <button class="btn grey sm" id="btnRandomPass" style="flex:1">🎲 สุ่มรหัสผ่าน</button>
+          <button class="btn grey sm" id="btnCopyPass" style="flex:1">📋 ก๊อปรหัสผ่าน</button>
+        </div>
+        <label class="fld" style="margin-bottom:12px">
+          <span>สิทธิ์การใช้งาน</span>
+          <select id="newUserRole">
+            <option value="counter">ผู้นับสต๊อก — ยิงบาร์โค้ด สร้าง/ปิด Job (แก้ Master ไม่ได้)</option>
+            <option value="viewer">ดูอย่างเดียว — ดูและพิมพ์เอกสาร</option>
+            <option value="admin">ผู้ดูแลระบบ — ทำได้ทุกอย่าง</option>
+          </select>
+        </label>
+        <button class="btn block" id="btnCreateUser">สร้างบัญชีให้เลย</button>
+        <button class="btn grey block sm" id="btnCancelUser" style="margin-top:8px">ยกเลิก</button>
+      </div>
+
+      <!-- ทางสำรอง: บัญชีที่ถูกสร้างไว้ใน Console แล้ว ต้องมีที่ให้ใส่ UID เข้าระบบ -->
+      <details style="margin-top:14px">
+        <summary class="muted" style="cursor:pointer">เพิ่มด้วย User UID (กรณีบัญชีถูกสร้างไว้ที่ Console แล้ว)</summary>
+        <div style="margin-top:12px">
+          <p class="muted" style="margin:0 0 12px;font-size:13px">
+            หา User UID ได้ที่ <b>Firebase Console → Authentication → Users</b>
+            คอลัมน์ขวาสุด กดไอคอนคัดลอก<br>
+            หรือให้ผู้ใช้คนนั้นลองล็อกอิน แล้วส่ง UID ที่แอปโชว์ให้เขามาให้คุณ
+          </p>
+          <label class="fld" style="margin-bottom:8px">
+            <span>User UID จาก Firebase Console</span>
+            <input type="text" id="linkUserUid" placeholder="เช่น 8kQ2f...zX1" autocomplete="off" spellcheck="false">
+          </label>
+          <label class="fld" style="margin-bottom:8px">
+            <span>ชื่อที่จะแสดงเป็นผู้นับ</span>
+            <input type="text" id="linkUserName" placeholder="เช่น สมชาย ใจดี" autocomplete="off">
+          </label>
+          <label class="fld" style="margin-bottom:8px">
+            <span>อีเมล (ใส่ไว้ให้ดูง่าย ไม่บังคับ)</span>
+            <input type="email" id="linkUserMail" placeholder="ชื่อ@บริษัท.com" autocomplete="off"
+                   autocapitalize="off" spellcheck="false">
+          </label>
+          <label class="fld" style="margin-bottom:12px">
+            <span>สิทธิ์การใช้งาน</span>
+            <select id="linkUserRole">
+              <option value="counter">ผู้นับสต๊อก</option>
+              <option value="viewer">ดูอย่างเดียว</option>
+              <option value="admin">ผู้ดูแลระบบ</option>
+            </select>
+          </label>
+          <button class="btn ghost block" id="btnLinkUser">เพิ่มด้วย UID</button>
+        </div>
+      </details>
     </div>
 
     <div class="card">
@@ -918,7 +962,7 @@ table.grid td.neg{color:var(--short);font-weight:700}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '1.9.0';
+var APP_VERSION = '1.9.1';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -957,6 +1001,8 @@ var REMOTE_MODE = /^https?:\/\//.test(FIREBASE_CONFIG.databaseURL || '');
 
 var IDENTITY_SIGNIN = 'https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=';
 var IDENTITY_REFRESH = 'https://securetoken.googleapis.com/v1/token?key=';
+var IDENTITY_SIGNUP = 'https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=';
+var IDENTITY_OOB = 'https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=';
 var AUTH_LS = 'isrd_auth';
 
 /* ข้อความ error ของ Firebase เป็นรหัสภาษาอังกฤษล้วน คนหน้างานอ่านไม่รู้เรื่อง
@@ -974,7 +1020,12 @@ var AUTH_ERRORS = {
   CONFIGURATION_NOT_FOUND:  'ยังไม่ได้เปิดวิธีล็อกอินแบบอีเมล/รหัสผ่าน — ให้ผู้ดูแลระบบไปเปิดที่ Firebase Console → Authentication → Sign-in method',
   TOKEN_EXPIRED:            'เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่',
   USER_NOT_FOUND:           'บัญชีนี้ถูกลบไปแล้ว กรุณาเข้าสู่ระบบใหม่',
-  NETWORK:                  'ต่ออินเทอร์เน็ตไม่ได้ ตรวจสัญญาณแล้วลองใหม่อีกครั้ง'
+  NETWORK:                  'ต่ออินเทอร์เน็ตไม่ได้ ตรวจสัญญาณแล้วลองใหม่อีกครั้ง',
+  /* ใช้ตอนสร้างบัญชีให้คนอื่น */
+  EMAIL_EXISTS:             'อีเมลนี้มีบัญชีอยู่แล้ว ใช้อีเมลอื่น หรือถ้าเป็นคนเดิมให้เพิ่มด้วย User UID แทน',
+  WEAK_PASSWORD:            'รหัสผ่านสั้นเกินไป ต้องอย่างน้อย 6 ตัวอักษร',
+  ADMIN_ONLY_OPERATION:     'Firebase ปิดการสร้างบัญชีจากหน้าเว็บไว้ — ต้องไปเปิดที่ Console → Authentication → Settings → User actions',
+  RESET_PASSWORD_EXCEED_LIMIT: 'ส่งลิงก์รีเซ็ตบ่อยเกินไป รอสักครู่แล้วลองใหม่'
 };
 function authMessage(code) {
   return AUTH_ERRORS[code] || 'เข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง';
@@ -1093,6 +1144,51 @@ var session = (function () {
 
     /* เรียกตอนโดน 401 — token อาจหมดอายุก่อนกำหนดถ้าเครื่อง sleep ไปนาน */
     renew: refresh,
+
+    /* ---------- สร้างบัญชีให้คนอื่น โดยที่ตัวเองไม่หลุดออกจากระบบ ----------
+       ถ้าใช้ Firebase SDK จะต้องทำท่า initializeApp(config,'secondary') แล้ว
+       createUserWithEmailAndPassword บน app ตัวรอง เพราะ SDK มี "current user"
+       เป็นตัวแปรกลาง พอสร้างบัญชีใหม่มันจะสลับ current user ทับของแอดมินทันที
+
+       ฝั่ง REST ไม่มี current user ให้ทับตั้งแต่แรก — endpoint accounts:signUp
+       แค่คืน idToken/refreshToken ของบัญชีใหม่กลับมาเป็น JSON เฉย ๆ
+       เราอ่านเอาแต่ localId แล้วทิ้งโทเคนไปทั้งคู่ ไม่แตะตัวแปร idToken/refreshToken
+       ของแอดมินเลยสักบรรทัด จึงไม่ต้องมี signOut และไม่ต้องมี deleteApp
+       ปลอดภัยกว่าเพราะไม่มีทางเผลอเขียนทับได้ตั้งแต่ต้น */
+    createUser: function (email, password) {
+      email = String(email || '').trim();
+      if (!email) return Promise.reject(codeError('MISSING_EMAIL'));
+      if (!password) return Promise.reject(codeError('MISSING_PASSWORD'));
+      if (String(password).length < 6) return Promise.reject(codeError('WEAK_PASSWORD'));
+
+      if (!REMOTE_MODE) {
+        return Promise.resolve({ uid: 'local_' + safeKey(email.toLowerCase()), email: email });
+      }
+      return fetch(IDENTITY_SIGNUP + FIREBASE_CONFIG.apiKey, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email, password: password, returnSecureToken: false })
+      }).catch(function () { throw netError(); }).then(function (r) {
+        if (!r.ok) return fail(r);
+        return r.json();
+      }).then(function (d) {
+        /* d.idToken / d.refreshToken ของบัญชีใหม่ถูกทิ้งตรงนี้ ไม่ได้เก็บที่ไหนเลย */
+        return { uid: d.localId, email: d.email || email };
+      });
+    },
+
+    /* ส่งลิงก์ตั้งรหัสผ่านใหม่ไปที่อีเมลของผู้ใช้ */
+    sendPasswordReset: function (email) {
+      if (!REMOTE_MODE) return Promise.resolve(true);
+      return fetch(IDENTITY_OOB + FIREBASE_CONFIG.apiKey, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requestType: 'PASSWORD_RESET', email: String(email || '').trim() })
+      }).catch(function () { throw netError(); }).then(function (r) {
+        if (!r.ok) return fail(r);
+        return true;
+      });
+    },
 
     signOut: function () {
       clearTimeout(timer);
@@ -5272,7 +5368,113 @@ function renderAccount() {
   if (!isAdmin() && state.masterTab === 'users') state.masterTab = 'products';
 }
 
+/* ---------- ช่วยกรอกฟอร์มบนมือถือ ---------- */
+
+/* ถอดอักษรไทยเป็นโรมันแบบหยาบ ๆ ไว้เดาอีเมลให้เท่านั้น
+   ภาษาไทยมีสระที่ไม่ได้เขียน (สระอะแฝง) ซึ่งถอดให้ตรงเป๊ะต้องแยกพยางค์ก่อน
+   ที่นี่ใช้กฎง่าย ๆ ว่าพยัญชนะติดกันสองตัวให้แทรก a — ได้ชื่อที่พออ่านออก
+   และแอดมินแก้เองได้ในช่อง จึงไม่ต้องแม่นระดับราชบัณฑิต */
+var TH_CONS = {
+  'ก':'k','ข':'kh','ฃ':'kh','ค':'kh','ฅ':'kh','ฆ':'kh','ง':'ng',
+  'จ':'ch','ฉ':'ch','ช':'ch','ซ':'s','ฌ':'ch','ญ':'y',
+  'ฎ':'d','ฏ':'t','ฐ':'th','ฑ':'th','ฒ':'th','ณ':'n',
+  'ด':'d','ต':'t','ถ':'th','ท':'th','ธ':'th','น':'n',
+  'บ':'b','ป':'p','ผ':'ph','ฝ':'f','พ':'ph','ฟ':'f','ภ':'ph','ม':'m',
+  'ย':'y','ร':'r','ล':'l','ว':'w','ศ':'s','ษ':'s','ส':'s','ห':'h','ฬ':'l','อ':'','ฮ':'h'
+};
+var TH_VOWEL = {
+  'ะ':'a','ั':'a','า':'a','ำ':'am','ิ':'i','ี':'i','ึ':'ue','ื':'ue','ุ':'u','ู':'u',
+  'เ':'e','แ':'ae','โ':'o','ใ':'ai','ไ':'ai','ๅ':'a','ฤ':'rue','ฦ':'lue'
+};
+var TH_LEADING = 'เแโใไ';
+var TH_SILENT = /[็-๎ๆฺ]/;   // วรรณยุกต์ ไม้ไต่คู้ ทัณฑฆาต ไม้ยมก
+
+function romanizeThai(text) {
+  var src = String(text == null ? '' : text);
+  var out = '', prevCons = false;
+  for (var i = 0; i < src.length; i++) {
+    var ch = src.charAt(i);
+    if (/[A-Za-z0-9]/.test(ch)) { out += ch; prevCons = false; continue; }
+    if (/\s/.test(ch)) { out += ' '; prevCons = false; continue; }
+    if (TH_SILENT.test(ch)) continue;
+    if (TH_LEADING.indexOf(ch) >= 0) {
+      /* สระหน้าเขียนก่อนพยัญชนะ แต่โรมันต้องออกเสียงพยัญชนะก่อน จึงสลับที่ */
+      var nx = src.charAt(i + 1);
+      if (TH_CONS[nx] !== undefined) { out += TH_CONS[nx] + TH_VOWEL[ch]; i++; }
+      else out += TH_VOWEL[ch];
+      prevCons = false;
+      continue;
+    }
+    if (TH_VOWEL[ch] !== undefined) { out += TH_VOWEL[ch]; prevCons = false; continue; }
+    if (TH_CONS[ch] !== undefined) {
+      if (prevCons && 'rlw'.indexOf(TH_CONS[ch].charAt(0)) < 0) out += 'a';
+      out += TH_CONS[ch];
+      prevCons = true;
+      continue;
+    }
+  }
+  return out;
+}
+
+/* @isrd.local เป็นโดเมนภายใน ส่งอีเมลจริงไม่ถึง ใช้เป็นชื่อผู้ใช้เฉย ๆ */
+var LOCAL_DOMAIN = 'isrd.local';
+var UNDELIVERABLE_DOMAIN = /@([a-z0-9-]+\.)*(local|localhost|internal|invalid|test|example)$/i;
+
+function suggestEmail(name) {
+  var base = romanizeThai(name).toLowerCase()
+    .replace(/[^a-z0-9]+/g, '.')
+    .replace(/^\.+|\.+$/g, '')
+    .slice(0, 40);
+  if (!base) return '';
+  var taken = {};
+  Object.keys(state.users).forEach(function (u) {
+    taken[String((state.users[u] || {}).email || '').toLowerCase()] = 1;
+  });
+  var candidate = base + '@' + LOCAL_DOMAIN;
+  for (var n = 2; taken[candidate] && n < 100; n++) candidate = base + n + '@' + LOCAL_DOMAIN;
+  return candidate;
+}
+
+/* ตัด 0 O l 1 I ออก เพราะพนักงานต้องอ่านรหัสจากจอแล้วพิมพ์ตามในมือถือ */
+var PASS_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+function randomPassword(len) {
+  var n = len || 8, out = '';
+  var buf = new Uint32Array(n);
+  if (window.crypto && window.crypto.getRandomValues) window.crypto.getRandomValues(buf);
+  else for (var j = 0; j < n; j++) buf[j] = Math.floor(Math.random() * 4294967296);
+  for (var i = 0; i < n; i++) out += PASS_CHARS.charAt(buf[i] % PASS_CHARS.length);
+  return out;
+}
+
+/* clipboard API ใช้ได้เฉพาะบนหน้า https — มีทางสำรองไว้เผื่อเปิดผ่าน http */
+function copyText(text, okMessage) {
+  function fallback() {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    document.body.removeChild(ta);
+    toast(ok ? (okMessage || 'คัดลอกแล้ว') : 'คัดลอกอัตโนมัติไม่ได้ กรุณากดค้างที่ข้อความแล้วเลือกคัดลอกเอง', !ok);
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text)
+      .then(function () { toast(okMessage || 'คัดลอกแล้ว'); }, fallback);
+  } else fallback();
+}
+
 /* ---------- หน้าจัดการผู้ใช้ (admin เท่านั้น) ---------- */
+
+/* ต้องเหลือ admin ที่ใช้งานได้อย่างน้อย 1 คนเสมอ ไม่งั้นไม่มีใครแก้อะไรได้อีกเลย */
+function activeAdminCount(excludeUid) {
+  return Object.keys(state.users).filter(function (u) {
+    var r = state.users[u] || {};
+    return u !== excludeUid && r.role === 'admin' && r.active !== false;
+  }).length;
+}
 
 function refreshUsers() {
   if (!isAdmin()) return Promise.resolve({});
@@ -5303,31 +5505,175 @@ function saveUserField(uid, patchFields) {
   });
 }
 
-function addUser() {
-  if (!requireAdmin('เพิ่มผู้ใช้ไม่ได้')) return;
-  var uid = $('newUserUid').value.trim();
-  var name = $('newUserName').value.trim();
-  var email = $('newUserMail').value.trim();
-  var role = $('newUserRole').value;
-  if (!uid) { toast('ใส่ User UID จาก Firebase Console ก่อน', true); return; }
-  if (uid !== safeKey(uid)) { toast('User UID มีอักขระที่ใช้เป็นคีย์ไม่ได้ ลองคัดลอกใหม่จาก Console', true); return; }
-  if (!name) { toast('ใส่ชื่อที่จะแสดงเป็นผู้นับก่อน', true); return; }
-  if (state.users[uid]) { toast('UID นี้มีอยู่ในระบบแล้ว — เลื่อนลงไปแก้ที่รายการข้างล่าง', true); return; }
-
+/* เขียนเรคอร์ดสิทธิ์ — ใช้ร่วมกันทั้งการสร้างบัญชีใหม่และการเพิ่มด้วย UID */
+function writeUserRecord(uid, name, email, role) {
   var patch = {};
   patch[uid] = {
     name: name, email: email, role: role, active: true,
     createdAt: Date.now(), updatedAt: Date.now(), createdBy: (state.me || {}).uid || ''
   };
-  db.update('users', patch).then(function () {
+  return db.update('users', patch).then(function () {
     state.users[uid] = patch[uid];
-    $('newUserUid').value = '';
+    renderUsers();
+    return patch[uid];
+  });
+}
+
+/* ---------- สร้างบัญชีใหม่จากในแอป ---------- */
+function createUserAccount() {
+  if (!requireAdmin('สร้างบัญชีผู้ใช้ไม่ได้')) return;
+  var name = $('newUserName').value.trim();
+  var email = $('newUserMail').value.trim();
+  var pass = $('newUserPass').value.trim();
+  var role = $('newUserRole').value;
+
+  if (!name) { toast('ใส่ชื่อ-นามสกุลก่อน', true); return; }
+  if (!email) { toast('ใส่อีเมลสำหรับเข้าระบบก่อน', true); return; }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { toast('รูปแบบอีเมลไม่ถูกต้อง', true); return; }
+  if (pass.length < 6) { toast('รหัสผ่านต้องอย่างน้อย 6 ตัวอักษร — กดปุ่มสุ่มก็ได้', true); return; }
+
+  var btn = $('btnCreateUser');
+  btn.disabled = true;
+  btn.textContent = 'กำลังสร้างบัญชี...';
+
+  /* สร้างบัญชีที่ Firebase ก่อน แล้วเขียนสิทธิ์ต่อทันทีในจังหวะเดียวกัน
+     ผู้ใช้ใหม่จึงเข้าระบบได้เลย ไม่ต้องรอให้ล็อกอินก่อนแล้วค่อยมาตั้ง role */
+  session.createUser(email, pass).then(function (created) {
+    if (state.users[created.uid]) throw new Error('ALREADY_LINKED');
+    return writeUserRecord(created.uid, name, email, role).then(function () { return created; });
+  }).then(function (created) {
     $('newUserName').value = '';
     $('newUserMail').value = '';
-    renderUsers();
+    $('newUserPass').value = '';
+    $('newUserForm').style.display = 'none';
+    showCredentials(name, email, pass, role);
+    return created;
+  }).catch(function (err) {
+    if (err && err.message === 'ALREADY_LINKED') {
+      toast('บัญชีนี้มีสิทธิ์อยู่ในระบบแล้ว', true);
+    } else if (err && err.authCode) {
+      toast(authMessage(err.authCode), true);
+    } else {
+      /* สร้างบัญชีผ่านแล้วแต่เขียนสิทธิ์ไม่ผ่าน = ค้างครึ่งทาง ต้องบอกให้ชัด */
+      ask('สร้างบัญชีแล้ว แต่ตั้งสิทธิ์ไม่สำเร็จ',
+          'บัญชี ' + email + ' ถูกสร้างที่ Firebase เรียบร้อยแล้ว\n' +
+          'แต่เขียนสิทธิ์ลงฐานข้อมูลไม่ผ่าน ผู้ใช้คนนี้จะยังเข้าใช้งานไม่ได้\n\n' +
+          'ให้ลองใหม่โดยใช้ช่อง "เพิ่มด้วย User UID" ข้างล่าง\n' +
+          'หา UID ได้ที่ Console → Authentication → Users',
+          'รับทราบ', { hideCancel: true });
+    }
+  }).then(function () {
+    btn.disabled = false;
+    btn.textContent = 'สร้างบัญชีให้เลย';
+  });
+}
+
+/* กล่องสรุปรหัสผ่าน — แสดงครั้งเดียว ปิดแล้วดูซ้ำไม่ได้เพราะไม่ได้เก็บไว้ที่ไหน */
+function showCredentials(name, email, pass, role) {
+  var box = document.createElement('div');
+
+  var warn = document.createElement('div');
+  warn.className = 'banner';
+  warn.textContent = 'กล่องนี้แสดงครั้งเดียว — ปิดแล้วดูรหัสผ่านซ้ำไม่ได้ ' +
+                     'เพราะระบบไม่ได้เก็บรหัสผ่านไว้ที่ไหนเลย ก๊อปส่งให้พนักงานก่อนปิด';
+  box.appendChild(warn);
+
+  var sec = repSection('บัญชีของ ' + name);
+  repLine(sec, 'สิทธิ์', ROLE_LABEL[role]);
+  repLine(sec, 'อีเมล', email);
+  repLine(sec, 'รหัสผ่าน', pass);
+  box.appendChild(sec);
+
+  var block = 'เข้าระบบนับสต๊อก ISRD\nอีเมล: ' + email + '\nรหัสผ่าน: ' + pass;
+  var pre = document.createElement('div');
+  pre.id = 'credBlock';
+  pre.style.cssText = 'white-space:pre-wrap;user-select:all;background:var(--line-soft);' +
+                      'border-radius:10px;padding:12px 14px;margin:12px 0;font-size:15px;' +
+                      'font-family:ui-monospace,Menlo,Consolas,monospace';
+  pre.textContent = block;
+  box.appendChild(pre);
+
+  /* วางเรียงลงมา ไม่วางคู่กัน — ข้อความไทยยาวจนล้นปุ่มเมื่อจอกว้าง 390px */
+  var bAll = document.createElement('button');
+  bAll.className = 'btn ghost block';
+  bAll.id = 'btnCopyAll';
+  bAll.textContent = '📋 ก๊อปทั้งชุดส่งไลน์';
+  bAll.onclick = function () { copyText(block, 'คัดลอกทั้งชุดแล้ว วางในไลน์ได้เลย'); };
+  var bPass = document.createElement('button');
+  bPass.className = 'btn grey block sm';
+  bPass.style.marginTop = '8px';
+  bPass.textContent = '📋 ก๊อปเฉพาะรหัสผ่าน';
+  bPass.onclick = function () { copyText(pass, 'คัดลอกรหัสผ่านแล้ว'); };
+  box.appendChild(bAll); box.appendChild(bPass);
+
+  if (UNDELIVERABLE_DOMAIN.test(email)) {
+    var note = document.createElement('div');
+    note.className = 'muted';
+    note.style.marginTop = '12px';
+    note.textContent = 'อีเมลนี้เป็นโดเมนภายใน ส่งอีเมลจริงไม่ถึง — ' +
+                       'ถ้าลืมรหัสผ่านต้องให้ผู้ดูแลระบบไปตั้งใหม่ที่ Firebase Console';
+    box.appendChild(note);
+  }
+
+  ask('สร้างบัญชีเรียบร้อย', 'ส่งอีเมลกับรหัสผ่านให้พนักงานก่อนปิดกล่องนี้',
+      'ก๊อปแล้ว ปิดได้', { hideCancel: true, detail: box });
+}
+
+/* ---------- เพิ่มด้วย UID (บัญชีที่มีอยู่แล้วใน Console) ---------- */
+function linkExistingUser() {
+  if (!requireAdmin('เพิ่มผู้ใช้ไม่ได้')) return;
+  var uid = $('linkUserUid').value.trim();
+  var name = $('linkUserName').value.trim();
+  var email = $('linkUserMail').value.trim();
+  var role = $('linkUserRole').value;
+  if (!uid) { toast('ใส่ User UID จาก Firebase Console ก่อน', true); return; }
+  if (uid !== safeKey(uid)) { toast('User UID มีอักขระที่ใช้เป็นคีย์ไม่ได้ ลองคัดลอกใหม่จาก Console', true); return; }
+  if (!name) { toast('ใส่ชื่อที่จะแสดงเป็นผู้นับก่อน', true); return; }
+  if (state.users[uid]) { toast('UID นี้มีอยู่ในระบบแล้ว — เลื่อนลงไปแก้ที่รายการข้างล่าง', true); return; }
+
+  writeUserRecord(uid, name, email, role).then(function () {
+    $('linkUserUid').value = '';
+    $('linkUserName').value = '';
+    $('linkUserMail').value = '';
     toast('เพิ่ม ' + name + ' เป็น' + ROLE_LABEL[role] + 'แล้ว');
   }).catch(function () {
     toast('เพิ่มผู้ใช้ไม่สำเร็จ ฐานข้อมูลปฏิเสธการเขียน — ตรวจว่าบัญชีคุณเป็น admin จริง', true);
+  });
+}
+
+/* ---------- รีเซ็ตรหัสผ่าน ---------- */
+function resetUserPassword(uid) {
+  if (!requireAdmin('รีเซ็ตรหัสผ่านไม่ได้')) return;
+  var u = state.users[uid] || {};
+  var email = String(u.email || '').trim();
+
+  if (!email) {
+    ask('รีเซ็ตรหัสผ่านไม่ได้',
+        'บัญชีนี้ไม่ได้บันทึกอีเมลไว้ในระบบ จึงไม่รู้ว่าจะส่งลิงก์ไปที่ไหน\n\n' +
+        'ให้ไปตั้งรหัสผ่านใหม่ที่ Firebase Console → Authentication → Users\n' +
+        'กดจุดสามจุดท้ายแถวของผู้ใช้คนนี้ แล้วเลือก "Reset password"',
+        'รับทราบ', { hideCancel: true });
+    return;
+  }
+  if (UNDELIVERABLE_DOMAIN.test(email)) {
+    ask('อีเมลนี้ส่งลิงก์ไม่ได้',
+        email + ' เป็นโดเมนภายใน ไม่ใช่อีเมลจริง ส่งลิงก์ตั้งรหัสใหม่ไปไม่ถึง\n\n' +
+        'ต้องไปตั้งรหัสผ่านใหม่ให้ที่ Firebase Console → Authentication → Users\n' +
+        'กดจุดสามจุดท้ายแถวของผู้ใช้คนนี้ แล้วเลือก "Reset password"\n' +
+        'แล้วบอกรหัสใหม่ให้พนักงานเอง',
+        'รับทราบ', { hideCancel: true });
+    return;
+  }
+
+  ask('ส่งลิงก์ตั้งรหัสผ่านใหม่?',
+      'จะส่งลิงก์ไปที่ ' + email + '\nผู้ใช้กดลิงก์ในอีเมลแล้วตั้งรหัสใหม่เองได้เลย',
+      'ส่งลิงก์').then(function (ok) {
+    if (!ok) return;
+    return session.sendPasswordReset(email).then(function () {
+      toast('ส่งลิงก์ไปที่ ' + email + ' แล้ว');
+    }).catch(function (err) {
+      toast(authMessage(err && err.authCode), true);
+    });
   });
 }
 
@@ -5386,10 +5732,15 @@ function renderUsers() {
       sel.appendChild(o);
     });
     sel.onchange = function () {
-      /* กันแอดมินคนสุดท้ายลดสิทธิ์ตัวเองจนไม่มีใครเข้าหน้านี้ได้อีก */
       if (me && this.value !== 'admin') {
         this.value = 'admin';
         toast('เปลี่ยนสิทธิ์ของตัวเองไม่ได้ — ให้แอดมินอีกคนเปลี่ยนให้', true);
+        return;
+      }
+      /* ต้องเหลือ admin ที่ใช้งานได้อย่างน้อย 1 คนเสมอ ไม่งั้นไม่มีใครแก้อะไรได้อีก */
+      if (u.role === 'admin' && this.value !== 'admin' && activeAdminCount(uid) === 0) {
+        this.value = 'admin';
+        toast('ลดสิทธิ์ไม่ได้ ระบบต้องมีผู้ดูแลอย่างน้อย 1 คน — ตั้งคนอื่นเป็น admin ก่อน', true);
         return;
       }
       saveUserField(uid, { role: this.value });
@@ -5398,14 +5749,30 @@ function renderUsers() {
 
     row.appendChild(nameLab); row.appendChild(roleLab);
 
+    /* ปุ่มรีเซ็ตรหัสผ่าน — มีทุกแถว รวมถึงของตัวเอง */
+    var rst = document.createElement('button');
+    rst.className = 'btn grey sm block';
+    rst.style.marginTop = '10px';
+    rst.setAttribute('data-action', 'reset');
+    rst.textContent = '🔑 รีเซ็ตรหัสผ่าน';
+    rst.onclick = function () { resetUserPassword(uid); };
+    row.appendChild(rst);
+
     /* บัญชีตัวเองไม่ต้องมีปุ่มปิด — กดไปก็โดนปฏิเสธ และเป็นทางที่ล็อกตัวเองออกได้ */
     if (!me) {
       var act = document.createElement('button');
       act.className = 'btn sm block ' + (u.active === false ? 'ghost' : 'grey');
-      act.style.marginTop = '10px';
+      act.style.marginTop = '8px';
       act.setAttribute('data-action', 'active');
       act.textContent = u.active === false ? 'เปิดใช้งานบัญชีนี้' : 'ปิดการใช้งานบัญชีนี้';
-      act.onclick = function () { saveUserField(uid, { active: u.active === false }); };
+      act.onclick = function () {
+        var turningOff = u.active !== false;
+        if (turningOff && u.role === 'admin' && activeAdminCount(uid) === 0) {
+          toast('ปิดไม่ได้ ระบบต้องมีผู้ดูแลอย่างน้อย 1 คน — ตั้งคนอื่นเป็น admin ก่อน', true);
+          return;
+        }
+        saveUserField(uid, { active: u.active === false });
+      };
       row.appendChild(act);
     } else {
       var note = document.createElement('div');
@@ -5444,8 +5811,43 @@ function init() {
     });
   });
   $('btnLogout').onclick = doLogout;
-  $('btnAddUser').onclick = addUser;
   session.onToken(function () { db.reopenStreams(); });
+
+  /* ---- สร้าง/จัดการผู้ใช้ ---- */
+  $('btnNewUser').onclick = function () {
+    if (!requireAdmin('สร้างบัญชีผู้ใช้ไม่ได้')) return;
+    var form = $('newUserForm');
+    var opening = form.style.display === 'none';
+    form.style.display = opening ? 'block' : 'none';
+    if (opening) {
+      if (!$('newUserPass').value) $('newUserPass').value = randomPassword(8);
+      $('newUserName').focus();
+    }
+  };
+  $('btnCancelUser').onclick = function () {
+    $('newUserForm').style.display = 'none';
+    $('newUserName').value = '';
+    $('newUserMail').value = '';
+    $('newUserPass').value = '';
+  };
+  /* เดาอีเมลจากชื่อให้ แต่หยุดเดาทันทีที่แอดมินพิมพ์อีเมลเอง */
+  $('newUserMail').addEventListener('input', function () { this.setAttribute('data-touched', '1'); });
+  $('newUserName').addEventListener('input', function () {
+    var mail = $('newUserMail');
+    if (mail.getAttribute('data-touched')) return;
+    mail.value = suggestEmail(this.value);
+  });
+  $('btnRandomPass').onclick = function () {
+    $('newUserPass').value = randomPassword(8);
+    toast('สุ่มรหัสผ่านใหม่แล้ว');
+  };
+  $('btnCopyPass').onclick = function () {
+    var v = $('newUserPass').value.trim();
+    if (!v) { toast('ยังไม่มีรหัสผ่านให้ก๊อป กดสุ่มก่อน', true); return; }
+    copyText(v, 'คัดลอกรหัสผ่านแล้ว');
+  };
+  $('btnCreateUser').onclick = createUserAccount;
+  $('btnLinkUser').onclick = linkExistingUser;
 
   $('branchSearch').addEventListener('input', renderBranchPicker);
   $('branchShowClosed').addEventListener('change', renderBranchPicker);
@@ -5735,6 +6137,64 @@ init();
   ====================================================================
   สรุปการเปลี่ยนแปลง
   ====================================================================
+
+  v1.9.1 — สร้างบัญชีผู้ใช้ได้จากในแอป ไม่ต้องเข้า Firebase Console
+
+    1) ปุ่ม "+ เพิ่มผู้ใช้" ในแท็บ Master > ผู้ใช้ (admin เท่านั้น)
+       ฟอร์ม: ชื่อ-นามสกุล / อีเมล / รหัสผ่าน / สิทธิ์
+
+    2) วิธีสร้างที่ไม่ทำให้แอดมินหลุดออกจากระบบ
+       ข้อกำหนดเขียนว่าให้ใช้ initializeApp(config,'secondary') แล้วเรียก
+       createUserWithEmailAndPassword บน instance รอง เสร็จแล้ว signOut + deleteApp
+       ท่านั้นเป็นของ Firebase SDK ซึ่งแอปนี้ใช้ไม่ได้ (กฎห้ามโหลดไลบรารีจาก CDN)
+
+       เหตุผลที่ SDK ต้องทำท่านั้น: SDK เก็บ "current user" ไว้เป็นตัวแปรกลาง
+       พอสร้างบัญชีใหม่มันจะสลับ current user ไปเป็นคนใหม่ทับแอดมินทันที
+       จึงต้องแยก app instance ออกไปอีกตัวเพื่อไม่ให้ไปแตะของเดิม
+
+       ฝั่ง REST ไม่มี current user ให้ทับตั้งแต่แรก accounts:signUp แค่คืน
+       idToken/refreshToken ของบัญชีใหม่มาเป็น JSON เราอ่านเอาแต่ localId
+       แล้วทิ้งโทเคนทั้งคู่ ไม่แตะตัวแปรเซสชันของแอดมินเลยสักบรรทัด
+       ผลลัพธ์ตรงตามที่ต้องการและไม่ต้องมี signOut/deleteApp ให้พลาด
+       ทดสอบแล้ว: สร้าง 3 คนติดกัน uid และ idToken ของแอดมินไม่เปลี่ยนเลย
+
+    3) สร้างเสร็จเขียน users/{uid} ต่อทันทีในคำสั่งเดียวกัน
+       { name, role, active: true, createdBy, createdAt }
+       ผู้ใช้ใหม่เข้าระบบได้เลย ไม่ต้องรอให้ล็อกอินก่อนแล้วค่อยมาตั้งสิทธิ์
+       ถ้าสร้างบัญชีผ่านแต่เขียนสิทธิ์ไม่ผ่าน จะขึ้นกล่องบอกว่าค้างครึ่งทาง
+       พร้อมบอกให้ไปใช้ช่อง "เพิ่มด้วย User UID" แทน
+
+    4) ช่วยกรอกบนมือถือ
+       - พิมพ์ชื่อไทยแล้วเดาอีเมลให้เป็น ชื่อโรมัน@isrd.local แก้ได้
+         ถอดอักษรแบบหยาบ (ภาษาไทยมีสระอะแฝงที่ต้องแยกพยางค์ถึงจะถอดตรง)
+         พอใช้เป็นชื่อผู้ใช้และแก้เองได้ · ถ้าชนกับที่มีอยู่จะเติมเลขต่อท้ายให้
+       - ปุ่มสุ่มรหัสผ่าน 8 ตัว ตัด 0 O l 1 I ออกเพราะต้องอ่านจากจอแล้วพิมพ์ตาม
+       - หลังสร้างเสร็จมีกล่องสรุป อีเมล + รหัสผ่าน ปุ่มก๊อปทั้งชุดพร้อมส่งไลน์
+         และปุ่มก๊อปเฉพาะรหัสผ่าน · เตือนชัดว่ากล่องนี้แสดงครั้งเดียว
+         เพราะระบบไม่ได้เก็บรหัสผ่านไว้ที่ไหนเลย
+
+    5) แก้ไขผู้ใช้เดิม
+       - แก้ชื่อ / แก้สิทธิ์ / เปิด-ปิดการใช้งาน (มีอยู่แล้วตั้งแต่ v1.9.0)
+       - เพิ่มปุ่ม "รีเซ็ตรหัสผ่าน" ส่งลิงก์ตั้งรหัสใหม่ไปที่อีเมล
+         อีเมลโดเมนภายใน (.local .internal .test .invalid .example) ส่งไม่ถึง
+         จะไม่ยิง API เลย แต่ขึ้นกล่องบอกวิธีไปตั้งใหม่ที่ Console แทน
+       - ต้องเหลือ admin ที่ใช้งานได้อย่างน้อย 1 คนเสมอ
+         ลดสิทธิ์หรือปิดบัญชี admin คนสุดท้ายไม่ได้ แม้เป็นบัญชีคนอื่น
+       - แอดมินยังลดสิทธิ์หรือปิดบัญชีตัวเองไม่ได้เหมือนเดิม
+
+    6) เรื่องความปลอดภัยที่ต้องรู้ — ยืนยันแล้วว่า Rules ครอบเคสนี้
+       apiKey อยู่ในหน้าเว็บ ใครก็ยิง accounts:signUp สมัครบัญชีเองได้
+       แต่บัญชีที่ไม่มีเรคอร์ดใน users/{uid} ทำอะไรไม่ได้เลยสักอย่าง
+       - อ่าน stocktake2026 ไม่ได้ เพราะ .read บังคับ active === true
+       - เขียนทุก node ไม่ได้ เพราะทุกเงื่อนไขอ่าน role จาก users/{uid}
+       - แอปขึ้นข้อความ "บัญชีนี้ยังไม่ได้รับสิทธิ์..." พร้อมโชว์ UID ให้ส่งแอดมิน
+       - หน้าล็อกอินไม่มีปุ่มสมัครสมาชิก และไม่มีทางไปหน้าสมัครจากในแอป
+
+       ข้อแลกเปลี่ยนที่ต้องรู้: ถ้าไปปิด "Enable create (sign-up)" ที่
+       Console → Authentication → Settings → User actions ช่องสมัครเองจะปิดสนิท
+       แต่ปุ่มสร้างบัญชีในแอปจะใช้ไม่ได้ตามไปด้วย เพราะใช้ endpoint เดียวกัน
+       จะปิดช่องนั้นแล้วยังสร้างบัญชีในแอปได้ ต้องมี backend ที่ใช้ Admin SDK
+       ซึ่งขัดกฎ "ไม่มี backend server" ของโปรเจกต์นี้
 
   v1.9.0 — ล็อกอินด้วย Firebase Authentication + สิทธิ์ 3 ระดับ
 
@@ -6147,10 +6607,37 @@ init();
      ถ้าวางกฎก่อนทำข้อ 4 จะไม่มีใครเป็น admin เลย และ users ก็เขียนไม่ได้
      เพราะยังไม่มีใครมีสิทธิ์ — ต้องกลับไปวางกฎเก่าเพื่อแก้
 
-  6) เพิ่มคนอื่นเข้าระบบ
-     ทำข้อ 2-3 ให้เขา แล้วเอา UID มาใส่ที่แอป หน้า Master > ผู้ใช้
-     พร้อมตั้งชื่อและเลือกสิทธิ์ ผู้ใช้ที่ยังไม่ถูกเพิ่มจะล็อกอินผ่าน
-     แต่แอปจะขึ้นข้อความว่ายังไม่ได้รับสิทธิ์ พร้อมโชว์ UID ให้เขาส่งมาให้คุณ
+  6) เพิ่มคนอื่นเข้าระบบ — ตั้งแต่ v1.9.1 ทำในแอปได้เลย ไม่ต้องกลับมาที่ Console
+     แอป > Master > ผู้ใช้ > "+ เพิ่มผู้ใช้" ใส่ชื่อ อีเมล รหัสผ่าน แล้วเลือกสิทธิ์
+     ระบบสร้างบัญชีที่ Firebase และตั้งสิทธิ์ให้พร้อมกันในคำสั่งเดียว
+     เสร็จแล้วมีกล่องให้ก๊อปอีเมล+รหัสผ่านส่งไลน์ให้พนักงาน (แสดงครั้งเดียว)
+
+     Console ยังต้องใช้อยู่ 2 กรณีเท่านั้น
+       - ตั้งรหัสผ่านใหม่ให้บัญชีที่ใช้อีเมลปลอม @isrd.local (ส่งลิงก์ไม่ถึง)
+       - ลบบัญชีออกจาก Authentication จริง ๆ (ในแอปทำได้แค่ปิดการใช้งาน)
+
+  ====================================================================
+  คนนอกสมัครบัญชีเองได้ไหม — ได้ แต่ทำอะไรไม่ได้
+  ====================================================================
+
+  apiKey ฝังอยู่ในหน้าเว็บ (Firebase ออกแบบมาแบบนั้น มันไม่ใช่ความลับ)
+  ใครก็ยิง accounts:signUp ตรง ๆ สมัครบัญชีเองได้ ห้ามไม่ได้จากฝั่งแอป
+
+  แต่บัญชีที่ไม่มีเรคอร์ดใน users/{uid} ทำอะไรกับข้อมูลไม่ได้เลยสักอย่าง
+    - อ่าน stocktake2026 ไม่ได้ เพราะ .read บังคับ active === true
+    - เขียนทุก node ไม่ได้ เพราะทุกเงื่อนไขอ่าน role จาก users/{uid} ที่ไม่มีอยู่
+    - อ่าน users ได้อย่างเดียว (จำเป็น ต้องอ่านเพื่อรู้สิทธิ์ตัวเอง)
+      เห็นชื่อกับอีเมลของพนักงาน แต่ไม่มีข้อมูลสต๊อกและแก้อะไรไม่ได้
+    - แอปขึ้นว่า "บัญชีนี้ยังไม่ได้รับสิทธิ์ใช้งาน" พร้อมโชว์ UID ให้ส่งแอดมิน
+    - หน้าล็อกอินไม่มีปุ่มสมัครสมาชิก และไม่มีทางไปหน้าสมัครจากในแอป
+
+  ถ้าอยากปิดช่องสมัครเองให้สนิท: Console > Authentication > Settings >
+  User actions > เอาเครื่องหมายถูกออกจาก "Enable create (sign-up)"
+
+  ⚠ แต่ปิดแล้วปุ่ม "+ เพิ่มผู้ใช้" ในแอปจะใช้ไม่ได้ตามไปด้วย เพราะใช้ endpoint
+  เดียวกัน จะปิดช่องนั้นแล้วยังสร้างบัญชีในแอปได้ ต้องมี backend ที่ใช้
+  Admin SDK ซึ่งขัดกฎ "ไม่มี backend server" ของโปรเจกต์นี้
+  เลือกเอาอย่างใดอย่างหนึ่ง — ตอนนี้เลือกไว้ที่ "สร้างในแอปได้"
 
   ====================================================================
   ต้องทดสอบอะไรบ้างหลังวาง Rules
@@ -6186,7 +6673,12 @@ init();
      - ปิดรอบนับ แล้วลองยิงอีกครั้ง ต้องยิงไม่เข้า
      - กดเปิดรอบกลับพร้อมกรอกเหตุผล ต้องเปิดได้ (เพราะเป็น admin)
 
-  ง) ทดสอบด้วยบัญชี counter (สร้างบัญชีที่สองแล้วตั้ง role เป็น counter)
+  ง) ทดสอบด้วยบัญชี counter (สร้างจากในแอป: Master > ผู้ใช้ > + เพิ่มผู้ใช้)
+     - สร้าง 3 คนติดกันแล้วคุณต้องยังล็อกอินเป็นแอดมินอยู่เหมือนเดิม
+       ไม่เด้งออก ไม่กลายเป็นคนที่เพิ่งสร้าง
+     - กล่องสรุปอีเมล+รหัสผ่านต้องขึ้นทุกครั้ง กดปุ่มก๊อปแล้ววางในไลน์ได้จริง
+     - เอาอีเมลกับรหัสผ่านนั้นไปล็อกอินในเครื่องอื่น ต้องเข้าได้ทันที
+       โดยไม่ต้องให้แอดมินไปตั้งสิทธิ์เพิ่มอีกรอบ
      - ยิงบาร์โค้ดได้ สร้างและปิด Job ได้
      - หน้า Master ช่องราคาต้นทุน/ประเภท/รูป ต้องถูกล็อกกดไม่ได้
      - ไม่เห็นแท็บ "ผู้ใช้" และไม่เห็นปุ่มเปิดรอบ/ลบ Job
