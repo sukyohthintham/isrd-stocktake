@@ -7752,7 +7752,9 @@ function handleLocationImport(file) {
       if (res.stat.noSku) repLine(sec, 'ข้ามเพราะไม่มี SKU', fmtNum(res.stat.noSku) + ' แถว', true);
       if (res.stat.bothBlank) {
         repLine(sec, 'ข้ามเพราะไม่มี Location เลย', fmtNum(res.stat.bothBlank) + ' แถว', true);
-        repNote(sec, 'นับรวมแถวที่ใส่ "--" ไว้ทั้งสองช่อง');
+        repNote(sec, 'นับรวมแถวที่เว้นว่างและแถวที่ใส่ "--" ไว้ทั้งสองช่อง — ' +
+                     'SKU พวกนี้ไม่มีตำแหน่งในไฟล์ จึงไม่มีอะไรให้เก็บ ' +
+                     'ไม่ได้เก็บเป็นเรคอร์ดว่างเพื่อไม่ให้ฐานข้อมูลบวมโดยไม่ได้ข้อมูลเพิ่ม');
       }
       if (res.stat.duplicates) {
         repLine(sec, 'SKU ซ้ำในไฟล์', fmtNum(res.stat.duplicates) + ' แถว');
