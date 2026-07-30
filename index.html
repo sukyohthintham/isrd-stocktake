@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="1.8.0">
+<meta name="version" content="1.8.1">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v1.8.0</title>
+<title>ISRD Stocktake v1.8.1</title>
 
 <style>
 :root{
@@ -330,9 +330,14 @@ table.grid td.neg{color:var(--short);font-weight:700}
 /* ทุกตารางกว้างเต็มเนื้อที่กระดาษ (190mm) เส้นขอบบางสีเทา ไม่ใช่เส้นดำหนา */
 .doc table{border-collapse:collapse;width:100%;font-size:9pt}
 /* ตารางรายการมี 14 คอลัมน์ ถ้าปล่อยให้เบราว์เซอร์จัดเอง คอลัมน์ Reason จะถูกดันตกขอบ A4
-   จึงล็อกความกว้างเป็นเปอร์เซ็นต์ด้วย table-layout:fixed ให้พอดีหน้ากระดาษเสมอ
-   (ตาราง Dashboard ใช้ auto เพราะหัวตารางมี colspan/rowspan ซ้อนกัน) */
+   จึงล็อกความกว้างเป็นเปอร์เซ็นต์ด้วย table-layout:fixed ให้พอดีหน้ากระดาษเสมอ */
 .doc table.items{font-size:8pt;table-layout:fixed}
+/* ตาราง Dashboard มี 16 คอลัมน์แล้ว ต้องล็อกความกว้างจาก <colgroup> ด้วย table-layout:fixed
+   ไม่งั้นเบราว์เซอร์จะขยายตามเนื้อหาจนล้นขอบ A4 แนวตั้ง — ลดเหลือ 7pt ให้พอดี 190mm */
+.doc table#docDash{table-layout:fixed;font-size:7pt}
+.doc table#docDash th,.doc table#docDash td{padding:3px 2px;font-size:7pt;line-height:1.25}
+.doc table#docDash td.num{white-space:normal}      /* ยอมให้ตัวเลขยาวตัดบรรทัดแทนที่จะดันคอลัมน์ */
+.doc table#docDash th{overflow-wrap:break-word}
 /* ภาษาไทยไม่มีช่องว่างระหว่างคำ ต้องใช้ overflow-wrap:anywhere ถึงจะตัดบรรทัดได้
    ไม่งั้นข้อความยาวจะล้นออกนอกช่องแล้วถูกตัดหายตอนพิมพ์ */
 /* หัวตารางรายการสินค้าใช้ 8pt เท่าเนื้อตาราง ไม่งั้นคำไทยสั้น ๆ อย่าง "จำนวน"
@@ -601,9 +606,10 @@ table.grid td.neg{color:var(--short);font-weight:700}
       <input type="file" id="branchFile" accept=".csv,.xlsx" style="display:none">
       <input type="file" id="imageFile" accept=".json" style="display:none">
       <button class="btn ghost block" id="btnImportBranch">📄 นำเข้าทะเบียนสาขา (Excel / CSV)</button>
+      <button class="btn grey block" id="btnResetBranch" style="margin-top:10px">🗑 ล้างทะเบียนสาขาแล้วนำเข้าใหม่</button>
       <p class="muted" style="margin:12px 0 0">
-        ไฟล์ต้องมี 2 คอลัมน์: <b>รหัส</b> และ <b>ชื่อคลัง/สาขา</b><br>
-        รหัสขึ้นต้นด้วย <b>"X "</b> หรือชื่อขึ้นต้นด้วย <b>"Close "</b> จะถูกตั้งเป็นปิดใช้งานให้อัตโนมัติ
+        ไฟล์ต้องมีหัวตาราง <b>รหัส</b> (หรือ รหัสคลัง/สาขา) และ <b>ชื่อคลัง/สาขา</b> — คอลัมน์ <b>#</b> ข้ามให้เอง<br>
+        รหัสขึ้นต้นด้วย <b>X</b> หรือชื่อขึ้นต้นด้วย <b>Close</b> จะถูกตั้งเป็นปิดใช้งานให้อัตโนมัติ
       </p>
       <label class="fld" style="margin:14px 0 8px">
         <span>ค้นหารหัสหรือชื่อสาขา</span>
@@ -724,14 +730,26 @@ table.grid td.neg{color:var(--short);font-weight:700}
       <div class="doc-sec">
         <div class="tbl-title">สรุปผลการนับ (Dashboard)</div>
         <table id="docDash">
+          <!-- 16 คอลัมน์รวมกันพอดี 100% ของ 190mm — ช่องมูลค่ากว้างสุดเพราะตัวเลขยาวถึง 11 หลัก
+               ถ้าแคบกว่านี้ "-436,438.00" จะถูกตัดขึ้นบรรทัดใหม่ อ่านยากตอนพิมพ์ -->
+          <colgroup>
+            <col style="width:8%">
+            <col style="width:6%"><col style="width:5%"><col style="width:5%"><col style="width:5%">
+            <col style="width:4%"><col style="width:6%"><col style="width:6.5%">
+            <col style="width:5%"><col style="width:5%"><col style="width:5%"><col style="width:5%">
+            <col style="width:6.5%">
+            <col style="width:9%"><col style="width:9%"><col style="width:10%">
+          </colgroup>
           <thead><tr>
             <th rowspan="2">กลุ่ม</th>
-            <th colspan="6">จำนวน (ชิ้น)</th>
-            <th rowspan="2">%Success</th>
+            <th colspan="7">จำนวน (ชิ้น)</th>
+            <th colspan="5">Product (SKU)</th>
             <th colspan="3">มูลค่า (บาท)</th>
-            <th rowspan="2">SKU<br>ตรง/ขาด/เกิน/รวม</th>
           </tr><tr>
             <th>ในระบบ</th><th>จริง</th><th>ตรง</th><th>ขาด</th><th>เกิน</th><th>Dift</th>
+            <th>%Success<br>(ชิ้น)</th>
+            <th>สินค้า<br>ตรง</th><th>สินค้า<br>ขาด</th><th>สินค้า<br>เกิน</th><th>SKU<br>(Total)</th>
+            <th>%Success<br>(SKU)</th>
             <th>ระบบ</th><th>จริง</th><th>ผลต่าง</th>
           </tr></thead>
           <tbody id="docDashBody"></tbody>
@@ -799,7 +817,7 @@ table.grid td.neg{color:var(--short);font-weight:700}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '1.8.0';
+var APP_VERSION = '1.8.1';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -1662,12 +1680,15 @@ function parseProductFile(parsed) {
     if (stopped) { if (rowHasContent(row)) stat.afterFooter++; continue; }
     if (!rowHasContent(row)) { stat.blank++; continue; }
 
-    /* จบข้อมูลเมื่อช่อง "#" ว่าง — แถวขยะท้ายไฟล์เว้นช่องนี้ไว้ทุกแถว */
+    /* จบข้อมูลเมื่อช่อง "#" ว่าง — แถวขยะท้ายไฟล์เว้นช่องนี้ไว้ทุกแถว
+       ตาข่ายรองจับคำว่า "Exported by" จากช่องแรกที่มีข้อความ ไม่ผูกกับตำแหน่งคอลัมน์ */
     var seqEmpty = idx.seq !== undefined && cellText(row[idx.seq]) === '';
-    if (seqEmpty || isExportFooter(row[0]) || isExportFooter(row[idx.code])) {
+    var firstText = '';
+    for (var fc = 0; fc < row.length && !firstText; fc++) firstText = cellText(row[fc]);
+    if (seqEmpty || isExportFooter(firstText) || isExportFooter(row[idx.code])) {
       stopped = true;
       stat.footerRowNum = num;
-      stat.footerReason = seqEmpty ? 'ช่อง "#" ว่าง' : ('เจอคำว่า "' + (cellText(row[0]) || cellText(row[idx.code])) + '"');
+      stat.footerReason = seqEmpty ? 'ช่อง "#" ว่าง' : ('เจอคำว่า "' + (firstText || cellText(row[idx.code])) + '"');
       stat.afterFooter++;
       continue;
     }
@@ -2756,49 +2777,59 @@ function saveManual() {
    11b. ทะเบียนคลังสินค้า/สาขา
    ============================================================ */
 
+/* ไฟล์ทะเบียนจริงมี 3 คอลัมน์: #  |  รหัส  |  ชื่อคลัง/สาขา
+   ต้องจับคอลัมน์จาก "ชื่อหัวตาราง" เท่านั้น ห้ามเดาจากตำแหน่ง
+   ของเดิมเดา {code:0, name:1} เวลาหาหัวไม่เจอ ผลคือหยิบ # มาเป็นรหัส
+   หยิบรหัสจริงมาเป็นชื่อ แล้วชื่อสาขาหายทั้งทะเบียนโดยไม่มีใครรู้ */
 var BRANCH_COLUMNS = {
-  code: ['รหัส', 'รหัสสาขา', 'รหัสคลัง', 'รหัสคลังสินค้า', 'code', 'branchcode', 'warehousecode', 'id'],
+  code: ['รหัส', 'รหัสคลัง/สาขา', 'รหัสคลังสินค้า/สาขา', 'รหัสสาขา', 'รหัสคลัง', 'รหัสคลังสินค้า',
+         'code', 'branchcode', 'warehousecode'],
   name: ['ชื่อคลัง/สาขา', 'ชื่อคลังสินค้า/สาขา', 'ชื่อสาขา', 'ชื่อคลัง', 'ชื่อ',
          'name', 'branch', 'branchname', 'warehouse']
 };
 
-/* สาขาที่ปิดไปแล้วในทะเบียนจริงจะขึ้นต้นรหัสด้วย "X " หรือขึ้นต้นชื่อด้วย "Close " */
+/* สาขาที่เลิกใช้: รหัสขึ้นต้นด้วย X (X 001 / X-01 / X001) หรือชื่อขึ้นต้นด้วย Close
+   ใช้ (?![a-z]) กันไม่ให้รหัสอย่าง XYZ-01 โดนเหมารวมว่าปิด */
 function isClosedBranch(code, name) {
-  return /^x\s/i.test(String(code || '').trim()) || /^close\s/i.test(String(name || '').trim());
+  return /^x(?![a-z])/i.test(String(code || '').trim()) ||
+         /^close(?![a-z])/i.test(String(name || '').trim());
 }
 
-function findBranchHeaderRow(rows) {
-  var aliases = BRANCH_COLUMNS.code.map(normText);
-  for (var r = 0; r < rows.length && r < 10; r++) {
+/* หัวตารางคือแถวที่เจอ "ทั้ง" คอลัมน์รหัสและคอลัมน์ชื่อ */
+function findBranchHeader(rows) {
+  var codeAliases = BRANCH_COLUMNS.code.map(normText);
+  var nameAliases = BRANCH_COLUMNS.name.map(normText);
+  var seen = [], checked = 0;
+  for (var r = 0; r < rows.length && checked < 10; r++) {
     if (!rowHasContent(rows[r])) continue;
+    checked++;
+    var found = {};
     for (var c = 0; c < rows[r].length; c++) {
-      if (headerMatches(rows[r][c], aliases)) return r;
+      var cell = cellText(rows[r][c]);
+      if (!cell) continue;
+      if (found.code === undefined && headerMatches(cell, codeAliases)) { found.code = c; continue; }
+      if (found.name === undefined && headerMatches(cell, nameAliases)) { found.name = c; }
     }
+    if (found.code !== undefined && found.name !== undefined) {
+      return { row: r, idx: found };
+    }
+    rows[r].forEach(function (cell) { var t = cellText(cell); if (t) seen.push(t); });
   }
-  return -1;
+  var err = new Error('NO_BRANCH_HEADER');
+  err.headers = seen.slice(0, 12);
+  throw err;
 }
 
 function parseBranchFile(parsed) {
   var rows = (parsed && parsed.rows) || [];
   if (!rows.length) throw new Error('EMPTY_FILE');
 
-  var headerRow = findBranchHeaderRow(rows);
-  var idx = { code: 0, name: 1 };     // ไม่มีหัวตารางก็ยังอ่านได้ ใช้สองคอลัมน์แรก
-  var start = 0;
-  if (headerRow >= 0) {
-    var header = rows[headerRow];
-    Object.keys(BRANCH_COLUMNS).forEach(function (field) {
-      var aliases = BRANCH_COLUMNS[field].map(normText);
-      for (var c = 0; c < header.length; c++) {
-        if (headerMatches(header[c], aliases)) { idx[field] = c; return; }
-      }
-    });
-    start = headerRow + 1;
-  }
+  var head = findBranchHeader(rows);      // หาไม่เจอ = โยน error ไม่เดาต่อ
+  var idx = head.idx;
 
   var branches = {};
-  var stat = { rows: 0, imported: 0, closed: 0, noCode: 0, duplicates: [] };
-  for (var r = start; r < rows.length; r++) {
+  var stat = { rows: 0, imported: 0, active: 0, closed: 0, noCode: 0, duplicates: [] };
+  for (var r = head.row + 1; r < rows.length; r++) {
     var row = rows[r] || [];
     if (!rowHasContent(row)) continue;
     stat.rows++;
@@ -2807,9 +2838,9 @@ function parseBranchFile(parsed) {
     if (!code) { stat.noCode++; continue; }
     var key = safeKey(code);
     if (branches[key]) { stat.duplicates.push(code); continue; }
-    var closed = isClosedBranch(code, name);
-    branches[key] = { code: code, name: name || code, active: !closed };
-    if (closed) stat.closed++;
+    var isClosed = isClosedBranch(code, name);
+    branches[key] = { code: code, name: name || code, active: !isClosed };
+    if (isClosed) stat.closed++; else stat.active++;
     stat.imported++;
   }
   if (!stat.imported) throw new Error('NO_ROWS');
@@ -2868,38 +2899,92 @@ function handleBranchImport(file) {
   }).then(function (parsed) {
     var result = parseBranchFile(parsed);
     return applyBranchImport(result.branches).then(function (diff) {
+      var st = result.stat;
       var box = document.createElement('div');
       var sec = repSection('ผลการนำเข้าทะเบียนสาขา');
-      repLine(sec, 'อ่านทั้งหมด', fmtNum(result.stat.rows) + ' แถว');
-      repLine(sec, 'เข้าระบบ', fmtNum(result.stat.imported) + ' สาขา');
-      repLine(sec, 'ปิดใช้งานอัตโนมัติ', fmtNum(result.stat.closed) + ' สาขา');
-      if (result.stat.closed) repNote(sec, 'รหัสขึ้นต้นด้วย "X " หรือชื่อขึ้นต้นด้วย "Close " — แก้เองได้ในหน้านี้');
-      if (result.stat.noCode) repLine(sec, 'ข้ามเพราะไม่มีรหัส', fmtNum(result.stat.noCode) + ' แถว', true);
-      if (result.stat.duplicates.length) {
-        repLine(sec, 'รหัสซ้ำในไฟล์', fmtNum(result.stat.duplicates.length) + ' รายการ', true);
-        repNote(sec, 'ใช้แถวแรกที่เจอ — ' + listWithLimit(result.stat.duplicates, 'รหัส'));
+      repLine(sec, 'อ่านทั้งหมด', fmtNum(st.rows) + ' แถว');
+      repLine(sec, 'เข้าระบบทั้งหมด', fmtNum(st.imported) + ' สาขา');
+      repLine(sec, 'เปิดใช้งาน', fmtNum(st.active) + ' สาขา');
+      repLine(sec, 'ปิดใช้งาน', fmtNum(st.closed) + ' สาขา');
+      if (st.closed) repNote(sec, 'รหัสขึ้นต้นด้วย "X" หรือชื่อขึ้นต้นด้วย "Close" — กดแก้เองได้ในหน้านี้');
+
+      var skipped = st.noCode + st.duplicates.length;
+      repLine(sec, 'ข้ามทั้งหมด', fmtNum(skipped) + ' แถว', skipped > 0);
+      if (st.noCode) repNote(sec, 'ไม่มีรหัสสาขา ' + fmtNum(st.noCode) + ' แถว');
+      if (st.duplicates.length) {
+        repNote(sec, 'รหัสซ้ำในไฟล์ ' + fmtNum(st.duplicates.length) + ' แถว ใช้แถวแรกที่เจอ — ' +
+                     listWithLimit(st.duplicates, 'รหัส'));
       }
+      if (!skipped) repNote(sec, 'ไม่มีแถวไหนถูกข้าม');
+
       repLine(sec, 'เพิ่มใหม่', fmtNum(diff.added) + ' สาขา');
-      repLine(sec, 'อัปเดตเดิม', fmtNum(diff.updated) + ' สาขา');
+      repLine(sec, 'ทับของเดิม', fmtNum(diff.updated) + ' สาขา');
       if (diff.keptManual) {
         repLine(sec, 'คงสถานะที่คนแก้ไว้', fmtNum(diff.keptManual) + ' สาขา');
         repNote(sec, 'สาขาที่เคยกดเปิด/ปิดเองไว้ ไฟล์ไม่ทับให้');
       }
       box.appendChild(sec);
       ask('นำเข้าทะเบียนสาขาเรียบร้อย',
-          'เข้าระบบ ' + fmtNum(result.stat.imported) + ' สาขา',
+          'ทะเบียนมีทั้งหมด ' + fmtNum(Object.keys(state.branches).length) + ' สาขา',
           'ปิด', { hideCancel: true, detail: box });
     });
   }).catch(function (err) {
+    var code = err && err.message;
+    if (code === 'NO_BRANCH_HEADER') {
+      /* หาหัวคอลัมน์ไม่เจอ = หยุด ไม่เดาตำแหน่งแล้วนำเข้ามั่ว */
+      var found = (err.headers || []).filter(Boolean);
+      var box = document.createElement('div');
+      var sec = repSection('อ่านไฟล์นี้ไม่ได้');
+      repNote(sec, 'ระบบต้องเจอหัวตาราง 2 ช่องนี้ในไฟล์:');
+      repLine(sec, 'คอลัมน์รหัส', 'รหัส หรือ รหัสคลัง/สาขา', true);
+      repLine(sec, 'คอลัมน์ชื่อ', 'ชื่อคลัง/สาขา หรือ ชื่อ', true);
+      repNote(sec, found.length
+        ? 'แต่ในไฟล์เจอหัวตารางว่า: ' + found.join(' · ')
+        : 'แต่ในไฟล์ไม่มีข้อความอะไรให้อ่านเลยในสิบแถวแรก');
+      repNote(sec, 'วิธีแก้: เปิดไฟล์แล้วแก้ชื่อหัวตารางให้ตรง หรือลบแถวที่อยู่เหนือหัวตารางออก แล้วอัปโหลดใหม่');
+      box.appendChild(sec);
+      ask('หาหัวตารางในไฟล์ไม่เจอ', 'ยังไม่ได้นำเข้าอะไรเลย ข้อมูลเดิมอยู่ครบ',
+          'ปิด', { hideCancel: true, detail: box });
+      return;
+    }
     var messages = {
       EMPTY_FILE: 'ไฟล์นี้ว่างเปล่า กรุณาตรวจไฟล์แล้วอัปโหลดใหม่',
-      NO_ROWS: 'ไม่พบข้อมูลสาขาในไฟล์ ต้องมีคอลัมน์รหัสและชื่อคลัง/สาขา',
+      NO_ROWS: 'เจอหัวตารางแล้วแต่ไม่มีข้อมูลสาขาอยู่ข้างใต้ กรุณาตรวจไฟล์แล้วอัปโหลดใหม่',
       NO_SHEET: 'อ่านไฟล์ Excel นี้ไม่ได้ กรุณาบันทึกเป็น .xlsx หรือ CSV แล้วอัปโหลดใหม่',
       BAD_ZIP: 'ไฟล์ Excel นี้เสียหรือไม่ใช่ไฟล์ .xlsx กรุณาบันทึกเป็น CSV แล้วอัปโหลดใหม่',
       NO_INFLATE: 'เครื่องนี้อ่านไฟล์ .xlsx ไม่ได้ กรุณาบันทึกเป็น CSV แล้วอัปโหลดใหม่'
     };
-    toast(messages[err && err.message] || 'นำเข้าทะเบียนสาขาไม่สำเร็จ กรุณาตรวจไฟล์แล้วลองใหม่', true);
+    toast(messages[code] || 'นำเข้าทะเบียนสาขาไม่สำเร็จ กรุณาตรวจไฟล์แล้วลองใหม่', true);
   }).then(function () { renderBranchMaster(); });
+}
+
+/* ล้างเฉพาะทะเบียนสาขา — Job / scans / สินค้า ไม่ถูกแตะ */
+function resetBranchRegistry() {
+  var total = Object.keys(state.branches).length;
+  if (!total) { toast('ทะเบียนสาขาว่างอยู่แล้ว', true); return; }
+
+  ask('ล้างทะเบียนสาขาทั้งหมด?',
+      'จะลบสาขาทั้ง ' + fmtNum(total) + ' รายการออกจากทะเบียน\n' +
+      'รอบนับ ยอดที่นับไปแล้ว และข้อมูลสินค้า ไม่ถูกแตะ',
+      'ต่อไป').then(function (ok) {
+    if (!ok) return;
+    return ask('ยืนยันอีกครั้ง',
+               'กดยืนยันแล้วทะเบียนสาขาจะว่างทันที ต้องนำเข้าไฟล์ใหม่เอง',
+               'ยืนยันล้างทะเบียน').then(function (sure) {
+      if (!sure) return;
+      return db.update('', { branches: null }).then(function () {
+        state.branches = {};
+        return refreshBranches();
+      }).then(function () {
+        renderBranchMaster();
+        renderBranchPicker();
+        toast('ล้างทะเบียนสาขาแล้ว เลือกไฟล์เพื่อนำเข้าใหม่');
+        $('branchFile').click();
+      }).catch(function () {
+        toast('ล้างทะเบียนไม่สำเร็จ กรุณาลองใหม่อีกครั้ง', true);
+      });
+    });
+  });
 }
 
 var BRANCH_RENDER_LIMIT = 200;
@@ -3222,6 +3307,21 @@ function summaryData() {
   return { groups: groups, rows: rows };
 }
 
+/* %Success สองตัว ใช้นิยามเดียวกันทั้งหน้าสรุป เอกสาร PDF และไฟล์ Excel
+
+   ชิ้น = (ยอดระบบรวม − ผลรวมค่าสัมบูรณ์ของผลต่างรายตัว) ÷ ยอดระบบรวม × 100
+          pcShort + pcOver คือผลรวมค่าสัมบูรณ์อยู่แล้ว — ใช้ค่าสัมบูรณ์เพื่อไม่ให้
+          ของเกินตัวหนึ่งไปกลบของขาดอีกตัวหนึ่งจนดูเหมือนนับตรง
+   SKU  = SKU ที่ผลต่าง = 0 ÷ SKU ทั้งหมด × 100                                   */
+function pctPiecesOf(g) {
+  if (!(g.sysQty > 0)) return null;
+  return ((g.sysQty - (g.pcShort + g.pcOver)) / g.sysQty) * 100;
+}
+function pctSkuOf(g) {
+  if (!(g.skuTotal > 0)) return null;
+  return (g.skuMatch / g.skuTotal) * 100;
+}
+
 var GROUP_LABEL = { product: 'Product', notProduct: 'Not Product', total: 'รวมทั้งหมด' };
 
 function renderSummary() {
@@ -3243,8 +3343,8 @@ function renderSummary() {
     tr.setAttribute('data-group', name);
     var diffQty = g.actQty - g.sysQty;
     var diffValue = g.actValue - g.sysValue;
-    var pctPieces = g.sysQty > 0 ? (g.actQty / g.sysQty) * 100 : null;
-    var pctSku = g.skuTotal > 0 ? (g.skuMatch / g.skuTotal) * 100 : null;
+    var pctPieces = pctPiecesOf(g);
+    var pctSku = pctSkuOf(g);
 
     function cell(text, cls) {
       var td = document.createElement('td');
@@ -3356,8 +3456,8 @@ function exportExcel() {
     s1.push([
       GROUP_LABEL[name], g.sysQty, g.actQty, g.actQty - g.sysQty,
       g.skuMatch, g.skuShort, g.skuOver,
-      g.sysQty > 0 ? Math.round((g.actQty / g.sysQty) * 1000) / 10 : '',
-      g.skuTotal > 0 ? Math.round((g.skuMatch / g.skuTotal) * 1000) / 10 : '',
+      pctPiecesOf(g) === null ? '' : Math.round(pctPiecesOf(g) * 10) / 10,
+      pctSkuOf(g) === null ? '' : Math.round(pctSkuOf(g) * 10) / 10,
       Math.round(g.sysValue * 100) / 100, Math.round(g.actValue * 100) / 100,
       Math.round((g.actValue - g.sysValue) * 100) / 100
     ]);
@@ -3564,22 +3664,27 @@ function renderDocDashboard(data) {
     if (name === 'total') tr.className = 'total-row';
     var dift = g.actQty - g.sysQty;
     var diffValue = g.actValue - g.sysValue;
-    var pct = g.sysQty > 0 ? (g.actQty / g.sysQty) * 100 : null;
 
     docCell(tr, GROUP_LABEL[name]);
+    /* กลุ่มจำนวน (ชิ้น) */
     docCell(tr, fmtNum(g.sysQty), 'num');
     docCell(tr, fmtNum(g.actQty), 'num');
     docCell(tr, fmtNum(g.pcMatch), 'num');
     docCell(tr, fmtNum(g.pcShort), 'num');
     docCell(tr, fmtNum(g.pcOver), 'num');
     docCell(tr, (dift > 0 ? '+' : '') + fmtNum(dift), 'num ' + (dift > 0 ? 'pos' : (dift < 0 ? 'neg' : '')));
-    docCell(tr, fmtPercent(pct), 'num');
+    docCell(tr, fmtPercent(pctPiecesOf(g)), 'num pct-pc');
+    /* กลุ่ม Product (SKU) — แยกช่องละคอลัมน์ */
+    docCell(tr, fmtNum(g.skuMatch), 'num');
+    docCell(tr, fmtNum(g.skuShort), 'num');
+    docCell(tr, fmtNum(g.skuOver), 'num');
+    docCell(tr, fmtNum(g.skuTotal), 'num');
+    docCell(tr, fmtPercent(pctSkuOf(g)), 'num pct-sku');
+    /* กลุ่มมูลค่า (บาท) */
     docCell(tr, fmtMoney(g.sysValue), 'num');
     docCell(tr, fmtMoney(g.actValue), 'num');
     docCell(tr, (diffValue > 0 ? '+' : '') + fmtMoney(diffValue),
       'num ' + (diffValue > 0 ? 'pos' : (diffValue < 0 ? 'neg' : '')));
-    docCell(tr, fmtNum(g.skuMatch) + ' / ' + fmtNum(g.skuShort) + ' / ' +
-                fmtNum(g.skuOver) + ' / ' + fmtNum(g.skuTotal), 'mid');
     body.appendChild(tr);
   });
 }
@@ -3784,17 +3889,21 @@ function exportDocExcel() {
   var data = summaryData();
   var priceLabel = state.priceField === 'costPrice' ? 'ราคาต้นทุน' : 'ราคาขาย';
 
-  var s1 = [['กลุ่ม', 'จำนวนในระบบ', 'จำนวนจริง', 'ตรง (ชิ้น)', 'ขาด (ชิ้น)', 'เกิน (ชิ้น)', 'Dift',
-             '%Success', 'มูลค่าระบบ', 'มูลค่าจริง', 'ผลต่างมูลค่า',
-             'SKU ตรง', 'SKU ขาด', 'SKU เกิน', 'SKU รวม']];
+  /* คอลัมน์ต้องเรียงตรงกับตาราง Dashboard ใน PDF ทุกช่อง */
+  var s1 = [['กลุ่ม',
+             'จำนวนในระบบ', 'จำนวนจริง', 'ตรง (ชิ้น)', 'ขาด (ชิ้น)', 'เกิน (ชิ้น)', 'Dift', '%Success (ชิ้น)',
+             'สินค้าตรง', 'สินค้าขาด', 'สินค้าเกิน', 'SKU (Total)', '%Success (SKU)',
+             'มูลค่าระบบ', 'มูลค่าจริง', 'ผลต่างมูลค่า']];
   ['product', 'notProduct', 'total'].forEach(function (name) {
     var g = data.groups[name];
-    s1.push([GROUP_LABEL[name], g.sysQty, g.actQty, g.pcMatch, g.pcShort, g.pcOver,
-             g.actQty - g.sysQty,
-             g.sysQty > 0 ? Math.round((g.actQty / g.sysQty) * 1000) / 10 : '',
+    var pc = pctPiecesOf(g), sku = pctSkuOf(g);
+    s1.push([GROUP_LABEL[name],
+             g.sysQty, g.actQty, g.pcMatch, g.pcShort, g.pcOver, g.actQty - g.sysQty,
+             pc === null ? '' : Math.round(pc * 10) / 10,
+             g.skuMatch, g.skuShort, g.skuOver, g.skuTotal,
+             sku === null ? '' : Math.round(sku * 10) / 10,
              Math.round(g.sysValue * 100) / 100, Math.round(g.actValue * 100) / 100,
-             Math.round((g.actValue - g.sysValue) * 100) / 100,
-             g.skuMatch, g.skuShort, g.skuOver, g.skuTotal]);
+             Math.round((g.actValue - g.sysValue) * 100) / 100]);
   });
   var spec = docSpec();
   s1.push([]);
@@ -4771,6 +4880,7 @@ function init() {
 
   /* ---- ทะเบียนสาขา ---- */
   $('btnImportBranch').onclick = function () { $('branchFile').click(); };
+  $('btnResetBranch').onclick = resetBranchRegistry;
   $('branchFile').addEventListener('change', function () {
     if (this.files && this.files[0]) handleBranchImport(this.files[0]);
     this.value = '';
@@ -4906,6 +5016,49 @@ init();
   ====================================================================
   สรุปการเปลี่ยนแปลง
   ====================================================================
+
+  v1.8.1 — แก้บั๊กนำเข้าทะเบียนสาขา + ตาราง Dashboard ในเอกสาร
+
+    A) ทะเบียนสาขาอ่านคอลัมน์เหลื่อมไปหนึ่งช่อง
+       ต้นตอ: parseBranchFile เดา idx = {code:0, name:1} เวลาหาหัวตารางไม่เจอ
+       ไฟล์จริงจาก ISRD มี 3 คอลัมน์ #  |  รหัส  |  ชื่อคลัง/สาขา และหัวคอลัมน์
+       เขียนว่า "รหัสคลัง/สาขา" ซึ่งไม่มีในรายการชื่อพ้อง → หาไม่เจอ → ตกไปใช้ค่าที่เดา
+       → หยิบ # มาเป็นรหัส หยิบรหัสจริงมาเป็นชื่อ ชื่อสาขาหายทั้งทะเบียน
+       และกฎสาขาปิดไปเทียบกับเลขลำดับจึงไม่ทำงาน
+       - ตัดการเดาตำแหน่งออกทั้งหมด จับคอลัมน์จากชื่อหัวตารางอย่างเดียว
+         หัวตาราง = แถวที่เจอทั้งคอลัมน์รหัสและคอลัมน์ชื่อ (คอลัมน์ # ไม่ตรงชื่อพ้องใด จึงถูกข้ามเอง)
+       - เพิ่มชื่อพ้อง "รหัสคลัง/สาขา" "รหัสคลังสินค้า/สาขา"
+       - หาหัวไม่เจอ = หยุด ไม่เขียนอะไรลงฐาน แล้วขึ้นกล่องบอกว่าต้องมีหัวอะไร
+         และในไฟล์เจอหัวว่าอะไรบ้าง
+       - กฎสาขาปิดใช้ /^x(?![a-z])/i กับ /^close(?![a-z])/i ครอบคลุม "X 001" "X-01" "X001"
+         โดยไม่เหมารหัสอย่าง XYZ-01 ว่าปิด
+       - นำเข้าซ้ำทับด้วยรหัสสาขาเป็น key เหมือนเดิม ค่าเปิด/ปิดที่คนกดเอง (activeSource=manual)
+         ยังไม่ถูกล้าง
+       - ปุ่ม "ล้างทะเบียนสาขาแล้วนำเข้าใหม่" ในแท็บ Master ยืนยัน 2 ชั้น
+         ล้างเฉพาะ branches ไม่แตะ Job / scans / products
+       - รายงานหลังนำเข้าบอก ทั้งหมด / เปิด / ปิด / ข้ามกี่แถวเพราะอะไร
+
+    B) ไล่ตรวจการนำเข้าไฟล์ทุกจุด
+       จุดที่อ่านไฟล์ทั้งหมด 3 จุด: Zort (parseProductFile), ทะเบียนสาขา (parseBranchFile),
+       รูปสินค้า (parseImageMap — JSON คีย์เป็นรหัสสินค้า ไม่มีคอลัมน์)
+       - Zort อ่านจากชื่อหัวตารางอยู่แล้วผ่าน COLUMN_ALIASES + findHeaderRow
+         ขาดคอลัมน์บังคับก็ปฏิเสธทั้งไฟล์ ไม่เดาตำแหน่ง
+       - เหลือที่เดียวที่ยังผูกกับตำแหน่ง: ตาข่ายรองจับ "Exported by" อ่านจาก row[0] ตรง ๆ
+         แก้เป็นอ่านช่องแรกที่มีข้อความแทน ไม่ผูกกับเลขคอลัมน์
+       สรุป: ตรวจ 3 จุด แก้ 2 จุด (ทะเบียนสาขา 1 + ตาข่ายรองท้ายไฟล์ Zort 1)
+
+    C) ตาราง Dashboard ในเอกสาร
+       - แยกกลุ่ม SKU เป็นคอลัมน์ละช่อง เลิกใช้ "5 / 424 / 0 / 429" ในช่องเดียว
+         หัวกลุ่ม "Product (SKU)": สินค้าตรง | สินค้าขาด | สินค้าเกิน | SKU (Total) | %Success (SKU)
+       - %Success แยกเป็น 2 คอลัมน์ อยู่ท้ายกลุ่มของตัวเอง
+         ชิ้น = (ยอดระบบรวม − ผลรวมค่าสัมบูรณ์ของผลต่างรายตัว) ÷ ยอดระบบรวม × 100
+         SKU  = SKU ที่ผลต่าง = 0 ÷ SKU ทั้งหมด × 100
+         สูตรชิ้นเปลี่ยนจากเดิม (จริง ÷ ระบบ) — ของเกินตัวหนึ่งจะไปกลบของขาดอีกตัวหนึ่งไม่ได้แล้ว
+         ย้ายไปใช้ pctPiecesOf/pctSkuOf ที่เดียว ทั้งหน้าสรุป เอกสาร และ Excel ทั้งสองไฟล์
+         จึงนิยามตรงกันหมด
+       - ตารางโตจาก 12 เป็น 16 คอลัมน์ ล็อกความกว้างด้วย colgroup + table-layout:fixed
+         ลดเหลือ 7pt ยังพิมพ์ลง A4 แนวตั้งครบ 190mm ไม่หมุนแนวนอน ไม่ตัดคอลัมน์ทิ้ง
+       - ชีท "สรุป" ใน Excel ใช้คอลัมน์ชุดเดียวกับ PDF ครบทั้ง 16 ช่อง
 
   v1.8.0 — ต่อ Firebase ใช้งานจริง
     - ใส่ config จริง และบังคับให้ข้อมูลทั้งหมดอยู่ใต้ stocktake2026 เท่านั้น
