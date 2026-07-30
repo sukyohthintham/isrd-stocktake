@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.0.0">
+<meta name="version" content="2.0.1">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.0.0</title>
+<title>ISRD Stocktake v2.0.1</title>
 
 <style>
 :root{
@@ -477,16 +477,30 @@ table.grid td.neg{color:var(--short);font-weight:700}
 /* กราฟโดนัท 2 บล็อก (Product / Not Product) บล็อกละ 2 วง
    แต่ละบล็อกห้ามถูกตัดข้ามหน้า และวงต้องเรียงแนวนอนเสมอตอนพิมพ์
    บนจอมือถือเรียงลงมาแนวตั้ง (ดูบล็อก @media print ที่บังคับกลับเป็นแนวนอน) */
+/* กราฟโดนัท 4 วง — ตอนพิมพ์เป็นตาราง 2 คอลัมน์ 2 แถว
+   แถว 1 Product · แถว 2 Not Product · ซ้าย %ชิ้น ขวา %SKU
+   ทั้งบล็อกต้องสูงไม่เกิน 1/3 หน้ากระดาษ และห้ามถูกตัดข้ามหน้า */
 #donutTitle{text-align:center}
-.donut-block{text-align:center;margin:10px 0;page-break-inside:avoid;break-inside:avoid}
-.donut-block .donut-head{font-weight:800;font-size:10.5pt;margin:0 0 6px}
-.donut-pair{display:flex;flex-direction:column;gap:14px;align-items:center}
+#donutGroups{page-break-inside:avoid;break-inside:avoid}
+/* ระยะห่างระหว่างบล็อกถูกบีบไว้ให้ทั้งก้อนพอดีใต้เพดาน 1/3 หน้า (92mm ≈ 349px)
+   วัดจริง: บล็อกละ 169px + ระยะขอบ 6px = 344px */
+.donut-block{text-align:center;margin:2px 0;page-break-inside:avoid;break-inside:avoid}
+/* ชื่อกลุ่มเป็นบรรทัดเดียวตัวหนา ไม่กินที่เป็นหัวข้อเต็มบรรทัด */
+.donut-block .donut-head{
+  font-weight:800;font-size:9pt;margin:0 0 2px;text-align:left;
+  border-bottom:0.5pt solid #cbd5e1;padding-bottom:2px;
+}
+.donut-pair{display:flex;flex-direction:column;gap:10px;align-items:center}
 /* บนจอกินเต็มความกว้างทีละวง ห้ามให้ flex ย่อความสูงของ svg ที่ล็อกไว้เป็น mm */
 .donut-cell{flex:0 0 auto;width:100%;min-width:0;display:flex;flex-direction:column;align-items:center}
-.donut-cap{font-weight:700;font-size:9.5pt;margin-bottom:4px}
-/* 32mm เพราะมี 4 วงแล้ว ต้องเหลือที่ให้ตารางในหน้าเดียวกัน */
-.donut-svg{width:32mm;height:32mm;display:block;margin:0 auto}
-.donut-note{margin-top:6px;font-size:8.5pt;color:#334155;line-height:1.35}
+.donut-cap{font-weight:700;font-size:8.5pt;margin-bottom:2px}
+/* 30mm — 4 วงแล้วต้องเหลือที่ให้ตารางในหน้าเดียวกัน */
+.donut-svg{width:30mm;height:30mm;display:block;margin:0 auto}
+/* บรรทัดอธิบายบรรทัดเดียว 7pt ยาวเกินให้ตัดด้วย ... ไม่ตกบรรทัดจนบล็อกสูงขึ้น */
+.donut-note{
+  margin-top:3px;font-size:7pt;color:#334155;line-height:1.25;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;
+}
 .sign-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px 14px;margin-top:10px}
 .sign-box{border:1px solid #94a3b8;border-radius:4px;padding:8px 10px 6px;font-size:9.5pt}
 .sign-box .s-role{font-weight:700;margin-bottom:26px}
@@ -518,9 +532,11 @@ table.grid td.neg{color:var(--short);font-weight:700}
   tfoot{display:table-footer-group}
   tr{page-break-inside:avoid;page-break-after:auto}
   .doc-sec,.sign-grid,.sign-box,.donut-wrap,.donut-block,.doc-foot{page-break-inside:avoid;break-inside:avoid}
-  /* ตอนพิมพ์สองวงต้องอยู่เคียงกันเสมอ กว้างเท่ากันคนละครึ่งหน้ากระดาษ */
+  /* ตอนพิมพ์บังคับเป็นตาราง 2x2 เสมอ — สองวงต่อแถว กว้างเท่ากันคนละครึ่งหน้า */
   .donut-pair{flex-direction:row;gap:0;align-items:flex-start}
   .donut-cell{width:50%;flex:0 0 50%}
+  /* ไม่ใช้ max-height + overflow:hidden บังคับความสูง เพราะมันซ่อนบรรทัดท้ายเงียบ ๆ
+     (ลองแล้วโดนตัดไป 8px จริง) คุมด้วยการบีบระยะขอบให้พอดีตั้งแต่ต้นแทน */
   .doc .reason-in{display:none !important}
   .doc .reason-print{display:block !important}
   .doc table th{-webkit-print-color-adjust:exact;print-color-adjust:exact}
@@ -805,7 +821,6 @@ table.grid td.neg{color:var(--short);font-weight:700}
       </div>
       <div class="muted" id="masterCount"></div>
       <button class="btn ghost sm block" id="btnImportImages" style="margin-top:12px">🖼 นำเข้ารูปสินค้า (JSON)</button>
-      <button class="btn grey sm block" id="btnUploadLocal" style="margin-top:10px">☁ ย้ายข้อมูลในเครื่องขึ้นฐานกลาง</button>
       <p class="muted" style="margin:10px 0 0">
         รับได้ทั้ง <b>product-images.json</b> และ <b>product-images.min.json</b><br>
         จับคู่ด้วยรหัสสินค้า แล้วเก็บลิงก์รูปไว้กับสินค้าใน Master
@@ -1231,7 +1246,7 @@ table.grid td.neg{color:var(--short);font-weight:700}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.0.0';
+var APP_VERSION = '2.0.1';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -3716,8 +3731,18 @@ function countLocalData(snap) {
   };
 }
 
-function uploadLocalToCloud() {
+/* ---------- เครื่องมือนักพัฒนา — ไม่มีปุ่มในหน้าจอ ----------
+   เคยเป็นปุ่ม "ย้ายข้อมูลในเครื่องขึ้นฐานกลาง" ในแท็บ Master
+   ถอดออกตั้งแต่ v2.0.1 เพราะข้อมูลทั้งหมดอยู่บน Firebase แล้ว ปุ่มหมดหน้าที่
+   และตั้งแต่วาง Database Rules ชุดจริง ก้อน rounds จะถูกปฏิเสธเสมอ
+   (ไม่มี .write ที่ระดับนั้นโดยเจตนา เพื่อไม่ให้ scans ถูกเขียนทับ)
+   ปุ่มที่ทำงานได้แค่ครึ่งเดียวอันตรายกว่าปุ่มที่ไม่มี
+
+   ถ้าต้องใช้จริง เปิด DevTools แล้วพิมพ์  __devUploadLocal()
+   จะขึ้นกล่องยืนยันพร้อมสรุปว่าจะย้ายอะไรขึ้นไปบ้าง                        */
+function __devUploadLocal() {
   if (!db.remote) { toast('ยังไม่ได้ตั้งค่าฐานกลาง จึงไม่มีที่ให้ย้ายขึ้น', true); return; }
+  if (!isAdmin()) { toast('ต้องเป็นผู้ดูแลระบบ', true); return; }
   var snap = db.localSnapshot();
   var top = Object.keys(snap);
   if (!top.length) { toast('ไม่มีข้อมูลในเครื่องให้ย้าย', true); return; }
@@ -3730,27 +3755,27 @@ function uploadLocalToCloud() {
   repLine(sec, 'Job', fmtNum(n.jobs) + ' รายการ');
   repLine(sec, 'การยิง', fmtNum(n.scans) + ' แถว');
   repLine(sec, 'บาร์โค้ดไม่พบ', fmtNum(n.unknown) + ' รายการ');
-  repNote(sec, 'ข้อมูลจะถูกรวมเข้ากับของที่มีอยู่บนฐานกลาง (merge) ไม่ได้ลบของเดิม ' +
-               'ถ้าเป็นข้อมูลลองยิงเล่น อย่ากดปุ่มนี้');
+  repNote(sec, 'ข้อมูลจะถูกรวมเข้ากับของที่มีอยู่บนฐานกลาง (merge) ไม่ได้ลบของเดิม');
+  repNote(sec, 'ก้อน rounds จะถูก Database Rules ปฏิเสธ — ยอดที่นับไว้จะไม่ถูกย้ายขึ้นไป');
   box.appendChild(sec);
 
-  ask('ย้ายข้อมูลในเครื่องขึ้นฐานกลาง?',
+  ask('[นักพัฒนา] ย้ายข้อมูลในเครื่องขึ้นฐานกลาง?',
       'เขียนขึ้นใต้ ' + db.rootPath + ' เท่านั้น',
       'ย้ายขึ้นเลย', { danger: true, detail: box }).then(function (ok) {
     if (!ok) return;
-    $('btnUploadLocal').disabled = true;
     /* ส่งทีละก้อนบนสุด ถ้าก้อนไหนล้มจะรู้ว่าล้มที่ไหน */
+    var failed = [];
     return top.reduce(function (chain, key) {
       return chain.then(function () {
         var patch = {};
         patch[key] = snap[key];
-        return db.update('', patch);
+        return db.update('', patch).catch(function () { failed.push(key); });
       });
     }, Promise.resolve()).then(function () {
-      toast('ย้ายข้อมูลขึ้นฐานกลางแล้ว');
-    }).catch(function () {
-      toast('ย้ายข้อมูลไม่สำเร็จ กรุณาตรวจการเชื่อมต่อแล้วลองใหม่', true);
-    }).then(function () { $('btnUploadLocal').disabled = false; });
+      toast(failed.length
+        ? ('ย้ายขึ้นบางส่วน — ฐานปฏิเสธ: ' + failed.join(', '))
+        : 'ย้ายข้อมูลขึ้นฐานกลางแล้ว', failed.length > 0);
+    });
   });
 }
 
@@ -4510,6 +4535,12 @@ function renderBranchPicker() {
       if (!$('newJobAbbr').value.trim()) $('newJobAbbr').placeholder = 'อักษรย่อ เช่น ' + branchCodeCompact(b.code);
       renderBranchPicker();
       previewJobCode();
+      /* ฟอร์มยาวขึ้นเรื่อย ๆ ตามฟิลด์ที่เพิ่มมา ปุ่มสร้างจึงตกไปอยู่ใต้ขอบจอ
+         พอเลือกสาขาเสร็จให้เลื่อนปุ่มขึ้นมาให้เห็นเลย จะได้ไม่ต้องไล่หา */
+      setTimeout(function () {
+        var t = $('btnAddRound');
+        if (t) t.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }, 60);
     };
     box.appendChild(btn);
   });
@@ -4577,7 +4608,6 @@ function renderMaster() {
 
   /* สินค้าเป็นข้อมูลกลาง แก้ได้เฉพาะ admin — คนอื่นดูได้แต่ช่องกรอกถูกล็อก */
   $('btnImportImages').disabled = !isAdmin();
-  $('btnUploadLocal').disabled = !isAdmin();
 
   document.querySelectorAll('[data-mfilter]').forEach(function (b) {
     b.className = 'btn sm ' + (b.getAttribute('data-mfilter') === state.masterFilter ? '' : 'grey');
@@ -8793,10 +8823,6 @@ function init() {
      ห้ามอ่านจากฐานตรงนี้ เพราะยังไม่ผ่านล็อกอิน คำขอจะไม่มี token ติดไปด้วย */
   applyCompany(loadCompanyLocal());
 
-  $('btnUploadLocal').onclick = function () {
-    if (!requireAdmin('ย้ายข้อมูลขึ้นฐานกลางไม่ได้')) return;
-    uploadLocalToCloud();
-  };
 
   /* ---- คิวเขียนข้อมูล + สถานะการเชื่อมต่อ ---- */
   db.onStatus(function (ok) {
@@ -8883,6 +8909,46 @@ init();
   ====================================================================
   สรุปการเปลี่ยนแปลง
   ====================================================================
+
+  v2.0.1 — กราฟโดนัทเป็นตาราง 2x2 · ถอดปุ่มย้ายข้อมูล · ปุ่มสร้าง Job ตกใต้ขอบจอ
+
+    กราฟโดนัท — กลับมาเป็นตาราง 2 คอลัมน์ 2 แถว
+      แถว 1 Product · แถว 2 Not Product · ซ้าย %ชิ้น ขวา %SKU
+      ชื่อกลุ่มเป็นบรรทัดเดียวชิดซ้ายมีเส้นคั่นใต้ ไม่ใช่หัวข้อกลางกินบรรทัดเต็ม
+      หัวข้อรวม "Stock Counting Accuracy" มีอันเดียวบนสุด
+      ย่อวงเหลือ 30mm · บรรทัดอธิบายเหลือบรรทัดเดียว 7pt (nowrap + ellipsis)
+      บนมือถือยังเรียงลงมาแนวตั้ง ตอนพิมพ์บังคับ 2x2 เสมอ
+
+      เรื่องความสูงไม่เกิน 1/3 หน้า: ตอนแรกใส่ max-height + overflow:hidden
+      วัดแล้วพบว่ามันตัดเนื้อหาทิ้งจริง 8px (scrollHeight 356 > clientHeight 348)
+      บรรทัดอธิบายของ Not Product หายไปโดยไม่มีใครรู้ จึงถอดออก
+      แล้วบีบระยะขอบระหว่างบล็อกจาก 6px เหลือ 2px แทน
+      วัดใหม่ได้ 340px ต่ำกว่าเพดาน 349px และไม่มีอะไรถูกซ่อน
+      เพิ่มเทสต์เช็ค scrollHeight <= clientHeight กันพลาดซ้ำ
+
+    ปุ่ม "ย้ายข้อมูลในเครื่องขึ้นฐานกลาง" — ถอดออกจากหน้าจอ
+      ข้อมูลทั้งหมดอยู่บน Firebase แล้ว ปุ่มนี้หมดหน้าที่
+      และตั้งแต่วาง Database Rules ชุดจริง ก้อน rounds จะถูกปฏิเสธเสมอ
+      เพราะไม่มี .write ที่ระดับนั้นโดยเจตนา (กันไม่ให้ scans ถูกเขียนทับ)
+      ปุ่มที่ทำงานได้แค่ครึ่งเดียวอันตรายกว่าปุ่มที่ไม่มี
+      ฟังก์ชันยังอยู่แต่ไม่มีปุ่มเรียก เปลี่ยนชื่อเป็น __devUploadLocal()
+      ต้องเปิด DevTools พิมพ์เองถึงเรียกได้ และยังเช็ก isAdmin() อยู่
+      ตอนนี้บอกด้วยว่าก้อนไหนถูกฐานปฏิเสธ แทนที่จะบอกแค่ว่า "ไม่สำเร็จ"
+
+    ปุ่ม "+ สร้าง Job" ตกไปอยู่ใต้ขอบจอ
+      ฟอร์มสร้าง Job ยาวขึ้นเรื่อย ๆ ตามฟิลด์ที่เพิ่มมา (อักษรย่อ ชื่อรอบ
+      ประเภทคลัง ชุด Location) วัดที่จอ 390px แล้วปุ่มอยู่ที่ y=906
+      ขณะที่จอสูง 844 — ต้องเลื่อนลงไปหาเอง ซึ่งพลาดง่ายเพราะแถบล่างลอยทับอยู่
+      พอเลือกสาขาเสร็จให้เลื่อนปุ่มขึ้นมากลางจอให้เลย
+
+    ข้อมูลทั้งหมดอยู่บน Firebase แล้ว ปุ่มนี้หมดหน้าที่
+    และตั้งแต่วาง Database Rules ชุดจริง ก้อน rounds จะถูกปฏิเสธเสมอ
+    เพราะไม่มี .write ที่ระดับนั้นโดยเจตนา (กันไม่ให้ scans ถูกเขียนทับ)
+    ปุ่มที่ทำงานได้แค่ครึ่งเดียวอันตรายกว่าปุ่มที่ไม่มี — ผู้ใช้จะเข้าใจว่าย้ายครบแล้ว
+
+    ฟังก์ชันยังอยู่ในไฟล์แต่ไม่มีปุ่มเรียก เปลี่ยนชื่อเป็น __devUploadLocal()
+    ต้องเปิด DevTools แล้วพิมพ์เองถึงจะเรียกได้ และยังเช็ก isAdmin() อยู่
+    ตอนนี้รายงานด้วยว่าก้อนไหนถูกฐานปฏิเสธ แทนที่จะบอกแค่ว่า "ไม่สำเร็จ"
 
   v2.0.0 — Location · Status · ภาพรวมทุกสาขา · เลย์เอาต์ Laptop
 
