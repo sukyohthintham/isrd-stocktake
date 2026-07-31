@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.0.1">
+<meta name="version" content="2.1.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.0.1</title>
+<title>ISRD Stocktake v2.1.0</title>
 
 <style>
 :root{
@@ -188,6 +188,8 @@ body.locked .topbar,body.locked .wrap,body.locked .nav{display:none}
 .scan-stage.newcode{background:var(--warn-bg);border-color:var(--warn)}
 /* ม่วง = ยิงติดปกติแต่สินค้ามี status พิเศษ ต้องสะดุดตาโดยไม่ดูเหมือน error */
 .scan-stage.special{background:#f3e8ff;border-color:#a855f7}
+/* ฟ้า = รู้จักสินค้าตัวนี้ แต่ไม่ได้อยู่ในไฟล์ยอดของสาขานี้ (ของมาผิดที่) */
+.scan-stage.foreign{background:#e0f2fe;border-color:#0284c7}
 .scan-newcode{font-family:ui-monospace,Consolas,monospace;font-size:17px;font-weight:700;color:#92400e}
 /* ---------- การ์ดสินค้าตอนยิง (เต็มความกว้าง รูปใหญ่ซ้าย ข้อมูลขวา) ---------- */
 .prodcard{display:flex;gap:14px;align-items:flex-start;margin-top:14px;min-height:120px}
@@ -465,6 +467,8 @@ table.grid td.neg{color:var(--short);font-weight:700}
 .doc .pos{color:#15803d;font-weight:700}
 .doc .neg{color:#b91c1c;font-weight:700}
 .doc .tbl-title{font-weight:800;font-size:10.5pt;margin:14px 0 6px}
+/* ปิดสวิตช์ "พิมพ์พร้อมรูปสินค้า" — ซ่อนกรอบรูปในเอกสาร ไม่ต้องโหลดอะไรเลย */
+body.no-doc-images .doc .imgbox{display:none}
 .doc .imgbox{
   width:24px;height:24px;border:0.5pt solid #cbd5e1;border-radius:3px;margin:0 auto;
   background:#fff;font-size:9px;
@@ -593,6 +597,13 @@ table.grid td.neg{color:var(--short);font-weight:700}
       <span>กรองตามสาขา</span>
       <select id="jobBranchFilter"><option value="all">ทุกสาขา</option></select>
     </label>
+  </div>
+
+  <div class="card" id="exportBar" style="display:none">
+    <h3>ดาวน์โหลดรวมหลาย Job</h3>
+    <div class="muted" id="exportPickInfo" style="margin-bottom:10px"></div>
+    <button class="btn block" id="btnExportPicked">⬇ ดาวน์โหลดรวมเป็นไฟล์เดียว</button>
+    <button class="btn grey block sm" id="btnExportClear" style="margin-top:8px">ล้างที่เลือก</button>
   </div>
 
   <div class="clist" id="jobList" style="margin-bottom:14px"></div>
@@ -820,6 +831,15 @@ table.grid td.neg{color:var(--short);font-weight:700}
         <button class="btn sm grey" data-mfilter="notProduct">Not Product</button>
       </div>
       <div class="muted" id="masterCount"></div>
+      <input type="file" id="masterFile" accept=".csv,.xlsx" style="display:none">
+      <button class="btn block" id="btnImportMaster" style="margin-top:12px">🏢 นำเข้า Master สินค้าทั้งบริษัท</button>
+      <p class="muted" style="margin:10px 0 0">
+        รับไฟล์ Zort export ของ<b>ทั้งบริษัท</b> — ไม่ผูกกับรอบนับหรือสาขาไหน<br>
+        upsert ด้วยรหัสสินค้า · ค่าที่คนแก้มือไว้ (ราคาต้นทุน · ประเภทที่ตั้งเอง ·
+        Status · ลิงก์รูป) <b>ไม่ถูกไฟล์ทับ</b><br>
+        ไฟล์นี้ทำให้ระบบ "รู้จัก" สินค้า แต่ไม่ได้บอกว่าสาขาไหนควรมีเท่าไหร่ —
+        ยอดของแต่ละสาขายังมาจากไฟล์ที่นำเข้าในรอบนับเหมือนเดิม
+      </p>
       <button class="btn ghost sm block" id="btnImportImages" style="margin-top:12px">🖼 นำเข้ารูปสินค้า (JSON)</button>
       <p class="muted" style="margin:10px 0 0">
         รับได้ทั้ง <b>product-images.json</b> และ <b>product-images.min.json</b><br>
@@ -927,6 +947,7 @@ table.grid td.neg{color:var(--short);font-weight:700}
           <span>สิทธิ์การใช้งาน</span>
           <select id="newUserRole">
             <option value="counter">ผู้นับสต๊อก — ยิงบาร์โค้ด สร้าง/ปิด Job (แก้ Master ไม่ได้)</option>
+            <option value="scanner">พนักงานยิงอย่างเดียว — เห็นแค่หน้ายิง</option>
             <option value="viewer">ดูอย่างเดียว — ดูและพิมพ์เอกสาร</option>
             <option value="admin">ผู้ดูแลระบบ — ทำได้ทุกอย่าง</option>
           </select>
@@ -961,6 +982,7 @@ table.grid td.neg{color:var(--short);font-weight:700}
             <span>สิทธิ์การใช้งาน</span>
             <select id="linkUserRole">
               <option value="counter">ผู้นับสต๊อก</option>
+              <option value="scanner">พนักงานยิงอย่างเดียว</option>
               <option value="viewer">ดูอย่างเดียว</option>
               <option value="admin">ผู้ดูแลระบบ</option>
             </select>
@@ -1063,6 +1085,12 @@ table.grid td.neg{color:var(--short);font-weight:700}
   <div class="muted" id="costNote" style="margin-bottom:14px"></div>
 
   <div class="card">
+    <h3>ไม่ใช่ของสาขานี้ <span class="chip" id="foreignChip">0</span></h3>
+    <div class="muted" id="foreignHint" style="margin-bottom:10px"></div>
+    <div class="clist" id="foreignList"></div>
+  </div>
+
+  <div class="card">
     <h3>บาร์โค้ดที่ไม่มีในระบบ <span class="chip" id="unknownChip">0</span></h3>
     <div class="muted" id="unknownHint" style="margin-bottom:10px"></div>
     <div class="clist" id="unknownList"></div>
@@ -1128,6 +1156,15 @@ table.grid td.neg{color:var(--short);font-weight:700}
       <button class="btn sm" data-docprice="sellPrice">ราคาขาย</button>
       <button class="btn sm grey" data-docprice="costPrice">ราคาต้นทุน</button>
     </div>
+    <label style="display:flex;align-items:flex-start;gap:10px;font-size:14px;margin-bottom:6px">
+      <input type="checkbox" id="printImages" checked
+             style="width:20px;height:20px;min-height:0;flex:0 0 auto">
+      <span><b>พิมพ์พร้อมรูปสินค้า</b></span>
+    </label>
+    <div class="muted" id="printImgHint" style="margin-bottom:10px">
+      ปิดแล้วพิมพ์ได้ทันทีไม่ต้องรอโหลดรูป — รูปจริงเฉลี่ย 380 KB ต่อรูป
+    </div>
+    <div id="printProgress" class="muted" style="display:none;margin-bottom:10px"></div>
     <button class="btn big block" id="btnPrint">🖨 พิมพ์ / บันทึกเป็น PDF</button>
     <button class="btn ghost block" id="btnDocExcel" style="margin-top:10px">⬇ ดาวน์โหลด Excel</button>
     <p class="muted" style="margin:12px 0 0">
@@ -1246,7 +1283,7 @@ table.grid td.neg{color:var(--short);font-weight:700}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.0.1';
+var APP_VERSION = '2.1.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -2568,6 +2605,8 @@ var state = {
   overviewFrom: '', overviewTo: '',
   overviewRows: [],
   scannerOpen: null,                        // ชื่อผู้ยิงที่กางดูรายโซนอยู่
+  exportPick: [],                           // Job ที่ติ๊กไว้รอรวมดาวน์โหลด
+  printImages: true,                        // พิมพ์พร้อมรูปสินค้าไหม (ข้อ B3)
   summaryTab: 'overview',                   // แท็บสรุป: ภาพรวมทุกสาขา / รอบนี้
   unknown: {},           // รอบเก่าก่อน v1.9.3: pushId -> {value, zone, user, ts}
   unknownKeys: {},       // safeKey(บาร์โค้ด) -> { value, qty, note, firstTs, zone, user }
@@ -3017,17 +3056,23 @@ function jobStatus() {
 var ROLE_LABEL = {
   admin:   'ผู้ดูแลระบบ',
   counter: 'ผู้นับสต๊อก',
+  scanner: 'พนักงานยิงอย่างเดียว',
   viewer:  'ดูอย่างเดียว'
 };
 var ROLE_HELP = {
   admin:   'ทำได้ทุกอย่าง รวมถึงแก้ Master และจัดการผู้ใช้',
   counter: 'ยิงบาร์โค้ด สร้างและปิด Job ออกเอกสาร',
+  scanner: 'เห็นแค่หน้ายิง ยิงได้ทุก Job ที่กำลังนับ',
   viewer:  'ดูและพิมพ์เอกสารเท่านั้น'
 };
 
 function myRole() { return (state.me && state.me.role) || null; }
 function isAdmin() { return myRole() === 'admin'; }
+/* isStaff = จัดการ Job ได้ (สร้าง ปิด นำเข้าไฟล์ ออกเอกสาร) — scanner ทำไม่ได้ */
 function isStaff() { return myRole() === 'admin' || myRole() === 'counter'; }
+/* ยิงบาร์โค้ดได้ — scanner ทำได้อย่างเดียวเรื่องนี้ */
+function canScanRole() { return isStaff() || myRole() === 'scanner'; }
+function isScannerOnly() { return myRole() === 'scanner'; }
 
 /* ข้อความบอกว่าทำไมทำไม่ได้ — ต้องบอกสาเหตุจริง ไม่ใช่ "ไม่มีสิทธิ์" ลอย ๆ */
 function roleBlockMessage(what) {
@@ -3046,11 +3091,11 @@ function requireAdmin(what) {
   return false;
 }
 
-function canScan() { return !!state.roundId && jobStatus() === 'counting' && isStaff(); }
+function canScan() { return !!state.roundId && jobStatus() === 'counting' && canScanRole(); }
 function canEdit() { return !!state.roundId && jobStatus() !== 'closed' && isStaff(); }
 
 function blockedMessage() {
-  if (!isStaff()) return roleBlockMessage('ยิงบาร์โค้ดไม่ได้');
+  if (!canScanRole()) return roleBlockMessage('ยิงบาร์โค้ดไม่ได้');
   return jobStatus() === 'closed'
     ? 'รอบนี้ปิดแล้ว แก้ไขไม่ได้'
     : 'รอบนี้อยู่ขั้นตรวจสอบ ยิงเพิ่มไม่ได้แล้ว';
@@ -3299,7 +3344,7 @@ function vibrate(pattern) {
 var flashTimer = null;
 function flashStage(cls) {
   var el = $('scanStage');
-  el.classList.remove('hit', 'miss', 'newcode', 'special');
+  el.classList.remove('hit', 'miss', 'newcode', 'special', 'foreign');
   void el.offsetWidth;                 // บังคับให้เบราว์เซอร์เริ่ม transition ใหม่
   el.classList.add(cls);
   clearTimeout(flashTimer);
@@ -3318,6 +3363,12 @@ function beepNewCode() {
 function beepSpecial() {
   beep(660, 80, 'sine');
   setTimeout(function () { beep(990, 130, 'sine'); }, 95);
+}
+/* รู้จักแต่ไม่ใช่ของสาขานี้ = สามโน้ตสั้นเท่ากัน แยกออกจากอีกสี่เสียงได้ด้วยหู */
+function beepForeign() {
+  beep(760, 60, 'square');
+  setTimeout(function () { beep(760, 60, 'square'); }, 80);
+  setTimeout(function () { beep(760, 60, 'square'); }, 160);
 }
 
 /* ============================================================
@@ -3343,40 +3394,47 @@ function markNoImage(box, state) {
   box.setAttribute('data-state', state || 'none');
 }
 
-function loadLazyImage(box) {
-  if (box.getAttribute('data-state')) return;
+function loadLazyImage(box, done) {
+  function finish() { if (done) { var f = done; done = null; f(); } }
+  if (box.getAttribute('data-state')) { finish(); return; }
   box.setAttribute('data-state', 'loading');
   if (lazyObserver) { try { lazyObserver.unobserve(box); } catch (e) { /* ปิดไปแล้วก็ช่าง */ } }
 
   var url = box.getAttribute('data-src');
-  if (!url) { markNoImage(box); return; }
+  if (!url) { markNoImage(box); finish(); return; }
 
   var img = new Image();
   var settled = false;
+  /* ข้อ B4 — โหลดสำเร็จไปแล้วรอบก่อน เบราว์เซอร์มีใน cache แล้ว ไม่ต้องรอ timeout ยาว */
+  var wait = imageDoneCache[url] ? 1500 : IMAGE_TIMEOUT_MS;
   var timer = setTimeout(function () {
     if (settled) return;
     settled = true;
     img.onload = img.onerror = null;
     img.src = '';                      // เลิกรอ ไม่ให้ค้างคาหน้าจอ
     markNoImage(box, 'timeout');
-  }, IMAGE_TIMEOUT_MS);
+    finish();
+  }, wait);
 
   img.onload = function () {
     if (settled) return;
     settled = true;
     clearTimeout(timer);
+    imageDoneCache[url] = true;
     box.textContent = '';
     box.classList.remove('noimg');
     img.className = 'img-el';
     img.alt = '';
     box.appendChild(img);
     box.setAttribute('data-state', 'ok');
+    finish();
   };
   img.onerror = function () {
     if (settled) return;
     settled = true;
     clearTimeout(timer);
     markNoImage(box, 'error');
+    finish();
   };
   img.decoding = 'async';
   img.src = url;
@@ -3394,10 +3452,34 @@ function imageBox(url, extraClass) {
 }
 
 /* ก่อนสั่งพิมพ์ต้องดึงรูปที่ยังไม่โหลดขึ้นมาก่อน ไม่งั้นเอกสารจะออกมาเป็นกรอบเปล่า */
-function preloadAllImages(root) {
-  var boxes = (root || document).querySelectorAll('.imgbox[data-src]:not([data-state])');
-  [].forEach.call(boxes, loadLazyImage);
-  return boxes.length;
+/* ---------- ข้อ B2/B4: ทยอยโหลดรูปทีละ 6 พร้อมแถบความคืบหน้า ----------
+   รูปจริงเฉลี่ย 380 KB ที่ 1080x1080 (วัดจากไฟล์จริง 20 รูป) — 407 รูปคือ ~148 MB
+   ยิงขอพร้อมกันทั้งหมดจะทำให้เบราว์เซอร์คิวยาวและหน่วงจนดูเหมือนค้าง
+   CDN ของ Zort ย่อรูปให้ไม่ได้ (ทดสอบทุก param แล้วคืนไฟล์เดิมขนาดเท่าเดิม)
+   จึงทำได้แค่คุมจำนวนที่โหลดพร้อมกันและจำสิ่งที่โหลดแล้ว                        */
+var IMAGE_CONCURRENCY = 6;
+var imageDoneCache = Object.create(null);   // url -> true เมื่อโหลดสำเร็จแล้วรอบนี้
+
+function preloadAllImages(root, onProgress) {
+  var boxes = [].slice.call(
+    (root || document).querySelectorAll('.imgbox[data-src]:not([data-state])'));
+  var total = boxes.length;
+  if (!total) { if (onProgress) onProgress(0, 0); return 0; }
+
+  var done = 0, next = 0, running = 0;
+  function pump() {
+    while (running < IMAGE_CONCURRENCY && next < boxes.length) {
+      var box = boxes[next++];
+      running++;
+      loadLazyImage(box, function () {
+        running--; done++;
+        if (onProgress) onProgress(done, total);
+        pump();
+      });
+    }
+  }
+  pump();
+  return total;
 }
 
 function waitForImages(root, maxMs) {
@@ -3869,11 +3951,14 @@ function handleScanValue(raw) {
   var written = writeScan(key, 1, 'scan', null);
   state.undoStack.push({ key: key, id: written.id });
 
-  /* status พิเศษ = เตือนให้รู้ตัว แต่ยังบันทึกตามปกติ ห้ามขวางจังหวะยิง */
+  /* ข้อ A2/A3 — "รู้จัก" กับ "เป็นของสาขานี้" คนละเรื่องกัน
+     ไม่มีคีย์ใน systemQty เลย = ไม่ได้อยู่ในไฟล์ยอดของสาขานี้ (ของมาผิดที่)
+     ต่างจากมีคีย์แต่ยอดเป็น 0 ซึ่งแปลว่าสาขานี้ควรมี 0 ชิ้น */
+  var foreign = state.systemQty[key] === undefined;
   var special = isSpecialStatus(productStatus(state.products[key]));
-  flashStage(special ? 'special' : 'hit');
-  if (special) beepSpecial(); else beep(1180, 70, 'square');
-  vibrate(special ? [30, 40, 30, 40, 30] : 40);
+  flashStage(foreign ? 'foreign' : (special ? 'special' : 'hit'));
+  if (foreign) beepForeign(); else if (special) beepSpecial(); else beep(1180, 70, 'square');
+  vibrate(foreign ? [60, 50, 60] : (special ? [30, 40, 30, 40, 30] : 40));
 
   showScanHit(key);
   pushRecent(state.products[key].name, 1, written.rec.ts);
@@ -3948,11 +4033,17 @@ function showScanHit(key) {
   var pend = pendingTransferQty(key);
   if (pend) badges.appendChild(makeBadge('🔁 รอโอน ' + fmtNum(pend), 'blue'));
 
-  $('slSys').textContent = fmtNum(state.systemQty[key] || 0);
+  /* ข้อ A3 — รู้จักแต่ไม่ใช่ของสาขานี้ ต้องเห็นชัดว่าต่างจากของปกติ */
+  var foreign = state.systemQty[key] === undefined;
+  if (foreign) badges.appendChild(makeBadge('📦 ไม่ใช่ของสาขานี้', 'blue'));
+
+  $('slSys').textContent = foreign ? '0' : fmtNum(state.systemQty[key] || 0);
   $('slQty').textContent = fmtNum(state.counts[key] || 0);
-  $('slMeta').textContent = isSpecialStatus(st)
-    ? '⚠ สินค้าสถานะพิเศษ — บันทึกแล้ว แต่ควรแจ้งหัวหน้าตอนปิดรอบ'
-    : 'ยิงตัวถัดไปต่อได้เลย';
+  $('slMeta').textContent = foreign
+    ? 'สินค้านี้มีใน Master แต่ไม่อยู่ในยอดของสาขานี้ — บันทึกแล้ว ต้องตรวจว่ามาจากไหน'
+    : (isSpecialStatus(st)
+        ? '⚠ สินค้าสถานะพิเศษ — บันทึกแล้ว แต่ควรแจ้งหัวหน้าตอนปิดรอบ'
+        : 'ยิงตัวถัดไปต่อได้เลย');
 }
 
 function showScanNewCode(value, key) {
@@ -4608,6 +4699,7 @@ function renderMaster() {
 
   /* สินค้าเป็นข้อมูลกลาง แก้ได้เฉพาะ admin — คนอื่นดูได้แต่ช่องกรอกถูกล็อก */
   $('btnImportImages').disabled = !isAdmin();
+  $('btnImportMaster').disabled = !isAdmin();
 
   document.querySelectorAll('[data-mfilter]').forEach(function (b) {
     b.className = 'btn sm ' + (b.getAttribute('data-mfilter') === state.masterFilter ? '' : 'grey');
@@ -4810,6 +4902,13 @@ function summaryData() {
       status: productStatus(p),
       location: locationText(key),
       rawSys: rawSys, pending: pending,
+      /* ข้อ A2 — สามสถานะที่ต้องไม่ปนกัน:
+         inRound  = อยู่ในไฟล์ยอดของสาขานี้
+         known    = มีใน Master (รู้จัก)
+         ไม่ inRound แต่ known = "ไม่ใช่ของสาขานี้" (ของมาผิดที่)
+         ไม่ known = "ไม่มีในระบบ" (ของไม่รู้ที่มา) */
+      inRound: state.systemQty[key] !== undefined,
+      known: !!state.products[key],
       sys: sys, act: act, diff: act - sys, price: price,
       scanQty: Number(state.scanQty[key]) || 0,
       manualQty: Number(state.manualQty[key]) || 0
@@ -5041,6 +5140,7 @@ function renderSummary() {
     });
   }
 
+  renderForeign(data);
   renderTransfers();
   renderScanners();
   renderSpecialStatus();
@@ -5664,6 +5764,78 @@ function buildCycleJobTable(perJob) {
   return box;
 }
 
+var FOREIGN_DOC_HEAD = ['#', 'รูป', 'รหัสสินค้า', 'ชื่อสินค้า', 'หมวดหมู่', 'Status',
+                        'Location', 'ยิงจริง', 'ราคา/ตัว', 'มูลค่า', 'Reason'];
+
+/* ตาราง "ไม่ใช่ของสาขานี้" — รู้จักสินค้า แต่ไม่อยู่ในไฟล์ยอดของสาขานี้ */
+function buildForeignDocTable(rows) {
+  if (!rows || !rows.length) return null;
+  var box = document.createElement('div');
+  box.setAttribute('data-foreign-table', '1');
+  var h = document.createElement('div');
+  h.className = 'tbl-title';
+  h.textContent = 'รายการที่พบแต่ไม่ใช่ของสาขานี้ — ' + fmtNum(rows.length) + ' รายการ';
+  box.appendChild(h);
+  var note = document.createElement('div');
+  note.style.cssText = 'font-size:9pt;color:#475569;margin-bottom:4px';
+  note.textContent = 'สินค้าเหล่านี้มีอยู่ใน Master ของบริษัท แต่ไม่อยู่ในไฟล์ยอดของสาขานี้ ' +
+                     'ยอดระบบจึงเป็น 0 — ต้องตรวจว่าของมาผิดสาขา หรือไฟล์ยอดตกหล่น';
+  box.appendChild(note);
+
+  var table = document.createElement('table');
+  table.className = 'items';
+  table.setAttribute('data-doc-table', 'ไม่ใช่ของสาขานี้');
+  var colgroup = document.createElement('colgroup');
+  [3, 4, 11, 20, 11, 10, 10, 7, 7, 8, 9].forEach(function (w) {
+    var col = document.createElement('col'); col.style.width = w + '%'; colgroup.appendChild(col);
+  });
+  table.appendChild(colgroup);
+  var thead = document.createElement('thead');
+  var htr = document.createElement('tr');
+  FOREIGN_DOC_HEAD.forEach(function (t) {
+    var th = document.createElement('th'); th.textContent = t; htr.appendChild(th);
+  });
+  thead.appendChild(htr);
+  table.appendChild(thead);
+
+  var tbody = document.createElement('tbody');
+  rows.forEach(function (r, i) {
+    var tr = document.createElement('tr');
+    tr.setAttribute('data-foreign-code', r.code);
+    docCell(tr, String(i + 1), 'mid');
+    var imgTd = document.createElement('td');
+    imgTd.className = 'mid';
+    imgTd.appendChild(imageBox((state.products[r.key] || {}).imageUrl));
+    tr.appendChild(imgTd);
+    docCell(tr, r.code);
+    docCell(tr, r.name);
+    docCell(tr, r.category || '-');
+    docCell(tr, r.status || DEFAULT_STATUS, 'mid');
+    docCell(tr, r.location || '-');
+    docCell(tr, fmtNum(r.act), 'num pos');
+    docCell(tr, fmtMoney(r.price), 'num');
+    docCell(tr, fmtMoney(r.act * r.price), 'num');
+
+    var rtd = document.createElement('td');
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'reason-in';
+    input.setAttribute('data-reason', r.key);
+    input.value = state.reasons[r.key] || '';
+    var printed = document.createElement('span');
+    printed.className = 'reason-print';
+    printed.textContent = input.value;
+    input.oninput = function () { printed.textContent = input.value; };
+    input.onchange = function () { saveReason(r.key, input.value.trim()); };
+    rtd.appendChild(input); rtd.appendChild(printed);
+    tr.appendChild(rtd);
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  box.appendChild(table);
+  return box;
+}
+
 /* ตาราง "รายการที่พบแต่ไม่มีในระบบ" — ไม่มีรายการเลยให้ซ่อนทั้งตาราง */
 function buildUnknownDocTable() {
   var rows = unknownRows(true);
@@ -5858,6 +6030,9 @@ function renderDoc() {
   document.querySelectorAll('[data-itemtab]').forEach(function (b) {
     b.className = 'btn sm ' + (b.getAttribute('data-itemtab') === state.itemTab ? '' : 'grey');
   });
+  /* ปิดสวิตช์รูป = ไม่ต้องมีคอลัมน์รูปในเอกสารเลย ตารางจะแคบลงและพิมพ์เร็วขึ้นด้วย */
+  $('printImages').checked = !!state.printImages;
+  document.body.classList.toggle('no-doc-images', !state.printImages);
 
   /* ข้อ D3 — ตารางรายการโอนกลับที่เกี่ยวข้องกับรอบนี้ (แสดงทั้งสองแท็บ) */
   var tfTable = buildTransferDocTable();
@@ -5884,6 +6059,9 @@ function renderDoc() {
   }
   host.appendChild(buildDocItemTable('รายการสินค้า (ขาด)', short));
   host.appendChild(buildDocItemTable('รายการสินค้า (เกิน)', over));
+  /* ข้อ A4 — ของมาผิดสาขา แยกตารางจากของที่ไม่รู้จักเลย */
+  var foreignTable = buildForeignDocTable(foreignRows(data));
+  if (foreignTable) host.appendChild(foreignTable);
   /* วางต่อจากตารางสินค้าเกิน เพราะเป็นของที่เจอเกินมาเหมือนกัน */
   var unknownTable = buildUnknownDocTable();
   if (unknownTable) host.appendChild(unknownTable);
@@ -6118,6 +6296,74 @@ function confirmBranch(stat) {
     'แต่รอบนับที่เลือกอยู่คือสาขา:\n' + expected + '\n\n' +
     'ถ้านำเข้าต่อ ยอดระบบของรอบนี้จะถูกแทนที่ด้วยข้อมูลของสาขาข้างบน',
     'ยืนยันว่าถูกต้อง แล้วนำเข้าต่อ', { cancelLabel: 'ยกเลิก', danger: true });
+}
+
+/* ---------- นำเข้า Master สินค้าทั้งบริษัท (ข้อ A1) ----------
+   ต่างจากการนำเข้าในรอบนับตรงที่เขียนแค่ products ไม่แตะ systemQty ของรอบไหนเลย
+   เพราะไฟล์นี้บอกว่า "บริษัทมีสินค้าอะไรบ้าง" ไม่ได้บอกว่า "สาขานี้ควรมีเท่าไหร่" */
+function handleMasterImport(file) {
+  if (!requireAdmin('นำเข้า Master ไม่ได้')) return;
+  var isXlsx = /\.xlsx$/i.test(file.name);
+  $('btnImportMaster').disabled = true;
+  $('masterCount').textContent = 'กำลังอ่านไฟล์...';
+
+  file.arrayBuffer().then(function (buf) {
+    return isXlsx ? parseXlsx(buf) : Promise.resolve(parseCsv(decodeTextFile(buf)));
+  }).then(function (parsed) {
+    var result = parseProductFile(parsed);
+    /* buildProductPatch เป็นตัวเดียวกับที่ใช้ตอนนำเข้าในรอบนับ
+       กติกา "ห้ามทับค่าที่คนแก้มือ" จึงเป็นชุดเดียวกันเป๊ะ ไม่มีทางหลุด */
+    var diff = buildProductPatch(result.products);
+    var total = Object.keys(diff.patch).length;
+    if (!total) { toast('ไม่มีอะไรต้องอัปเดต', true); return; }
+
+    /* ไฟล์ทั้งบริษัทมีหลักหมื่นรายการ ตัดเป็นก้อนเหมือนตอนนำเข้า Location */
+    var keys = Object.keys(diff.patch);
+    var CHUNK = 400;
+    function step(i) {
+      if (i >= keys.length) return Promise.resolve();
+      var chunk = {};
+      keys.slice(i, i + CHUNK).forEach(function (k) { chunk[k] = diff.patch[k]; });
+      return db.update('products', chunk).then(function () {
+        $('masterCount').textContent = 'กำลังบันทึก ' + fmtNum(Math.min(i + CHUNK, keys.length)) +
+          ' / ' + fmtNum(keys.length) + ' ...';
+        return step(i + CHUNK);
+      });
+    }
+    return step(0).then(refreshProducts).then(function () {
+      buildScanIndex();
+      var box = document.createElement('div');
+      var sec = repSection('ผลการนำเข้า Master ทั้งบริษัท');
+      repLine(sec, 'อ่านจากไฟล์', fmtNum(result.stat.imported) + ' รายการ');
+      repLine(sec, 'เพิ่มใหม่', fmtNum(diff.added) + ' รายการ');
+      repLine(sec, 'อัปเดตของเดิม', fmtNum(diff.updated) + ' รายการ');
+      if (diff.keptManual) {
+        repLine(sec, 'คงค่าที่คนแก้มือไว้', fmtNum(diff.keptManual) + ' รายการ');
+        repNote(sec, 'ประเภทที่ตั้งเอง (typeSource=manual) ไม่ถูกไฟล์ทับ');
+      }
+      repNote(sec, 'ราคาต้นทุน · Status · ลิงก์รูป ไม่ถูกแตะทุกกรณี');
+      repLine(sec, 'Master ตอนนี้มีทั้งหมด', fmtNum(Object.keys(state.products).length) + ' รายการ');
+      repNote(sec, 'ไฟล์นี้ไม่ได้แตะยอดระบบของรอบนับใด ๆ');
+      box.appendChild(sec);
+      ask('นำเข้า Master เรียบร้อย',
+          'ระบบรู้จักสินค้า ' + fmtNum(Object.keys(state.products).length) + ' รายการแล้ว',
+          'ปิด', { hideCancel: true, detail: box });
+    });
+  }).catch(function (err) {
+    var code = err && err.message;
+    if (code === 'MISSING_COLUMNS') { showMissingColumnsHelp(err.missing); return; }
+    var messages = {
+      EMPTY_FILE: 'ไฟล์นี้ว่างเปล่า กรุณาตรวจไฟล์แล้วอัปโหลดใหม่',
+      NO_ROWS: 'ไม่พบข้อมูลสินค้าในไฟล์ กรุณาตรวจว่ามีข้อมูลอยู่ใต้หัวตาราง',
+      NO_SHEET: 'อ่านไฟล์ Excel นี้ไม่ได้ กรุณาบันทึกเป็น .xlsx หรือ CSV แล้วอัปโหลดใหม่',
+      BAD_ZIP: 'ไฟล์ Excel นี้เสียหรือไม่ใช่ไฟล์ .xlsx กรุณาบันทึกเป็น CSV แล้วอัปโหลดใหม่',
+      NO_INFLATE: 'เครื่องนี้อ่านไฟล์ .xlsx ไม่ได้ กรุณาบันทึกเป็น CSV แล้วอัปโหลดใหม่'
+    };
+    toast(messages[code] || 'นำเข้า Master ไม่สำเร็จ กรุณาตรวจไฟล์แล้วลองใหม่', true);
+  }).then(function () {
+    $('btnImportMaster').disabled = false;
+    renderMaster();
+  });
 }
 
 /* ---------- นำเข้าไฟล์ TF Return ---------- */
@@ -6571,6 +6817,7 @@ function renderReopenBanner() {
 }
 
 function renderJobs() {
+  renderExportBar();
   document.querySelectorAll('[data-jstatus]').forEach(function (b) {
     b.className = 'btn sm ' + (b.getAttribute('data-jstatus') === state.jobFilter ? '' : 'grey');
   });
@@ -6636,11 +6883,21 @@ function renderJobs() {
     s.textContent = (g.branchCode ? g.branchCode + ' · ' : '') + (g.branchName || '-') +
       ' · ' + fmtNum(g.jobs.length) + ' Job';
     left.appendChild(t); left.appendChild(s);
+    var right = document.createElement('div');
+    right.style.cssText = 'display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end';
     var chip = document.createElement('span');
     chip.className = 'chip ' + (g.allClosed ? 'ok' : 'warn');
     chip.setAttribute('data-cyclestatus', g.allClosed ? 'closed' : 'open');
     chip.textContent = g.allClosed ? 'รอบนี้ปิดครบแล้ว' : ('ยังไม่ปิด ' + fmtNum(g.openCount) + ' Job');
-    head.appendChild(left); head.appendChild(chip);
+    right.appendChild(chip);
+    /* ข้อ C3 — ดาวน์โหลดทั้ง cycle ของสาขา */
+    var cb = document.createElement('button');
+    cb.className = 'btn sm grey';
+    cb.setAttribute('data-cycleexcel', cid);
+    cb.textContent = '⬇ Excel ทั้งรอบ';
+    cb.onclick = function () { exportJobsExcel(jobsInCycle(cid), cid); };
+    right.appendChild(cb);
+    head.appendChild(left); head.appendChild(right);
     host.appendChild(head);
 
     shown.filter(function (id) { return cycleOf(state.roundIndex[id]) === cid; })
@@ -6762,7 +7019,39 @@ function renderJobCard(id, list) {
       setTimeout(openJobMenu, 120);
     };
     acts.appendChild(mb);
+
+    /* ข้อ C1 — ดาวน์โหลด Excel ของ Job ใบนี้ได้จากการ์ดเลย ไม่ต้องเปิดเข้าไปก่อน */
+    var xb = document.createElement('button');
+    xb.className = 'btn sm grey';
+    xb.style.flex = '0 0 auto';
+    xb.setAttribute('data-cardact', 'excel');
+    xb.textContent = '⬇ Excel';
+    xb.onclick = function (e) {
+      e.stopPropagation();
+      exportJobsExcel([id]);
+    };
+    acts.appendChild(xb);
     card.appendChild(acts);
+
+    /* ข้อ C2 — ติ๊กเลือกหลายใบแล้วรวมเป็นไฟล์เดียว */
+    var pick = document.createElement('label');
+    pick.style.cssText = 'display:flex;align-items:center;gap:8px;margin-top:8px;font-size:13px;color:var(--muted)';
+    var cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.style.cssText = 'width:20px;height:20px;min-height:0;flex:0 0 auto';
+    cb.setAttribute('data-jobpick', id);
+    cb.checked = state.exportPick.indexOf(id) >= 0;
+    cb.onclick = function (e) { e.stopPropagation(); };
+    cb.onchange = function () {
+      var i = state.exportPick.indexOf(id);
+      if (cb.checked && i < 0) state.exportPick.push(id);
+      if (!cb.checked && i >= 0) state.exportPick.splice(i, 1);
+      renderExportBar();
+    };
+    pick.appendChild(cb);
+    pick.appendChild(document.createTextNode('เลือกใบนี้เพื่อรวมดาวน์โหลด'));
+    pick.onclick = function (e) { e.stopPropagation(); };
+    card.appendChild(pick);
 
     card.onclick = function () { openJob(id); };
     list.appendChild(card);
@@ -6965,18 +7254,45 @@ function goScan() {
 
 function startBlockers() {
   var missing = [];
-  if (!isStaff()) missing.push(roleBlockMessage('ยิงบาร์โค้ดไม่ได้'));
+  if (!canScanRole()) missing.push(roleBlockMessage('ยิงบาร์โค้ดไม่ได้'));
   if (!state.roundId) missing.push('ยังไม่ได้เลือก Job');
   if (state.roundId && !(state.roundIndex[state.roundId] || {}).branch) missing.push('Job นี้ยังไม่ได้ระบุสาขา');
   if (!state.zoneId) missing.push('ยังไม่ได้เลือกโซน');
   if (state.roundId && !Object.keys(state.systemQty).length) missing.push('ยังไม่ได้นำเข้ายอดระบบของ Job นี้');
-  if (state.roundId && isStaff() && !canScan()) missing.push(blockedMessage());
+  if (state.roundId && canScanRole() && !canScan()) missing.push(blockedMessage());
   return missing;
 }
 
 function sessionReady() { return startBlockers().length === 0; }
 
+/* ---------- ข้อ D5: ซ่อนแท็บที่ไม่มีสิทธิ์ไปเลย ----------
+   กดแล้วขึ้นว่า "ไม่มีสิทธิ์" คือให้ความหวังแล้วปฏิเสธ ซ่อนไปเลยตรงกว่า
+   ตัวจริงยังบังคับที่ Database Rules อีกชั้น ไม่ได้พึ่งการซ่อนอย่างเดียว */
+var PAGE_ROLES = {
+  jobs:    function () { return !isScannerOnly(); },
+  start:   function () { return !isScannerOnly(); },
+  scan:    function () { return canScanRole(); },
+  master:  function () { return !isScannerOnly(); },
+  summary: function () { return !isScannerOnly(); },
+  doc:     function () { return !isScannerOnly(); }
+};
+
+function canSeePage(name) {
+  var fn = PAGE_ROLES[name];
+  return fn ? fn() : true;
+}
+
+function applyNavVisibility() {
+  ['Jobs', 'Start', 'Scan', 'Master', 'Summary', 'Doc'].forEach(function (p) {
+    var key = p.charAt(0).toLowerCase() + p.slice(1);
+    var btn = $('nav' + p);
+    if (btn) btn.style.display = canSeePage(key) ? '' : 'none';
+  });
+}
+
 function showPage(name) {
+  /* กันเข้าหน้าที่ไม่มีสิทธิ์ผ่านทางอื่น เช่น เรียกฟังก์ชันตรง ๆ หรือกลับมาจากหน้าเก่า */
+  if (!canSeePage(name)) name = canScanRole() ? 'scan' : 'summary';
   state.page = name;
   ['Jobs', 'Start', 'Scan', 'Master', 'Summary', 'Doc'].forEach(function (p) {
     var key = p.charAt(0).toLowerCase() + p.slice(1);
@@ -6993,6 +7309,7 @@ function showPage(name) {
 
 function refreshNav() {
   var ready = sessionReady();
+  applyNavVisibility();
   $('navStart').disabled = !state.roundId;
   $('navScan').disabled = !ready;
   $('navSummary').disabled = !state.roundId;
@@ -7032,6 +7349,163 @@ function refreshNav() {
     ? (jobBranchLabel(round) +
        (state.zoneId ? ' · ' + zoneName(state.zoneId) : '') + (state.counter ? ' · ' + state.counter : ''))
     : 'ยังไม่ได้เลือก Job';
+}
+
+/* ============================================================
+   Export Excel หลาย Job ในไฟล์เดียว (ข้อ C1–C3)
+   ชีทสรุปรวมอยู่บนสุด แล้วตามด้วยชีทของแต่ละ Job
+   ใช้ตัวเขียน xlsx ของโปรเจกต์เอง — ไม่มี SheetJS ในไฟล์นี้ ไม่เคยมี
+   ============================================================ */
+var EXPORT_JOB_HEAD = ['รหัสสินค้า', 'ชื่อสินค้า', 'Location', 'Status', 'ประเภท',
+                       'ยอดระบบ', 'ยิงจริง', 'ผลต่าง', 'ราคา', 'มูลค่าระบบ', 'มูลค่าจริง', 'สถานะการนับ'];
+
+function exportJobsExcel(ids, cycleLabel) {
+  ids = (ids || []).filter(Boolean);
+  if (!ids.length) { toast('ยังไม่ได้เลือก Job', true); return Promise.resolve(); }
+  toast('กำลังรวมข้อมูล ' + fmtNum(ids.length) + ' Job ...');
+
+  return loadJobsRaw(ids).then(function (parts) {
+    var sheets = [];
+    var summary = [['รหัส Job', 'สาขา', 'ประเภทคลัง', 'สถานะ', 'รอบนับของสาขา',
+                    'SKU ทั้งหมด', 'SKU ที่ยิงแล้ว', 'ชิ้นที่ยิงได้',
+                    '%Success (ชิ้น)', '%Success (SKU)', 'มูลค่าระบบ', 'มูลค่าจริง', 'ผลต่างมูลค่า']];
+    var totals = { sku: 0, scanned: 0, pieces: 0, sysV: 0, actV: 0 };
+
+    parts.forEach(function (p) {
+      var job = state.roundIndex[p.id] || {};
+      var d = summaryDataFrom(p.sys, p.counts, null);
+      var g = d.groups.total;
+      summary.push([
+        job.jobCode || p.id, jobBranchLabel(job), storeTypeLabel(storeTypeOf(job)),
+        JOB_STATUS_TEXT[job.status || 'counting'], cycleOf(job),
+        g.skuTotal, d.rows.filter(function (r) { return r.act !== 0; }).length, g.actQty,
+        pctPiecesOf(g) === null ? '' : Math.round(pctPiecesOf(g) * 10) / 10,
+        pctSkuOf(g) === null ? '' : Math.round(pctSkuOf(g) * 10) / 10,
+        Math.round(g.sysValue * 100) / 100, Math.round(g.actValue * 100) / 100,
+        Math.round((g.actValue - g.sysValue) * 100) / 100
+      ]);
+      totals.sku += g.skuTotal;
+      totals.scanned += d.rows.filter(function (r) { return r.act !== 0; }).length;
+      totals.pieces += g.actQty;
+      totals.sysV += g.sysValue;
+      totals.actV += g.actValue;
+
+      var rows = [EXPORT_JOB_HEAD.slice()];
+      d.rows.forEach(function (r) {
+        rows.push([r.code, r.name, r.location || '', r.status || DEFAULT_STATUS,
+                   r.type === 'notProduct' ? 'Not Product' : 'Product',
+                   r.sys, r.act, r.diff, r.price,
+                   Math.round(r.sys * r.price * 100) / 100,
+                   Math.round(r.act * r.price * 100) / 100,
+                   !r.known ? 'ไม่มีในระบบ'
+                            : (!r.inRound ? 'ไม่ใช่ของสาขานี้'
+                                          : (r.diff === 0 ? 'ตรง' : (r.diff < 0 ? 'ขาด' : 'เกิน')))]);
+      });
+      sheets.push({ name: sheetNameFor(job.jobCode || p.id, sheets.length),
+                    rows: rows, widths: [18, 34, 16, 18, 12, 11, 10, 10, 11, 14, 14, 16] });
+    });
+
+    summary.push([]);
+    summary.push(['รวมทุก Job', ids.length + ' Job', '', '', cycleLabel || '',
+                  totals.sku, totals.scanned, totals.pieces, '', '',
+                  Math.round(totals.sysV * 100) / 100, Math.round(totals.actV * 100) / 100,
+                  Math.round((totals.actV - totals.sysV) * 100) / 100]);
+    summary.push([]);
+    summary.push(['ออกไฟล์เมื่อ', thaiDate(Date.now())]);
+    summary.push(['ออกโดย', state.counter || '-']);
+    summary.push(['หมายเหตุ', '%Success ของแถวรวมไม่ได้เฉลี่ยจากแต่ละ Job — ดูตัวเลขรายใบแทน']);
+
+    var blob = buildXlsx([{ name: 'สรุปรวม', rows: summary,
+                            widths: [22, 26, 16, 12, 16, 11, 12, 12, 13, 13, 14, 14, 14] }].concat(sheets));
+    var label = cycleLabel ? cycleLabel
+              : (ids.length === 1 ? ((state.roundIndex[ids[0]] || {}).jobCode || 'job')
+                                  : (ids.length + 'jobs'));
+    downloadBlob(blob, 'stocktake_' + String(label).replace(/[\\\/:*?"<>|]/g, '_') + '_' +
+                       beYearMonth() + '.xlsx');
+    toast('ดาวน์โหลด Excel ' + fmtNum(ids.length) + ' Job แล้ว');
+  }).catch(function () {
+    toast('รวมข้อมูลไม่สำเร็จ กรุณาตรวจการเชื่อมต่อแล้วลองใหม่', true);
+  });
+}
+
+function downloadBlob(blob, filename) {
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+}
+
+/* ชื่อชีทใน Excel ห้ามเกิน 31 ตัวและห้ามมี : \ / ? * [ ] */
+function sheetNameFor(code, i) {
+  var s = String(code).replace(/[\\\/:*?\[\]]/g, '-').slice(0, 28);
+  return s + (i ? '' : '');
+}
+
+function loadJobsRaw(ids) {
+  return Promise.all(ids.map(function (id) {
+    return Promise.all([
+      db.get('rounds/' + id + '/systemQty'),
+      db.get('rounds/' + id + '/scans')
+    ]).then(function (res) {
+      var counts = {};
+      var scans = res[1] || {};
+      Object.keys(scans).forEach(function (sid) {
+        var rec = scans[sid];
+        if (!rec) return;
+        var k = safeKey(rec.code);
+        counts[k] = (counts[k] || 0) + (Number(rec.delta) || 0);
+      });
+      return { id: id, sys: res[0] || {}, counts: counts };
+    });
+  }));
+}
+
+function renderExportBar() {
+  var bar = $('exportBar');
+  var n = state.exportPick.length;
+  bar.style.display = n ? 'block' : 'none';
+  $('exportPickInfo').textContent = n
+    ? ('เลือกไว้ ' + fmtNum(n) + ' Job — ไฟล์เดียวจะมีชีทสรุปรวมบนสุด แล้วตามด้วยชีทของแต่ละ Job')
+    : '';
+}
+
+/* ---------- ข้อ A4: "ไม่ใช่ของสาขานี้" แยกจาก "ไม่มีในระบบ" ----------
+   ของมาผิดที่ = รู้ว่าเป็นสินค้าอะไร แต่ไม่ควรอยู่ที่สาขานี้
+   ของไม่รู้ที่มา = ไม่รู้ด้วยซ้ำว่าเป็นอะไร — คนละปัญหา แก้คนละแบบ */
+function foreignRows(data) {
+  return data.rows.filter(function (r) {
+    if (!r.known || r.inRound || r.act === 0) return false;
+    /* บาร์โค้ดที่เจอที่สาขานี้แล้วแอดมินสร้างเป็นสินค้าใหม่ ไม่ใช่ "ของมาผิดที่"
+       มันคือของที่เจอตรงนี้จริง ๆ และมีตารางของตัวเองอยู่แล้ว (ไม่มีในระบบ) */
+    return !state.unknownKeys[r.key];
+  }).sort(function (a, b) { return b.act - a.act; });
+}
+
+function renderForeign(data) {
+  var rows = foreignRows(data);
+  $('foreignChip').textContent = fmtNum(rows.length);
+  $('foreignChip').className = 'chip ' + (rows.length ? 'warn' : 'ok');
+  $('foreignHint').textContent = rows.length
+    ? ('ยิงเจอสินค้าที่มีใน Master แต่ไม่อยู่ในไฟล์ยอดของสาขานี้ รวม ' +
+       fmtNum(rows.reduce(function (s, r) { return s + r.act; }, 0)) +
+       ' ชิ้น — ของมาผิดสาขาหรือไฟล์ยอดตกหล่น')
+    : 'ไม่มีของที่มาผิดสาขา';
+  var host = $('foreignList');
+  host.innerHTML = '';
+  if (!rows.length) { host.innerHTML = '<div class="empty">ไม่มี</div>'; return; }
+  rows.forEach(function (r) {
+    var d = document.createElement('div');
+    d.className = 'rep-line';
+    d.setAttribute('data-foreign', r.code);
+    var s = document.createElement('span');
+    s.textContent = r.code + ' · ' + r.name;
+    var b = document.createElement('b');
+    b.textContent = fmtNum(r.act) + ' ชิ้น';
+    d.appendChild(s); d.appendChild(b);
+    host.appendChild(d);
+  });
 }
 
 /* ---------- รายการโอนกลับในรอบนี้ ---------- */
@@ -7623,7 +8097,7 @@ function setMe(user, rec) {
     uid: user.uid,
     email: rec.email || user.email || '',
     name: rec.name || defaultNameFromEmail(user.email),
-    role: rec.role === 'admin' || rec.role === 'viewer' ? rec.role : 'counter'
+    role: /^(admin|viewer|scanner)$/.test(rec.role) ? rec.role : 'counter'
   };
   state.counter = state.me.name;      // ผู้นับ = ชื่อจากบัญชี ไม่ให้พิมพ์เอง
   return state.me;
@@ -8405,7 +8879,7 @@ function renderUsers() {
     var roleSp = document.createElement('span'); roleSp.textContent = 'สิทธิ์การใช้งาน';
     var sel = document.createElement('select');
     sel.setAttribute('data-action', 'role');
-    ['admin', 'counter', 'viewer'].forEach(function (r) {
+    ['admin', 'counter', 'scanner', 'viewer'].forEach(function (r) {
       var o = document.createElement('option');
       o.value = r; o.textContent = ROLE_LABEL[r] + ' — ' + ROLE_HELP[r];
       if ((u.role || 'counter') === r) o.selected = true;
@@ -8744,6 +9218,12 @@ function init() {
     b.onclick = function () { setPriceField(b.getAttribute('data-docprice')); };
   });
   $('btnExport').onclick = exportExcel;
+  $('btnExportPicked').onclick = function () { exportJobsExcel(state.exportPick.slice()); };
+  $('btnExportClear').onclick = function () {
+    state.exportPick = [];
+    renderJobs();
+    renderExportBar();
+  };
 
   /* ---- ภาพรวมทุกสาขา ---- */
   document.querySelectorAll('[data-sumtab]').forEach(function (b) {
@@ -8764,12 +9244,44 @@ function init() {
   $('navDoc').onclick = function () { if (state.roundId) showPage('doc'); };
   /* ดึงรูปที่ยังไม่โหลดขึ้นมาก่อนพิมพ์ ไม่งั้นเอกสารออกมาเป็นกรอบเปล่า
      แต่ไม่รอเกิน 8 วินาที รูปไหนไม่มาก็ปล่อยเป็นกรอบเทาแล้วพิมพ์ต่อ */
+  $('printImages').addEventListener('change', function () {
+    state.printImages = this.checked;
+    try { localStorage.setItem('isrd_print_images', this.checked ? '1' : '0'); } catch (e) { /* ปล่อย */ }
+    renderDoc();
+  });
+
   $('btnPrint').onclick = function () {
-    var pending = preloadAllImages($('docSheet'));
+    var prog = $('printProgress');
+    /* ข้อ B3 — ปิดสวิตช์แล้วพิมพ์ทันที ไม่แตะรูปเลย */
+    if (!state.printImages) { window.print(); return; }
+
+    var pending = preloadAllImages($('docSheet'), function (done, total) {
+      prog.textContent = 'กำลังโหลดรูป ' + fmtNum(done) + ' / ' + fmtNum(total) +
+        ' (ทีละ ' + IMAGE_CONCURRENCY + ' รูป)';
+    });
     if (!pending) { window.print(); return; }
-    toast('กำลังโหลดรูป ' + fmtNum(pending) + ' รูปก่อนพิมพ์...');
-    waitForImages($('docSheet'), 8000).then(function () { window.print(); });
+    prog.style.display = 'block';
+    prog.textContent = 'กำลังโหลดรูป 0 / ' + fmtNum(pending);
+    $('btnPrint').disabled = true;
+    /* รอไม่เกิน 60 วิ — ไฟล์ใหญ่และเยอะ เผื่อเวลาไว้มากกว่าเดิม แต่ไม่รอไม่จบ */
+    waitForImages($('docSheet'), 60000).then(function (left) {
+      prog.textContent = left
+        ? ('โหลดไม่ทัน ' + fmtNum(left) + ' รูป — พิมพ์เป็นกรอบเทาแทน')
+        : 'โหลดรูปครบแล้ว';
+      $('btnPrint').disabled = false;
+      window.print();
+      setTimeout(function () { prog.style.display = 'none'; }, 4000);
+    });
   };
+
+  $('btnImportMaster').onclick = function () {
+    if (!requireAdmin('นำเข้า Master ไม่ได้')) return;
+    $('masterFile').click();
+  };
+  $('masterFile').addEventListener('change', function () {
+    if (this.files && this.files[0]) handleMasterImport(this.files[0]);
+    this.value = '';
+  });
 
   $('btnImportImages').onclick = function () {
     if (!requireAdmin('นำเข้ารูปสินค้าไม่ได้')) return;
@@ -8822,6 +9334,7 @@ function init() {
      กรอกครั้งเดียวใช้ได้ทุก Job ทุกเอกสาร และยังขึ้นให้แม้เปิดตอนเน็ตหลุด
      ห้ามอ่านจากฐานตรงนี้ เพราะยังไม่ผ่านล็อกอิน คำขอจะไม่มี token ติดไปด้วย */
   applyCompany(loadCompanyLocal());
+  try { state.printImages = localStorage.getItem('isrd_print_images') !== '0'; } catch (e) { /* ปล่อย */ }
 
 
   /* ---- คิวเขียนข้อมูล + สถานะการเชื่อมต่อ ---- */
@@ -8900,6 +9413,9 @@ function startApp() {
   renderStart();
   renderJobs();
   renderBranchPicker();
+  applyNavVisibility();
+  /* scanner เห็นแค่หน้ายิง เปิดแอปมาต้องพาไปหน้านั้นเลย ไม่ใช่หน้ารายการ Job ที่เขาไม่เห็น */
+  if (isScannerOnly()) showPage('scan');
 }
 
 init();
@@ -8909,6 +9425,59 @@ init();
   ====================================================================
   สรุปการเปลี่ยนแปลง
   ====================================================================
+
+  v2.1.0 — Master ทั้งบริษัท · พิมพ์เร็วขึ้น · Export หลาย Job · role scanner
+
+    A) Master เป็นของทั้งบริษัท ไม่ใช่ของสาขาที่เคยนับ
+       ปุ่ม "นำเข้า Master สินค้าทั้งบริษัท" ในแท็บ Master (admin เท่านั้น)
+       รับไฟล์ Zort export ทั้งบริษัท เขียนแค่ products ไม่แตะ systemQty ของรอบไหนเลย
+       ใช้ buildProductPatch ตัวเดียวกับตอนนำเข้าในรอบนับ กติกา "ห้ามทับค่าที่คนแก้มือ"
+       จึงเป็นชุดเดียวกันเป๊ะ — costPrice · imageUrl · Status ไม่ถูกแตะทุกกรณี
+       และ typeSource='manual' คงประเภทที่คนตั้งไว้ ตัดเป็นก้อนละ 400 ตอนเขียน
+
+       แยกความหมาย 3 อย่างที่เคยปนกัน:
+         อยู่ใน Master          = รู้จัก มีชื่อ มีราคา
+         อยู่ใน systemQty ของรอบ = สาขานี้ควรมีเท่าไหร่
+         ไม่อยู่ใน Master        = ไม่รู้จักจริง
+       ตัวชี้ขาดคือ state.systemQty[key] === undefined ไม่ใช่ค่าเป็น 0
+       เพราะ "ไม่มีคีย์" (ไม่อยู่ในไฟล์สาขา) ต่างจาก "มีคีย์แต่เป็น 0" (สาขาควรมี 0)
+
+       ตอนยิงแยก 3 กรณี:
+         เขียว = รู้จัก + มียอดในรอบ
+         ฟ้า   = รู้จักแต่ไม่มียอดในรอบ · ป้าย "ไม่ใช่ของสาขานี้" · เสียงสามโน้ตสั้น
+                 โชว์ชื่อ รูป ราคา ตามปกติ ยอดระบบ 0
+         ส้ม   = ไม่รู้จักเลย · ป้าย "ไม่มีในระบบ" แบบเดิม
+       หน้าสรุปและเอกสารแยกตาราง "ไม่ใช่ของสาขานี้" ออกจาก "ไม่มีในระบบ"
+       (ของมาผิดที่ กับ ของไม่รู้ที่มา แก้คนละแบบ)
+
+    B) พิมพ์เอกสารเร็วขึ้น
+       B1 — ทดสอบ CDN แล้ว: image.zort.co.th ย่อรูปให้ไม่ได้
+            ลอง width / w / size / resize / thumb / h / format=webp และ
+            /cdn-cgi/image/ ทั้งหมดคืนไฟล์เดิมขนาดเท่าเดิมเป๊ะ (11,261 B · 303x297)
+            HTTP 200 ทุกอัน ยกเว้น cdn-cgi ที่ได้ 404 → Cloudflare Image Resizing ไม่ได้เปิด
+            วัดของจริง 20 รูป: เฉลี่ย 380 KB ที่ 1080x1080 → 407 รูป ≈ 148 MB
+            ไม่ได้เดา param ไหนเพิ่ม เพราะไม่มีอันไหนทำงานจริง
+       B2 — โหลดพร้อมกันไม่เกิน 6 รูป ทยอยเติมคิว พร้อมแถบบอก "กี่ / ทั้งหมด"
+       B3 — สวิตช์ "พิมพ์พร้อมรูปสินค้า" เปิดเป็นค่าเริ่มต้น จำค่าไว้ในเครื่อง
+            ปิดแล้วซ่อนคอลัมน์รูปและพิมพ์ทันที ไม่แตะเครือข่ายเลย
+       B4 — จำ url ที่โหลดสำเร็จแล้ว รอบสองไม่ต้องรอ timeout ยาว
+
+    C) Export Excel หลาย Job
+       C1 — การ์ด Job มีปุ่ม "⬇ Excel" ของใบนั้น
+       C2 — ติ๊กเลือกหลายใบ แล้วกดรวมเป็นไฟล์เดียว ชีทสรุปรวมอยู่บนสุด
+            ตามด้วยชีทของแต่ละ Job
+       C3 — หัวกลุ่ม cycle มีปุ่ม "⬇ Excel ทั้งรอบ" รวมทุก Job ในรอบนั้น
+       หมายเหตุ: โปรเจกต์นี้ไม่มี SheetJS และไม่เคยมี — ใช้ตัวเขียน xlsx
+       ที่เขียนเองในไฟล์ (store-only ZIP + SpreadsheetML) ตามกฎห้ามใช้ไลบรารีนอก
+
+    D) ล็อกสิทธิ์ตามหน้า
+       เพิ่ม role "scanner" ต่ำกว่า counter — เห็นแค่แท็บ "ยิง" อย่างเดียว
+       ยิงได้ทุก Job ที่สถานะ counting (ยังไม่ทำ per-job assignment ตามที่ระบุ)
+       แท็บที่ไม่มีสิทธิ์ถูกซ่อนไปเลย ไม่ใช่กดแล้วขึ้นว่าไม่มีสิทธิ์
+       showPage() กันเข้าหน้าที่ไม่มีสิทธิ์ผ่านทางอื่นด้วย
+       เปิดแอปมา scanner จะไปหน้ายิงทันที ไม่ใช่หน้ารายการ Job ที่เขาไม่เห็น
+       Database Rules: scanner เขียนได้เฉพาะ scans และ unknown ของ Job ที่ counting
+       ทุก node อื่นคงเดิม — systemQty · roundIndex · products ไม่มี scanner
 
   v2.0.1 — กราฟโดนัทเป็นตาราง 2x2 · ถอดปุ่มย้ายข้อมูล · ปุ่มสร้าง Job ตกใต้ขอบจอ
 
@@ -9466,7 +10035,7 @@ init();
             ".write": "auth != null && ((root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin') || (!root.child('stocktake2026/users').exists() && $uid === auth.uid && newData.child('role').val() === 'admin' && newData.child('active').val() === true))",
             ".validate": "!newData.exists() || newData.hasChildren(['name','role','active'])",
             "name":   { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length < 120" },
-            "role":   { ".validate": "newData.isString() && newData.val().matches(/^(admin|counter|viewer)$/)" },
+            "role":   { ".validate": "newData.isString() && newData.val().matches(/^(admin|counter|scanner|viewer)$/)" },
             "active": { ".validate": "newData.isBoolean()" },
             "email":  { ".validate": "newData.isString() && newData.val().length < 200" }
           }
@@ -9521,7 +10090,7 @@ init();
 
             "scans": {
               "$scanId": {
-                ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && !data.exists() && newData.exists() && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting'",
+                ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter|scanner)$/) && !data.exists() && newData.exists() && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting'",
                 ".validate": "newData.hasChildren(['code','zone','delta','user','ts'])",
                 "delta": { ".validate": "newData.isNumber()" },
                 "ts":    { ".validate": "newData.isNumber()" }
@@ -9530,7 +10099,7 @@ init();
 
             "unknown": {
               "$id": {
-                ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && !data.exists() && newData.exists() && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting'"
+                ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter|scanner)$/) && !data.exists() && newData.exists() && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting'"
               }
             },
 
