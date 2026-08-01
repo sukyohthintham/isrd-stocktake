@@ -1,0 +1,176 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "wms2026": {
+      ".read": true,
+      ".write": true
+    },
+    "stocktake2026": {
+      ".read": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true",
+      ".write": false,
+      "users": {
+        ".read": "auth != null",
+        "$uid": {
+          ".write": "auth != null && ((root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin') || (!root.child('stocktake2026/users').exists() && $uid === auth.uid && newData.child('role').val() === 'admin' && newData.child('active').val() === true))",
+          ".validate": "!newData.exists() || newData.hasChildren(['name','role','active'])",
+          "name": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length < 120"
+          },
+          "role": {
+            ".validate": "newData.isString() && newData.val().matches(/^(admin|counter|scanner|viewer)$/)"
+          },
+          "active": {
+            ".validate": "newData.isBoolean()"
+          },
+          "email": {
+            ".validate": "newData.isString() && newData.val().length < 200"
+          }
+        }
+      },
+      "products": {
+        ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin'"
+      },
+      "branches": {
+        ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin'"
+      },
+      "locations": {
+        ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin'"
+      },
+      "settings": {
+        ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin'"
+      },
+      "docCounters": {
+        "$branch": {
+          "$kind": {
+            "$yearMonth": {
+              ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && newData.isNumber() && (!data.exists() || newData.val() > data.val())"
+            }
+          }
+        }
+      },
+      "cycles": {
+        "$cycleId": {
+          ".validate": "!newData.exists() || newData.hasChildren(['status'])",
+          "status": {
+            ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && (!data.exists() || data.val() !== 'closed' || root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin')",
+            ".validate": "newData.isString() && newData.val().matches(/^(counting|reviewing|closed)$/)"
+          },
+          "info": {
+            ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/cycles').child($cycleId).child('status').val() !== 'closed'",
+            "schema": {
+              ".validate": "newData.isNumber()"
+            },
+            "seq": {
+              ".validate": "newData.isNumber()"
+            },
+            "createdAt": {
+              ".validate": "newData.isNumber()"
+            },
+            "importedAt": {
+              ".validate": "newData.isNumber()"
+            },
+            "migratedAt": {
+              ".validate": "newData.isNumber()"
+            },
+            "branchCode": {
+              ".validate": "newData.isString() && newData.val().length < 64"
+            }
+          },
+          "systemQty": {
+            ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && (!root.child('stocktake2026/cycles').child($cycleId).child('status').exists() || root.child('stocktake2026/cycles').child($cycleId).child('status').val() === 'counting')",
+            "$sku": {
+              ".validate": "!newData.exists() || newData.isNumber()"
+            }
+          },
+          "transfers": {
+            ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && (!root.child('stocktake2026/cycles').child($cycleId).child('status').exists() || root.child('stocktake2026/cycles').child($cycleId).child('status').val() === 'counting')"
+          },
+          "deductTransfer": {
+            ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/cycles').child($cycleId).child('status').val() !== 'closed'",
+            ".validate": "newData.isBoolean()"
+          }
+        }
+      },
+      "roundIndex": {
+        "$roundId": {
+          ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && (!data.exists() || data.child('status').val() !== 'closed' || root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin') && (newData.exists() || root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin')",
+          ".validate": "!newData.exists() || newData.hasChildren(['jobCode','branchCode','status'])",
+          "status": {
+            ".validate": "newData.isString() && newData.val().matches(/^(counting|reviewing|closed)$/)"
+          },
+          "storeType": {
+            ".validate": "newData.isString() && newData.val().length < 24"
+          },
+          "cycleId": {
+            ".validate": "newData.isString() && newData.val().length < 64"
+          },
+          "closedAt": {
+            ".validate": "newData.isNumber()"
+          },
+          "createdAt": {
+            ".validate": "newData.isNumber()"
+          },
+          "importedAt": {
+            ".validate": "newData.isNumber()"
+          }
+        }
+      },
+      "rounds": {
+        "$roundId": {
+          "zones": {
+            ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/)"
+          },
+          "schema": {
+            ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/)"
+          },
+          "systemQty": {
+            ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting'"
+          },
+          "transfers": {
+            ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting'"
+          },
+          "reasons": {
+            ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() !== 'closed'"
+          },
+          "docType": {
+            ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() !== 'closed'"
+          },
+          "docNo": {
+            ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() !== 'closed'"
+          },
+          "transferNo": {
+            ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() !== 'closed'"
+          },
+          "deductTransfer": {
+            ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() !== 'closed'",
+            ".validate": "newData.isBoolean()"
+          },
+          "scans": {
+            "$scanId": {
+              ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter|scanner)$/) && !data.exists() && newData.exists() && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting'",
+              ".validate": "newData.hasChildren(['code','zone','delta','user','ts'])",
+              "delta": {
+                ".validate": "newData.isNumber()"
+              },
+              "ts": {
+                ".validate": "newData.isNumber()"
+              }
+            }
+          },
+          "unknown": {
+            "$id": {
+              ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter|scanner)$/) && !data.exists() && newData.exists() && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting'"
+            }
+          },
+          "items": {
+            ".write": false
+          },
+          "counts": {
+            ".write": false
+          }
+        }
+      }
+    }
+  }
+}

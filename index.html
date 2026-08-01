@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.1.0">
+<meta name="version" content="2.1.1">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.1.0</title>
+<title>ISRD Stocktake v2.1.1</title>
 
 <style>
 :root{
@@ -85,6 +85,9 @@ select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,va
 .btn:active{transform:scale(.985)}
 .btn:disabled{opacity:.45;cursor:not-allowed}
 .btn.block{display:flex;width:100%}
+/* ตัวเลือกในกล่องถาม — สูงพอให้คนใส่ถุงมือกดโดน และรองรับข้อความ 2 บรรทัด */
+.btn.choice{flex-direction:column;align-items:flex-start;text-align:left;
+  min-height:60px;padding:12px 14px;white-space:normal;line-height:1.35}
 .btn.big{min-height:64px;font-size:19px}
 .btn.ghost{background:#fff;color:var(--brand);border-color:var(--brand)}
 .btn.grey{background:#fff;color:var(--muted);border-color:var(--line)}
@@ -1028,7 +1031,7 @@ body.no-doc-images .doc .imgbox{display:none}
     <div class="tablewrap">
       <table class="grid" id="ovTable">
         <thead><tr>
-          <th>รหัสสาขา</th><th>ชื่อสาขา</th><th>สถานะ Job</th>
+          <th>รหัสสาขา</th><th>ชื่อสาขา</th><th>รอบนับ</th>
           <th>SKU ที่ยิงแล้ว</th><th>ชิ้นที่ยิงได้</th>
           <th>%Success (ชิ้น)</th><th>%Success (SKU)</th>
           <th>ผลต่างมูลค่า</th><th>อัปเดตล่าสุด</th>
@@ -1283,7 +1286,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.1.0';
+var APP_VERSION = '2.1.1';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -2365,16 +2368,176 @@ function storeTypeLabel(key) {
   return hit ? hit.label : key;
 }
 
-/* cycle = รหัสสาขา + ปีเดือน เช่น LKB01-202607
-   Job ในสาขาและเดือนเดียวกันเข้า cycle เดียวกันเอง แก้ทีหลังได้เผื่อคร่อมเดือน */
-function cycleIdFor(branchCode, at) {
+/* ---------- รอบนับของสาขา (cycle) ----------
+   นิยาม: 1 รอบนับ = 1 ครั้งที่ไปนับสาขานั้น ถือยอดระบบก้อนเดียว เปิดได้หลาย Job
+   รหัส: [ย่อสาขา]-[ปีเดือน พ.ศ.]-[เลขรัน 2 หลัก] เช่น FCM01-256907-01
+   นับสาขาเดิมเดือนเดิมซ้ำ = เลขรัน -02 -03 → คนละรอบนับ แยกขาดจากกัน       */
+var CYCLE_SCHEMA = 1;                        // ระเบียนรอบนับรุ่นที่ย้าย systemQty ขึ้นมาแล้ว
+
+function cycleYm(at) {                       // 2026-07 → '256907'
   var d = new Date(at || Date.now());
-  var ym = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0');
-  return branchCodeCompact(branchCode || 'NA') + '-' + ym;
+  return (d.getFullYear() + 543) + String(d.getMonth() + 1).padStart(2, '0');
 }
+function makeCycleId(branchCode, at, seq) {
+  return branchCodeCompact(branchCode || 'NA') + '-' + cycleYm(at) +
+         '-' + String(seq || 1).padStart(2, '0');
+}
+
+/* รูปแบบเดิม v2.0.0 คือ [ย่อสาขา]-[ปีเดือน ค.ศ.] ไม่มีเลขรัน เช่น FCM01-202607
+   แปลงที่ชั้นอ่านเหมือน storeTypeOf เพื่อให้หน้าจออ่านค่าถูกทันทีแม้ยังไม่ได้ migrate */
+function normalizeCycleId(raw, job) {
+  var s = String(raw || '').trim();
+  if (/-\d{6}-\d{2}$/.test(s)) return s;                    // รูปแบบใหม่แล้ว
+  var old = s.match(/^(.*)-(\d{4})(\d{2})$/);
+  if (old) {
+    var y = Number(old[2]);
+    if (y < 2400) y += 543;                                 // ค.ศ. → พ.ศ.
+    return old[1] + '-' + y + old[3] + '-01';
+  }
+  if (s) return s;                                          // รหัสมือที่ไม่เข้าแบบ ปล่อยตามเดิม
+  return makeCycleId((job || {}).branchCode, (job || {}).createdAt, 1);
+}
+
 function cycleOf(job) {
   if (!job) return '';
-  return job.cycleId || cycleIdFor(job.branchCode, job.createdAt);
+  return normalizeCycleId(job.cycleId, job);
+}
+
+/* เลขรันถัดไปของสาขา+เดือนนี้ — ดูจากทั้ง Job ที่มีอยู่และระเบียนรอบนับที่โหลดมา */
+function nextCycleSeq(branchCode, at) {
+  var prefix = branchCodeCompact(branchCode || 'NA') + '-' + cycleYm(at) + '-';
+  var max = 0;
+  function look(cid) {
+    if (String(cid).indexOf(prefix) !== 0) return;
+    var n = Number(String(cid).slice(prefix.length));
+    if (n > max) max = n;
+  }
+  Object.keys(state.roundIndex).forEach(function (id) { look(cycleOf(state.roundIndex[id])); });
+  Object.keys(state.cycles).forEach(look);
+  return max + 1;
+}
+
+/* ---------- สถานะของรอบนับ ----------
+   ระเบียน cycles/{id}/status เป็นตัวจริงที่ Database Rules ใช้ตัดสิน
+   แต่ถ้ายังไม่มีระเบียน (ข้อมูลเก่าก่อน migrate) ให้คิดจากสถานะ Job ในรอบนั้นแทน
+   กติกา: มี Job ใดกำลังนับ → รอบยังนับอยู่ · ปิดครบทุกใบ → รอบปิด           */
+function deriveCycleStatus(cid) {
+  var ids = jobsInCycle(cid);
+  if (!ids.length) return 'counting';
+  var any = function (st) {
+    return ids.some(function (id) { return ((state.roundIndex[id] || {}).status || 'counting') === st; });
+  };
+  if (any('counting')) return 'counting';
+  if (any('reviewing')) return 'reviewing';
+  return 'closed';
+}
+function cycleStatus(cid) {
+  var rec = state.cycles[cid];
+  return (rec && rec.status) || deriveCycleStatus(cid);
+}
+function cycleInfo(cid) { return (state.cycles[cid] || {}).info || {}; }
+function cycleMigrated(cid) { return Number(cycleInfo(cid).schema) >= 1; }
+
+/* ข้อ F3 — รอบที่ยัง "กำลังนับ" ของสาขานี้ มีให้เข้าร่วมไหม
+   reviewing / closed ไม่นับ ต้องเปิดรอบใหม่เท่านั้น */
+function openCycleFor(branchCode) {
+  var prefix = branchCodeCompact(branchCode || 'NA') + '-';
+  var best = null, bestAt = -1;
+  var seen = {};
+  Object.keys(state.roundIndex).forEach(function (id) {
+    var job = state.roundIndex[id] || {};
+    var cid = cycleOf(job);
+    if (cid.indexOf(prefix) !== 0 || seen[cid]) return;
+    seen[cid] = 1;
+    if (cycleStatus(cid) !== 'counting') return;
+    var at = jobsInCycle(cid).reduce(function (m, jid) {
+      return Math.max(m, (state.roundIndex[jid] || {}).createdAt || 0);
+    }, 0);
+    if (at > bestAt) { bestAt = at; best = cid; }
+  });
+  return best;
+}
+
+/* เขียนสถานะรอบให้ตรงกับ Job ในรอบนั้น เรียกทุกครั้งที่สถานะ Job เปลี่ยน
+   เขียนเฉพาะตอนค่าต่างจริง จะได้ไม่ยิงคำขอทิ้ง ๆ ขว้าง ๆ */
+function syncCycleStatus(cid) {
+  if (!cid) return Promise.resolve();
+  var want = deriveCycleStatus(cid);
+  var rec = state.cycles[cid] || {};
+  if (rec.status === want) return Promise.resolve();
+  return db.update('cycles/' + cid, { status: want }).then(function () {
+    state.cycles[cid] = state.cycles[cid] || {};
+    state.cycles[cid].status = want;
+  }).catch(function () { /* กฎอาจไม่ให้เปลี่ยน — หน้าจอยังคิดจาก Job ได้เอง */ });
+}
+
+/* ============================================================
+   ยอดระบบและรายการโอน — ทางเข้าจุดเดียว (ข้อ F2)
+
+   ตั้งแต่ v2.1.1 ทั้งสองอย่างเก็บที่ cycles/{cycleId} ไม่ใช่ rounds/{jobId}
+   เพราะมันคือ "ยอดของสาขา ณ รอบที่ไปนับ" ไม่ใช่ของ Job ใบใดใบหนึ่ง
+   Job SHOW กับ STOCK ของสาขาเดียวกันจึงใช้ก้อนเดียวกัน แบ่งกันแค่พื้นที่นับ
+
+   ข้อมูลเก่าที่ยังไม่ migrate อ่านจาก rounds ของทุก Job ในรอบแล้วยุบแบบ
+   "เอาค่าสูงสุดรายรหัส" — ห้ามบวกกันเด็ดขาด เพราะการบวกซ้ำคือต้นเหตุบั๊กยอด ×2
+   ============================================================ */
+function mergeSysMax(target, src) {
+  Object.keys(src || {}).forEach(function (k) {
+    var v = Number(src[k]) || 0;
+    if (target[k] === undefined || v > target[k]) target[k] = v;
+  });
+  return target;
+}
+
+function legacyRoundParts(cid, field) {
+  return Promise.all(jobsInCycle(cid).map(function (id) {
+    return db.get('rounds/' + id + '/' + field)
+      .then(function (d) { return { id: id, data: d || {} }; })
+      .catch(function () { return { id: id, data: {} }; });
+  }));
+}
+
+function loadCycleSystemQty(cid) {
+  if (!cid) return Promise.resolve({});
+  return db.get('cycles/' + cid + '/systemQty').then(function (data) {
+    if (data && Object.keys(data).length) return data;
+    if (cycleMigrated(cid)) return data || {};       // ย้ายแล้วและว่างจริง
+    return legacyRoundParts(cid, 'systemQty').then(function (parts) {
+      var out = {};
+      parts.forEach(function (p) { mergeSysMax(out, p.data); });
+      return out;
+    });
+  }).catch(function () { return {}; });
+}
+
+/* ใบโอนเลขเดียวกัน = ใบเดียวกัน เอาใบที่มีรายการมากกว่าไว้ ไม่รวมรายการเข้าด้วยกัน */
+function mergeTransfers(target, src) {
+  Object.keys(src || {}).forEach(function (k) {
+    var cur = target[k], add = src[k];
+    if (!add) return;
+    if (!cur || Object.keys(add.items || {}).length > Object.keys(cur.items || {}).length) target[k] = add;
+  });
+  return target;
+}
+
+function loadCycleTransfers(cid) {
+  if (!cid) return Promise.resolve({ transfers: {}, deduct: false });
+  return Promise.all([
+    db.get('cycles/' + cid + '/transfers'),
+    db.get('cycles/' + cid + '/deductTransfer')
+  ]).then(function (res) {
+    var tf = res[0] || {}, deduct = res[1] === true;
+    if (Object.keys(tf).length || cycleMigrated(cid)) return { transfers: tf, deduct: deduct };
+    return Promise.all([
+      legacyRoundParts(cid, 'transfers'),
+      legacyRoundParts(cid, 'deductTransfer')
+    ]).then(function (old) {
+      var out = {};
+      old[0].forEach(function (p) { mergeTransfers(out, p.data); });
+      var anyDeduct = old[1].some(function (p) { return p.data === true; });
+      return { transfers: out, deduct: deduct || anyDeduct };
+    });
+  }).catch(function () { return { transfers: {}, deduct: false }; });
 }
 
 var DEFAULT_STATUS = 'Normal';
@@ -2596,6 +2759,8 @@ var state = {
   customStoreTypes: [],                     // ประเภทคลังย่อยที่แอดมินเพิ่มเอง
   docScope: 'job',                          // เอกสาร: 'job' = เฉพาะ Job นี้ · 'cycle' = รวมทั้งสาขา
   cycleData: null,                          // แคชยอดรวมทั้ง cycle
+  cycles: {},                               // cycleId -> { status, info } ระเบียนรอบนับ
+  cycleId: null,                            // รอบนับของ Job ที่เปิดอยู่
   transfers: {},                            // safeKey(tfNo) -> ใบโอนของรอบนี้
   transferQty: {},                          // safeKey(sku) -> ยอดรอโอนรวม
   deductTransfer: false,                    // หักรายการรอโอนออกจากยอดระบบไหม
@@ -2632,7 +2797,8 @@ var state = {
   manualOpen: false,
   jobFilter: 'all',        // ตัวกรองสถานะในหน้ารายการ Job
   jobBranch: 'all',
-  jobStats: {},            // roundId -> ความคืบหน้า (คำนวณครั้งเดียวแล้วเก็บไว้)
+  jobStats: {},            // roundId -> ยอดที่ Job ใบนั้นยิงได้ (คำนวณครั้งเดียวแล้วเก็บไว้)
+  cycleStats: {},          // cycleId -> ความคืบหน้าและความแม่นของทั้งรอบนับ
   jobConfirmed: false,     // ยืนยัน Job แล้วหรือยังก่อนเริ่มยิง
   connection: 'unknown'    // 'online' | 'offline' | 'unknown'
 };
@@ -2647,7 +2813,8 @@ function toast(msg, bad) {
   toast._t = setTimeout(function () { t.className = 'toast'; }, 3200);
 }
 
-/* opts.fields = [{key,label,type:'text'|'pin',placeholder}]
+/* opts.fields = [{key,label,type:'text'|'pin'|'choice',placeholder,options,value}]
+   choice = ปุ่มตัวเลือกแบบกดทั้งแถบ options = [{value,label,note}] เผื่อคนใส่ถุงมือ
    ถ้ามี fields จะคืนค่าเป็น object ของค่าที่กรอก หรือ null เมื่อกดยกเลิก
    ถ้าไม่มี fields จะคืน true/false เหมือนเดิม */
 function ask(title, message, okLabel, opts) {
@@ -2658,8 +2825,50 @@ function ask(title, message, okLabel, opts) {
     $('modalMsg').textContent = message;
     $('modalDetail').innerHTML = '';
 
-    var inputs = {};
+    var inputs = {}, choices = {};
     (opts.fields || []).forEach(function (f) {
+      if (f.type === 'choice') {
+        var wrap = document.createElement('div');
+        wrap.className = 'fld';
+        var head = document.createElement('span');
+        head.textContent = f.label;
+        wrap.appendChild(head);
+        choices[f.key] = f.value || (f.options[0] || {}).value;
+        var btns = [];
+        (f.options || []).forEach(function (o) {
+          var b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'btn block choice';
+          b.style.marginTop = '8px';
+          b.setAttribute('data-choice', f.key);
+          b.setAttribute('data-choiceval', o.value);
+          var t = document.createElement('div');
+          t.style.fontWeight = '800';
+          t.textContent = o.label;
+          b.appendChild(t);
+          if (o.note) {
+            var n = document.createElement('div');
+            n.style.cssText = 'font-size:12px;font-weight:500;opacity:.85;margin-top:3px;white-space:normal';
+            n.textContent = o.note;
+            b.appendChild(n);
+          }
+          b.onclick = function () {
+            choices[f.key] = o.value;
+            btns.forEach(function (x) {
+              x.className = 'btn block choice' +
+                (x.getAttribute('data-choiceval') === choices[f.key] ? '' : ' grey');
+            });
+          };
+          btns.push(b);
+          wrap.appendChild(b);
+        });
+        btns.forEach(function (x) {
+          x.className = 'btn block choice' +
+            (x.getAttribute('data-choiceval') === choices[f.key] ? '' : ' grey');
+        });
+        $('modalDetail').appendChild(wrap);
+        return;
+      }
       var lab = document.createElement('label');
       lab.className = 'fld';
       var sp = document.createElement('span');
@@ -2689,6 +2898,7 @@ function ask(title, message, okLabel, opts) {
       if (ok && opts.fields) {
         values = {};
         Object.keys(inputs).forEach(function (k) { values[k] = inputs[k].value.trim(); });
+        Object.keys(choices).forEach(function (k) { values[k] = choices[k]; });
       }
       $('modalBg').classList.remove('show');
       $('modalDetail').innerHTML = '';
@@ -2785,7 +2995,7 @@ function applyScanRecord(id, rec) {
   }
 
   state.scanLog.push({ id: id, rec: rec });
-  delete state.jobStats[state.roundId];   // ความคืบหน้าที่แคชไว้เก่าแล้ว
+  dropJobStats(state.roundId);            // ความคืบหน้าที่แคชไว้เก่าแล้ว
   return true;
 }
 
@@ -2984,15 +3194,17 @@ function makeJobCode(abbr, when, storeType) {
   return base + String(next).padStart(2, '0');
 }
 
-function createRound(name, branch, abbr, locationSet, storeType) {
+/* cid = รอบนับที่ผู้ใช้เลือกไว้แล้ว (เข้ารอบเดิม หรือเปิดรอบใหม่) — ดูข้อ F3 */
+function createRound(name, branch, abbr, locationSet, storeType, cid) {
   var id = db.newKey();
   var now = Date.now();
   var st = String(storeType || DEFAULT_STORE_TYPE).toUpperCase();
+  cid = cid || makeCycleId(branch.code, now, nextCycleSeq(branch.code, now));
   var patch = {};
   patch[id] = {
     locationSet: locationSet === 'online' ? 'online' : 'offline',
     storeType: st,
-    cycleId: cycleIdFor(branch.code, now),
+    cycleId: cid,
     jobCode: makeJobCode(abbr || branchCodeCompact(branch.code) || suggestAbbr(branch.name), now, st),
     name: name,
     branchCode: branch.code,
@@ -3001,7 +3213,66 @@ function createRound(name, branch, abbr, locationSet, storeType) {
     createdAt: now, createdBy: state.counter || 'ไม่ระบุ',
     status: 'counting'
   };
-  return db.update('roundIndex', patch).then(function () { return id; });
+  return ensureCycleRecord(cid, branch, now)
+    .then(function () { return db.update('roundIndex', patch); })
+    .then(function () { return id; });
+}
+
+/* ข้อ F6 — ปิดรอบแล้วยอดระบบล็อกถาวร นำเข้าไฟล์ทับไม่ได้อีก
+   ฐานข้อมูลปฏิเสธอยู่แล้วอีกชั้น อันนี้เพื่อบอกเป็นภาษาคนก่อนจะเสียเวลาอ่านไฟล์ */
+function requireOpenCycle() {
+  var st = cycleStatus(state.cycleId);
+  if (st === 'counting') return true;
+  toast(st === 'closed'
+    ? 'รอบนับ ' + state.cycleId + ' ปิดแล้ว นำเข้ายอดระบบทับไม่ได้ — ให้ผู้ดูแลระบบเปิดรอบกลับมาก่อน'
+    : 'รอบนับ ' + state.cycleId + ' อยู่ขั้นตรวจสอบ กดปุ่ม "กลับไปขั้นนับ" ก่อนจึงจะนำเข้าไฟล์ได้', true);
+  return false;
+}
+
+/* ข้อ F3 — สาขานี้มีรอบนับค้างอยู่ไหม ถ้ามีต้องให้เลือกเอง ห้ามเดาแทน
+   เข้ารอบเดิม = สืบทอดยอดระบบ ไม่ต้องอัปโหลดซ้ำ
+   เปิดรอบใหม่ = เลขรัน +1 ยอดระบบแยกขาดจากรอบก่อน ต้องนำเข้าไฟล์ใหม่ */
+function pickCycleForNewJob(branch) {
+  var open = openCycleFor(branch.code);
+  var fresh = makeCycleId(branch.code, null, nextCycleSeq(branch.code));
+  if (!open) return Promise.resolve(fresh);
+
+  var jobs = jobsInCycle(open);
+  var skus = (state.cycleStats[open] || {}).skuTotal;
+  return ask('สาขานี้มีรอบนับค้างอยู่',
+    'สาขา ' + branch.code + ' · ' + branch.name + '\n' +
+    'รอบ ' + open + ' ยังนับไม่จบ มี ' + fmtNum(jobs.length) + ' Job อยู่แล้ว\n\n' +
+    'Job ใบใหม่นี้จะอยู่รอบไหน',
+    'สร้าง Job',
+    { cancelLabel: 'ยกเลิก', fields: [{
+        key: 'cid', label: 'เลือกรอบนับ', type: 'choice', value: open,
+        options: [
+          { value: open, label: 'เข้ารอบเดิม ' + open,
+            note: 'ใช้ยอดระบบก้อนเดิมของรอบนี้' +
+                  (skus ? ' (' + fmtNum(skus) + ' SKU)' : '') + ' ไม่ต้องอัปโหลดไฟล์ซ้ำ' },
+          { value: fresh, label: 'เปิดรอบนับใหม่ ' + fresh,
+            note: 'เริ่มนับสาขานี้รอบใหม่ ยอดระบบแยกขาดจากรอบเดิม ต้องนำเข้าไฟล์ยอดระบบใหม่' }
+        ]
+      }] })
+    .then(function (v) { return v ? v.cid : null; });
+}
+
+/* สร้างระเบียนรอบนับถ้ายังไม่มี — ต้องมีก่อนนำเข้าไฟล์ เพราะ Rules อ่าน status จากตรงนี้ */
+function ensureCycleRecord(cid, branch, at) {
+  if (state.cycles[cid] && state.cycles[cid].info) return Promise.resolve();
+  var seq = Number(String(cid).slice(String(cid).lastIndexOf('-') + 1)) || 1;
+  var rec = {
+    status: 'counting',
+    info: {
+      branchCode: branch.code, branchName: branch.name,
+      ym: cycleYm(at), seq: seq,
+      createdAt: at, createdBy: state.counter || 'ไม่ระบุ',
+      schema: CYCLE_SCHEMA
+    }
+  };
+  return db.update('cycles/' + cid, rec).then(function () {
+    state.cycles[cid] = rec;
+  });
 }
 
 /* ---------- cycle: กลุ่มของ Job ในสาขา+เดือนเดียวกัน ---------- */
@@ -3195,29 +3466,31 @@ function buildProductPatch(incoming) {
   return { patch: patch, added: added, updated: updated, keptManual: keptManual };
 }
 
-/* ข้อ D1 — ไฟล์ยอดระบบไฟล์เดิมถูกนำเข้าไปแล้วใน Job อื่นของ cycle เดียวกันหรือยัง
-   ถ้าเบิ้ล ยอดระบบของรายงานรวมจะเป็นสองเท่าทันที ต้องให้คนกดยืนยันเอง
-   เทียบด้วยลายเซ็น: จำนวน SKU + ผลรวมยอด + รหัสสินค้าตัวแรก/ตัวท้าย */
+/* ลายเซ็นไฟล์ยอดระบบ: จำนวน SKU + ผลรวมยอด + รหัสสินค้าตัวแรก/ตัวท้าย */
 function importFingerprint(systemQty) {
   var keys = Object.keys(systemQty).sort();
   var total = keys.reduce(function (s, k) { return s + (Number(systemQty[k]) || 0); }, 0);
   return keys.length + ':' + total + ':' + (keys[0] || '') + ':' + (keys[keys.length - 1] || '');
 }
 
+/* ตั้งแต่ v2.1.1 ยอดระบบอยู่ที่รอบนับ นำเข้าซ้ำในรอบเดิม = แทนที่ ไม่เบิ้ลอีกแล้ว
+   ที่ยังต้องเตือนคือ "เอาไฟล์ของรอบก่อนหน้ามาใช้กับรอบใหม่" ซึ่งแปลว่าลืมดึงไฟล์ใหม่ */
 function findDuplicateImport(fingerprint) {
-  var cid = cycleOf(currentJob());
+  var here = state.cycleId;
+  var prefix = String(here).slice(0, String(here).lastIndexOf('-') + 1);
   var hits = [];
-  jobsInCycle(cid).forEach(function (id) {
-    if (id === state.roundId) return;
-    var j = state.roundIndex[id] || {};
-    if (j.importFingerprint && j.importFingerprint === fingerprint) {
-      hits.push(j.jobCode || id);
-    }
+  Object.keys(state.cycles).forEach(function (cid) {
+    if (cid === here) return;
+    if (prefix && cid.indexOf(branchCodeCompact(jobBranchCode(currentJob()) || '')) !== 0) return;
+    var info = cycleInfo(cid);
+    if (info.importFingerprint && info.importFingerprint === fingerprint) hits.push(cid);
   });
   return hits;
 }
 
-function applyImport(roundId, parsedResult) {
+/* เขียนยอดระบบเข้า "รอบนับ" ไม่ใช่ Job — นำเข้าซ้ำในรอบเดิมจึงเป็นการแทนที่
+   ไม่ใช่การบวกเพิ่ม (ข้อ F4) คีย์ที่หายไปจากไฟล์ใหม่ถูกลบออกให้ตรงกับไฟล์เสมอ */
+function applyImport(cid, parsedResult) {
   var productDiff = buildProductPatch(parsedResult.products);
   var sysPatch = {}, removed = 0;
 
@@ -3229,10 +3502,10 @@ function applyImport(roundId, parsedResult) {
   });
 
   return db.update('products', productDiff.patch)
-    .then(function () { return db.update('rounds/' + roundId, sysPatch); })
+    .then(function () { return db.update('cycles/' + cid, sysPatch); })
     .then(function () {
-      /* บันทึกลายเซ็นไฟล์ไว้กับ Job เพื่อให้ Job อื่นใน cycle ตรวจซ้ำได้ */
-      return db.update('roundIndex/' + roundId, {
+      /* ลายเซ็นไฟล์อยู่กับรอบนับ ใช้เตือนตอนเผลอเอาไฟล์ของรอบเก่ามาใช้กับรอบใหม่ */
+      return db.update('cycles/' + cid + '/info', {
         importFingerprint: importFingerprint(parsedResult.systemQty),
         importedAt: Date.now()
       }).catch(function () { /* ไม่สำคัญพอจะทำให้การนำเข้าล้ม */ });
@@ -3272,13 +3545,14 @@ function migrateRoundIfNeeded(roundId, data) {
   var items = data.items || {};
   var oldCounts = data.counts || {};
   var roundPatch = { schema: 2 };
+  var cyclePatch = {};                 // ยอดระบบไปอยู่ที่รอบนับตั้งแต่ v2.1.1
   var productPatch = {};
   var migrated = 0;
 
   Object.keys(items).forEach(function (key) {
     var it = items[key];
     if (!it) return;
-    roundPatch['systemQty/' + key] = Number(it.systemQty) || 0;
+    cyclePatch['systemQty/' + key] = Number(it.systemQty) || 0;
     /* เติม master เฉพาะรหัสที่ยังไม่มี ไม่ทับข้อมูลที่สมบูรณ์กว่าจากไฟล์ Zort */
     if (!state.products[key]) {
       var cls = classifyByCategory('');
@@ -3311,8 +3585,149 @@ function migrateRoundIfNeeded(roundId, data) {
     : Promise.resolve();
 
   /* items และ counts เดิมไม่ถูกแตะเลย — ประวัติการนับต้องตรวจย้อนหลังได้ตลอด */
+  var cid = cycleOf(state.roundIndex[roundId]);
   return chain.then(function () { return db.update('rounds/' + roundId, roundPatch); })
+              .then(function () {
+                if (!cid || !Object.keys(cyclePatch).length) return;
+                return db.update('cycles/' + cid, cyclePatch);
+              })
               .then(function () { return migrated > 0 || Object.keys(items).length > 0; });
+}
+
+/* ============================================================
+   9b. ย้ายยอดระบบจาก Job ขึ้นไปอยู่ที่รอบนับ (v2.1.0 → v2.1.1)
+
+   บั๊กที่แก้: SHOW กับ STOCK ของสาขาเดียวเดือนเดียวนำเข้าไฟล์ยอดเดียวกัน
+   ข้อมูลจึงถูกเก็บซ้ำ 2 ชุด แล้วรายงานรวมบวกทั้งสองชุด → ยอดระบบเป็นสองเท่า
+
+   วิธียุบ: เอาค่าสูงสุดรายรหัส ห้ามบวกกันเด็ดขาด
+   ของเดิมที่ rounds/{id}/systemQty ไม่ลบ เก็บเป็นประวัติและเผื่อย้อนกลับ
+   รันซ้ำได้ — ข้ามรอบที่มี info/schema แล้ว
+   ============================================================ */
+function migrateCyclesIfNeeded() {
+  if (!isStaff()) return Promise.resolve(null);      // scanner/viewer เขียนไม่ได้อยู่แล้ว
+
+  var groups = {};
+  Object.keys(state.roundIndex).forEach(function (id) {
+    var cid = cycleOf(state.roundIndex[id]);
+    if (!cid) return;
+    (groups[cid] = groups[cid] || []).push(id);
+  });
+
+  var todo = Object.keys(groups).filter(function (cid) { return !cycleMigrated(cid); });
+  if (!todo.length) return Promise.resolve(null);
+
+  var report = { cycles: 0, keys: 0, conflicts: [], renamed: 0 };
+
+  return todo.reduce(function (chain, cid) {
+    return chain.then(function () { return migrateOneCycle(cid, groups[cid], report); });
+  }, Promise.resolve()).then(function () {
+    /* รหัสรอบนับรูปแบบเก่าบน Job — เขียนให้เป็นรูปแบบใหม่ทีเดียว */
+    var renames = [];
+    Object.keys(state.roundIndex).forEach(function (id) {
+      var job = state.roundIndex[id] || {};
+      var want = cycleOf(job);
+      if (want && job.cycleId !== want) renames.push({ id: id, cid: want });
+    });
+    return renames.reduce(function (chain, r) {
+      return chain.then(function () {
+        return db.update('roundIndex/' + r.id, { cycleId: r.cid }).then(function () {
+          state.roundIndex[r.id].cycleId = r.cid;
+          report.renamed++;
+        }).catch(function () { /* อ่านต่อได้อยู่แล้วผ่าน normalizeCycleId */ });
+      });
+    }, Promise.resolve());
+  }).then(function () { return report.cycles ? report : null; })
+    .catch(function () { return null; });
+}
+
+function migrateOneCycle(cid, ids, report) {
+  var job0 = state.roundIndex[ids[0]] || {};
+  return Promise.all([
+    legacyRoundParts(cid, 'systemQty'),
+    legacyRoundParts(cid, 'transfers'),
+    legacyRoundParts(cid, 'deductTransfer')
+  ]).then(function (res) {
+    var sys = {}, seenFrom = {}, transfers = {}, deduct = false;
+
+    res[0].forEach(function (p) {
+      Object.keys(p.data).forEach(function (k) {
+        var v = Number(p.data[k]) || 0;
+        var code = (state.roundIndex[p.id] || {}).jobCode || p.id;
+        if (sys[k] === undefined) { sys[k] = v; seenFrom[k] = [{ job: code, qty: v }]; return; }
+        seenFrom[k].push({ job: code, qty: v });
+        if (v > sys[k]) sys[k] = v;
+      });
+    });
+    res[1].forEach(function (p) { mergeTransfers(transfers, p.data); });
+    res[2].forEach(function (p) { if (p.data === true) deduct = true; });
+
+    /* รหัสที่ Job ต่างใบให้ค่าไม่ตรงกัน ต้องรายงาน ห้ามยุบเงียบ */
+    Object.keys(seenFrom).forEach(function (k) {
+      var vals = seenFrom[k];
+      if (vals.length < 2) return;
+      var differ = vals.some(function (v) { return v.qty !== vals[0].qty; });
+      if (differ) report.conflicts.push({ cid: cid, key: k, vals: vals, took: sys[k] });
+    });
+
+    var seq = Number(String(cid).slice(String(cid).lastIndexOf('-') + 1)) || 1;
+    var head = {
+      status: deriveCycleStatus(cid),
+      deductTransfer: deduct,
+      info: {
+        branchCode: job0.branchCode || '', branchName: jobBranchName(job0),
+        ym: String(cid).split('-')[1] || cycleYm(job0.createdAt), seq: seq,
+        createdAt: job0.createdAt || Date.now(), createdBy: job0.createdBy || 'ระบบ',
+        schema: CYCLE_SCHEMA, migratedAt: Date.now(), migratedFrom: ids.join(',')
+      }
+    };
+    if (Object.keys(transfers).length) head.transfers = transfers;
+
+    report.cycles++;
+    report.keys += Object.keys(sys).length;
+
+    /* เขียนยอดระบบทีละก้อน ไฟล์ทั้งบริษัทมีหมื่นกว่ารหัส ส่งทีเดียวไม่ไหว */
+    return chunkedUpdate('cycles/' + cid + '/systemQty', sys)
+      .then(function () { return db.update('cycles/' + cid, head); })
+      .then(function () { state.cycles[cid] = head; });
+  });
+}
+
+/* ส่ง patch ใหญ่เป็นก้อนละ 400 คีย์ — ยืมวิธีเดียวกับตอนนำเข้า Master ทั้งบริษัท */
+function chunkedUpdate(path, patch, size) {
+  var keys = Object.keys(patch);
+  if (!keys.length) return Promise.resolve();
+  size = size || 400;
+  var chunks = [];
+  for (var i = 0; i < keys.length; i += size) {
+    var part = {};
+    keys.slice(i, i + size).forEach(function (k) { part[k] = patch[k]; });
+    chunks.push(part);
+  }
+  return chunks.reduce(function (chain, part) {
+    return chain.then(function () { return db.update(path, part); });
+  }, Promise.resolve());
+}
+
+function showCycleMigrationReport(report) {
+  if (!report) return;
+  if (!report.conflicts.length) {
+    toast('ย้ายยอดระบบขึ้นรอบนับแล้ว ' + fmtNum(report.cycles) + ' รอบ — ยอดที่นับไว้อยู่ครบ');
+    return;
+  }
+  var lines = report.conflicts.slice(0, 10).map(function (c) {
+    return '• ' + c.key + ' — ' +
+      c.vals.map(function (v) { return v.job + ': ' + fmtNum(v.qty); }).join(' / ') +
+      ' → ใช้ ' + fmtNum(c.took);
+  });
+  ask('ย้ายยอดระบบขึ้นรอบนับแล้ว — มีบางรหัสที่ค่าไม่ตรงกัน',
+    'รวม ' + fmtNum(report.cycles) + ' รอบนับ · พบ ' + fmtNum(report.conflicts.length) +
+    ' รหัสที่ Job ต่างใบเคยเก็บยอดระบบไว้ไม่เท่ากัน ระบบเลือกค่าสูงสุดให้\n\n' +
+    lines.join('\n') +
+    (report.conflicts.length > 10 ? '\n(แสดง 10 รายการแรกจากทั้งหมด)' : '') +
+    '\n\nยอดที่นับไปแล้วไม่ถูกแตะเลย และยอดเดิมของแต่ละ Job ยังเก็บไว้ในฐานข้อมูล\n' +
+    'ถ้าตัวเลขไหนไม่ถูก ให้นำเข้าไฟล์ยอดระบบใหม่ทับได้ที่หน้าตั้งค่า',
+    'รับทราบ', { hideCancel: true });
 }
 
 /* ============================================================
@@ -4925,18 +5340,20 @@ function summaryData() {
    SKU ที่อยู่ทั้ง Show และ Stock จึงถูกยุบเป็น SKU เดียวโดยอัตโนมัติ */
 function loadCycleRaw(cid) {
   var ids = jobsInCycle(cid);
-  return Promise.all(ids.map(function (id) {
-    return Promise.all([
-      db.get('rounds/' + id + '/systemQty'),
-      db.get('rounds/' + id + '/scans')
-    ]).then(function (res) { return { id: id, sys: res[0] || {}, scans: res[1] || {} }; });
-  }));
+  /* ยอดระบบอ่านครั้งเดียวจากรอบนับ ไม่ใช่อ่านทีละ Job แล้วบวกกัน (ข้อ F5) */
+  return Promise.all([
+    loadCycleSystemQty(cid),
+    Promise.all(ids.map(function (id) {
+      return db.get('rounds/' + id + '/scans')
+        .then(function (scans) { return { id: id, scans: scans || {} }; });
+    }))
+  ]).then(function (res) { return { sys: res[0], jobs: res[1] }; });
 }
 
-function buildCycleData(parts) {
-  var sysAll = {}, countAll = {}, jobsPerSku = {}, perJob = [];
+function buildCycleData(raw) {
+  var sysAll = raw.sys || {}, countAll = {}, jobsPerSku = {}, perJob = [];
 
-  parts.forEach(function (p) {
+  raw.jobs.forEach(function (p) {
     var job = state.roundIndex[p.id] || {};
     var counts = {}, users = {};
     Object.keys(p.scans).forEach(function (sid) {
@@ -4946,34 +5363,23 @@ function buildCycleData(parts) {
       counts[k] = (counts[k] || 0) + (Number(rec.delta) || 0);
       if (rec.user) users[rec.user] = 1;
     });
-    Object.keys(p.sys).forEach(function (k) {
-      sysAll[k] = (sysAll[k] || 0) + (Number(p.sys[k]) || 0);
-    });
     Object.keys(counts).forEach(function (k) {
       countAll[k] = (countAll[k] || 0) + counts[k];
       if (counts[k]) (jobsPerSku[k] = jobsPerSku[k] || {})[p.id] = 1;
     });
 
-    /* ข้อ C3 — ตารางย่อยแยกตาม Job ให้เห็นว่าฝั่งไหนแม่นกว่ากัน */
-    var keys = {};
-    Object.keys(p.sys).forEach(function (k) { keys[k] = 1; });
-    Object.keys(counts).forEach(function (k) { keys[k] = 1; });
-    var all = Object.keys(keys).filter(function (k) {
-      return (Number(p.sys[k]) || 0) !== 0 || (counts[k] || 0) !== 0;
-    });
-    var sysQty = 0, absDiff = 0, pieces = 0;
-    all.forEach(function (k) {
-      var s = Number(p.sys[k]) || 0, a = counts[k] || 0;
-      sysQty += s; absDiff += Math.abs(a - s); pieces += a;
-    });
+    /* ตารางย่อยแยกตาม Job — บอกได้แค่ว่าใบนี้ยิงอะไรไปเท่าไหร่
+       ห้ามมีผลต่างหรือ %Success ตรงนี้ เพราะยอดระบบเป็นของทั้งสาขา
+       SKU เดียวกันยิงข้าม Job ได้ เทียบรายใบจึงไม่มีความหมาย (ข้อ F5) */
+    var scanned = Object.keys(counts).filter(function (k) { return counts[k] !== 0; });
+    var pieces = scanned.reduce(function (s, k) { return s + counts[k]; }, 0);
     perJob.push({
       id: p.id,
       jobCode: job.jobCode || p.id,
       storeType: storeTypeLabel(storeTypeOf(job)),
       status: JOB_STATUS_TEXT[job.status || 'counting'],
-      skuTotal: all.length,
+      skuTotal: scanned.length,
       pieces: pieces,
-      pctPieces: sysQty > 0 ? ((sysQty - absDiff) / sysQty) * 100 : null,
       users: Object.keys(users).length
     });
   });
@@ -5714,8 +6120,10 @@ function buildTransferItemTable(t) {
   return box;
 }
 
-var CYCLE_JOB_HEAD = ['#', 'รหัส Job', 'ประเภทคลัง', 'สถานะ', 'จำนวน SKU', 'ชิ้นที่ยิงได้',
-                      '%Success (ชิ้น)', 'ผู้นับ'];
+/* ไม่มีคอลัมน์ยอดระบบ ผลต่าง หรือ %Success — ตัวเลขพวกนั้นเป็นของทั้งรอบนับ
+   อยู่ที่ตารางรวมข้างบนที่เดียว (ข้อ F5) */
+var CYCLE_JOB_HEAD = ['#', 'รหัส Job', 'ประเภทคลัง', 'สถานะ', 'SKU ที่ยิง', 'ชิ้นที่ยิงได้',
+                      'ผู้นับ'];
 
 function buildCycleJobTable(perJob) {
   if (!perJob || !perJob.length) return null;
@@ -5723,14 +6131,15 @@ function buildCycleJobTable(perJob) {
   box.setAttribute('data-cyclejob-table', '1');
   var h = document.createElement('div');
   h.className = 'tbl-title';
-  h.textContent = 'แยกตาม Job ในรอบนี้ — ' + fmtNum(perJob.length) + ' Job';
+  h.textContent = 'แยกตาม Job ในรอบนี้ — ' + fmtNum(perJob.length) +
+                  ' Job (ยอดระบบและผลต่างเป็นของทั้งรอบ ดูตารางด้านบน)';
   box.appendChild(h);
 
   var table = document.createElement('table');
   table.className = 'items';
   table.setAttribute('data-doc-table', 'แยกตาม Job');
   var colgroup = document.createElement('colgroup');
-  [4, 24, 16, 11, 10, 11, 12, 12].forEach(function (w) {
+  [4, 28, 18, 12, 12, 13, 13].forEach(function (w) {
     var col = document.createElement('col');
     col.style.width = w + '%';
     colgroup.appendChild(col);
@@ -5755,7 +6164,6 @@ function buildCycleJobTable(perJob) {
     docCell(tr, j.status, 'mid');
     docCell(tr, fmtNum(j.skuTotal), 'num');
     docCell(tr, fmtNum(j.pieces), 'num');
-    docCell(tr, fmtPercent(j.pctPieces), 'num');
     docCell(tr, fmtNum(j.users) + ' คน', 'num');
     tbody.appendChild(tr);
   });
@@ -6370,6 +6778,7 @@ function handleMasterImport(file) {
 function handleTransferImport(file) {
   if (!state.roundId) { toast('เลือก Job ก่อนนำเข้าไฟล์', true); return; }
   if (!canScan()) { toast(blockedMessage() + ' — นำเข้าไฟล์ไม่ได้', true); return; }
+  if (!requireOpenCycle()) return;
 
   var isXlsx = /\.xlsx$/i.test(file.name);
   $('btnImportTf').disabled = true;
@@ -6389,7 +6798,8 @@ function handleTransferImport(file) {
         t.importedBy = state.counter || 'ไม่ระบุ';
         patch[k] = t;
       });
-      return db.update('rounds/' + state.roundId + '/transfers', patch).then(function () {
+      /* รายการโอนเป็นของสาขาไม่ใช่ของ Job — เก็บที่รอบนับเดียวกับยอดระบบ (ข้อ F2) */
+      return db.update('cycles/' + state.cycleId + '/transfers', patch).then(function () {
         Object.keys(patch).forEach(function (k) { state.transfers[k] = patch[k]; });
         state.transferQty = transferQtyMap();
         state.cycleData = null;
@@ -6465,16 +6875,17 @@ function confirmTransferBranch(stat) {
 function confirmDuplicateImport(result) {
   var hits = findDuplicateImport(importFingerprint(result.systemQty));
   if (!hits.length) return Promise.resolve(true);
-  return ask('ไฟล์นี้ถูกนำเข้าไปแล้วใน Job อื่นของรอบนี้',
-    'เจอไฟล์ยอดระบบชุดเดียวกันอยู่ใน:\n' + hits.join('\n') + '\n\n' +
-    'ถ้านำเข้าซ้ำที่ Job นี้ด้วย ยอดระบบในรายงาน "รวมทั้งสาขา" จะถูกนับสองรอบ\n' +
-    'ให้ทำต่อเฉพาะกรณีที่ของสองคลังนี้ใช้ไฟล์ยอดเดียวกันจริง ๆ',
-    'เข้าใจแล้ว นำเข้าต่อ', { cancelLabel: 'ยกเลิก', danger: true });
+  return ask('ไฟล์นี้เคยใช้กับรอบนับก่อนหน้าแล้ว',
+    'ไฟล์ยอดระบบชุดเดียวกันนี้ถูกนำเข้าไปแล้วที่รอบ:\n' + hits.join('\n') + '\n\n' +
+    'รอบนับที่กำลังทำอยู่คือ ' + state.cycleId + ' ซึ่งเป็นคนละรอบ\n' +
+    'ถ้าตั้งใจนับรอบใหม่ ควรดึงไฟล์ยอดระบบล่าสุดจาก Zort มาใช้ ไม่ใช่ไฟล์ของรอบก่อน',
+    'ยืนยันว่าถูกต้อง นำเข้าต่อ', { cancelLabel: 'ยกเลิก', danger: true });
 }
 
 function handleImport(file) {
   if (!state.roundId) { toast('เลือก Job ก่อนนำเข้าไฟล์', true); return; }
   if (!canScan()) { toast(blockedMessage() + ' — นำเข้าไฟล์ไม่ได้', true); return; }
+  if (!requireOpenCycle()) return;
 
   var isXlsx = /\.xlsx$/i.test(file.name);
   $('btnImport').disabled = true;
@@ -6493,9 +6904,10 @@ function handleImport(file) {
     });
 
     function doImport(result) {
-      return applyImport(state.roundId, result).then(function (diff) {
+      return applyImport(state.cycleId, result).then(function (diff) {
         state.lastImport = { stat: result.stat, diff: diff };
         state.cycleData = null;      // ยอดรวมของ cycle เปลี่ยนแล้ว ต้องโหลดใหม่
+        delete state.cycleStats[state.cycleId];
         return Promise.all([refreshProducts(), refreshSystemQty()]).then(function () {
           renderStart();
           showImportReport();
@@ -6531,18 +6943,53 @@ function isStaleJob(job) {
    อ่านครั้งเดียวแล้วเก็บไว้ ไม่งั้นเลื่อนรายการทีก็ยิงคำขอใหม่ทุกครั้ง */
 function loadJobStats(id) {
   if (state.jobStats[id]) return Promise.resolve(state.jobStats[id]);
-  return Promise.all([
-    db.get('rounds/' + id + '/systemQty'),
-    db.get('rounds/' + id + '/scans')
-  ]).then(function (res) {
-    var sys = res[0] || {}, scans = res[1] || {};
-    var counts = {};
+  return db.get('rounds/' + id + '/scans').then(function (data) {
+    var scans = data || {};
+    var counts = {}, lastTs = 0;
     Object.keys(scans).forEach(function (sid) {
       var rec = scans[sid];
       if (!rec) return;
       var k = safeKey(rec.code);
       counts[k] = (counts[k] || 0) + (Number(rec.delta) || 0);
+      if ((rec.ts || 0) > lastTs) lastTs = rec.ts || 0;
     });
+    /* การ์ด Job บอกได้แค่ "ใบนี้ทำอะไรไปเท่าไหร่" — ยอดระบบเป็นของทั้งรอบนับ
+       ความแม่น (%Success) จึงย้ายไปอยู่ที่หัวรอบนับแทน (ข้อ F5) */
+    var stat = {
+      counts: counts,
+      skuScanned: Object.keys(counts).filter(function (k) { return counts[k] !== 0; }).length,
+      pieces: Object.keys(counts).reduce(function (s, k) { return s + counts[k]; }, 0),
+      lastTs: lastTs
+    };
+    state.jobStats[id] = stat;
+    return stat;
+  }).catch(function () { return null; });
+}
+
+/* ยิงเพิ่ม/ลบ Job แล้วสถิติเก่าใช้ไม่ได้ ต้องทิ้งของรอบที่ Job นั้นสังกัดด้วย */
+function dropJobStats(id) {
+  if (!id) return;
+  delete state.jobStats[id];
+  delete state.cycleStats[cycleOf(state.roundIndex[id])];
+}
+
+/* สถิติระดับ "รอบนับ" — ยอดระบบก้อนเดียวเทียบกับยอดยิงรวมของทุก Job ในรอบ
+   ใช้ loadJobStats ตัวเดิมเป็นฐาน ตัวเลขจึงตรงกับการ์ด Job เสมอและอ่านฐานซ้ำน้อยที่สุด */
+function loadCycleStats(cid) {
+  if (state.cycleStats[cid]) return Promise.resolve(state.cycleStats[cid]);
+  var ids = jobsInCycle(cid);
+  return Promise.all([
+    loadCycleSystemQty(cid),
+    Promise.all(ids.map(loadJobStats))
+  ]).then(function (res) {
+    var sys = res[0] || {}, parts = res[1] || [];
+    var counts = {}, lastTs = 0;
+    parts.forEach(function (p) {
+      if (!p) return;
+      Object.keys(p.counts).forEach(function (k) { counts[k] = (counts[k] || 0) + p.counts[k]; });
+      if (p.lastTs > lastTs) lastTs = p.lastTs;
+    });
+
     var keys = {};
     Object.keys(sys).forEach(function (k) { keys[k] = 1; });
     Object.keys(counts).forEach(function (k) { keys[k] = 1; });
@@ -6553,75 +7000,82 @@ function loadJobStats(id) {
     var match = all.filter(function (k) { return (Number(sys[k]) || 0) === (counts[k] || 0); }).length;
 
     /* ตัวเลขชุดเดียวกับหน้าสรุป — %ชิ้นใช้สูตรค่าสัมบูรณ์ และมูลค่าคิดด้วยราคาที่เลือกอยู่ */
-    var sysQty = 0, absDiff = 0, sysValue = 0, actValue = 0, lastTs = 0;
+    var sysQty = 0, absDiff = 0, sysValue = 0, actValue = 0;
     all.forEach(function (k) {
       var s = Number(sys[k]) || 0, a = counts[k] || 0;
-      var p = state.products[k] || {};
-      var price = Number(p[state.priceField]) || 0;
+      var price = Number((state.products[k] || {})[state.priceField]) || 0;
       sysQty += s;
       absDiff += Math.abs(a - s);
       sysValue += s * price;
       actValue += a * price;
     });
-    Object.keys(scans).forEach(function (sid) {
-      var t = (scans[sid] || {}).ts || 0;
-      if (t > lastTs) lastTs = t;
-    });
 
     var stat = {
+      cid: cid,
+      jobs: ids.length,
       skuTotal: Object.keys(sys).length,
       skuScanned: Object.keys(counts).filter(function (k) { return counts[k] !== 0; }).length,
       pieces: Object.keys(counts).reduce(function (s, k) { return s + counts[k]; }, 0),
+      sysQty: sysQty,
       success: all.length ? (match / all.length) * 100 : null,
       pctPieces: sysQty > 0 ? ((sysQty - absDiff) / sysQty) * 100 : null,
       diffValue: actValue - sysValue,
       lastTs: lastTs
     };
-    state.jobStats[id] = stat;
+    state.cycleStats[cid] = stat;
     return stat;
   }).catch(function () { return null; });
 }
 
 /* ---------- A: ภาพรวมทุกสาขา ----------
-   ดึงสถิติของทุก Job ที่ผ่านตัวกรอง แล้ววางเป็นตารางแถวละสาขา
-   ใช้ loadJobStats ตัวเดียวกับการ์ดหน้า Job — ตัวเลขจึงตรงกันเสมอ */
-function overviewJobs() {
+   แถวละ "รอบนับ" ไม่ใช่แถวละ Job — ตั้งแต่ v2.1.1 ยอดระบบเป็นของรอบนับ
+   ถ้ายังวางแถวละ Job แถวรวมท้ายตารางจะบวกยอดระบบซ้ำตามจำนวน Job ทันที
+   ใช้ loadCycleStats ตัวเดียวกับหัวรอบในหน้า Job — ตัวเลขจึงตรงกันเสมอ */
+function overviewCycles() {
   var from = state.overviewFrom ? new Date(state.overviewFrom + 'T00:00:00').getTime() : 0;
   var to = state.overviewTo ? new Date(state.overviewTo + 'T23:59:59').getTime() : Infinity;
-  return Object.keys(state.roundIndex).filter(function (id) {
+  var seen = {}, out = [];
+  Object.keys(state.roundIndex).forEach(function (id) {
     var j = state.roundIndex[id] || {};
-    var st = j.status || 'counting';
-    if (state.overviewStatus !== 'all' && st !== state.overviewStatus) return false;
     var at = j.createdAt || 0;
-    return at >= from && at <= to;
-  }).sort(function (a, b) {
-    return String((state.roundIndex[a] || {}).branchCode || '')
-      .localeCompare(String((state.roundIndex[b] || {}).branchCode || ''), 'th');
+    if (at < from || at > to) return;
+    var cid = cycleOf(j);
+    if (seen[cid]) return;
+    seen[cid] = 1;
+    if (state.overviewStatus !== 'all' && cycleStatus(cid) !== state.overviewStatus) return;
+    out.push(cid);
   });
+  return out.sort(function (a, b) { return String(a).localeCompare(String(b), 'th'); });
+}
+function cycleBranch(cid) {
+  var ids = jobsInCycle(cid);
+  return state.roundIndex[ids[0]] || {};
 }
 
 function renderOverview() {
   document.querySelectorAll('[data-ostatus]').forEach(function (b) {
     b.className = 'btn sm ' + (b.getAttribute('data-ostatus') === state.overviewStatus ? '' : 'grey');
   });
-  var ids = overviewJobs();
+  var ids = overviewCycles();
   var body = $('ovBody');
   body.innerHTML = '';
+  var allCycles = Object.keys(cycleGroups()).length;
   $('ovCount').textContent = ids.length
-    ? ('แสดง ' + fmtNum(ids.length) + ' รอบนับ จากทั้งหมด ' + fmtNum(Object.keys(state.roundIndex).length))
+    ? ('แสดง ' + fmtNum(ids.length) + ' รอบนับ จากทั้งหมด ' + fmtNum(allCycles))
     : 'ไม่มีรอบนับที่ตรงกับตัวกรอง';
   if (!ids.length) return;
 
   var cells = {};
-  ids.forEach(function (id) {
-    var j = state.roundIndex[id] || {};
+  ids.forEach(function (cid) {
+    var j = cycleBranch(cid);
+    var jobs = jobsInCycle(cid);
     var tr = document.createElement('tr');
-    tr.setAttribute('data-ovrow', id);
+    tr.setAttribute('data-ovrow', cid);
     tr.style.cursor = 'pointer';
-    tr.onclick = function () { openJob(id); showPage('summary'); setSummaryTab('job'); };
+    tr.onclick = function () { openJob(jobs[0]); showPage('summary'); setSummaryTab('job'); };
     var vals = [
       j.branchCode || '-', j.branchName || j.branch || '-',
-      JOB_STATUS_TEXT[j.status || 'counting'],
+      cid + ' · ' + JOB_STATUS_TEXT[cycleStatus(cid)] + ' · ' + fmtNum(jobs.length) + ' Job',
       '…', '…', '…', '…', '…', '…'
     ];
     vals.forEach(function (v, i) {
@@ -6630,7 +7084,7 @@ function renderOverview() {
       if (i >= 3) { td.style.textAlign = 'right'; td.setAttribute('data-ovcol', String(i)); }
       tr.appendChild(td);
     });
-    cells[id] = tr;
+    cells[cid] = tr;
     body.appendChild(tr);
   });
 
@@ -6648,10 +7102,10 @@ function renderOverview() {
 
   var agg = { skuScanned: 0, skuTotal: 0, pieces: 0, sysQty: 0, absDiff: 0, diffValue: 0 };
   var pending = ids.length;
-  ids.forEach(function (id) {
-    loadJobStats(id).then(function (s) {
+  ids.forEach(function (cid) {
+    loadCycleStats(cid).then(function (s) {
       pending--;
-      var tr = cells[id];
+      var tr = cells[cid];
       if (s && tr) {
         var tds = tr.querySelectorAll('[data-ovcol]');
         tds[0].textContent = fmtNum(s.skuScanned) + ' / ' + fmtNum(s.skuTotal);
@@ -6662,7 +7116,7 @@ function renderOverview() {
         tds[4].className = s.diffValue > 0 ? 'pos' : (s.diffValue < 0 ? 'neg' : '');
         tds[4].style.textAlign = 'right';
         tds[5].textContent = s.lastTs ? fmtTime(s.lastTs) : '-';
-        if ((state.roundIndex[id] || {}).status === 'counting') {
+        if (cycleStatus(cid) === 'counting') {
           agg.skuScanned += s.skuScanned;
           agg.skuTotal += s.skuTotal;
           agg.pieces += s.pieces;
@@ -6882,7 +7336,20 @@ function renderJobs() {
     s.className = 'cy-sub';
     s.textContent = (g.branchCode ? g.branchCode + ' · ' : '') + (g.branchName || '-') +
       ' · ' + fmtNum(g.jobs.length) + ' Job';
-    left.appendChild(t); left.appendChild(s);
+    /* ยอดระบบและความแม่นเป็นของทั้งรอบนับ จึงอยู่ที่หัวรอบ ไม่ใช่บนการ์ด Job (ข้อ F5) */
+    var prog = document.createElement('div');
+    prog.className = 'cy-sub';
+    prog.setAttribute('data-cycleprog', cid);
+    prog.textContent = 'กำลังรวมยอดของรอบนี้...';
+    left.appendChild(t); left.appendChild(s); left.appendChild(prog);
+    loadCycleStats(cid).then(function (st) {
+      if (!st) { prog.textContent = 'อ่านยอดของรอบนี้ไม่ได้'; return; }
+      prog.textContent = !st.skuTotal
+        ? 'ยังไม่ได้นำเข้ายอดระบบของรอบนี้'
+        : ('ยิงแล้ว ' + fmtNum(st.skuScanned) + ' / ' + fmtNum(st.skuTotal) + ' SKU · ' +
+           fmtNum(st.pieces) + ' ชิ้น · %Success (ชิ้น) ' + fmtPercent(st.pctPieces) +
+           ' · (SKU) ' + fmtPercent(st.success));
+    });
     var right = document.createElement('div');
     right.style.cssText = 'display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end';
     var chip = document.createElement('span');
@@ -6965,7 +7432,7 @@ function renderJobCard(id, list) {
 
     var prog = document.createElement('div');
     prog.className = 'j-prog';
-    [['SKU ที่ยิงแล้ว', '…', 'sku'], ['ชิ้นที่นับได้', '…', 'pieces'], ['%Success', '…', 'success']]
+    [['SKU ที่ใบนี้ยิง', '…', 'sku'], ['ชิ้นที่นับได้', '…', 'pieces'], ['ยิงล่าสุด', '…', 'success']]
       .forEach(function (p) {
         var d = document.createElement('div');
         var lab = document.createElement('span'); lab.className = 'p-lab'; lab.textContent = p[0];
@@ -7056,14 +7523,17 @@ function renderJobCard(id, list) {
     card.onclick = function () { openJob(id); };
     list.appendChild(card);
 
-    loadJobStats(id).then(function (stat) {
+    /* แถบความคืบหน้าคือ "ใบนี้ยิงไปกี่ % ของชิ้นที่ยิงได้ทั้งรอบ"
+       ไม่ใช่เทียบกับยอดระบบ เพราะยอดระบบเป็นของทั้งรอบนับ ไม่ใช่ของใบนี้ */
+    Promise.all([loadJobStats(id), loadCycleStats(cycleOf(j))]).then(function (res) {
+      var stat = res[0], cyc = res[1];
       if (!stat) return;
-      var pct = stat.skuTotal ? Math.round(stat.skuScanned / stat.skuTotal * 100) : 0;
-      card.querySelector('[data-prog=sku]').textContent =
-        fmtNum(stat.skuScanned) + ' / ' + fmtNum(stat.skuTotal);
+      card.querySelector('[data-prog=sku]').textContent = fmtNum(stat.skuScanned);
       card.querySelector('[data-prog=pieces]').textContent = fmtNum(stat.pieces);
-      card.querySelector('[data-prog=success]').textContent = fmtPercent(stat.success);
-      fill.style.width = Math.min(100, pct) + '%';
+      card.querySelector('[data-prog=success]').textContent =
+        stat.lastTs ? fmtTime(stat.lastTs) : 'ยังไม่ได้ยิง';
+      var share = (cyc && cyc.pieces) ? Math.round(stat.pieces / cyc.pieces * 100) : 0;
+      fill.style.width = Math.min(100, share) + '%';
     });
   });
 }
@@ -7095,8 +7565,11 @@ function previewJobCode() {
   var abbr = $('newJobAbbr').value.trim() || branchCodeCompact(state.newBranch.code);
   var st = $('newJobStoreType').value;
   box.style.display = 'block';
-  box.textContent = 'รหัส Job ที่จะได้: ' + makeJobCode(abbr, null, st) +
-    ' · รอบนับของสาขา: ' + cycleIdFor(state.newBranch.code);
+  var open = openCycleFor(state.newBranch.code);
+  box.textContent = 'รหัส Job ที่จะได้: ' + makeJobCode(abbr, null, st) + ' · ' +
+    (open ? 'สาขานี้มีรอบนับ ' + open + ' เปิดค้างอยู่ — กดสร้างแล้วจะให้เลือกว่าจะเข้ารอบเดิมหรือเปิดรอบใหม่'
+          : 'จะเปิดรอบนับใหม่: ' +
+            makeCycleId(state.newBranch.code, null, nextCycleSeq(state.newBranch.code)));
 }
 
 /* ---------- ปิด / เปิดรอบนับ ---------- */
@@ -7117,7 +7590,14 @@ function changeJobStatus(next, extra) {
   log.push({ from: from, to: next, by: state.counter || 'ไม่ระบุ', at: Date.now() });
   var patch = { status: next, statusLog: log };
   if (extra) Object.keys(extra).forEach(function (f) { patch[f] = extra[f]; });
-  return db.update('roundIndex/' + state.roundId, patch);
+  var id = state.roundId;
+  return db.update('roundIndex/' + id, patch).then(function () {
+    /* สถานะรอบนับต้องตามสถานะ Job เสมอ — Database Rules ใช้ค่านี้ล็อกยอดระบบ (ข้อ F6)
+       อัปเดตในเครื่องก่อน เพราะ deriveCycleStatus อ่านจาก state ไม่ได้รอสตรีมกลับมา */
+    if (state.roundIndex[id]) state.roundIndex[id].status = next;
+    delete state.cycleStats[cycleOf(state.roundIndex[id])];
+    return syncCycleStatus(cycleOf(state.roundIndex[id]));
+  });
 }
 
 function sendToReview() {
@@ -7224,7 +7704,7 @@ function deleteJob() {
         localStorage.removeItem('isrd_round');
         state.roundId = null;
         clearSubs();
-        delete state.jobStats[id];
+        dropJobStats(id);
         showPage('jobs');
         renderJobBar();
         toast('ลบ Job ออกจากรายการแล้ว — ยอดที่นับไว้ยังเก็บเป็นหลักฐานในฐานข้อมูล');
@@ -7365,27 +7845,39 @@ function exportJobsExcel(ids, cycleLabel) {
   toast('กำลังรวมข้อมูล ' + fmtNum(ids.length) + ' Job ...');
 
   return loadJobsRaw(ids).then(function (parts) {
+    /* ยอดระบบเป็นของ "รอบนับ" จึงต้องยุบ Job ที่อยู่รอบเดียวกันเข้าด้วยกันก่อนคิด
+       ถ้าเผลอวางแถวละ Job แล้วบวกมูลค่าระบบ จะได้ตัวเลขเบิ้ลอีกรอบ (ข้อ F5) */
+    var byCycle = {};
+    parts.forEach(function (p) {
+      var cid = cycleOf(state.roundIndex[p.id]);
+      var c = byCycle[cid] || (byCycle[cid] = { cid: cid, sys: p.sys, counts: {}, jobs: [] });
+      Object.keys(p.counts).forEach(function (k) { c.counts[k] = (c.counts[k] || 0) + p.counts[k]; });
+      c.jobs.push(p);
+    });
+    var cids = Object.keys(byCycle).sort();
+
     var sheets = [];
-    var summary = [['รหัส Job', 'สาขา', 'ประเภทคลัง', 'สถานะ', 'รอบนับของสาขา',
+    var summary = [['รอบนับ', 'สาขา', 'Job ในรอบ', 'สถานะรอบ',
                     'SKU ทั้งหมด', 'SKU ที่ยิงแล้ว', 'ชิ้นที่ยิงได้',
                     '%Success (ชิ้น)', '%Success (SKU)', 'มูลค่าระบบ', 'มูลค่าจริง', 'ผลต่างมูลค่า']];
     var totals = { sku: 0, scanned: 0, pieces: 0, sysV: 0, actV: 0 };
 
-    parts.forEach(function (p) {
-      var job = state.roundIndex[p.id] || {};
-      var d = summaryDataFrom(p.sys, p.counts, null);
+    cids.forEach(function (cid) {
+      var c = byCycle[cid];
+      var job0 = state.roundIndex[c.jobs[0].id] || {};
+      var d = summaryDataFrom(c.sys, c.counts, null);
       var g = d.groups.total;
+      var scanned = d.rows.filter(function (r) { return r.act !== 0; }).length;
       summary.push([
-        job.jobCode || p.id, jobBranchLabel(job), storeTypeLabel(storeTypeOf(job)),
-        JOB_STATUS_TEXT[job.status || 'counting'], cycleOf(job),
-        g.skuTotal, d.rows.filter(function (r) { return r.act !== 0; }).length, g.actQty,
+        cid, jobBranchLabel(job0), c.jobs.length, JOB_STATUS_TEXT[cycleStatus(cid)],
+        g.skuTotal, scanned, g.actQty,
         pctPiecesOf(g) === null ? '' : Math.round(pctPiecesOf(g) * 10) / 10,
         pctSkuOf(g) === null ? '' : Math.round(pctSkuOf(g) * 10) / 10,
         Math.round(g.sysValue * 100) / 100, Math.round(g.actValue * 100) / 100,
         Math.round((g.actValue - g.sysValue) * 100) / 100
       ]);
       totals.sku += g.skuTotal;
-      totals.scanned += d.rows.filter(function (r) { return r.act !== 0; }).length;
+      totals.scanned += scanned;
       totals.pieces += g.actQty;
       totals.sysV += g.sysValue;
       totals.actV += g.actValue;
@@ -7401,22 +7893,38 @@ function exportJobsExcel(ids, cycleLabel) {
                             : (!r.inRound ? 'ไม่ใช่ของสาขานี้'
                                           : (r.diff === 0 ? 'ตรง' : (r.diff < 0 ? 'ขาด' : 'เกิน')))]);
       });
-      sheets.push({ name: sheetNameFor(job.jobCode || p.id, sheets.length),
+      sheets.push({ name: sheetNameFor(cid, sheets.length),
                     rows: rows, widths: [18, 34, 16, 18, 12, 11, 10, 10, 11, 14, 14, 16] });
     });
 
     summary.push([]);
-    summary.push(['รวมทุก Job', ids.length + ' Job', '', '', cycleLabel || '',
+    summary.push(['รวมทุกรอบนับ', cids.length + ' รอบ', ids.length + ' Job', '',
                   totals.sku, totals.scanned, totals.pieces, '', '',
                   Math.round(totals.sysV * 100) / 100, Math.round(totals.actV * 100) / 100,
                   Math.round((totals.actV - totals.sysV) * 100) / 100]);
+
+    /* บล็อกที่สอง — ใบไหนยิงอะไรไปเท่าไหร่ ไม่มียอดระบบและผลต่าง
+       เพราะ SKU เดียวยิงข้าม Job ได้ เทียบรายใบไม่มีความหมาย */
+    summary.push([]);
+    summary.push(['แยกตาม Job (บอกได้แค่ว่าใบไหนยิงอะไรไปเท่าไหร่)']);
+    summary.push(['รหัส Job', 'รอบนับ', 'ประเภทคลัง', 'สถานะ', 'SKU ที่ยิง', 'ชิ้นที่ยิงได้']);
+    cids.forEach(function (cid) {
+      byCycle[cid].jobs.forEach(function (p) {
+        var job = state.roundIndex[p.id] || {};
+        var keys = Object.keys(p.counts).filter(function (k) { return p.counts[k] !== 0; });
+        summary.push([job.jobCode || p.id, cid, storeTypeLabel(storeTypeOf(job)),
+                      JOB_STATUS_TEXT[job.status || 'counting'], keys.length,
+                      keys.reduce(function (s, k) { return s + p.counts[k]; }, 0)]);
+      });
+    });
+
     summary.push([]);
     summary.push(['ออกไฟล์เมื่อ', thaiDate(Date.now())]);
     summary.push(['ออกโดย', state.counter || '-']);
-    summary.push(['หมายเหตุ', '%Success ของแถวรวมไม่ได้เฉลี่ยจากแต่ละ Job — ดูตัวเลขรายใบแทน']);
+    summary.push(['หมายเหตุ', 'ยอดระบบเป็นของรอบนับ ไม่ใช่ของ Job — นับครั้งเดียวต่อรอบ']);
 
     var blob = buildXlsx([{ name: 'สรุปรวม', rows: summary,
-                            widths: [22, 26, 16, 12, 16, 11, 12, 12, 13, 13, 14, 14, 14] }].concat(sheets));
+                            widths: [22, 26, 16, 14, 12, 13, 13, 13, 13, 14, 14, 14] }].concat(sheets));
     var label = cycleLabel ? cycleLabel
               : (ids.length === 1 ? ((state.roundIndex[ids[0]] || {}).jobCode || 'job')
                                   : (ids.length + 'jobs'));
@@ -7443,10 +7951,17 @@ function sheetNameFor(code, i) {
   return s + (i ? '' : '');
 }
 
+/* ยอดระบบอ่านจากรอบนับ ไม่ใช่จาก Job — Job หลายใบในรอบเดียวกันจึงใช้ก้อนเดียวกัน
+   แคชไว้ต่อรอบ ไม่อ่านซ้ำต่อ Job (ข้อ F2) */
 function loadJobsRaw(ids) {
+  var sysCache = {};
+  function sysOf(cid) {
+    if (!sysCache[cid]) sysCache[cid] = loadCycleSystemQty(cid);
+    return sysCache[cid];
+  }
   return Promise.all(ids.map(function (id) {
     return Promise.all([
-      db.get('rounds/' + id + '/systemQty'),
+      sysOf(cycleOf(state.roundIndex[id])),
       db.get('rounds/' + id + '/scans')
     ]).then(function (res) {
       var counts = {};
@@ -7841,8 +8356,8 @@ function refreshZones() {
 
 function refreshSystemQty() {
   if (!state.roundId) return Promise.resolve();
-  var id = state.roundId;
-  return db.get('rounds/' + id + '/systemQty').then(function (data) {
+  var id = state.roundId, cid = state.cycleId;
+  return loadCycleSystemQty(cid).then(function (data) {
     if (state.roundId !== id) return;
     state.systemQty = data || {};
     renderStart();
@@ -7872,14 +8387,11 @@ function refreshBranches() {
 function refreshTransfers() {
   if (!state.roundId) return Promise.resolve();
   var id = state.roundId;
-  return Promise.all([
-    db.get('rounds/' + id + '/transfers'),
-    db.get('rounds/' + id + '/deductTransfer')
-  ]).then(function (res) {
+  return loadCycleTransfers(state.cycleId).then(function (res) {
     if (state.roundId !== id) return;
-    state.transfers = res[0] || {};
+    state.transfers = res.transfers || {};
     state.transferQty = transferQtyMap();
-    state.deductTransfer = res[1] === true;
+    state.deductTransfer = res.deduct === true;
     if ($('deductTf')) $('deductTf').checked = state.deductTransfer;
     renderStart();
     if (state.page === 'summary') renderSummary();
@@ -7892,8 +8404,8 @@ function saveDeductTransfer(on) {
   state.cycleData = null;
   if (state.page === 'summary') renderSummary();
   if (state.page === 'doc') renderDoc();
-  if (!state.roundId) return Promise.resolve();
-  return db.update('rounds/' + state.roundId, { deductTransfer: !!on })
+  if (!state.cycleId) return Promise.resolve();
+  return db.update('cycles/' + state.cycleId, { deductTransfer: !!on })
     .catch(function () { toast('บันทึกสวิตช์ไม่สำเร็จ แต่หน้าจอคิดให้แล้ว', true); });
 }
 
@@ -7972,6 +8484,7 @@ function clearSubs() {
 
 function selectRound(id) {
   state.roundId = id;
+  state.cycleId = cycleOf(state.roundIndex[id]);   // ยอดระบบผูกกับรอบนับ ไม่ใช่ Job
   localStorage.setItem('isrd_round', id);
   state.zoneId = localStorage.getItem('isrd_zone_' + id) || null;
   state.zones = {};
@@ -7987,7 +8500,7 @@ function selectRound(id) {
   state.locationFilter = '';
   if ($('locFilter')) $('locFilter').value = '';
   state.scannerOpen = null;
-  delete state.jobStats[id];
+  dropJobStats(id);
   resetRoundAggregates();
   clearSubs();
   $('recentList').innerHTML = '';
@@ -9027,17 +9540,23 @@ function init() {
     if (!requireStaff('สร้าง Job ไม่ได้')) return;
     if (!state.newBranch) { toast('เลือกสาขาจากทะเบียนก่อน', true); return; }
     if (!name) { toast('ตั้งชื่อรอบนับก่อน', true); return; }
-    createRound(name, state.newBranch, abbr, $('newJobLocSet').value,
-                $('newJobStoreType').value).then(function (id) {
-      $('newRoundName').value = '';
-      $('newJobAbbr').value = '';
-      $('branchSearch').value = '';
-      state.newBranch = null;
-      $('jobCodePreview').style.display = 'none';
-      renderBranchPicker();
-      selectRound(id);
-      showPage('start');
-      toast('สร้าง Job ' + ((state.roundIndex[id] || {}).jobCode || '') + ' แล้ว');
+
+    var branch = state.newBranch;
+    pickCycleForNewJob(branch).then(function (cid) {
+      if (!cid) return;                    // กดยกเลิก
+      return createRound(name, branch, abbr, $('newJobLocSet').value,
+                         $('newJobStoreType').value, cid).then(function (id) {
+        $('newRoundName').value = '';
+        $('newJobAbbr').value = '';
+        $('branchSearch').value = '';
+        state.newBranch = null;
+        $('jobCodePreview').style.display = 'none';
+        renderBranchPicker();
+        selectRound(id);
+        showPage('start');
+        toast('สร้าง Job ' + ((state.roundIndex[id] || {}).jobCode || '') +
+              ' ในรอบนับ ' + cid + ' แล้ว');
+      });
     }).catch(function () { toast('สร้าง Job ไม่สำเร็จ กรุณาตรวจสัญญาณอินเทอร์เน็ตแล้วลองใหม่', true); });
   };
 
@@ -9395,19 +9914,48 @@ function startApp() {
   refreshStoreTypes();
   if (isAdmin()) refreshUsers().then(renderUsers);
 
+  /* ระเบียนรอบนับต้องมาก่อน roundIndex — cycleStatus และ Rules อ่านจากตรงนี้ */
+  db.subscribe('cycles', function (data) {
+    var next = data || {};
+    /* systemQty กับ transfers ก้อนใหญ่ ไม่ต้องเก็บซ้ำในหน่วยความจำ เก็บแค่หัวรอบพอ */
+    state.cycles = {};
+    Object.keys(next).forEach(function (cid) {
+      var c = next[cid] || {};
+      state.cycles[cid] = { status: c.status, info: c.info || {}, deductTransfer: c.deductTransfer };
+    });
+    if (state.page === 'jobs') renderJobs();
+  });
+
   db.subscribe('roundIndex', function (data) {
+    var first = !startApp._gotJobs;
     state.roundIndex = data || {};
+    startApp._gotJobs = true;
     renderStart();
     renderJobBar();
     if (state.page === 'jobs') renderJobs();
     if (state.page === 'summary') renderSummary();
     if (state.page === 'doc') renderDoc();
+
+    /* ย้ายยอดระบบขึ้นรอบนับครั้งเดียวตอนเปิดแอป — รันซ้ำได้แต่ไม่ต้องรันทุกครั้งที่ Job เปลี่ยน */
+    if (first) {
+      migrateCyclesIfNeeded().then(function (report) {
+        if (!report) return;
+        state.cycleStats = {};
+        showCycleMigrationReport(report);
+        if (state.roundId) refreshSystemQty();
+        if (state.page === 'jobs') renderJobs();
+      });
+    }
   });
 
   /* เปิดแอปมาให้กลับเข้า Job เดิมที่ค้างไว้ */
   var saved = localStorage.getItem('isrd_round');
   if (saved) {
-    db.get('roundIndex/' + saved).then(function (r) { if (r) selectRound(saved); });
+    db.get('roundIndex/' + saved).then(function (r) {
+      if (!r) return;
+      state.roundIndex[saved] = state.roundIndex[saved] || r;
+      selectRound(saved);
+    });
   }
 
   renderStart();
@@ -9425,6 +9973,105 @@ init();
   ====================================================================
   สรุปการเปลี่ยนแปลง
   ====================================================================
+
+  v2.1.1 — ยอดระบบผูกกับ "รอบนับ" ไม่ใช่ต่อ Job (แก้บั๊กยอดคูณ 2)
+
+    บั๊กที่แก้: ปิดรอบ SHOW+STOCK ของสาขาเดียวเดือนเดียว แล้วยอดระบบในรายงานรวม
+    ออกมาเป็นสองเท่า (FCM01-SHOW เห็น 3,078 = 2 × 1,539)
+
+    ต้นเหตุอยู่ที่โครงสร้าง ไม่ใช่การคำนวณ — systemQty เก็บที่ rounds/{jobId}/systemQty
+    คือ "ต่อ Job" ทั้งที่ความจริงมันคือ "ยอดของสาขา ณ รอบที่ไปนับ" พอ SHOW กับ STOCK
+    นำเข้าไฟล์เดียวกัน ข้อมูลจึงถูกเก็บซ้ำ 2 ชุด แล้ว buildCycleData บวกทุก Job ตรง ๆ
+    แก้ด้วยการย้ายขึ้นไปอยู่ระดับรอบนับ บั๊กจึงหายไปจากโครงสร้าง ไม่ใช่จากการหารกลับ
+
+    F1) รหัสรอบนับ = [ย่อสาขา]-[ปีเดือน พ.ศ.]-[เลขรัน 2 หลัก]  เช่น FCM01-256907-01
+        นับสาขาเดิมเดือนเดิมซ้ำ = เลขรัน -02 -03 → คนละรอบนับ แยกขาดจากกัน
+        รูปแบบเดิม (FCM01-202607 เป็น ค.ศ. ไม่มีเลขรัน) แปลงที่ชั้นอ่านด้วย
+        normalizeCycleId เหมือนที่ v2.0.0 ทำกับ storeTypeOf — หน้าจออ่านค่าถูกทันที
+        แม้ยังไม่ได้ migrate
+
+    F2) โครงสร้างใหม่ — node เดียวที่เพิ่มคือ stocktake2026/cycles
+          cycles/{cycleId}/status              counting | reviewing | closed
+          cycles/{cycleId}/info/               branchCode branchName ym seq
+                                               createdAt createdBy schema
+                                               importFingerprint importedAt
+                                               migratedAt migratedFrom
+          cycles/{cycleId}/systemQty/{safeKey} ← ย้ายมาจาก rounds/{jobId}/systemQty
+          cycles/{cycleId}/transfers/{tfNo}    ← ย้ายมาจาก rounds/{jobId}/transfers
+          cycles/{cycleId}/deductTransfer      ← ย้ายมาจาก rounds/{jobId}/deductTransfer
+
+        transfers ย้ายตามมาด้วยเพราะมีบั๊กแบบเดียวกันรออยู่ — นำเข้าไฟล์ TF เดียวกัน
+        ทั้ง SHOW และ STOCK แล้วยอดรอโอนจะซ้ำ
+
+        info เป็นชั้นย่อยเพื่อให้ Database Rules คุมได้ 5 จุดพอ ไม่ต้องไล่ทีละฟิลด์
+
+        ของเดิมที่ rounds/{id}/systemQty และ /transfers ไม่ลบ ไม่แตะ
+        เก็บเป็นประวัติและเผื่อย้อนกลับ — แอปแค่เลิกอ่าน
+
+        loadCycleSystemQty / loadCycleTransfers เป็นทางเข้าจุดเดียว
+        ถ้ารอบไหนยังไม่มี info/schema จะ fallback ไปยุบจาก rounds ของทุก Job
+        ในรอบนั้นแบบ "เอาค่าสูงสุดรายรหัส" ทันทีโดยไม่เขียนอะไร
+        → viewer/scanner ที่เขียนไม่ได้ก็เห็นตัวเลขถูกก่อน migrate
+
+        migrateCyclesIfNeeded() รันครั้งเดียวตอนเปิดแอป เฉพาะ isStaff()
+        ยุบ systemQty แบบเอาค่าสูงสุดรายรหัส — ห้ามบวกกันเด็ดขาด
+        ถ้ามีรหัสที่ Job ต่างใบเก็บไว้ไม่เท่ากันจะขึ้นโมดัลบอกว่ารหัสไหน ค่าจากใบไหน
+        และเลือกค่าไหน (10 รายการแรก) ไม่ยุบเงียบ
+        ข้ามทันทีถ้า info/schema ครบแล้ว → รันซ้ำได้ · ไม่แตะ scans เลยสักแถว
+
+    F3) สร้าง Job แล้วสาขานั้นมีรอบ counting ค้างอยู่ → ถามก่อนว่าจะเข้ารอบไหน
+        [ก] เข้ารอบเดิม <id>  — สืบทอดยอดระบบ ไม่ต้องอัปโหลดไฟล์ซ้ำ
+        [ข] เปิดรอบนับใหม่     — เลขรัน +1 ยอดระบบแยกขาด ต้องนำเข้าไฟล์ใหม่
+        ไม่มีรอบ counting ค้าง = เปิดรอบใหม่อัตโนมัติ ไม่ถาม
+        รอบที่เป็น reviewing / closed ไม่ขึ้นเป็นตัวเลือกเลย
+        เพิ่ม field type 'choice' ให้ ask() — ปุ่มสูง 60px รองรับคนใส่ถุงมือ
+
+    F4) นำเข้าไฟล์ซ้ำในรอบเดิม = แทนที่ ไม่บวกเพิ่ม (idempotent โดยโครงสร้าง)
+        คำเตือนเดิม "ไฟล์นี้ถูกนำเข้าใน Job อื่นของรอบนี้แล้ว" หมดหน้าที่และผิดความจริง
+        เปลี่ยนขอบเขตเป็นเตือนเมื่อเจอลายเซ็นไฟล์เดียวกันใน "รอบนับอื่น" ของสาขาเดียวกัน
+        (เผลอเอาไฟล์ของรอบ -01 มาใช้กับรอบ -02 = ลืมดึงไฟล์ใหม่จาก Zort)
+
+    F5) รายงานรวมนับยอดระบบครั้งเดียว — buildCycleData รับ sys ก้อนเดียวจากรอบนับ
+        ยอดยิงยังรวมรายรหัสจากทุก Job เหมือนเดิม แล้วค่อยเทียบทีเดียว
+
+        ตารางย่อยราย Job ตัดคอลัมน์ %Success และผลต่างออก เพราะ SKU เดียวยิงข้าม Job ได้
+        เทียบรายใบไม่มีความหมาย เหลือ # · รหัส Job · ประเภทคลัง · สถานะ ·
+        SKU ที่ยิง · ชิ้นที่ยิงได้ · ผู้นับ
+
+        ผลที่ตามมาอีก 3 ที่ ซึ่งถ้าไม่แก้จะเป็นบั๊กเดิมย้ายที่:
+        - การ์ด Job หน้ารายการ: เหลือ "SKU ที่ใบนี้ยิง / ชิ้นที่นับได้ / ยิงล่าสุด"
+          ยอดระบบและ %Success ย้ายไปอยู่ที่หัวรอบนับ (loadCycleStats)
+          แถบความคืบหน้าคือส่วนแบ่งของชิ้นที่ยิงได้ทั้งรอบ ไม่ใช่เทียบยอดระบบ
+        - หน้าภาพรวมทุกสาขา: แถวละ "รอบนับ" ไม่ใช่แถวละ Job
+          ถ้ายังวางแถวละ Job แถวรวมท้ายตารางจะบวกยอดระบบซ้ำตามจำนวน Job ทันที
+        - Excel หลาย Job: ชีทสรุปรวมเป็นแถวละรอบนับ + บล็อกที่สองแยกตาม Job
+          (บอกได้แค่ยิงอะไรไปเท่าไหร่) · ชีทรายละเอียดหนึ่งชีทต่อรอบนับ
+
+    F6) ปิดรอบแล้วล็อกยอดระบบถาวร
+        cycles/{cid}/status เขียนตามสถานะรวมของ Job ในรอบ (syncCycleStatus)
+        มี Job ใด counting → counting · ไม่มีแต่มี reviewing → reviewing · ปิดครบ → closed
+        นำเข้า Stock Check / TF ตอนรอบไม่ใช่ counting → ปุ่มในแอปปฏิเสธพร้อมบอกวิธีแก้
+        และ Database Rules ปฏิเสธซ้ำอีกชั้น
+        คงกฎเดิมครบ: ออกจาก closed ได้เฉพาะ admin + reopenLog + แถบเตือนถาวร
+
+    G) ตรวจเก็บตกจาก v2.1.0
+       G1) ปุ่ม "นำเข้า Master สินค้าทั้งบริษัท" ใช้กับไฟล์จริงได้ (ผูกเป็นเทสต์ถาวรแล้ว)
+           MasterProduct_30072026.xlsx · ชีท "สินค้า" · อ่าน 15,810 แถว
+           เข้าระบบ 15,806 รายการ · รหัสซ้ำ 0 · ข้าม 1 แถวที่ไม่มีรหัส (แถว 53)
+           จบไฟล์ที่แถว 15,811 เพราะช่อง # ว่าง · NTCT0026BKFF อยู่ในไฟล์
+           คอลัมน์จับจากชื่อหัวตารางครบ — โครงไฟล์ตรงกับ parser ไม่ต้องแก้
+
+       G2) CDN ย่อรูปไม่ได้ ยืนยันด้วย URL จริงที่มี ?service=r2
+           width · w · size · resize · thumb · h · tr=w-120 · format=webp&quality=40
+           คืน 200 พร้อมไฟล์เดิมเป๊ะทุกตัว (11,261 B · 303×297 เท่ากันหมด)
+           /cdn-cgi/image/ คืน 404 → Cloudflare Image Resizing ไม่ได้เปิดบนโดเมนนี้
+           สุ่มรูปจริง 12 ใบ เฉลี่ย 247 KB ใหญ่สุด 670 KB (2048×2048 ก็มี)
+           → เอกสาร 407 แถว ≈ 98 MB ต่อการพิมพ์ 1 ครั้ง
+           ของที่ทำได้แล้วใน v2.1.0 (คิว 6 รูป · สวิตช์ปิดรูป · แคช) คือเพดานฝั่งแอป
+           ทางแก้จริงอยู่นอกแอป — ไม่เดาต่อ
+
+    Database Rules: ต้องวางใหม่ เพราะมี node cycles เพิ่ม ถ้าไม่วางจะนำเข้ายอดระบบไม่ได้
+    ไฟล์พร้อมก๊อปอยู่ที่ stocktake-rules-v2.1.1.json ที่รากโปรเจกต์ (ตรงกับบล็อกท้ายไฟล์นี้)
 
   v2.1.0 — Master ทั้งบริษัท · พิมพ์เร็วขึ้น · Export หลาย Job · role scanner
 
@@ -10019,92 +10666,173 @@ init();
     "rules": {
       ".read": false,
       ".write": false,
-
       "wms2026": {
         ".read": true,
         ".write": true
       },
-
       "stocktake2026": {
         ".read": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true",
         ".write": false,
-
         "users": {
           ".read": "auth != null",
           "$uid": {
             ".write": "auth != null && ((root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin') || (!root.child('stocktake2026/users').exists() && $uid === auth.uid && newData.child('role').val() === 'admin' && newData.child('active').val() === true))",
             ".validate": "!newData.exists() || newData.hasChildren(['name','role','active'])",
-            "name":   { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length < 120" },
-            "role":   { ".validate": "newData.isString() && newData.val().matches(/^(admin|counter|scanner|viewer)$/)" },
-            "active": { ".validate": "newData.isBoolean()" },
-            "email":  { ".validate": "newData.isString() && newData.val().length < 200" }
+            "name": {
+              ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length < 120"
+            },
+            "role": {
+              ".validate": "newData.isString() && newData.val().matches(/^(admin|counter|scanner|viewer)$/)"
+            },
+            "active": {
+              ".validate": "newData.isBoolean()"
+            },
+            "email": {
+              ".validate": "newData.isString() && newData.val().length < 200"
+            }
           }
         },
-
         "products": {
           ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin'"
         },
-
         "branches": {
           ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin'"
         },
-
         "locations": {
           ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin'"
         },
-
         "settings": {
           ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin'"
         },
-
         "docCounters": {
-          "$branch": { "$kind": { "$yearMonth": {
-            ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && newData.isNumber() && (!data.exists() || newData.val() > data.val())"
-          } } }
+          "$branch": {
+            "$kind": {
+              "$yearMonth": {
+                ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && newData.isNumber() && (!data.exists() || newData.val() > data.val())"
+              }
+            }
+          }
         },
-
+        "cycles": {
+          "$cycleId": {
+            ".validate": "!newData.exists() || newData.hasChildren(['status'])",
+            "status": {
+              ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && (!data.exists() || data.val() !== 'closed' || root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin')",
+              ".validate": "newData.isString() && newData.val().matches(/^(counting|reviewing|closed)$/)"
+            },
+            "info": {
+              ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/cycles').child($cycleId).child('status').val() !== 'closed'",
+              "schema": {
+                ".validate": "newData.isNumber()"
+              },
+              "seq": {
+                ".validate": "newData.isNumber()"
+              },
+              "createdAt": {
+                ".validate": "newData.isNumber()"
+              },
+              "importedAt": {
+                ".validate": "newData.isNumber()"
+              },
+              "migratedAt": {
+                ".validate": "newData.isNumber()"
+              },
+              "branchCode": {
+                ".validate": "newData.isString() && newData.val().length < 64"
+              }
+            },
+            "systemQty": {
+              ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && (!root.child('stocktake2026/cycles').child($cycleId).child('status').exists() || root.child('stocktake2026/cycles').child($cycleId).child('status').val() === 'counting')",
+              "$sku": {
+                ".validate": "!newData.exists() || newData.isNumber()"
+              }
+            },
+            "transfers": {
+              ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && (!root.child('stocktake2026/cycles').child($cycleId).child('status').exists() || root.child('stocktake2026/cycles').child($cycleId).child('status').val() === 'counting')"
+            },
+            "deductTransfer": {
+              ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/cycles').child($cycleId).child('status').val() !== 'closed'",
+              ".validate": "newData.isBoolean()"
+            }
+          }
+        },
         "roundIndex": {
           "$roundId": {
             ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && (!data.exists() || data.child('status').val() !== 'closed' || root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin') && (newData.exists() || root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin')",
             ".validate": "!newData.exists() || newData.hasChildren(['jobCode','branchCode','status'])",
-            "status":     { ".validate": "newData.isString() && newData.val().matches(/^(counting|reviewing|closed)$/)" },
-            "storeType":  { ".validate": "newData.isString() && newData.val().length < 24" },
-            "cycleId":    { ".validate": "newData.isString() && newData.val().length < 64" },
-            "closedAt":   { ".validate": "newData.isNumber()" },
-            "createdAt":  { ".validate": "newData.isNumber()" },
-            "importedAt": { ".validate": "newData.isNumber()" }
+            "status": {
+              ".validate": "newData.isString() && newData.val().matches(/^(counting|reviewing|closed)$/)"
+            },
+            "storeType": {
+              ".validate": "newData.isString() && newData.val().length < 24"
+            },
+            "cycleId": {
+              ".validate": "newData.isString() && newData.val().length < 64"
+            },
+            "closedAt": {
+              ".validate": "newData.isNumber()"
+            },
+            "createdAt": {
+              ".validate": "newData.isNumber()"
+            },
+            "importedAt": {
+              ".validate": "newData.isNumber()"
+            }
           }
         },
-
         "rounds": {
           "$roundId": {
-            "zones":            { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/)" },
-            "schema":           { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/)" },
-            "systemQty":        { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting'" },
-            "transfers":        { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting'" },
-            "reasons":          { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() !== 'closed'" },
-            "docType":          { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() !== 'closed'" },
-            "docNo":            { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() !== 'closed'" },
-            "transferNo":       { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() !== 'closed'" },
-            "deductTransfer":   { ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() !== 'closed'", ".validate": "newData.isBoolean()" },
-
+            "zones": {
+              ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/)"
+            },
+            "schema": {
+              ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/)"
+            },
+            "systemQty": {
+              ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting'"
+            },
+            "transfers": {
+              ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting'"
+            },
+            "reasons": {
+              ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() !== 'closed'"
+            },
+            "docType": {
+              ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() !== 'closed'"
+            },
+            "docNo": {
+              ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() !== 'closed'"
+            },
+            "transferNo": {
+              ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() !== 'closed'"
+            },
+            "deductTransfer": {
+              ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() !== 'closed'",
+              ".validate": "newData.isBoolean()"
+            },
             "scans": {
               "$scanId": {
                 ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter|scanner)$/) && !data.exists() && newData.exists() && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting'",
                 ".validate": "newData.hasChildren(['code','zone','delta','user','ts'])",
-                "delta": { ".validate": "newData.isNumber()" },
-                "ts":    { ".validate": "newData.isNumber()" }
+                "delta": {
+                  ".validate": "newData.isNumber()"
+                },
+                "ts": {
+                  ".validate": "newData.isNumber()"
+                }
               }
             },
-
             "unknown": {
               "$id": {
                 ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter|scanner)$/) && !data.exists() && newData.exists() && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting'"
               }
             },
-
-            "items":  { ".write": false },
-            "counts": { ".write": false }
+            "items": {
+              ".write": false
+            },
+            "counts": {
+              ".write": false
+            }
           }
         }
       }
@@ -10123,6 +10851,14 @@ init();
   กฎชุดนี้จึงไม่มี .write ที่สองชั้นนั้นเลย ให้สิทธิ์ทีละ node ลูกแทน
   (zones · schema · systemQty · transfers · reasons · docType · docNo ·
    transferNo · deductTransfer · scans/$scanId · unknown/$id)
+
+  cycles และ cycles/$cycleId ก็เหมือนกัน — ข้างใต้มี systemQty ที่ต้องล็อกได้
+  ตอนปิดรอบ ถ้าใส่ .write ที่สองชั้นนั้นจะล็อกไม่ได้อีกเลย
+  จึงให้ทีละ node ลูกเช่นกัน (status · info · systemQty · transfers · deductTransfer)
+
+  systemQty และ transfers ของรอบนับยอมให้เขียนตอน "ยังไม่มีระเบียนรอบนั้น" ด้วย
+  เพราะตอน migrate ข้อมูลเก่า ยอดถูกเขียนก่อนที่ระเบียนรอบจะถูกสร้าง
+  เงื่อนไข admin/counter ยังบังคับอยู่ครบ จึงไม่ได้เปิดช่องให้ใครก็เขียนได้
 
   ส่วน products / branches / locations / settings / users มี .write ที่ระดับ node
   แต่เป็น "เงื่อนไข admin" ไม่ใช่ true และข้างใต้ไม่มีอะไรที่ต้องเข้มกว่านั้น
@@ -10145,8 +10881,16 @@ init();
   roundIndex/{id}               active          admin + counter
                                                 ออกจาก closed ได้เฉพาะ admin
                                                 ลบ Job ได้เฉพาะ admin
+  cycles/{cid}/status           active          admin + counter
+                                                ออกจาก closed ได้เฉพาะ admin
+  cycles/{cid}/info             active          admin + counter · ยกเว้นตอนรอบ closed
+  cycles/{cid}/systemQty        active          admin + counter · เฉพาะรอบ counting
+  cycles/{cid}/transfers        active          admin + counter · เฉพาะรอบ counting
+  cycles/{cid}/deductTransfer   active          admin + counter · ยกเว้นตอนรอบ closed
   rounds/{id}/systemQty         active          admin + counter · เฉพาะ counting
+                                                (ข้อมูลเก่าก่อน v2.1.1 แอปไม่เขียนแล้ว)
   rounds/{id}/transfers         active          admin + counter · เฉพาะ counting
+                                                (ข้อมูลเก่าก่อน v2.1.1 แอปไม่เขียนแล้ว)
   rounds/{id}/scans/{id}        active          สร้างใหม่เท่านั้น · เฉพาะ counting
                                                 แก้/ลบไม่ได้ทุกกรณี แม้เป็น admin
   rounds/{id}/reasons,docNo,    active          admin + counter · ยกเว้นตอน closed
@@ -10184,6 +10928,11 @@ init();
      /stocktake2026/rounds/<id>/items                  write   Denied
      /stocktake2026/rounds/<id>                        write   Denied
        (สำคัญ: ถ้าอันนี้ Allowed แปลว่าเผลอใส่ .write ที่ $roundId แล้ว)
+     /stocktake2026/cycles/<cid>/systemQty             write   Allowed
+       (ต่อเมื่อ cycles/<cid>/status = counting หรือยังไม่มีระเบียนรอบนั้น)
+     /stocktake2026/cycles/<cid>                       write   Denied
+       (สำคัญเหมือนกัน: ถ้า Allowed แปลว่าเผลอใส่ .write ที่ $cycleId แล้ว
+        จะล็อกยอดระบบตอนปิดรอบไม่ได้อีกเลย)
 
      แล้วสลับเป็น Unauthenticated
      /stocktake2026                                    read    Denied
@@ -10208,6 +10957,15 @@ init();
      - นำเข้า TF Return ต้องได้ 37 SKU 86 ชิ้น
      - ปิดรอบ แล้วลองยิงอีกครั้ง ต้องยิงไม่เข้า
      - กดเปิดรอบกลับพร้อมกรอกเหตุผล ต้องเปิดได้ (เพราะเป็น admin)
+
+     เฉพาะ v2.1.1 — ต้องเช็คเพิ่ม 4 ข้อ ถ้าข้อไหนไม่ผ่านแปลว่ายังไม่ได้วาง Rules ใหม่
+     - เปิดแอปครั้งแรกหลังวาง Rules ต้องมีข้อความว่าย้ายยอดระบบขึ้นรอบนับแล้ว
+       (ถ้ามีรหัสที่ค่าไม่ตรงกันจะขึ้นกล่องรายงานให้อ่านด้วย)
+     - สาขาที่เคยเปิดทั้ง SHOW และ STOCK — เปิดรายงาน "รวมทั้งสาขา"
+       ยอดระบบต้องเท่ากับไฟล์ 1 ไฟล์ ไม่ใช่สองเท่า
+     - สร้าง Job ใหม่ที่สาขาซึ่งมีรอบค้างอยู่ ต้องมีกล่องให้เลือกเข้ารอบเดิม/เปิดรอบใหม่
+       เลือกเข้ารอบเดิมแล้วยอดระบบต้องมาเองโดยไม่ต้องอัปโหลดไฟล์
+     - นำเข้าไฟล์ยอดระบบไฟล์เดิมซ้ำในรอบเดิม ยอดต้องเท่าเดิม ไม่บวกเพิ่ม
 
   ง) บัญชี counter (สร้างจากในแอป แล้วตั้ง role เป็น counter)
      - ยิงบาร์โค้ดได้ · สร้างและปิด Job ได้ · ออกเลขที่เอกสารได้
