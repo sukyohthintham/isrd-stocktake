@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.1.3">
+<meta name="version" content="2.1.4">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.1.3</title>
+<title>ISRD Stocktake v2.1.4</title>
 
 <style>
 :root{
@@ -472,10 +472,17 @@ table.grid td.neg{color:var(--short);font-weight:700}
 .doc .tbl-title{font-weight:800;font-size:10.5pt;margin:14px 0 6px}
 /* ปิดสวิตช์ "พิมพ์พร้อมรูปสินค้า" — ซ่อนกรอบรูปในเอกสาร ไม่ต้องโหลดอะไรเลย */
 body.no-doc-images .doc .imgbox{display:none}
+/* กล่องรูปในตารางเอกสาร — ขนาดคงที่ทุกแถว จัดกึ่งกลาง เหมือนเอกสารของ dashboard
+   box-sizing ต้องเป็น border-box ไม่งั้นเส้นขอบจะบวกเพิ่มจนแต่ละแถวไม่เท่ากัน */
 .doc .imgbox{
-  width:24px;height:24px;border:0.5pt solid #cbd5e1;border-radius:3px;margin:0 auto;
-  background:#fff;font-size:9px;
+  width:30px;height:30px;box-sizing:border-box;
+  border:1px solid #cbd5e1;border-radius:3px;margin:0 auto;
+  background:#fff;font-size:11px;
 }
+/* contain ไม่ใช่ cover — ป้ายและรูปแนวนอน (เช่นพวก AS) ต้องเห็นทั้งรูป ห้ามตัดขอบทิ้ง
+   รูปสี่เหลี่ยมจัตุรัสยังเต็มช่องเหมือนเดิม เพราะสัดส่วนตรงกับกล่องอยู่แล้ว
+   จำกัดไว้ที่ .doc เท่านั้น การ์ดหน้ายิงกับหน้า Master ยังใช้ cover ตามเดิม */
+.doc .imgbox .img-el{object-fit:contain}
 .doc .reason-in{
   width:100%;min-height:0;border:0;border-bottom:1px dotted #94a3b8;border-radius:0;
   font-size:9pt;padding:2px 3px;background:transparent;font-family:inherit;
@@ -522,8 +529,10 @@ body.no-doc-images .doc .imgbox{display:none}
   @page { size: A4 portrait; margin: 12mm 10mm 14mm 10mm; }
   html,body{background:#fff !important;padding:0 !important;margin:0 !important}
   /* .jobbar กับ #reopenBanner เป็นแถบของแอป ไม่ใช่เนื้อเอกสาร
-     คำเตือนเรื่องเปิดแก้ในเอกสารใช้ #docReopen ซึ่งอยู่ในกระดาษอยู่แล้ว */
-  .topbar,.nav,.toast,.modal-bg,.no-print,.jobbar,#reopenBanner{display:none !important}
+     #docReopen เป็นคำเตือนเรื่องเปิดแก้ที่วางอยู่ในกระดาษ — ซ่อนตอนพิมพ์ด้วย
+     เอกสารที่ส่งออกไปต้องสะอาด ส่วนบนหน้าจอยังโชว์ครบ และ reopenLog ในฐานไม่ถูกแตะ
+     ประวัติการเปิดแก้จึงยังตรวจย้อนหลังได้เหมือนเดิมทุกประการ */
+  .topbar,.nav,.toast,.modal-bg,.no-print,.jobbar,#reopenBanner,#docReopen{display:none !important}
   .wrap{padding:0 !important;max-width:none !important}
   .page{display:none !important}
   #pageDoc{display:block !important}
@@ -1296,7 +1305,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.1.3';
+var APP_VERSION = '2.1.4';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -3843,7 +3852,9 @@ function markNoImage(box, state) {
 var THUMB_SIZE = 120;                 // 12mm บนกระดาษ ~45px ที่ 96dpi — เผื่อไว้ถึง 300dpi
 var THUMB_QUALITY = 0.5;              // วัดจากรูปจริง: ~2.8 KB ต่อรูป
 var THUMB_TIMEOUT_MS = 15000;         // ดาวน์โหลด + decode + encode ใช้เวลากว่าโหลดรูปเฉย ๆ
-var THUMB_STORE_KEY = 'isrd_thumbs';
+/* ขึ้นรุ่นคีย์เมื่อวิธีย่อรูปเปลี่ยน — v2 = ย่อทั้งรูปแทนการครอปกลาง
+   ถ้าใช้คีย์เดิมเครื่องที่เคยพิมพ์ไว้จะหยิบรูปที่ครอปแล้วมาใช้ต่อไม่รู้จบ */
+var THUMB_STORE_KEY = 'isrd_thumbs_v2';
 var THUMB_STORE_CAP = 2500000;        // ~2.5 MB ใน localStorage
 var IMAGE_PROXY = 'https://inspiration-dashboard.vercel.app/api/image-proxy?url=';
 
@@ -3928,8 +3939,10 @@ function fetchImageBlob(url) {
   });
 }
 
-/* วาดลง canvas แบบ cover-fit ตรงกลางบนพื้นขาว แล้วออกเป็น JPEG
-   สูตรเดียวกับ compressAllImages() ของ dashboard ต่างแค่ค่าคงที่ */
+/* ย่อ "ทั้งรูป" ลงกล่องจัตุรัสแล้ววางกลางบนพื้นขาว (letterbox)
+   ไม่ครอปกลางแบบ cover เหมือน dashboard เพราะป้ายและรูปแนวนอนจะโดนตัดขอบทิ้ง
+   ตั้งแต่ตอนย่อ แล้ว object-fit ฝั่ง CSS จะกู้คืนไม่ได้อีกเลย
+   ผลลัพธ์ยังเป็น JPEG จัตุรัส 120px เท่าเดิม ขนาดไฟล์จึงไม่ต่างจากเดิม */
 function makeThumb(url) {
   if (thumbCache[url]) return Promise.resolve(thumbCache[url]);
   return fetchImageBlob(url).then(function (blob) {
@@ -3940,8 +3953,9 @@ function makeThumb(url) {
     var g = c.getContext('2d');
     g.fillStyle = '#ffffff';
     g.fillRect(0, 0, THUMB_SIZE, THUMB_SIZE);
-    var s = Math.min(bmp.width, bmp.height);
-    g.drawImage(bmp, (bmp.width - s) / 2, (bmp.height - s) / 2, s, s, 0, 0, THUMB_SIZE, THUMB_SIZE);
+    var scale = Math.min(THUMB_SIZE / bmp.width, THUMB_SIZE / bmp.height);
+    var w = bmp.width * scale, h = bmp.height * scale;
+    g.drawImage(bmp, (THUMB_SIZE - w) / 2, (THUMB_SIZE - h) / 2, w, h);
     if (bmp.close) bmp.close();
     var data = c.toDataURL('image/jpeg', THUMB_QUALITY);
     thumbCache[url] = data;
@@ -5615,14 +5629,17 @@ function summaryDataFrom(sysMap, countMap, jobsPerSku) {
 }
 
 /* %Success สองตัว ใช้นิยามเดียวกันทั้งหน้าสรุป เอกสาร PDF และไฟล์ Excel
+   ตั้งใจให้ตอบคนละคำถาม อ่านคู่กันถึงจะเห็นภาพครบ
 
-   ชิ้น = (ยอดระบบรวม − ผลรวมค่าสัมบูรณ์ของผลต่างรายตัว) ÷ ยอดระบบรวม × 100
-          pcShort + pcOver คือผลรวมค่าสัมบูรณ์อยู่แล้ว — ใช้ค่าสัมบูรณ์เพื่อไม่ให้
-          ของเกินตัวหนึ่งไปกลบของขาดอีกตัวหนึ่งจนดูเหมือนนับตรง
-   SKU  = SKU ที่ผลต่าง = 0 ÷ SKU ทั้งหมด × 100                                   */
+   ชิ้น = (ยอดระบบรวม − |ยอดจริงรวม − ยอดระบบรวม|) ÷ ยอดระบบรวม × 100
+          คิดจากยอดรวมสุทธิ ตอบว่า "ของในคลังรวมแล้วตรงกับระบบไหม"
+          ระบบ 39 นับได้ 39 ทั้งที่ขาด 1 เกิน 1 = 100% เพราะยอดรวมตรง
+   SKU  = SKU ที่ผลต่าง = 0 ÷ SKU ทั้งหมด × 100
+          ตอบว่า "แต่ละรายการอยู่ถูกที่ไหม" เคสเดียวกันนี้ได้ 86.7% (13 จาก 15)
+          ของสลับที่จึงไม่หลุดสายตา แค่ไปโผล่ที่ตัวเลข SKU แทน                    */
 function pctPiecesOf(g) {
   if (!(g.sysQty > 0)) return null;
-  return ((g.sysQty - (g.pcShort + g.pcOver)) / g.sysQty) * 100;
+  return ((g.sysQty - Math.abs(g.actQty - g.sysQty)) / g.sysQty) * 100;
 }
 function pctSkuOf(g) {
   if (!(g.skuTotal > 0)) return null;
@@ -6145,7 +6162,9 @@ function buildDocItemTable(title, rows) {
   /* กว้างรวม 100% พอดีหน้ากระดาษเสมอ ไม่ว่าชื่อสินค้าจะยาวแค่ไหน
      # รูป รหัส ชื่อ Location Status หมวด Type ยอดระบบ รอโอน ยิงจริง ผลต่าง
      ราคา มูลค่าระบบ มูลค่าจริง ผลต่างมูลค่า Reason */
-  var widths = [2.5, 3.5, 8.5, 11, 7.5, 7.5, 6.5, 5, 5, 5, 4.5, 4.5, 4.5, 5.5, 5.5, 5.5, 8];
+  /* คอลัมน์รูปกว้าง 4.5% ≈ 32px บนหน้ากระดาษ 190mm พอดีกล่อง 30px + ระยะขอบช่อง
+     ที่เพิ่มมา 1% หักจากคอลัมน์ Reason ซึ่งยังเหลือที่เขียนพอ */
+  var widths = [2.5, 4.5, 8.5, 11, 7.5, 7.5, 6.5, 5, 5, 5, 4.5, 4.5, 4.5, 5.5, 5.5, 5.5, 7];
   var colgroup = document.createElement('colgroup');
   widths.forEach(function (w) {
     var col = document.createElement('col');
@@ -6380,7 +6399,7 @@ function buildForeignDocTable(rows) {
   table.className = 'items';
   table.setAttribute('data-doc-table', 'ไม่ใช่ของสาขานี้');
   var colgroup = document.createElement('colgroup');
-  [3, 4, 11, 20, 11, 10, 10, 7, 7, 8, 9].forEach(function (w) {
+  [3, 5, 11, 19, 11, 10, 10, 7, 7, 8, 9].forEach(function (w) {
     var col = document.createElement('col'); col.style.width = w + '%'; colgroup.appendChild(col);
   });
   table.appendChild(colgroup);
@@ -7190,13 +7209,14 @@ function loadCycleStats(cid) {
     });
     var match = all.filter(function (k) { return (Number(sys[k]) || 0) === (counts[k] || 0); }).length;
 
-    /* ตัวเลขชุดเดียวกับหน้าสรุป — %ชิ้นใช้สูตรค่าสัมบูรณ์ และมูลค่าคิดด้วยราคาที่เลือกอยู่ */
-    var sysQty = 0, absDiff = 0, sysValue = 0, actValue = 0;
+    /* ตัวเลขชุดเดียวกับหน้าสรุป — %ชิ้นคิดจากยอดรวมสุทธิเหมือน pctPiecesOf()
+       ป้ายชื่อเดียวกันต้องหมายความเหมือนกันทุกหน้า ไม่งั้นอ่านข้ามหน้าแล้วสับสน */
+    var sysQty = 0, actQty = 0, sysValue = 0, actValue = 0;
     all.forEach(function (k) {
       var s = Number(sys[k]) || 0, a = counts[k] || 0;
       var price = Number((state.products[k] || {})[state.priceField]) || 0;
       sysQty += s;
-      absDiff += Math.abs(a - s);
+      actQty += a;
       sysValue += s * price;
       actValue += a * price;
     });
@@ -7209,7 +7229,7 @@ function loadCycleStats(cid) {
       pieces: Object.keys(counts).reduce(function (s, k) { return s + counts[k]; }, 0),
       sysQty: sysQty,
       success: all.length ? (match / all.length) * 100 : null,
-      pctPieces: sysQty > 0 ? ((sysQty - absDiff) / sysQty) * 100 : null,
+      pctPieces: sysQty > 0 ? ((sysQty - Math.abs(actQty - sysQty)) / sysQty) * 100 : null,
       diffValue: actValue - sysValue,
       lastTs: lastTs
     };
@@ -7291,7 +7311,7 @@ function renderOverview() {
   });
   body.appendChild(totalRow);
 
-  var agg = { skuScanned: 0, skuTotal: 0, pieces: 0, sysQty: 0, absDiff: 0, diffValue: 0 };
+  var agg = { skuScanned: 0, skuTotal: 0, pieces: 0, diffValue: 0 };
   var pending = ids.length;
   ids.forEach(function (cid) {
     loadCycleStats(cid).then(function (s) {
@@ -10187,6 +10207,51 @@ init();
   ====================================================================
   สรุปการเปลี่ยนแปลง
   ====================================================================
+
+  v2.1.4 — %Success (ชิ้น) คิดจากยอดรวมสุทธิ · รูปในเอกสาร · แถบเปิดแก้ตอนพิมพ์
+
+    1) %Success (ชิ้น) เปลี่ยนนิยาม
+       เดิม  (Σระบบ − Σ|ผลต่างรายตัว|) ÷ Σระบบ
+       ใหม่  (Σระบบ − |Σจริง − Σระบบ|) ÷ Σระบบ
+
+       เจตนาคือแยกให้ชัดว่าสองตัวเลขตอบคนละคำถาม อ่านคู่กันถึงเห็นภาพครบ:
+         ชิ้น = ของในคลังรวมแล้วตรงกับระบบไหม
+         SKU  = แต่ละรายการอยู่ถูกที่ไหม
+       ระบบ 39 นับได้ 39 ทั้งที่ขาด 1 เกิน 1 → ชิ้น 100% (ยอดรวมตรง)
+       แต่ SKU 86.7% (13 จาก 15) ของสลับที่จึงไม่หลุดสายตา แค่ย้ายไปโผล่ที่ตัวเลข SKU
+       และช่องมูลค่ายังโชว์ −160 ตามเดิม เห็นได้ว่าถึงชิ้นครบ เงินก็ขาดได้
+
+       แก้ที่ pctPiecesOf() ที่เดียว ครอบตารางหน้าสรุป · ตาราง Dashboard ในเอกสาร ·
+       โดนัท · Excel ทั้งสามตัว
+       loadCycleStats() แก้ตามด้วย เพราะหัวรอบนับกับหน้าภาพรวมทุกสาขาใช้ป้ายชื่อเดียวกัน
+       ถ้าไม่แก้จะกลายเป็นชื่อเดียวกันแต่คนละนิยามในคนละหน้า
+
+       ไม่แตะ: pctSkuOf() · คอลัมน์ ตรง/ขาด/เกิน (ชิ้น) ซึ่งยังเป็นจำนวนรายตัวจริง ·
+       คอลัมน์มูลค่าทั้งหมด
+
+    2) รูปในคอลัมน์ "รูป" ของเอกสาร
+       ยกโครงจากเอกสาร Return Scan ของ inspiration-dashboard
+       (TfCompareTab.tsx:2127 — กล่องขนาดคงที่ + object-fit + margin:0 auto)
+       - กล่อง 24px → 30px เท่า dashboard พร้อม box-sizing:border-box
+         ไม่งั้นเส้นขอบจะบวกเพิ่มจนแต่ละแถวไม่เท่ากัน
+       - คอลัมน์รูป 3.5% → 4.5% (ตารางรายการ) และ 4% → 5% (ตารางไม่ใช่ของสาขานี้)
+         หักจากคอลัมน์ที่เหลือที่ยังกว้างพอ รวมยังเป็น 100%
+       - ใช้ object-fit: contain เฉพาะใน .doc — ป้ายและรูปแนวนอนอย่างพวก AS
+         ต้องเห็นทั้งรูป ไม่ตัดขอบ · รูปจัตุรัสยังเต็มช่องเหมือนเดิม
+         การ์ดหน้ายิงและหน้า Master ยังใช้ cover ตามเดิม ไม่ถูกกระทบ
+
+       ที่ต้องแก้คู่กันคือ makeThumb() ของโหมด Compact ซึ่งเดิม "ครอปกลาง"
+       ตั้งแต่ตอนย่อ ขอบจึงหายไปก่อน CSS จะได้ทำงาน เปลี่ยนเป็นย่อทั้งรูป
+       แล้ววางกลางบนพื้นขาว ขนาดไฟล์เท่าเดิมเพราะยังเป็น JPEG จัตุรัส 120px
+       และขึ้นรุ่นคีย์แคชเป็น isrd_thumbs_v2 ไม่งั้นเครื่องที่เคยพิมพ์แล้ว
+       จะหยิบรูปที่ครอปไว้เดิมมาใช้ต่อไม่รู้จบ
+
+    3) แถบ "รอบนี้ถูกเปิดแก้ไขหลังปิด N ครั้ง" ไม่ติดไปในเอกสารที่พิมพ์อีกแล้ว
+       เติม #docReopen เข้าไปใน @media print — ซ่อนด้วย CSS เท่านั้น
+       บนหน้าจอยังโชว์ครบทั้งแถบของแอปและแถบในกระดาษ
+       reopenLog / reopenCount ในฐานไม่ถูกแตะเลย ประวัติยังตรวจย้อนหลังได้เหมือนเดิม
+
+    ไม่แตะ Database Rules — งานนี้ไม่เขียนฐานเลย
 
   v2.1.3 — แก้บั๊กตัวกรองหน้ารายการ Job ค้าง
 
