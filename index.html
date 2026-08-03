@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.1.4">
+<meta name="version" content="2.1.5">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.1.4</title>
+<title>ISRD Stocktake v2.1.5</title>
 
 <style>
 :root{
@@ -454,6 +454,20 @@ table.grid td.neg{color:var(--short);font-weight:700}
 /* หัวตารางรายการสินค้าใช้ 8pt เท่าเนื้อตาราง ไม่งั้นคำไทยสั้น ๆ อย่าง "จำนวน"
    จะถูกตัดกลางคำในคอลัมน์แคบ */
 .doc table.items td,.doc table.items th{padding:3px 4px;font-size:8pt}
+/* รหัสสินค้าต้องอ่านได้รวดเดียว ห้ามตัดขึ้นบรรทัดใหม่กลางรหัส
+   ไม่ใส่ text-overflow:ellipsis ตั้งใจ — ถ้าวันหนึ่งมีรหัสยาวกว่าช่อง ต้องเห็นว่ามันล้น
+   ไม่ใช่โดนตัดหายเงียบ ๆ จนไปอ่านผิดตัวกันทั้งทีม */
+.doc table.items td.sku{white-space:nowrap;font-variant-numeric:tabular-nums}
+/* ช่องรูปบีบระยะขอบเหลือ 2px แบบเดียวกับเอกสารของ dashboard
+   ระยะขอบ 4px สองด้านบวกกับกล่อง 30px รวมแล้วเกินความกว้างคอลัมน์ รูปจะเลยเส้นออกไป */
+.doc table.items td.imgcell{padding:2px}
+/* หัวคอลัมน์ให้เบราว์เซอร์ตัดตามขอบคำไทย ไม่ใช่ตัดตรงไหนก็ได้
+   ค่าตั้งต้น break-word ทำให้ได้ "หมว/ดหมู่" ซึ่งอ่านสะดุด — normal ได้ "หมวด/หมู่" */
+.doc table.items th{overflow-wrap:normal}
+/* ตัวเลขคงเป็นบรรทัดเดียวเสมอ (nowrap ตามค่าตั้งต้นของ td.num)
+   เคยลองให้ตกบรรทัดได้เพื่อกันล้น แต่กลายเป็นว่าเลขปกติแตกกลางจำนวน
+   เช่น 1,410.00 อ่านเป็น "1,41" กับ "0.00" คนละบรรทัด ซึ่งอ่านผิดได้ง่ายกว่าเดิมมาก
+   จึงคุมด้วยการให้ความกว้างคอลัมน์มูลค่าพอกับค่าที่เป็นไปได้จริงแทน */
 .doc table th,.doc table td{
   border:0.5pt solid #cbd5e1;padding:4px 5px;vertical-align:middle;
   text-align:left;overflow-wrap:break-word;word-break:normal;
@@ -517,7 +531,9 @@ body.no-doc-images .doc .imgbox{display:none}
 }
 .sign-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px 14px;margin-top:10px}
 .sign-box{border:1px solid #94a3b8;border-radius:4px;padding:8px 10px 6px;font-size:9.5pt}
-.sign-box .s-role{font-weight:700;margin-bottom:26px}
+/* 12 กล่อง 4 แถว — บีบระยะลงจาก 26px เพื่อให้ทั้งบล็อกยังพอดีหน้าเดียว
+   แต่ยังเหลือที่เซ็นชื่อจริงได้สบาย */
+.sign-box .s-role{font-weight:700;margin-bottom:20px}
 .sign-box .s-line{border-top:1px dotted #111827;padding-top:3px;text-align:center;color:#475569}
 .doc-foot{margin-top:18px;padding-top:8px;border-top:1px solid #94a3b8;font-size:9pt;color:#334155;text-align:center}
 .doc .reopen-warn{
@@ -1305,7 +1321,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.1.4';
+var APP_VERSION = '2.1.5';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -5850,10 +5866,13 @@ function exportExcel() {
         ไม่งั้นสระลอยและวรรณยุกต์เพี้ยนทั้งเอกสาร
    ============================================================ */
 
+/* เรียงตามลำดับที่ใช้จริง — .sign-grid เป็น 3 คอลัมน์ จึงได้ตาราง 3x4 เอง
+   แถวละ 3 กล่อง: หัวหน้า / พนักงานสาขา / พนักงาน Warehouse / พนักงาน Admin Store */
 var SIGN_ROLES = [
-  'Operation Manager', 'Area ประจำสาขา',
+  'Operation Manager', 'Warehouse Manager', 'Area ประจำสาขา',
   'พนักงานประจำสาขา (1)', 'พนักงานประจำสาขา (2)', 'พนักงานประจำสาขา (3)',
-  'พนักงาน Warehouse (1)', 'พนักงาน Warehouse (2)', 'พนักงาน Warehouse (3)'
+  'พนักงาน Warehouse (1)', 'พนักงาน Warehouse (2)', 'พนักงาน Warehouse (3)',
+  'พนักงาน (Admin Store) (1)', 'พนักงาน (Admin Store) (2)', 'พนักงาน (Admin Store) (3)'
 ];
 
 function thaiDate(ms) {
@@ -6135,9 +6154,12 @@ function unknownExcelRow(u, i) {
           u.legacy ? 'รอบเก่า (ไม่มียอด)' : (u.resolved ? 'จัดการแล้ว' : 'ยังไม่ได้จัดการ')];
 }
 
-var DOC_ITEM_HEAD = ['#', 'รูป', 'รหัสสินค้า', 'ชื่อสินค้า', 'Location', 'Status', 'หมวดหมู่', 'Type',
-  'ยอดระบบ', 'ยอดรอโอน', 'ยิงจริง', 'ผลต่าง', 'ราคา/ตัว', 'มูลค่ารวม (ระบบ)', 'มูลค่าจริง',
-  'ผลต่าง (มูลค่า)', 'Reason'];
+/* ไม่มี Location และ Type แล้วตั้งแต่ v2.1.5 — Type ซ้ำกับหัวข้อกลุ่ม Product/Not Product
+   ส่วน Location ยังอยู่ครบในไฟล์ Excel และในตาราง "ไม่ใช่ของสาขานี้"
+   ที่ว่างยกไปให้รหัสสินค้าแสดงเต็มโดยไม่ตัดบรรทัด */
+var DOC_ITEM_HEAD = ['#', 'รูป', 'รหัสสินค้า', 'ชื่อสินค้า', 'Status', 'หมวดหมู่',
+  'ยอดระบบ', 'ยอดรอโอน', 'ยิงจริง', 'ผลต่าง', 'ราคา/ตัว', 'มูลค่าระบบ', 'มูลค่าจริง',
+  'ผลต่างมูลค่า', 'Reason'];
 
 function buildDocItemTable(title, rows) {
   var box = document.createElement('div');
@@ -6162,9 +6184,11 @@ function buildDocItemTable(title, rows) {
   /* กว้างรวม 100% พอดีหน้ากระดาษเสมอ ไม่ว่าชื่อสินค้าจะยาวแค่ไหน
      # รูป รหัส ชื่อ Location Status หมวด Type ยอดระบบ รอโอน ยิงจริง ผลต่าง
      ราคา มูลค่าระบบ มูลค่าจริง ผลต่างมูลค่า Reason */
-  /* คอลัมน์รูปกว้าง 4.5% ≈ 32px บนหน้ากระดาษ 190mm พอดีกล่อง 30px + ระยะขอบช่อง
-     ที่เพิ่มมา 1% หักจากคอลัมน์ Reason ซึ่งยังเหลือที่เขียนพอ */
-  var widths = [2.5, 4.5, 8.5, 11, 7.5, 7.5, 6.5, 5, 5, 5, 4.5, 4.5, 4.5, 5.5, 5.5, 5.5, 7];
+  /* # รูป รหัส ชื่อ Status หมวด ยอดระบบ รอโอน ยิงจริง ผลต่าง
+     ราคา มูลค่าระบบ มูลค่าจริง ผลต่างมูลค่า Reason — รวม 100% พอดี
+     รหัสสินค้าได้ 17% ≈ 32mm บนกระดาษ 190mm พอสำหรับรหัสยาวสุดในไฟล์จริง 18 ตัวอักษร
+     (NTTW0008WH00FF-2F1 และอีก 77 ตัวที่ยาวเท่ากัน) ที่ 8pt โดยไม่ตัดบรรทัด */
+  var widths = [2.5, 5, 17, 9, 5.5, 5, 5, 5, 5, 5, 7, 7.5, 7.5, 8, 6];
   var colgroup = document.createElement('colgroup');
   widths.forEach(function (w) {
     var col = document.createElement('col');
@@ -6190,17 +6214,15 @@ function buildDocItemTable(title, rows) {
     docCell(tr, String(i + 1), 'mid');
 
     var imgTd = document.createElement('td');
-    imgTd.className = 'mid';
+    imgTd.className = 'mid imgcell';
     var product = state.products[r.key] || {};
     imgTd.appendChild(imageBox(product.imageUrl));
     tr.appendChild(imgTd);
 
-    docCell(tr, r.code);
+    docCell(tr, r.code, 'sku');
     docCell(tr, r.name);
-    docCell(tr, locationText(r.key) || '-');
     docCell(tr, r.status || DEFAULT_STATUS, 'mid');
     docCell(tr, r.category || '-');
-    docCell(tr, r.type === 'notProduct' ? 'Not Product' : 'Product', 'mid');
     docCell(tr, fmtNum(r.rawSys === undefined ? r.sys : r.rawSys), 'num');
     docCell(tr, fmtNum(r.pending || 0), 'num');
     docCell(tr, fmtNum(r.act), 'num');
@@ -6535,7 +6557,7 @@ function renderDocSigns() {
     l1.textContent = 'ลงชื่อ';
     var l2 = document.createElement('div');
     l2.className = 's-line';
-    l2.style.marginTop = '14px';
+    l2.style.marginTop = '10px';
     l2.textContent = 'วันที่';
     d.appendChild(r); d.appendChild(l1); d.appendChild(l2);
     box.appendChild(d);
@@ -10207,6 +10229,39 @@ init();
   ====================================================================
   สรุปการเปลี่ยนแปลง
   ====================================================================
+
+  v2.1.5 — จัดหน้าเอกสาร Stock Take ใหม่ (layout ล้วน ไม่แตะข้อมูล)
+
+    1) ตารางรายการสินค้าตัด 2 คอลัมน์ เหลือ 15 จาก 17
+       - Location ออก — ยังมีครบในไฟล์ Excel และในตาราง "ไม่ใช่ของสาขานี้"
+         ซึ่งเป็นที่ที่ต้องใช้ตามหาของวางผิดที่จริง ๆ
+       - Type ออก — ซ้ำกับหัวข้อกลุ่ม Product / Not Product ที่อยู่เหนือตารางอยู่แล้ว
+       - Status และคอลัมน์ตัวเลขทุกช่องคงไว้ครบ ไม่มีข้อมูลไหนหายจากเอกสาร
+
+    2) เกลี่ยความกว้างใหม่ ยึดจากที่วัดจริง ไม่ใช่กะเอา
+       รหัสสินค้า 8.5% → 17% (32.3mm) เพราะรหัสยาวสุดในไฟล์ Master จริงคือ 18 ตัวอักษร
+       (NTTW0008WH00FF-2F1 และอีก 77 ตัวที่ยาวเท่ากัน) ใส่ td.sku{white-space:nowrap}
+       บังคับให้อยู่บรรทัดเดียว — ไม่ใส่ text-overflow:ellipsis ตั้งใจ
+       ถ้าวันหนึ่งมีรหัสยาวกว่าช่องต้องเห็นว่าล้น ไม่ใช่โดนตัดหายเงียบ ๆ
+
+       ระหว่างทำเจอปัญหาที่ซ่อนอยู่ 3 อย่าง แก้ไปด้วย:
+       - ช่องรูป: กล่อง 30px + ระยะขอบ 4px สองด้าน รวมเกินความกว้างคอลัมน์
+         รูปจึงเลยเส้นออกไป — บีบระยะขอบเหลือ 2px แบบเอกสารของ dashboard
+       - ตัวเลขมูลค่า: td.num เป็น nowrap พอค่าถึงหลักแสนจะล้นออกนอกเส้น
+         ตอนพิมพ์คือตัวเลขหายจากกระดาษจริง ๆ — ขยายคอลัมน์มูลค่าให้พอ
+         (เคยลองให้ตกบรรทัดแทน แต่ได้ผลแย่กว่า เพราะ 1,410.00 แตกเป็น "1,41" กับ "0.00")
+       - หัวคอลัมน์ภาษาไทยถูกตัดกลางพยางค์เป็น "หมว/ดหมู่" เพราะ overflow-wrap:break-word
+         เปลี่ยนเป็น normal ให้เบราว์เซอร์ตัดตามขอบคำ ได้ "หมวด/หมู่"
+
+       ยืนยันด้วยไฟล์จริง 407 รายการ เปิดรูปด้วย: ไม่มีหัวหรือช่องไหนล้นเลยสักแถว
+       ตารางกว้าง 190mm พอดีพื้นที่พิมพ์ A4 แนวตั้ง
+
+    3) ช่องลงชื่อ 8 → 12 กล่อง เรียง 3 คอลัมน์ 4 แถว
+       เพิ่ม Warehouse Manager และแถวพนักงาน (Admin Store) ×3
+       บีบระยะในกล่องลงเล็กน้อย (26px → 20px, 14px → 10px) ทั้งบล็อกจึงยังสูง
+       ~123mm พอดีหน้าเดียว ไม่ถูกผ่ากลางหน้ากระดาษ
+
+    ไม่แตะ Firebase และไม่แตะ Database Rules — งานนี้ไม่เขียนฐานเลย
 
   v2.1.4 — %Success (ชิ้น) คิดจากยอดรวมสุทธิ · รูปในเอกสาร · แถบเปิดแก้ตอนพิมพ์
 
