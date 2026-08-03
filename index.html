@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.1.1">
+<meta name="version" content="2.1.2">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.1.1</title>
+<title>ISRD Stocktake v2.1.2</title>
 
 <style>
 :root{
@@ -1165,7 +1165,17 @@ body.no-doc-images .doc .imgbox{display:none}
       <span><b>พิมพ์พร้อมรูปสินค้า</b></span>
     </label>
     <div class="muted" id="printImgHint" style="margin-bottom:10px">
-      ปิดแล้วพิมพ์ได้ทันทีไม่ต้องรอโหลดรูป — รูปจริงเฉลี่ย 380 KB ต่อรูป
+      ปิดแล้วพิมพ์ได้ทันทีไม่ต้องรอโหลดรูป — รูปจริงเฉลี่ย 300 KB ต่อรูป
+    </div>
+    <label id="compactRow"
+           style="display:flex;align-items:flex-start;gap:10px;font-size:14px;margin:0 0 6px 30px">
+      <input type="checkbox" id="compactImages" checked
+             style="width:20px;height:20px;min-height:0;flex:0 0 auto">
+      <span><b>🎨 Compact (ไฟล์เล็ก · รูปย่อ)</b></span>
+    </label>
+    <div class="muted" id="compactHint" style="margin:0 0 10px 30px">
+      ย่อรูปเหลือ 120px ก่อนพิมพ์ — เอกสาร 400 รายการจาก <b>~98 MB เหลือ ~1 MB</b><br>
+      ครั้งแรกใช้เวลาย่อสักครู่ ครั้งต่อไปพิมพ์ได้ทันทีเพราะจำรูปย่อไว้แล้ว
     </div>
     <div id="printProgress" class="muted" style="display:none;margin-bottom:10px"></div>
     <button class="btn big block" id="btnPrint">🖨 พิมพ์ / บันทึกเป็น PDF</button>
@@ -1286,7 +1296,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.1.1';
+var APP_VERSION = '2.1.2';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -2772,6 +2782,7 @@ var state = {
   scannerOpen: null,                        // ชื่อผู้ยิงที่กางดูรายโซนอยู่
   exportPick: [],                           // Job ที่ติ๊กไว้รอรวมดาวน์โหลด
   printImages: true,                        // พิมพ์พร้อมรูปสินค้าไหม (ข้อ B3)
+  compactImages: true,                      // ย่อรูปก่อนพิมพ์ไหม (v2.1.2)
   summaryTab: 'overview',                   // แท็บสรุป: ภาพรวมทุกสาขา / รอบนี้
   unknown: {},           // รอบเก่าก่อน v1.9.3: pushId -> {value, zone, user, ts}
   unknownKeys: {},       // safeKey(บาร์โค้ด) -> { value, qty, note, firstTs, zone, user }
@@ -3809,6 +3820,135 @@ function markNoImage(box, state) {
   box.setAttribute('data-state', state || 'none');
 }
 
+/* ============================================================
+   โหมด Compact — ย่อรูปจริงก่อนพิมพ์ (v2.1.2)
+
+   ทำไมต้องย่อจริง ไม่ใช่ย่อด้วย CSS:
+   Print-to-PDF ฝัง bytes ต้นฉบับลงไฟล์เสมอ ต่อให้ CSS ย่อเหลือ 12mm ก็ตาม
+   วัดแล้ว 60 รูปในหน้าเดียว: รูปเต็ม 2.50 MB · CSS ย่อ 12mm 2.49 MB — ไม่ต่างกันเลย
+
+   ทำไมต้องมีตัวช่วยดึงรูป:
+   image.zort.co.th ไม่ส่ง header CORS เลย เบราว์เซอร์จึงอ่าน bytes ไม่ได้
+   ลองครบ 4 ทางแล้วตันหมด — <img> ธรรมดาวาดลง canvas ได้แต่ canvas จะ "เปื้อน"
+   แล้ว toDataURL โยน SecurityError · crossOrigin="anonymous" โหลดไม่ขึ้นเลย ·
+   fetch ตรงโดน TypeError · fetch แบบ no-cors ได้ blob ขนาด 0 ไบต์
+
+   จึงยืม /api/image-proxy ของ inspiration-dashboard (Vercel) ที่ดึงฝั่ง server
+   แล้วส่งกลับพร้อม Access-Control-Allow-Origin: * — เป็นวิธีเดียวกับที่หน้า
+   TF Compare ของ dashboard ใช้อยู่จริง ต่างแค่ขนาด 120px แทน 60px
+   ============================================================ */
+var THUMB_SIZE = 120;                 // 12mm บนกระดาษ ~45px ที่ 96dpi — เผื่อไว้ถึง 300dpi
+var THUMB_QUALITY = 0.5;              // วัดจากรูปจริง: ~2.8 KB ต่อรูป
+var THUMB_TIMEOUT_MS = 15000;         // ดาวน์โหลด + decode + encode ใช้เวลากว่าโหลดรูปเฉย ๆ
+var THUMB_STORE_KEY = 'isrd_thumbs';
+var THUMB_STORE_CAP = 2500000;        // ~2.5 MB ใน localStorage
+var IMAGE_PROXY = 'https://inspiration-dashboard.vercel.app/api/image-proxy?url=';
+
+var thumbCache = Object.create(null);      // url -> data:image/jpeg;base64,...
+var thumbDirty = false;
+var corsDirect = null;                     // null ยังไม่รู้ · true ดึงตรงได้ · false ต้องผ่านตัวช่วย
+var thumbFailed = 0;                       // ย่อไม่สำเร็จกี่รูปในการพิมพ์รอบนี้
+
+function loadThumbStore() {
+  try {
+    var raw = localStorage.getItem(THUMB_STORE_KEY);
+    if (!raw) return;
+    var o = JSON.parse(raw);
+    if (!o || o.v !== 1 || !o.m) return;
+    Object.keys(o.m).forEach(function (k) { thumbCache[k] = o.m[k]; });
+  } catch (e) { /* แคชเสียก็เริ่มใหม่ ไม่ใช่เรื่องคอขาดบาดตาย */ }
+}
+
+/* เขียนแคชลงเครื่อง — เต็มแล้วทิ้งตัวเก่าสุดไล่ลงมา ไม่ปล่อยให้ throw ทะลุขึ้นไปทำแอปพัง */
+function saveThumbStore() {
+  if (!thumbDirty) return;
+  thumbDirty = false;
+  var keys = Object.keys(thumbCache);      // ลำดับการใส่ = เก่าไปใหม่
+  for (var guard = 0; guard < 40; guard++) {
+    var m = {}, size = 0;
+    for (var i = keys.length - 1; i >= 0; i--) {          // เก็บตัวใหม่ก่อน
+      var v = thumbCache[keys[i]];
+      if (size + v.length > THUMB_STORE_CAP) break;
+      m[keys[i]] = v; size += v.length;
+    }
+    try {
+      localStorage.setItem(THUMB_STORE_KEY, JSON.stringify({ v: 1, m: m }));
+      return;
+    } catch (e) {
+      keys = keys.slice(Math.ceil(keys.length / 2));      // ยังไม่พอ ตัดครึ่งแล้วลองใหม่
+      if (!keys.length) {
+        try { localStorage.removeItem(THUMB_STORE_KEY); } catch (e2) { /* ปล่อย */ }
+        return;                                          // เครื่องเต็มจริง ใช้แคชในหน่วยความจำต่อไป
+      }
+    }
+  }
+}
+
+/* ดึง bytes ของรูป — ลองดึงตรงแค่ "รูปเดียว" ต่อเซสชัน
+   เพราะ fetch ข้าม origin ที่ไม่มี CORS จะโหลดไฟล์ครบก่อนแล้วค่อยถูกบล็อก
+   ถ้าลองตรงทุกรูปจะเปลืองเน็ตสองเท่า — และถ้าวันหนึ่ง Zort เปิด CORS
+   ตัวนี้จะเลิกใช้ตัวช่วยเองอัตโนมัติโดยไม่ต้องแก้โค้ด
+
+   ต้องล็อกด้วย corsProbe ด้วย ไม่งั้นรูป 6 ใบที่วิ่งขนานกันจะเห็น corsDirect
+   เป็น null พร้อมกันแล้วลองตรงพร้อมกันหมด กลายเป็นโหลดไฟล์ใหญ่ทิ้ง 6 รอบ */
+var corsProbe = null;
+
+function fetchImageBlob(url) {
+  function direct() {
+    return fetch(url, { cache: 'force-cache' }).then(function (r) {
+      if (!r.ok) throw new Error('CDN_' + r.status);
+      return r.blob();
+    });
+  }
+  function viaProxy() {
+    return fetch(IMAGE_PROXY + encodeURIComponent(url), { cache: 'force-cache' })
+      .then(function (r) {
+        if (!r.ok) throw new Error('PROXY_' + r.status);
+        return r.blob();
+      });
+  }
+
+  if (corsDirect !== null) return corsDirect ? direct() : viaProxy();
+
+  if (!corsProbe) {
+    corsProbe = direct().then(function (blob) {
+      corsDirect = true;
+      return { url: url, blob: blob };
+    }).catch(function () {
+      corsDirect = false;
+      return null;
+    });
+  }
+  return corsProbe.then(function (hit) {
+    if (hit && hit.url === url) return hit.blob;    // ใบที่ไปลองเอง ใช้ bytes ที่ได้มาเลย
+    return corsDirect ? direct() : viaProxy();
+  });
+}
+
+/* วาดลง canvas แบบ cover-fit ตรงกลางบนพื้นขาว แล้วออกเป็น JPEG
+   สูตรเดียวกับ compressAllImages() ของ dashboard ต่างแค่ค่าคงที่ */
+function makeThumb(url) {
+  if (thumbCache[url]) return Promise.resolve(thumbCache[url]);
+  return fetchImageBlob(url).then(function (blob) {
+    return createImageBitmap(blob);
+  }).then(function (bmp) {
+    var c = document.createElement('canvas');
+    c.width = THUMB_SIZE; c.height = THUMB_SIZE;
+    var g = c.getContext('2d');
+    g.fillStyle = '#ffffff';
+    g.fillRect(0, 0, THUMB_SIZE, THUMB_SIZE);
+    var s = Math.min(bmp.width, bmp.height);
+    g.drawImage(bmp, (bmp.width - s) / 2, (bmp.height - s) / 2, s, s, 0, 0, THUMB_SIZE, THUMB_SIZE);
+    if (bmp.close) bmp.close();
+    var data = c.toDataURL('image/jpeg', THUMB_QUALITY);
+    thumbCache[url] = data;
+    thumbDirty = true;
+    return data;
+  });
+}
+
+function compactOn() { return !!(state.printImages && state.compactImages); }
+
 function loadLazyImage(box, done) {
   function finish() { if (done) { var f = done; done = null; f(); } }
   if (box.getAttribute('data-state')) { finish(); return; }
@@ -3817,6 +3957,46 @@ function loadLazyImage(box, done) {
 
   var url = box.getAttribute('data-src');
   if (!url) { markNoImage(box); finish(); return; }
+
+  /* โหมด Compact — ย่อรูปให้เล็กก่อนค่อยเอาไปใส่ <img>
+     ย่อไม่สำเร็จ (ตัวช่วยล่ม / รูปเสีย) ให้ถอยไปโหลดรูปเต็มแบบเดิม
+     เอกสารยังมีรูป แค่ใบนั้นใหญ่ — นับไว้รายงาน ไม่ปล่อยเงียบ */
+  if (compactOn() && !box.getAttribute('data-nothumb')) {
+    var tmDone = false;
+    var tmTimer = setTimeout(function () {
+      if (tmDone) return;
+      tmDone = true; thumbFailed++;
+      box.setAttribute('data-nothumb', 'timeout');
+      box.removeAttribute('data-state');
+      loadLazyImage(box, done);
+    }, thumbCache[url] ? 3000 : THUMB_TIMEOUT_MS);
+    makeThumb(url).then(function (data) {
+      if (tmDone) return;
+      tmDone = true; clearTimeout(tmTimer);
+      var ti = new Image();
+      ti.onload = function () {
+        imageDoneCache[url] = true;
+        box.textContent = '';
+        box.classList.remove('noimg');
+        ti.className = 'img-el';
+        ti.alt = '';
+        box.appendChild(ti);
+        box.setAttribute('data-state', 'thumb');
+        finish();
+      };
+      ti.onerror = function () { markNoImage(box, 'error'); finish(); };
+      ti.decoding = 'async';
+      ti.src = data;
+    }).catch(function () {
+      if (tmDone) return;
+      tmDone = true; clearTimeout(tmTimer);
+      thumbFailed++;
+      box.setAttribute('data-nothumb', 'failed');
+      box.removeAttribute('data-state');
+      loadLazyImage(box, done);          // ถอยไปทางเดิม รูปเต็ม
+    });
+    return;
+  }
 
   var img = new Image();
   var settled = false;
@@ -3889,6 +4069,9 @@ function preloadAllImages(root, onProgress) {
       loadLazyImage(box, function () {
         running--; done++;
         if (onProgress) onProgress(done, total);
+        /* คิวหมดแล้วเก็บรูปย่อลงเครื่องทันที ไม่ต้องรอให้กดพิมพ์
+           ปิดหน้าไปกลางคันงานที่ย่อไว้แล้วจะได้ไม่หายเปล่า */
+        if (!running && next >= boxes.length) saveThumbStore();
         pump();
       });
     }
@@ -6441,6 +6624,11 @@ function renderDoc() {
   /* ปิดสวิตช์รูป = ไม่ต้องมีคอลัมน์รูปในเอกสารเลย ตารางจะแคบลงและพิมพ์เร็วขึ้นด้วย */
   $('printImages').checked = !!state.printImages;
   document.body.classList.toggle('no-doc-images', !state.printImages);
+  /* ไม่มีรูปก็ไม่มีอะไรให้ย่อ — ปิดสวิตช์ Compact ตามไปด้วย */
+  $('compactImages').checked = !!state.compactImages;
+  $('compactImages').disabled = !state.printImages;
+  $('compactRow').style.opacity = state.printImages ? '' : '.45';
+  $('compactHint').style.display = state.printImages ? '' : 'none';
 
   /* ข้อ D3 — ตารางรายการโอนกลับที่เกี่ยวข้องกับรอบนี้ (แสดงทั้งสองแท็บ) */
   var tfTable = buildTransferDocTable();
@@ -9769,24 +9957,41 @@ function init() {
     renderDoc();
   });
 
+  /* สลับโหมดต้องวาดเอกสารใหม่ กรอบที่โหลดไปแล้วติด data-state ไว้ จะไม่ถูกทำซ้ำ */
+  $('compactImages').addEventListener('change', function () {
+    state.compactImages = this.checked;
+    try { localStorage.setItem('isrd_compact_images', this.checked ? '1' : '0'); } catch (e) { /* ปล่อย */ }
+    renderDoc();
+  });
+
   $('btnPrint').onclick = function () {
     var prog = $('printProgress');
     /* ข้อ B3 — ปิดสวิตช์แล้วพิมพ์ทันที ไม่แตะรูปเลย */
     if (!state.printImages) { window.print(); return; }
 
+    var compact = compactOn();
+    var verb = compact ? 'กำลังย่อรูป ' : 'กำลังโหลดรูป ';
+    thumbFailed = 0;
+
     var pending = preloadAllImages($('docSheet'), function (done, total) {
-      prog.textContent = 'กำลังโหลดรูป ' + fmtNum(done) + ' / ' + fmtNum(total) +
-        ' (ทีละ ' + IMAGE_CONCURRENCY + ' รูป)';
+      prog.textContent = verb + fmtNum(done) + ' / ' + fmtNum(total) +
+        ' (ทีละ ' + IMAGE_CONCURRENCY + ' รูป)' +
+        (compact && corsDirect === false ? ' · ผ่านตัวช่วยย่อรูป' : '');
     });
     if (!pending) { window.print(); return; }
     prog.style.display = 'block';
-    prog.textContent = 'กำลังโหลดรูป 0 / ' + fmtNum(pending);
+    prog.textContent = verb + '0 / ' + fmtNum(pending);
     $('btnPrint').disabled = true;
-    /* รอไม่เกิน 60 วิ — ไฟล์ใหญ่และเยอะ เผื่อเวลาไว้มากกว่าเดิม แต่ไม่รอไม่จบ */
-    waitForImages($('docSheet'), 60000).then(function (left) {
-      prog.textContent = left
+    /* โหมดย่อรูปต้องดาวน์โหลด + แปลงทุกใบ ให้เวลามากกว่าโหมดปกติ แต่ยังไม่รอไม่จบ */
+    waitForImages($('docSheet'), compact ? 180000 : 60000).then(function (left) {
+      var msg = left
         ? ('โหลดไม่ทัน ' + fmtNum(left) + ' รูป — พิมพ์เป็นกรอบเทาแทน')
-        : 'โหลดรูปครบแล้ว';
+        : (compact ? 'ย่อรูปครบแล้ว' : 'โหลดรูปครบแล้ว');
+      if (compact && thumbFailed) {
+        msg += ' · ย่อไม่สำเร็จ ' + fmtNum(thumbFailed) + ' รูป (ใบนั้นพิมพ์เป็นรูปเต็ม)';
+      }
+      prog.textContent = msg;
+      saveThumbStore();
       $('btnPrint').disabled = false;
       window.print();
       setTimeout(function () { prog.style.display = 'none'; }, 4000);
@@ -9854,6 +10059,8 @@ function init() {
      ห้ามอ่านจากฐานตรงนี้ เพราะยังไม่ผ่านล็อกอิน คำขอจะไม่มี token ติดไปด้วย */
   applyCompany(loadCompanyLocal());
   try { state.printImages = localStorage.getItem('isrd_print_images') !== '0'; } catch (e) { /* ปล่อย */ }
+  try { state.compactImages = localStorage.getItem('isrd_compact_images') !== '0'; } catch (e) { /* ปล่อย */ }
+  loadThumbStore();               // รูปย่อที่เคยทำไว้ พิมพ์ซ้ำจะได้ไม่ต้องย่อใหม่
 
 
   /* ---- คิวเขียนข้อมูล + สถานะการเชื่อมต่อ ---- */
@@ -9973,6 +10180,70 @@ init();
   ====================================================================
   สรุปการเปลี่ยนแปลง
   ====================================================================
+
+  v2.1.2 — โหมด Compact: มีรูปในเอกสาร แต่ไฟล์เล็ก
+
+    ปัญหา: เอกสารต้องมีรูปสินค้า แต่พิมพ์รูปเต็มแล้วไฟล์ ~98 MB ต่อครั้ง
+    ใหญ่เกินส่งอีเมลหรือเก็บจริง — v2.1.0 ทำได้แค่คุมคิวโหลดกับสวิตช์ปิดรูป
+
+    เอาเทคนิคของหน้า TF Compare ใน inspiration-dashboard มาใช้
+    (compressAllImages ใน app/dashboard/return-scan/TfCompareTab.tsx)
+
+    ทำไมต้องย่อรูปจริง ย่อด้วย CSS ไม่ได้
+      Print-to-PDF ฝัง bytes ต้นฉบับลงไฟล์เสมอ ไม่สนว่า CSS ย่อเหลือเท่าไหร่
+      วัดแล้ว 60 รูปในหน้าเดียว: รูปเต็ม 2.50 MB · CSS ย่อ 12mm 2.49 MB
+      · เติม image-rendering ก็ 2.49 MB — ไม่ต่างกันเลยแม้แต่นิดเดียว
+
+    ทำไมต้องมีตัวช่วยดึงรูป ไม่ใช่ย่อเองตรง ๆ
+      image.zort.co.th ไม่ส่ง header CORS เลย (ยิงดูทุก header แล้ว ไม่มี ACAO
+      · OPTIONS preflight ตอบ 405) เบราว์เซอร์จึงอ่าน bytes ไม่ได้
+      ทดสอบใน headless Chrome จากคนละ origin ครบ 4 ทาง ตันหมด:
+        <img> ธรรมดา → canvas    SecurityError: Tainted canvases may not be exported
+        <img crossOrigin>         โหลดรูปไม่ขึ้นเลย CORS บล็อกตั้งแต่โหลด
+        fetch ตรง                 TypeError: Failed to fetch
+        fetch แบบ no-cors         ได้ opaque response · blob ขนาด 0 ไบต์
+      dashboard ทำได้เพราะมี /api/image-proxy บน Vercel ที่ดึงฝั่ง server
+      แล้วส่งกลับพร้อม Access-Control-Allow-Origin: * — กุญแจอยู่ที่บรรทัดนั้น
+      ไม่ใช่ที่ canvas · แอปนี้จึงยืม route เดียวกันนั้นมาใช้
+
+    1) makeThumb(url) — canvas 120px q0.5 พื้นขาว cover-fit ตรงกลาง แล้วออกเป็น JPEG
+       สูตรเดียวกับ dashboard ต่างแค่ 120px แทน 60px เพราะช่องรูปในเอกสาร
+       กว้าง 12mm บนกระดาษ ต้องเผื่อเครื่องพิมพ์ 300dpi
+       วัดจากรูปจริง 8 ใบ (ต้นฉบับเฉลี่ย 299 KB): 60px q0.4 = 1,452 B ·
+       120px q0.5 = 2,821 B · 160px q0.6 = 4,507 B → 407 รูปคือ ~1.1 MB
+
+    2) ลองดึงตรงครั้งเดียวต่อเซสชัน ไม่ใช่ทุกใบ
+       fetch ข้าม origin ที่ไม่มี CORS จะโหลดไฟล์ครบก่อนแล้วค่อยถูกบล็อก
+       ลองทุกใบ = เสียเน็ตสองเท่า จึงล็อกด้วย corsProbe ให้ใบแรกไปลองใบเดียว
+       ที่เหลือรอผล (ถ้าไม่ล็อก 6 ใบที่วิ่งขนานกันจะลองพร้อมกันหมด)
+       ผลพลอยได้: วันไหน Zort ใส่ CORS ให้ โค้ดจะเลิกใช้ตัวช่วยเองอัตโนมัติ
+       โดยไม่ต้องแก้อะไรสักบรรทัด
+
+    3) แคชรูปย่อ — ในหน่วยความจำ + localStorage['isrd_thumbs'] เพดาน 2.5 MB
+       เขียนไม่ลงให้ทิ้งตัวเก่าสุดไล่ลงมา ทิ้งจนหมดแล้วยังไม่พอก็เลิกเขียนลงเครื่อง
+       ใช้แคชในหน่วยความจำต่อ ไม่ปล่อยให้ QuotaExceeded ทะลุขึ้นไปทำแอปพัง
+       เก็บทันทีที่คิวย่อหมด ไม่ต้องรอให้กดพิมพ์ — ปิดหน้าไปกลางคันงานจะได้ไม่หายเปล่า
+       ผล: พิมพ์ครั้งแรกของชุดสินค้านั้นช้า ครั้งต่อ ๆ ไปทันที
+
+    4) ล้มเหลวรายรูป (ตัวช่วยล่ม / รูปเสีย / เกิน 15 วิ) → ถอยไปโหลดรูปเต็มแบบเดิม
+       เอกสารยังมีรูป แค่ใบนั้นใหญ่ · นับไว้แล้วรายงานท้ายแถบความคืบหน้า ไม่เงียบ
+
+    5) UI — สวิตช์ที่สองใต้ "พิมพ์พร้อมรูปสินค้า" ค่าเริ่มต้นเปิด
+       ปิดสวิตช์บน = ไม่มีรูปเลย (เร็วสุด) และสวิตช์ Compact ถูกปิดตามไปด้วย
+       สลับสวิตช์ต้อง renderDoc() ใหม่ เพราะกรอบที่โหลดไปแล้วติด data-state ไว้
+       เวลารอตอนพิมพ์ขยายเป็น 180 วิเฉพาะโหมดนี้ (407 รูป ÷ 6 ≈ 55 วิ เผื่อเน็ตช้า)
+
+    แก้ที่ loadLazyImage() ที่เดียว ครอบทั้งเอกสาร Stock Take และ Transfer
+    เพราะทั้งสองวาดรูปผ่าน imageBox() ตัวเดียวกันอยู่แล้ว
+
+    วัดจริงด้วย page.pdf() ในเทสต์ — เอกสารเดียวกัน 12 รูป:
+      ฐานไม่มีรูป 2.41 MB · รูปเต็ม 8.02 MB · Compact 2.67 MB
+      → ส่วนที่เป็นรูป 5.61 MB เหลือ 0.26 MB = เล็กลง 21 เท่า
+
+    ไม่แตะ Database Rules — งานนี้ไม่เขียนฐานเลย
+
+    ข้อควรรู้: โหมดนี้พึ่ง inspiration-dashboard.vercel.app ถ้าโปรเจกต์นั้นถูกลบ
+    หรือ Vercel ล่ม Compact จะถอยไปพิมพ์รูปเต็มเอง (ไม่พัง แต่ไฟล์ใหญ่)
 
   v2.1.1 — ยอดระบบผูกกับ "รอบนับ" ไม่ใช่ต่อ Job (แก้บั๊กยอดคูณ 2)
 
