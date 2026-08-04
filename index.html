@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.1.6">
+<meta name="version" content="2.1.7">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.1.6</title>
+<title>ISRD Stocktake v2.1.7</title>
 
 <style>
 :root{
@@ -857,6 +857,7 @@ body.no-doc-images .doc .imgbox{display:none}
         <button class="btn sm grey" data-mfilter="review">รอตรวจสอบ</button>
         <button class="btn sm grey" data-mfilter="nocost">ยังไม่มีราคาต้นทุน</button>
         <button class="btn sm grey" data-mfilter="notProduct">Not Product</button>
+        <button class="btn sm grey" data-mfilter="inactive">ปิดใช้งาน</button>
       </div>
       <div class="muted" id="masterCount"></div>
       <input type="file" id="masterFile" accept=".csv,.xlsx" style="display:none">
@@ -1313,7 +1314,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.1.6';
+var APP_VERSION = '2.1.7';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -2605,14 +2606,30 @@ function statusTone(s) { return STATUS_TONE[s] || 'warn'; }
 /* ---------- กฎแยก Product / Not Product ----------
    ระบุจากฝั่ง Not Product เท่านั้น และห้ามใช้คอลัมน์ Tag เพราะข้อมูลไม่นิ่ง */
 var NOT_PRODUCT_CATEGORIES = ['ทรัพย์สินบริษัท', 'วัสดุของใช้สิ้นเปลือง'];
-var REVIEW_CATEGORIES = ['ปิดใช้งาน'];
+/* ของเลิกขายแล้ว — ไม่มีอะไรต้องตรวจ แต่ยังต้องรู้จักตอนยิง เพราะอาจตกค้างบนชั้น
+   เคยอยู่ใน REVIEW_CATEGORIES จนถึง v2.1.6 ซึ่งทำให้ 9,513 จาก 15,806 ตัว
+   ขึ้นป้าย "รอตรวจสอบ" กลบของที่ต้องดูจริง (หมวดว่าง) ซึ่งมีแค่ 38 ตัว */
+var INACTIVE_CATEGORIES = ['ปิดใช้งาน'];
+var REVIEW_CATEGORIES = [];              // ว่างไว้เผื่อมีหมวดที่ต้องให้คนตรวจในอนาคต
 
 function classifyByCategory(category) {
   var c = normText(category);
   if (!c) return { type: 'product', needsReview: true };            // หมวดว่าง = ต้องมีคนมาดู
   if (NOT_PRODUCT_CATEGORIES.map(normText).indexOf(c) >= 0) return { type: 'notProduct', needsReview: false };
+  if (INACTIVE_CATEGORIES.map(normText).indexOf(c) >= 0) return { type: 'inactive', needsReview: false };
   if (REVIEW_CATEGORIES.map(normText).indexOf(c) >= 0) return { type: 'product', needsReview: true };
   return { type: 'product', needsReview: false };
+}
+
+/* สินค้าตัวนี้เลิกขายแล้วหรือยัง — ต้องอ่านจากหมวดหมู่ด้วย ไม่ใช่ดูแค่ฟิลด์ type
+   เพราะของที่ import ไว้ก่อน v2.1.7 ถูกเขียนลงฐานไปแล้วว่า type:'product'
+   ถ้าดูแค่ type ผู้ใช้จะไม่เห็นผลอะไรเลยจนกว่าจะ import ไฟล์หมื่นห้าพันแถวใหม่
+   ค่าที่คนตั้งเองไว้ (typeSource manual) ชนะเสมอ ไฟล์และหมวดหมู่ห้ามมาทับ */
+function isInactiveProduct(p) {
+  if (!p) return false;
+  if (p.typeSource === 'manual') return p.type === 'inactive';
+  if (p.type === 'inactive') return true;
+  return INACTIVE_CATEGORIES.map(normText).indexOf(normText(p.category)) >= 0;
 }
 
 /* ชื่อสาขาอยู่แถวชื่อเรื่อง: "สินค้า - NTDS Central Festival Chiangmai FL.4" */
@@ -2664,7 +2681,7 @@ function parseProductFile(parsed) {
     blank: 0, noCode: [], afterFooter: 0, footerRowNum: null, footerReason: null,
     merged: [], badQty: [], imported: 0,
     noCategory: 0, noBarcode: 0, noUnit: 0, zeroPrice: 0, noSubCategory: 0,
-    product: 0, notProduct: 0, needsReview: 0, specialStatus: 0
+    product: 0, notProduct: 0, inactive: 0, needsReview: 0, specialStatus: 0
   };
 
   var stopped = false;
@@ -2750,7 +2767,9 @@ function parseProductFile(parsed) {
     var cls = classifyByCategory(products[k].category);
     products[k]._type = cls.type;
     products[k]._needsReview = cls.needsReview;
-    if (cls.type === 'notProduct') stat.notProduct++; else stat.product++;
+    if (cls.type === 'notProduct') stat.notProduct++;
+    else if (cls.type === 'inactive') stat.inactive++;
+    else stat.product++;
     if (cls.needsReview) stat.needsReview++;
   });
 
@@ -5263,7 +5282,16 @@ function masterRows() {
   var keys = Object.keys(state.products);
   return keys.filter(function (key) {
     var p = state.products[key];
-    if (state.masterFilter === 'review' && !p.needsReview) return false;
+    var inactive = isInactiveProduct(p);
+    if (state.masterFilter === 'inactive') {
+      if (!inactive) return false;
+    } else if (inactive) {
+      /* ของเลิกขายมีเป็นหมื่นตัว ถ้าปนอยู่ในทุกลิสต์จะกลบของที่ต้องลงมือจนหาไม่เจอ
+         ยกเว้นตัวที่อยู่ในรอบนับจริงหรือถูกยิงเจอแล้ว — พวกนั้นมีตัวตนบนชั้น ต้องเห็นเสมอ */
+      var inRound = (Number(state.systemQty[key]) || 0) > 0 || !!state.counts[key];
+      if (!inRound) return false;
+    }
+    if (state.masterFilter === 'review' && (!p.needsReview || inactive)) return false;
     if (state.masterFilter === 'nocost' && p.costPrice !== undefined && p.costPrice !== null) return false;
     if (state.masterFilter === 'notProduct' && p.type !== 'notProduct') return false;
     if (!term) return true;
@@ -5323,9 +5351,20 @@ function renderMaster() {
   var keys = masterRows();
   var total = Object.keys(state.products).length;
   var shown = keys.slice(0, MASTER_RENDER_LIMIT);
+  /* ของที่ถูกซ่อนเพราะเลิกขายต้องบอกให้รู้ ไม่ใช่หายไปเงียบ ๆ แล้วคนงงว่าของหาย
+     ใช้ Set ไม่ใช่ indexOf — สินค้ามีหมื่นห้าพันตัว การไล่หาในอาเรย์ทุกรอบจะหน่วงจนหน้าค้าง */
+  var hiddenInactive = 0;
+  if (state.masterFilter !== 'inactive') {
+    var inList = Object.create(null);
+    keys.forEach(function (k) { inList[k] = 1; });
+    Object.keys(state.products).forEach(function (k) {
+      if (!inList[k] && isInactiveProduct(state.products[k])) hiddenInactive++;
+    });
+  }
   $('masterCount').textContent = total
     ? ('พบ ' + fmtNum(keys.length) + ' จากทั้งหมด ' + fmtNum(total) + ' รายการ' +
-       (keys.length > shown.length ? ' — แสดง ' + fmtNum(shown.length) + ' รายการแรก พิมพ์ค้นหาเพื่อกรองให้แคบลง' : ''))
+       (keys.length > shown.length ? ' — แสดง ' + fmtNum(shown.length) + ' รายการแรก พิมพ์ค้นหาเพื่อกรองให้แคบลง' : '') +
+       (hiddenInactive ? ' · ซ่อนของเลิกขาย ' + fmtNum(hiddenInactive) + ' รายการ (ดูที่ชิป "ปิดใช้งาน")' : ''))
     : 'ยังไม่มีข้อมูลสินค้า — นำเข้าไฟล์ที่หน้า "เริ่มนับ" ก่อน';
 
   var list = $('masterList');
@@ -5354,12 +5393,15 @@ function renderMaster() {
 
     var right = document.createElement('div');
     right.style.textAlign = 'right';
+    /* ป้ายประเภทมี 3 สถานะตั้งแต่ v2.1.7 — Product · Not Product · ปิดใช้งาน */
+    var inactive = isInactiveProduct(p);
     var typeChip = document.createElement('span');
-    typeChip.className = 'chip ' + (p.type === 'notProduct' ? 'warn' : 'ok');
-    typeChip.setAttribute('data-type', p.type);
-    typeChip.textContent = p.type === 'notProduct' ? 'Not Product' : 'Product';
+    typeChip.className = 'chip ' + (inactive ? 'grey' : (p.type === 'notProduct' ? 'warn' : 'ok'));
+    typeChip.setAttribute('data-type', inactive ? 'inactive' : p.type);
+    typeChip.textContent = inactive ? 'ปิดใช้งาน'
+      : (p.type === 'notProduct' ? 'Not Product' : 'Product');
     right.appendChild(typeChip);
-    if (p.needsReview) {
+    if (p.needsReview && !inactive) {
       var rv = document.createElement('div');
       rv.style.marginTop = '5px';
       var chip = document.createElement('span');
@@ -5396,9 +5438,12 @@ function renderMaster() {
     typeBtn.className = 'btn sm grey';
     typeBtn.style.width = '100%';
     typeBtn.setAttribute('data-action', 'toggleType');
-    typeBtn.textContent = p.type === 'notProduct' ? 'เปลี่ยนเป็น Product' : 'เปลี่ยนเป็น Not Product';
+    /* ของที่เลิกขายแล้วให้กู้กลับมาเป็น Product ได้ เผื่อความจริงยังขายอยู่
+       กดแล้ว saveProductEdit ตั้ง typeSource เป็น manual ให้เอง ไฟล์ import จะไม่ทับอีก */
+    typeBtn.textContent = inactive ? 'เปลี่ยนเป็น Product'
+      : (p.type === 'notProduct' ? 'เปลี่ยนเป็น Product' : 'เปลี่ยนเป็น Not Product');
     typeBtn.onclick = function () {
-      var next = p.type === 'notProduct' ? 'product' : 'notProduct';
+      var next = (inactive || p.type === 'notProduct') ? 'product' : 'notProduct';
       saveProductEdit(key, 'type', next).then(function () { toast('เปลี่ยน ' + p.code + ' เป็น ' + next); });
     };
     typeLab.appendChild(typeBtn);
@@ -6837,8 +6882,12 @@ function buildImportReport(stat, diff) {
   var cls = repSection('แยกประเภทตามหมวดหมู่');
   repLine(cls, 'Product', fmtNum(stat.product) + ' รายการ');
   repLine(cls, 'Not Product', fmtNum(stat.notProduct) + ' รายการ');
+  repLine(cls, 'สินค้าปิดใช้งาน', fmtNum(stat.inactive) + ' รายการ (ไม่ต้องตรวจ)');
+  if (stat.inactive) repNote(cls, 'ของเลิกขายแล้ว — ยังค้นเจอและยิงได้ตามปกติ ' +
+    'ถ้าเจอบนชั้นจริงจะนับเข้ารายงานให้ ดูรายการทั้งหมดที่หน้า Master แล้วกรอง "ปิดใช้งาน"');
   repLine(cls, 'รอตรวจสอบ', fmtNum(stat.needsReview) + ' รายการ', stat.needsReview > 0);
-  if (stat.needsReview) repNote(cls, 'หมวด "ปิดใช้งาน" หรือไม่มีหมวดหมู่ — เปิดหน้า Master แล้วกรอง "รอตรวจสอบ" เพื่อเคลียร์');
+  if (stat.needsReview) repNote(cls, 'ไม่มีหมวดหมู่ในไฟล์ จึงเดาประเภทให้ไม่ได้ — ' +
+    'เปิดหน้า Master แล้วกรอง "รอตรวจสอบ" เพื่อเคลียร์');
   box.appendChild(cls);
 
   var gaps = repSection('ข้อมูลที่ไม่ครบ (ไม่ทำให้นำเข้าล้ม)');
@@ -10199,6 +10248,43 @@ init();
   ====================================================================
   สรุปการเปลี่ยนแปลง
   ====================================================================
+
+  v2.1.7 — เลิก flag สินค้า "ปิดใช้งาน" เป็น "รอตรวจสอบ"
+
+    ปัญหา: import Master 15,806 ตัว แล้ว 9,551 (60%) ขึ้นป้าย "รอตรวจสอบ"
+    สืบแล้วพบว่า 9,513 ในนั้นคือหมวด "ปิดใช้งาน" (ของเลิกขาย) ที่ไม่มีอะไรต้องตรวจ
+    เหลือของที่ต้องดูจริง ๆ คือหมวดว่าง 38 ตัว ซึ่งถูกกลบจนหาไม่เจอ
+    และในไฟล์ยอดของสาขาจริง 407 รายการ มีของเลิกขายแค่ 2 ตัว ที่เหลือไม่มีวันถูกนับ
+
+    1) classifyByCategory เพิ่มประเภทที่สาม
+       INACTIVE_CATEGORIES = ['ปิดใช้งาน'] → { type: 'inactive', needsReview: false }
+       REVIEW_CATEGORIES เหลือว่าง เก็บไว้เผื่อมีหมวดที่ต้องให้คนตรวจในอนาคต
+       หมวดว่างยังคง needsReview: true เหมือนเดิม ไม่แตะ
+
+    2) stat แยกตัวนับ inactive ออกจาก product / notProduct / needsReview
+
+    3) isInactiveProduct() — อ่านจากหมวดหมู่ด้วย ไม่ได้ดูแค่ฟิลด์ type
+       เพราะของที่ import ไว้ก่อนเวอร์ชันนี้ถูกเขียนลงฐานไปแล้วว่า type:'product'
+       ถ้าดูแค่ type ผู้ใช้จะไม่เห็นผลอะไรเลยจนกว่าจะ import ไฟล์หมื่นห้าพันแถวใหม่
+       ลำดับการตัดสิน: typeSource manual ชนะเสมอ → type:'inactive' → หมวดหมู่
+
+    4) หน้า Master
+       - ชิปกรองใหม่ "ปิดใช้งาน" คู่กับ "รอตรวจสอบ" เดิม
+       - ตัวกรองอื่นซ่อนของเลิกขายทั้งหมด ยกเว้นตัวที่อยู่ในรอบนับจริง
+         (systemQty > 0 หรือถูกยิงเจอแล้ว) เพราะพวกนั้นมีตัวตนบนชั้น ต้องเห็นเสมอ
+       - บอกจำนวนที่ซ่อนไว้ท้ายบรรทัดนับ ไม่ให้ของหายเงียบ ๆ
+       - ป้ายประเภทมี 3 สถานะ · ปุ่มสลับให้กู้ของเลิกขายกลับเป็น Product ได้
+         (กดแล้วเป็น manual ไฟล์ import จะไม่ทับอีก)
+
+    5) รายงานผลนำเข้าแยกบรรทัด "สินค้าปิดใช้งาน" ออกจาก "รอตรวจสอบ"
+       ด้วยไฟล์จริงกลายเป็น ปิดใช้งาน 9,513 · รอตรวจสอบ 38 (จากเดิมรวมกัน 9,551)
+       แก้ note ที่เคยเขียนว่า 'หมวด "ปิดใช้งาน" หรือไม่มีหมวดหมู่' ให้เหลือหมวดว่างอย่างเดียว
+
+    ของเลิกขายยัง import เข้า products และอยู่ในดัชนียิงเหมือนเดิมทุกประการ
+    ยิงเจอแล้วนับเป็นสินค้าปกติ ไม่กลายเป็น "ไม่มีในระบบ"
+    และถ้านับเจอบนชั้นจริงจะเข้ารายงานในกลุ่ม Product ตามปกติ — มีตัวตนก็ต้องมีในผลต่าง
+
+    ไม่แตะ Firebase และไม่แตะ Database Rules
 
   v2.1.6 — เอา "ยอดรอโอน" ออกจากการนับ + ตัด Status ในเอกสาร
 
