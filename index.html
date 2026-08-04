@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.1.5">
+<meta name="version" content="2.1.6">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.1.5</title>
+<title>ISRD Stocktake v2.1.6</title>
 
 <style>
 :root{
@@ -1088,14 +1088,6 @@ body.no-doc-images .doc .imgbox{display:none}
   <div class="card" id="tfCard">
     <h3>รายการโอนกลับในรอบนี้ <span class="chip" id="tfChip">0</span></h3>
     <div class="muted" id="tfSummaryHint" style="margin-bottom:10px"></div>
-    <label style="display:flex;align-items:flex-start;gap:10px;font-size:14px;margin-bottom:6px">
-      <input type="checkbox" id="deductTf" style="width:20px;height:20px;min-height:0;flex:0 0 auto">
-      <span><b>หักรายการรอโอนออกจากยอดระบบ</b></span>
-    </label>
-    <div class="muted" style="margin-bottom:10px">
-      เปิดเมื่อของกองที่รอโอนถูกแยกออกไปแล้วและไม่ได้นับรวมในรอบนี้ —
-      ผลต่างและ %Success จะคิดจาก (ยอดระบบ − ยอดรอโอน)
-    </div>
     <div class="clist" id="tfList"></div>
   </div>
 
@@ -1321,7 +1313,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.1.5';
+var APP_VERSION = '2.1.6';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -2558,24 +2550,20 @@ function mergeTransfers(target, src) {
   return target;
 }
 
+/* ตั้งแต่ v2.1.6 อ่านแค่รายการโอน ไม่อ่าน deductTransfer อีก
+   ส่งของกลับ = เคลียร์ออกจากคลังทันที ยอดระบบจาก Zort จึงถูกอยู่แล้ว ไม่ต้องหักซ้ำ
+   ค่าเก่าที่เคยเขียนไว้ในฐานไม่ได้ลบ แค่เลิกอ่าน */
 function loadCycleTransfers(cid) {
-  if (!cid) return Promise.resolve({ transfers: {}, deduct: false });
-  return Promise.all([
-    db.get('cycles/' + cid + '/transfers'),
-    db.get('cycles/' + cid + '/deductTransfer')
-  ]).then(function (res) {
-    var tf = res[0] || {}, deduct = res[1] === true;
-    if (Object.keys(tf).length || cycleMigrated(cid)) return { transfers: tf, deduct: deduct };
-    return Promise.all([
-      legacyRoundParts(cid, 'transfers'),
-      legacyRoundParts(cid, 'deductTransfer')
-    ]).then(function (old) {
+  if (!cid) return Promise.resolve({ transfers: {} });
+  return db.get('cycles/' + cid + '/transfers').then(function (tf) {
+    tf = tf || {};
+    if (Object.keys(tf).length || cycleMigrated(cid)) return { transfers: tf };
+    return legacyRoundParts(cid, 'transfers').then(function (old) {
       var out = {};
-      old[0].forEach(function (p) { mergeTransfers(out, p.data); });
-      var anyDeduct = old[1].some(function (p) { return p.data === true; });
-      return { transfers: out, deduct: deduct || anyDeduct };
+      old.forEach(function (p) { mergeTransfers(out, p.data); });
+      return { transfers: out };
     });
-  }).catch(function () { return { transfers: {}, deduct: false }; });
+  }).catch(function () { return { transfers: {} }; });
 }
 
 var DEFAULT_STATUS = 'Normal';
@@ -2800,8 +2788,7 @@ var state = {
   cycles: {},                               // cycleId -> { status, info } ระเบียนรอบนับ
   cycleId: null,                            // รอบนับของ Job ที่เปิดอยู่
   transfers: {},                            // safeKey(tfNo) -> ใบโอนของรอบนี้
-  transferQty: {},                          // safeKey(sku) -> ยอดรอโอนรวม
-  deductTransfer: false,                    // หักรายการรอโอนออกจากยอดระบบไหม
+  transferQty: {},                          // safeKey(sku) -> จำนวนที่อยู่ในใบโอนกลับ
   importTab: 'stock',                       // แท็บนำเข้า: stock / tf
   itemTab: 'stock',                         // แท็บรายการสินค้า: stock / tf
   overviewStatus: 'all',                    // ตัวกรองหน้าภาพรวมทุกสาขา
@@ -3684,10 +3671,9 @@ function migrateOneCycle(cid, ids, report) {
   var job0 = state.roundIndex[ids[0]] || {};
   return Promise.all([
     legacyRoundParts(cid, 'systemQty'),
-    legacyRoundParts(cid, 'transfers'),
-    legacyRoundParts(cid, 'deductTransfer')
+    legacyRoundParts(cid, 'transfers')
   ]).then(function (res) {
-    var sys = {}, seenFrom = {}, transfers = {}, deduct = false;
+    var sys = {}, seenFrom = {}, transfers = {};
 
     res[0].forEach(function (p) {
       Object.keys(p.data).forEach(function (k) {
@@ -3699,7 +3685,6 @@ function migrateOneCycle(cid, ids, report) {
       });
     });
     res[1].forEach(function (p) { mergeTransfers(transfers, p.data); });
-    res[2].forEach(function (p) { if (p.data === true) deduct = true; });
 
     /* รหัสที่ Job ต่างใบให้ค่าไม่ตรงกัน ต้องรายงาน ห้ามยุบเงียบ */
     Object.keys(seenFrom).forEach(function (k) {
@@ -3712,7 +3697,6 @@ function migrateOneCycle(cid, ids, report) {
     var seq = Number(String(cid).slice(String(cid).lastIndexOf('-') + 1)) || 1;
     var head = {
       status: deriveCycleStatus(cid),
-      deductTransfer: deduct,
       info: {
         branchCode: job0.branchCode || '', branchName: jobBranchName(job0),
         ym: String(cid).split('-')[1] || cycleYm(job0.createdAt), seq: seq,
@@ -4662,7 +4646,7 @@ function showScanHit(key) {
   badges.appendChild(makeBadge(st, statusTone(st)));
   /* ข้อ C3 — ของกองนี้เตรียมส่งกลับแล้ว คนนับต้องรู้ */
   var pend = pendingTransferQty(key);
-  if (pend) badges.appendChild(makeBadge('🔁 รอโอน ' + fmtNum(pend), 'blue'));
+  if (pend) badges.appendChild(makeBadge('🔁 อยู่ในใบโอนกลับ ' + fmtNum(pend), 'blue'));
 
   /* ข้อ A3 — รู้จักแต่ไม่ใช่ของสาขานี้ ต้องเห็นชัดว่าต่างจากของปกติ */
   var foreign = state.systemQty[key] === undefined;
@@ -5501,14 +5485,14 @@ function summaryData() {
         ? { code: unknownInfo.value, name: unknownInfo.note || ('ไม่มีในระบบ — ' + unknownInfo.value),
             type: 'product', unit: '' }
         : { code: key, name: key, type: 'product' });
-    var rawSys = Number(state.systemQty[key]) || 0;
-    var pending = pendingTransferQty(key);
-    /* ข้อ D2 — เปิดสวิตช์แล้วคิดผลต่างจาก (ยอดระบบ − ยอดรอโอน) */
-    var sys = state.deductTransfer ? Math.max(0, rawSys - pending) : rawSys;
+    /* ตั้งแต่ v2.1.6 คิดจากยอดระบบตรง ๆ เสมอ
+       ส่งของกลับ = เคลียร์ออกจากคลังทันที ยอดที่ดึงมาจาก Zort จึงหักไปแล้วในตัว
+       ถ้าหักรายการโอนกลับซ้ำอีกจะกลายเป็นหักสองรอบ */
+    var sys = Number(state.systemQty[key]) || 0;
     var act = Number(state.counts[key]) || 0;
     /* ยอดถูกย้ายออกไปหมดแล้ว (ผูกกับสินค้าอื่น) และไม่มียอดระบบ = ไม่ใช่แถวจริง
        ถ้าไม่ตัดออก SKU รวมจะถูกนับเกินและ %Success จะเพี้ยน */
-    if (!rawSys && !act && !state.products[key]) return;
+    if (!sys && !act && !state.products[key]) return;
     var price = Number(p[priceField]) || 0;      // ยังไม่กรอกต้นทุน = คิดเป็น 0
     var bucket = p.type === 'notProduct' ? 'notProduct' : 'product';
 
@@ -5532,7 +5516,6 @@ function summaryData() {
       category: p.category || '',
       status: productStatus(p),
       location: locationText(key),
-      rawSys: rawSys, pending: pending,
       /* ข้อ A2 — สามสถานะที่ต้องไม่ปนกัน:
          inRound  = อยู่ในไฟล์ยอดของสาขานี้
          known    = มีใน Master (รู้จัก)
@@ -6157,8 +6140,8 @@ function unknownExcelRow(u, i) {
 /* ไม่มี Location และ Type แล้วตั้งแต่ v2.1.5 — Type ซ้ำกับหัวข้อกลุ่ม Product/Not Product
    ส่วน Location ยังอยู่ครบในไฟล์ Excel และในตาราง "ไม่ใช่ของสาขานี้"
    ที่ว่างยกไปให้รหัสสินค้าแสดงเต็มโดยไม่ตัดบรรทัด */
-var DOC_ITEM_HEAD = ['#', 'รูป', 'รหัสสินค้า', 'ชื่อสินค้า', 'Status', 'หมวดหมู่',
-  'ยอดระบบ', 'ยอดรอโอน', 'ยิงจริง', 'ผลต่าง', 'ราคา/ตัว', 'มูลค่าระบบ', 'มูลค่าจริง',
+var DOC_ITEM_HEAD = ['#', 'รูป', 'รหัสสินค้า', 'ชื่อสินค้า', 'หมวดหมู่',
+  'ยอดระบบ', 'ยิงจริง', 'ผลต่าง', 'ราคา/ตัว', 'มูลค่าระบบ', 'มูลค่าจริง',
   'ผลต่างมูลค่า', 'Reason'];
 
 function buildDocItemTable(title, rows) {
@@ -6184,11 +6167,12 @@ function buildDocItemTable(title, rows) {
   /* กว้างรวม 100% พอดีหน้ากระดาษเสมอ ไม่ว่าชื่อสินค้าจะยาวแค่ไหน
      # รูป รหัส ชื่อ Location Status หมวด Type ยอดระบบ รอโอน ยิงจริง ผลต่าง
      ราคา มูลค่าระบบ มูลค่าจริง ผลต่างมูลค่า Reason */
-  /* # รูป รหัส ชื่อ Status หมวด ยอดระบบ รอโอน ยิงจริง ผลต่าง
+  /* # รูป รหัส ชื่อ หมวด ยอดระบบ ยิงจริง ผลต่าง
      ราคา มูลค่าระบบ มูลค่าจริง ผลต่างมูลค่า Reason — รวม 100% พอดี
      รหัสสินค้าได้ 17% ≈ 32mm บนกระดาษ 190mm พอสำหรับรหัสยาวสุดในไฟล์จริง 18 ตัวอักษร
-     (NTTW0008WH00FF-2F1 และอีก 77 ตัวที่ยาวเท่ากัน) ที่ 8pt โดยไม่ตัดบรรทัด */
-  var widths = [2.5, 5, 17, 9, 5.5, 5, 5, 5, 5, 5, 7, 7.5, 7.5, 8, 6];
+     (NTTW0008WH00FF-2F1 และอีก 77 ตัวที่ยาวเท่ากัน) ที่ 8pt โดยไม่ตัดบรรทัด
+     ที่ว่างจากการตัด Status กับ ยอดรอโอน ยกไปให้ชื่อสินค้าเป็นหลัก */
+  var widths = [2.5, 5, 17, 15, 6.5, 5.5, 5.5, 5.5, 7, 8, 8, 8.5, 6];
   var colgroup = document.createElement('colgroup');
   widths.forEach(function (w) {
     var col = document.createElement('col');
@@ -6221,10 +6205,8 @@ function buildDocItemTable(title, rows) {
 
     docCell(tr, r.code, 'sku');
     docCell(tr, r.name);
-    docCell(tr, r.status || DEFAULT_STATUS, 'mid');
     docCell(tr, r.category || '-');
-    docCell(tr, fmtNum(r.rawSys === undefined ? r.sys : r.rawSys), 'num');
-    docCell(tr, fmtNum(r.pending || 0), 'num');
+    docCell(tr, fmtNum(r.sys), 'num');
     docCell(tr, fmtNum(r.act), 'num');
     docCell(tr, (r.diff > 0 ? '+' : '') + fmtNum(r.diff),
       'num ' + (r.diff > 0 ? 'pos' : (r.diff < 0 ? 'neg' : '')));
@@ -6635,9 +6617,10 @@ function renderDoc() {
     : 'ยังไม่มีผู้นับในรอบนี้';
   /* ข้อ D4 — ระบุในเอกสารว่า %Success คิดจากฐานไหน */
   var tfPieces = transferList().reduce(function (s, t) { return s + (t.pieces || 0); }, 0);
-  $('docBasis').textContent = 'ฐานคำนวณ %Success: ' +
-    (state.deductTransfer ? 'ยอดระบบหักรายการรอโอนแล้ว' : 'ยอดระบบเต็ม ไม่หักรายการรอโอน') +
-    (tfPieces ? ' · รอบนี้มีของรอโอน ' + fmtNum(tfPieces) + ' ชิ้น' : '') +
+  /* ไม่มีทางเลือกฐานคำนวณอีกแล้ว — คิดจากยอดระบบตรง ๆ เสมอ
+     จำนวนที่ส่งกลับยังบอกไว้เพราะช่วยอธิบายว่าทำไมของถึงขาด แต่ไม่ใช่ตัวแปรในการคำนวณ */
+  $('docBasis').textContent = 'ฐานคำนวณ %Success: ยอดระบบจาก Zort' +
+    (tfPieces ? ' · รอบนี้ส่งกลับคลังกลางแล้ว ' + fmtNum(tfPieces) + ' ชิ้น' : '') +
     (state.docScope === 'cycle' ? ' · ขอบเขต: รวมทั้งสาขา' : ' · ขอบเขต: เฉพาะ Job นี้');
   $('docNoLabelPrint').textContent = spec.noLabel + ':';
   $('docNoShow').textContent = currentDocNo() || '—';
@@ -8269,12 +8252,12 @@ function transferList() {
 function renderTransfers() {
   var list = transferList();
   $('tfChip').textContent = fmtNum(list.length);
-  $('deductTf').checked = !!state.deductTransfer;
   var pieces = list.reduce(function (s, t) { return s + (t.pieces || 0); }, 0);
   var skus = Object.keys(state.transferQty || {}).length;
   $('tfSummaryHint').textContent = list.length
-    ? ('รวม ' + fmtNum(skus) + ' SKU · ' + fmtNum(pieces) + ' ชิ้น · ฐานที่ใช้คิดตอนนี้: ' +
-       (state.deductTransfer ? 'ยอดระบบ − ยอดรอโอน' : 'ยอดระบบเต็ม'))
+    ? ('รวม ' + fmtNum(skus) + ' SKU · ' + fmtNum(pieces) + ' ชิ้น — ' +
+       'ของชุดนี้ถูกส่งกลับคลังกลางแล้ว ยอดระบบจาก Zort หักให้เรียบร้อยแล้ว ' +
+       'จึงไม่ถูกนำมาหักซ้ำในการคำนวณ')
     : 'ยังไม่ได้นำเข้ารายการโอนกลับ — นำเข้าที่หน้าตั้งค่า แท็บ TF Return';
   var host = $('tfList');
   host.innerHTML = '';
@@ -8628,22 +8611,10 @@ function refreshTransfers() {
     if (state.roundId !== id) return;
     state.transfers = res.transfers || {};
     state.transferQty = transferQtyMap();
-    state.deductTransfer = res.deduct === true;
-    if ($('deductTf')) $('deductTf').checked = state.deductTransfer;
     renderStart();
     if (state.page === 'summary') renderSummary();
     if (state.page === 'doc') renderDoc();
   }).catch(function () { /* ปล่อยให้ใช้ค่าเดิม */ });
-}
-
-function saveDeductTransfer(on) {
-  state.deductTransfer = !!on;
-  state.cycleData = null;
-  if (state.page === 'summary') renderSummary();
-  if (state.page === 'doc') renderDoc();
-  if (!state.cycleId) return Promise.resolve();
-  return db.update('cycles/' + state.cycleId, { deductTransfer: !!on })
-    .catch(function () { toast('บันทึกสวิตช์ไม่สำเร็จ แต่หน้าจอคิดให้แล้ว', true); });
 }
 
 function refreshLocations() {
@@ -9839,7 +9810,6 @@ function init() {
     if (this.files && this.files[0]) handleTransferImport(this.files[0]);
     this.value = '';
   });
-  $('deductTf').addEventListener('change', function () { saveDeductTransfer(this.checked); });
   document.querySelectorAll('[data-itemtab]').forEach(function (b) {
     b.onclick = function () { state.itemTab = b.getAttribute('data-itemtab'); renderDoc(); };
   });
@@ -10177,7 +10147,7 @@ function startApp() {
     state.cycles = {};
     Object.keys(next).forEach(function (cid) {
       var c = next[cid] || {};
-      state.cycles[cid] = { status: c.status, info: c.info || {}, deductTransfer: c.deductTransfer };
+      state.cycles[cid] = { status: c.status, info: c.info || {} };
     });
     if (state.page === 'jobs') renderJobs();
   });
@@ -10229,6 +10199,43 @@ init();
   ====================================================================
   สรุปการเปลี่ยนแปลง
   ====================================================================
+
+  v2.1.6 — เอา "ยอดรอโอน" ออกจากการนับ + ตัด Status ในเอกสาร
+
+    นิยามงานจริงเปลี่ยน: ส่งของกลับ = เคลียร์ออกจากคลังทันที ไม่มีสถานะ "รอโอน" คั่น
+    ยอดระบบที่ดึงจาก Zort จึงหักของที่ส่งกลับไปแล้วในตัว ถ้ามาหักรายการโอนกลับซ้ำอีก
+    เท่ากับหักสองรอบ กลไก deductTransfer ที่ทำไว้ใน v2.0.0 (ข้อ D2) จึงหมดหน้าที่
+
+    1) ถอด deductTransfer ออกทั้งเส้น — สวิตช์ในหน้าสรุป · state · การอ่าน/เขียนฐาน ·
+       การยุบค่าตอน migrate · เงื่อนไขใน summaryData
+       ผลต่างและ %Success คิดจากยอดระบบตรง ๆ เสมอ ไม่มีทางเลือกอื่นอีก
+
+       ผลพลอยได้: summaryDataFrom() ที่ใช้กับรายงานระดับรอบนับไม่เคยอ่านสวิตช์นี้อยู่แล้ว
+       พอถอดออก ตัวเลขของรายงาน Job กับรายงานรวมทั้งสาขาจึงนิยามตรงกันเป็นครั้งแรก
+
+       ค่าเก่าที่ cycles/{cid}/deductTransfer ไม่ได้ลบ ตามกติกาห้ามแตะข้อมูล
+       แอปแค่เลิกอ่าน ค่าจึงค้างอยู่เฉย ๆ ไม่มีผลกับอะไรอีก
+
+       คงไว้ครบตามที่สั่ง (ตัวเลือก 2): ปุ่มนำเข้า TF Return · parseTransferFile ·
+       การเก็บที่ cycles/{cid}/transfers · แท็บ "รายการโอนกลับ" · ตารางรายการโอนในเอกสาร
+       ป้ายตอนยิงยังมี แต่เปลี่ยนคำจาก "รอโอน" เป็น "อยู่ในใบโอนกลับ"
+       เพราะของที่ส่งกลับไปแล้วแต่ยังมาโผล่บนชั้นคือเรื่องที่คนนับต้องรู้
+       ยิ่งสำคัญขึ้นตามนิยามใหม่ แค่คำเดิมขัดกับนิยาม
+
+       ข้อความในเอกสารและในกล่องสรุปที่เคยบอก "ฐานที่ใช้คิด" เปลี่ยนเป็นบอกข้อเท็จจริงแทน:
+       ฐานคือยอดระบบจาก Zort และรอบนี้ส่งกลับไปแล้วกี่ชิ้น — เป็นข้อมูลประกอบ
+       ที่ช่วยอธิบายว่าทำไมของถึงขาด ไม่ใช่ตัวแปรในการคำนวณ
+
+    2) ตารางรายการในเอกสาร 15 → 13 คอลัมน์ — ตัด Status และ ยอดรอโอน
+       Status ยังอยู่ครบในหน้าจอ (การ์ดตอนยิง) · หน้า Master · ไฟล์ Excel ทั้งสองตัว
+       ที่ว่าง 10.5% ยกไปให้ชื่อสินค้าเป็นหลัก: 9% → 15% (17mm → 28.5mm)
+       รหัสสินค้าคงที่ 17% ตามเดิม รหัสยาว 18 ตัวอักษรยังอยู่บรรทัดเดียว
+
+       วัดกับไฟล์จริง 407 รายการ เปิดรูปด้วย: ตาราง 190mm พอดี A4
+       ไม่มีหัวหรือช่องไหนล้นเลยสักแถว
+
+    ไม่แตะ Firebase และไม่แตะ Database Rules — งานนี้ไม่เขียนฐานเลย
+    (กฎของ cycles/{cid}/deductTransfer ยังอยู่ในบล็อก Rules ท้ายไฟล์ แต่ไม่มีใครเขียนแล้ว)
 
   v2.1.5 — จัดหน้าเอกสาร Stock Take ใหม่ (layout ล้วน ไม่แตะข้อมูล)
 
