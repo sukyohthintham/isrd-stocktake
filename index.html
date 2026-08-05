@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.1.8">
+<meta name="version" content="2.1.9">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.1.8</title>
+<title>ISRD Stocktake v2.1.9</title>
 
 <style>
 :root{
@@ -160,7 +160,9 @@ select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,va
 }
 .zone-lock b{font-size:28px;font-weight:800;color:#6b21a8}
 .zone-lock b.long{font-size:14px;max-width:110px;word-break:break-word;text-align:center}
-.zone-lock i{font-size:10px;font-weight:700;font-style:normal;color:#7e22ce;white-space:nowrap}
+/* ป้ายยาวกว่าตัวอักษรมาก ต้องยอมให้ตกบรรทัดได้ ไม่งั้นแถบบานจนดันปุ่ม "เปลี่ยน" ตกจอ */
+.zone-lock i{font-size:10px;font-weight:700;font-style:normal;color:#7e22ce;
+  max-width:104px;text-align:center;line-height:1.25;margin-top:2px}
 
 .banner.bad{background:var(--short-bg);color:#7f1d1d;border-color:#fca5a5}
 .hint{font-size:13px;color:var(--warn);margin-top:6px;font-weight:600}
@@ -712,17 +714,11 @@ body.no-doc-images .doc .imgbox{display:none}
 <!-- ============ PAGE 1 : START ============ -->
 <section class="page" id="pageStart">
   <div class="card">
-    <h3>1. เลือกโซนในคลัง</h3>
-    <div class="muted" id="zoneLead" style="margin-bottom:10px">โซนมาจากตัวอักษรหน้า Location หยิบ · เลือกครั้งเดียวล็อกทั้ง session</div>
+    <h3>1. เลือกโซนที่จะไล่เก็บ (ตัวกรอง)</h3>
+    <div class="muted" id="zoneLead" style="margin-bottom:10px">เลือกโซนเพื่อกรองรายการให้ไล่เก็บทีละโซน · ไม่ต้องเลือกก็เริ่มนับได้</div>
     <div class="zone-grid" id="zoneLetters"></div>
-    <div class="picklist" id="zoneList"></div>
-    <button class="btn ghost sm block" id="btnZoneCustom">เพิ่มโซนเอง ▾</button>
-    <div id="zoneCustom" style="display:none;margin-top:8px">
-      <div class="row">
-        <input type="text" id="newZoneName" placeholder="ชื่อโซนใหม่ เช่น โซน A ชั้น 1">
-        <button class="btn ghost" id="btnAddZone" style="flex:0 0 auto">+ เพิ่มโซน</button>
-      </div>
-      <div class="hint" id="zoneHint" style="display:none">พิมพ์แล้วต้องกด <b>+ เพิ่มโซน</b> ด้วย ถึงจะใช้โซนนี้ได้</div>
+    <div class="hint" style="color:var(--muted);font-weight:400;margin-top:0">
+      ตัวกรองนี้ไม่มีผลกับโซนที่บันทึก — ทุกชิ้นลงโซนตาม <b>Location หยิบ</b> ของตัวมันเองเสมอ
     </div>
   </div>
 
@@ -766,7 +762,7 @@ body.no-doc-images .doc .imgbox{display:none}
 <!-- ============ PAGE 2 : SCAN ============ -->
 <section class="page" id="pageScan">
   <div class="banner info" style="display:flex;justify-content:space-between;gap:10px;align-items:center">
-    <span class="zone-lock" id="zoneLock"><b id="zoneLockLetter">–</b><i>โซน (ล็อกทั้ง session)</i></span>
+    <span class="zone-lock" id="zoneLock"><b id="zoneLockLetter">–</b><i>โซนของชิ้นนี้ (จาก Location หยิบ)</i></span>
     <span id="sessionText" style="flex:1 1 auto;min-width:0"></span>
     <button class="btn sm grey" id="btnChangeSession" style="flex:0 0 auto">เปลี่ยน</button>
   </div>
@@ -1359,7 +1355,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.1.8';
+var APP_VERSION = '2.1.9';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -2890,6 +2886,8 @@ var state = {
   jobStats: {},            // roundId -> ยอดที่ Job ใบนั้นยิงได้ (คำนวณครั้งเดียวแล้วเก็บไว้)
   cycleStats: {},          // cycleId -> ความคืบหน้าและความแม่นของทั้งรอบนับ
   jobConfirmed: false,     // ยืนยัน Job แล้วหรือยังก่อนเริ่มยิง
+  lastZoneName: '',        // โซนของชิ้นล่าสุดที่ยิง — ตัวเลขและตัวอักษรบนหน้ายิงตามตัวนี้
+  locationsLoaded: false,  // ตาราง Location มาถึงหรือยัง — โซนขึ้นกับมันตั้งแต่ v2.1.9
   connection: 'unknown'    // 'online' | 'offline' | 'unknown'
 };
 
@@ -3039,15 +3037,6 @@ function zoneLabel(name) {
   return /^โซน/.test(n) ? n : 'โซน ' + n;
 }
 
-/* โซนที่มาจาก Location เป็นตัวอักษรล้วน ("E") · โซนที่คนตั้งชื่อเองไม่ใช่ ("โซน A ชั้น 1")
-   แยกให้ออกเพราะมีแค่โซนตัวอักษรที่เทียบกับ Location ของสินค้าได้ */
-function zoneLetterOf(name) {
-  var n = String(name == null ? '' : name).trim();
-  return /^[A-Za-z]+$/.test(n) ? n.toUpperCase() : '';
-}
-function lockedZoneLetter() {
-  return state.zoneId ? zoneLetterOf(zoneName(state.zoneId)) : '';
-}
 function roundLabel(name) {
   var n = String(name == null ? '' : name).trim() || '-';
   return /^รอบ/.test(n) ? n : 'รอบ ' + n;
@@ -3068,7 +3057,10 @@ function applyScanRecord(id, rec) {
   var key = safeKey(rec.code);
   var delta = Number(rec.delta) || 0;
   state.counts[key] = (state.counts[key] || 0) + delta;
-  state.zoneTotals[rec.zone] = (state.zoneTotals[rec.zone] || 0) + delta;
+  /* คีย์ด้วย "ชื่อโซน" ไม่ใช่ id — ตัวเลขบนจอหาจากตัวอักษรโซน
+     และยอดเก่าที่ลงชื่อโซนเดียวกันไว้จะรวมเข้ากับยอดใหม่เอง */
+  var zk = rec.zoneName || rec.zone;
+  state.zoneTotals[zk] = (state.zoneTotals[zk] || 0) + delta;
   if (rec.mode === 'manual') {
     state.manualQty[key] = (state.manualQty[key] || 0) + delta;
     state.manualLog.push({ id: id, rec: rec });
@@ -3477,69 +3469,44 @@ function blockedMessage() {
     : 'รอบนี้อยู่ขั้นตรวจสอบ ยิงเพิ่มไม่ได้แล้ว';
 }
 
-function createZone(roundId, name) {
-  var id = db.newKey();
-  var patch = {};
-  patch['zones/' + id] = { name: name, createdAt: Date.now() };
-  return db.update('rounds/' + roundId, patch).then(function () { return id; });
-}
-
-/* ล็อกโซนไว้ทั้ง session — เก็บลงเครื่องด้วย ปิดแอปแล้วเปิดใหม่จะได้อยู่โซนเดิม */
-function useZone(id) {
-  var prev = lockedZoneLetter();
-  state.zoneId = id;
-  localStorage.setItem('isrd_zone_' + state.roundId, id);
-  var letter = zoneLetterOf(zoneName(id));
-  if (letter) {
-    /* โซนตัวอักษรผูกกับ Location โดยตรง ตั้งตัวกรองให้เลย คนนับจะได้ไม่ต้องพิมพ์ซ้ำ */
-    state.locationFilter = letter;
-    if ($('locFilter')) $('locFilter').value = letter;
-  } else if (prev && String(state.locationFilter || '').trim().toUpperCase() === prev) {
-    /* ย้ายออกจากโซนตัวอักษรไปโซนที่ไม่ผูกกับ Location — ล้างเฉพาะตัวกรองที่ระบบตั้งให้เอง
-       ถ้าคนนับพิมพ์ตัวกรองเองไว้ ห้ามไปลบของเขา */
-    state.locationFilter = '';
-    if ($('locFilter')) $('locFilter').value = '';
+/* v2.1.9 — ปุ่มโซนเหลือหน้าที่เดียวคือตัวกรองไล่เก็บทีละโซน
+   ไม่เขียนฐาน ไม่สร้างเรคอร์ดโซน เพราะโซนที่บันทึกมาจาก Location ของสินค้าเสมอ
+   ตัวกรองกับช่อง "เก็บทีละโซน" บนหน้ายิงเป็นค่าเดียวกัน แก้ที่ไหนก็เห็นตรงกัน */
+function setZoneFilter(letter) {
+  var v = String(letter || '').trim().toUpperCase();
+  state.locationFilter = v;
+  /* เขียนกลับเฉพาะตอนค่าต่างจริง ไม่งั้นเคอร์เซอร์กระโดดไปท้ายช่องทุกครั้งที่พิมพ์ */
+  if ($('locFilter') && $('locFilter').value !== v) $('locFilter').value = v;
+  if (state.roundId) {
+    /* จำตัวกรองล่าสุดของรอบนี้ไว้ — คีย์ใหม่ ไม่ใช้ isrd_zone_ เดิมที่เก็บ zone id
+       ค่าเก่าจะได้ไม่ถูกอ่านผิดความหมายเป็นตัวอักษรโซน */
+    if (v) localStorage.setItem('isrd_zonefilter_' + state.roundId, v);
+    else localStorage.removeItem('isrd_zonefilter_' + state.roundId);
   }
-  if (state.page === 'scan') renderLocFilter();
-  renderZoneLock();
+  renderLocFilter();
   renderStart();
-}
-
-/* เลือกโซนจากชื่อ — มีโซนชื่อนี้อยู่แล้วให้ใช้ตัวเดิม ห้ามสร้างซ้ำ
-   ไม่งั้นยอดที่คนอื่นนับค้างไว้ในโซนเดียวกันจะแตกเป็นคนละก้อน รายงานแยกโซนก็เชื่อไม่ได้ */
-function pickZoneNamed(name) {
-  if (!state.roundId) { toast('เลือกรอบนับก่อน แล้วจึงเลือกโซน', true); return Promise.resolve(null); }
-  var want = normText(name);
-  var exist = null;
-  Object.keys(state.zones).forEach(function (id) {
-    if (!exist && normText(state.zones[id].name) === want) exist = id;
-  });
-  if (exist) { useZone(exist); return Promise.resolve(exist); }
-  return createZone(state.roundId, name).then(function (id) {
-    state.zones[id] = { name: name, createdAt: Date.now() };   // เห็นทันที ไม่ต้องรออ่านกลับ
-    useZone(id);
-    return id;
-  }).catch(function () {
-    toast('เลือกโซนไม่สำเร็จ กรุณาตรวจสัญญาณอินเทอร์เน็ตแล้วลองใหม่', true);
-    return null;
-  });
 }
 
 function writeScan(key, delta, mode, reason, extra) {
   var product = state.products[key] || { code: key };
   var id = db.newKey();
-  /* zone ต้องมีค่าเสมอ — Database Rules บังคับ hasChildren(['code','zone','delta','user','ts'])
-     และ Firebase ตัดคีย์ที่เป็น undefined ทิ้ง แถวที่เขียนจากหน้า Master (ตอนจัดการ
-     บาร์โค้ดใหม่) อาจยังไม่ได้เลือกโซน ถ้าปล่อยว่างจะถูกฐานปฏิเสธทั้งแถว */
+  /* v2.1.9 — โซนมาจาก Location หยิบ ของสินค้าตัวนี้ ไม่ใช่โซนที่คนเลือกไว้บนจอ
+     zone ต้องมีค่าเสมอ — Database Rules บังคับ hasChildren(['code','zone','delta','user','ts'])
+     และ Firebase ตัดคีย์ที่เป็น undefined ทิ้ง ของที่ไม่มี Location จึงตกเป็น 'no-zone'
+     (ค่าเดิมที่ใช้มาแต่ไหนแต่ไร) แทนที่จะปล่อยว่างแล้วโดนฐานปฏิเสธทั้งแถว
+     ไม่สร้างเรคอร์ดใน zones/ เพราะ Rules ให้ scanner เขียน scans ได้แต่เขียน zones ไม่ได้
+     ถ้ารวมสองอย่างใน update ก้อนเดียว (atomic) บัญชี scanner จะยิงไม่ได้เลยทั้งแถว */
+  var zn = zoneNameForKey(key);
   var rec = {
     code: product.code || key,
-    zone: state.zoneId || 'no-zone',
-    zoneName: state.zoneId ? zoneName(state.zoneId) : '(ไม่ระบุโซน)',
+    zone: zn === NO_ZONE_NAME ? 'no-zone' : zn,
+    zoneName: zn,
     user: state.counter || 'ไม่ระบุ',
     ts: Date.now(),
     delta: delta,
     mode: mode
   };
+  state.lastZoneName = zn;                        // ตัวเลขกับตัวอักษรบนจอต้องตามของชิ้นล่าสุด
   if (reason) rec.reason = reason;
   if (extra) Object.keys(extra).forEach(function (f) { rec[f] = extra[f]; });
 
@@ -4493,6 +4460,14 @@ function zonePrefixOf(loc) {
   return m ? m[1].toUpperCase() : '';
 }
 
+/* v2.1.9 — โซนของการยิงหนึ่งครั้ง = โซนของ "ตัวสินค้า" ไม่ใช่ของคนที่ยืนยิง
+   ของบ้านอยู่ J (หยิบ J1-2-4) ยิงตรงไหนก็ต้องลง J เสมอ
+   ก่อนหน้านี้บันทึกตามโซนที่คนล็อกไว้เอง ทำให้ของบ้าน J ไปโผล่ในรายงานโซน D
+   ทุกที่ที่ต้องรู้โซนของสินค้าต้องเรียกตัวนี้ ห้ามคำนวณเองซ้ำ ไม่งั้นจอกับฐานไม่ตรงกัน */
+function zoneNameForKey(key) {
+  return zonePrefixOf((locationOf(key) || {}).pick) || NO_ZONE_NAME;
+}
+
 /* รายชื่อโซนที่มีของให้นับจริงในรอบนี้ — ไล่จาก SKU ในรอบนับ ไม่ใช่ทั้งบริษัทหมื่นหกพันตัว
    คนนับจะได้ไม่ต้องเลื่อนหาตัวอักษรที่สาขานี้ไม่มีของเลย
    ถ้ายังไม่ได้นำเข้ายอดระบบ ค่อยถอยไปใช้ทั้งตาราง Location เพื่อให้เลือกโซนล่วงหน้าได้ */
@@ -4797,15 +4772,14 @@ function showScanHit(key) {
   if (loc && loc.refill) badges.appendChild(makeBadge('📦 เติม ' + loc.refill, 'loc'));
   if (!loc) badges.appendChild(makeBadge('📍 ไม่มี Location', 'grey'));
 
-  /* ของวางผิดโซน — เตือนอย่างเดียว ห้ามกันการนับ
-     จุดที่เจอของจริงคือข้อมูลที่ต้องเก็บ แถวนี้ยังบันทึกใต้โซนที่ล็อกไว้เหมือนเดิม */
-  var lockLetter = lockedZoneLetter();
-  var itemLetter = loc ? zonePrefixOf(loc.pick) : '';
-  if (lockLetter && itemLetter && lockLetter !== itemLetter) {
-    badges.appendChild(makeBadge('⚠ Location อยู่โซน ' + itemLetter + ' (ล็อกโซน ' + lockLetter + ')', 'warn'));
-  }
+  /* ของเลิกขายไม่ควรเหลืออยู่บนชั้นแล้ว เจอเมื่อไหร่ต้องสะดุดตาทันที
+     ยังนับให้ตามปกติ — เตือนให้รู้ ไม่ใช่ปฏิเสธการนับ */
+  if (isInactiveProduct(p)) badges.appendChild(makeBadge('⚠ ของเลิกขายเจอบนชั้น', 'red'));
 
   setScanNote(p.note);
+  /* โซนบนจอต้องตรงกับโซนที่แถวนี้ถูกบันทึกจริง จึงคิดจากตัวช่วยตัวเดียวกับ writeScan */
+  state.lastZoneName = zoneNameForKey(key);
+  renderZoneLock();
 
   var st = productStatus(p);
   badges.appendChild(makeBadge(st, statusTone(st)));
@@ -4838,6 +4812,8 @@ function showScanNewCode(value, key) {
   badges.innerHTML = '';
   badges.appendChild(makeBadge('ไม่มีในระบบ', 'warn'));
   setScanNote('');                       // บาร์โค้ดที่ยังไม่มีสินค้า ไม่มีหมายเหตุให้แสดง
+  state.lastZoneName = zoneNameForKey(key);   // ไม่มีสินค้าก็ไม่มี Location → "(ไม่ระบุโซน)"
+  renderZoneLock();
   $('slSys').textContent = '0';
   $('slQty').textContent = fmtNum(state.counts[key] || 0);
   $('slMeta').textContent = 'ยิงตัวถัดไปต่อได้เลย';
@@ -4939,8 +4915,15 @@ function pushRecent(name, delta, ts) {
   while (list.children.length > 5) list.removeChild(list.lastChild);
 }
 
+/* ตัวเลขใหญ่ = ยอดของโซนที่ของชิ้นล่าสุดสังกัดอยู่
+   ป้ายใต้ตัวเลขต้องบอกชื่อโซนด้วย ไม่งั้นตัวเลขเปลี่ยนไปมาแล้วคนอ่านผิดโซน */
 function renderScanTotals() {
-  $('scanTotal').textContent = fmtNum(state.zoneTotals[state.zoneId] || 0);
+  var nm = String(state.lastZoneName || '').trim();
+  $('scanTotal').textContent = fmtNum(nm ? (state.zoneTotals[nm] || 0) : 0);
+  var lab = $('scanTotalLab');
+  if (!lab) return;
+  lab.textContent = !nm ? 'ชิ้นที่ยิงแล้วในโซนนี้'
+    : (nm === NO_ZONE_NAME ? 'ชิ้นที่ยิงแล้วในกลุ่มไม่ระบุโซน' : 'ชิ้นที่ยิงแล้วในโซน ' + nm);
 }
 
 function renderConnection() {
@@ -4994,17 +4977,18 @@ function undoLastScan() {
   $('btnUndo').disabled = state.undoStack.length === 0;
 }
 
-/* โซนที่ล็อกไว้ ต้องอ่านออกตอนถือมือถือห่างหนึ่งช่วงแขน คนนับจะได้ไม่ยิงผิดโซนทั้งกอง */
+/* โซนของชิ้นล่าสุดที่ยิง ต้องอ่านออกตอนถือมือถือห่างหนึ่งช่วงแขน
+   คนนับจะได้เห็นทันทีว่าของชิ้นนี้บ้านอยู่โซนไหน ไม่ใช่โซนที่ตัวเองยืนอยู่ */
 function renderZoneLock() {
   var box = $('zoneLock');
   if (!box) return;
-  var nm = state.zoneId ? String(zoneName(state.zoneId) || '').trim() : '';
+  var nm = String(state.lastZoneName || '').trim();
   var letter = $('zoneLockLetter');
   var show = nm === NO_ZONE_NAME ? 'ไม่ระบุ' : (nm || '–');
   letter.textContent = show;
-  /* ชื่อโซนที่คนตั้งเองยาวเกินกล่องตัวใหญ่ ย่อฟอนต์แทนที่จะปล่อยให้ล้นออกนอกแถบ */
+  /* ชื่อโซนยาวเกินกล่องตัวใหญ่ ย่อฟอนต์แทนที่จะปล่อยให้ล้นออกนอกแถบ */
   letter.className = show.length > 3 ? 'long' : '';
-  box.setAttribute('title', nm ? zoneLabel(nm) : 'ยังไม่ได้เลือกโซน');
+  box.setAttribute('title', nm ? zoneLabel(nm) : 'ยังไม่ได้ยิงอะไรในรอบนี้');
 }
 
 function renderScanPage() {
@@ -8188,7 +8172,7 @@ function goScan() {
   if (state.jobConfirmed) { showPage('scan'); return; }
   var job = currentJob() || {};
   ask('ยืนยัน Job ก่อนเริ่มยิง',
-      job.jobCode + '\nสาขา ' + jobBranchLabel(job) + '\nโซน ' + zoneName(state.zoneId) +
+      job.jobCode + '\nสาขา ' + jobBranchLabel(job) +
       '\nผู้นับ ' + state.counter + '\n\nยิงเข้า Job นี้ใช่ไหม',
       'ใช่ เริ่มยิงได้').then(function (ok) {
     if (!ok) return;
@@ -8206,7 +8190,10 @@ function startBlockers() {
   if (!canScanRole()) missing.push(roleBlockMessage('ยิงบาร์โค้ดไม่ได้'));
   if (!state.roundId) missing.push('ยังไม่ได้เลือก Job');
   if (state.roundId && !(state.roundIndex[state.roundId] || {}).branch) missing.push('Job นี้ยังไม่ได้ระบุสาขา');
-  if (!state.zoneId) missing.push('ยังไม่ได้เลือกโซน');
+  /* v2.1.9 — โซนมาจาก Location ของสินค้าแล้ว การเลือกโซนเป็นแค่ตัวกรอง ไม่ควรกันการเริ่มนับ
+     แต่ถ้าตาราง Location ยังมาไม่ถึง ต้องรอก่อน ไม่งั้นแถวที่ยิงจะลง "ไม่ระบุโซน" ถาวร
+     (ต่อท้ายอย่างเดียว แก้ย้อนหลังไม่ได้ตามกฎห้ามลบยอดที่นับไปแล้ว) */
+  if (state.roundId && !state.locationsLoaded) missing.push('กำลังโหลดข้อมูล Location — รอสักครู่แล้วลองใหม่');
   if (state.roundId && !Object.keys(state.systemQty).length) missing.push('ยังไม่ได้นำเข้ายอดระบบของ Job นี้');
   if (state.roundId && canScanRole() && !canScan()) missing.push(blockedMessage());
   return missing;
@@ -8296,7 +8283,7 @@ function refreshNav() {
   $('topTitle').textContent = round ? (round.jobCode || 'ISRD ระบบนับสต๊อก') : 'ISRD ระบบนับสต๊อก';
   $('topSub').textContent = round
     ? (jobBranchLabel(round) +
-       (state.zoneId ? ' · ' + zoneName(state.zoneId) : '') + (state.counter ? ' · ' + state.counter : ''))
+       (state.counter ? ' · ' + state.counter : ''))
     : 'ยังไม่ได้เลือก Job';
 }
 
@@ -8720,56 +8707,33 @@ function appendFixButtons(box) {
 
 function renderStart() {
   var zl = $('zoneLetters');
-  var zw = $('zoneList');
   zl.innerHTML = '';
-  zw.innerHTML = '';
   if (!state.roundId) {
-    $('zoneLead').textContent = 'โซนมาจากตัวอักษรหน้า Location หยิบ · เลือกครั้งเดียวล็อกทั้ง session';
-    zw.innerHTML = '<div class="empty">เลือกรอบนับก่อน แล้วจึงเลือกโซน</div>';
+    $('zoneLead').textContent = 'เลือกรอบนับก่อน แล้วจึงเลือกโซนที่จะไล่เก็บ';
   } else {
     var letters = roundZoneLetters();
-    var lockLetter = lockedZoneLetter();
-    var curName = state.zoneId ? zoneName(state.zoneId) : '';
+    var cur = String(state.locationFilter || '').trim().toUpperCase();
 
     letters.forEach(function (L) {
       var b = document.createElement('button');
-      b.className = 'zone-btn' + (L === lockLetter ? ' sel' : '');
+      b.className = 'zone-btn' + (L === cur ? ' sel' : '');
       b.setAttribute('data-zoneletter', L);
       b.textContent = L;
-      b.onclick = function () { pickZoneNamed(L); };
+      b.onclick = function () { setZoneFilter(L); };
       zl.appendChild(b);
     });
 
-    /* ของที่ไม่มี Location ต้องนับได้เสมอ — ปุ่มนี้จึงมีให้เลือกทุกกรณี ไม่มีเงื่อนไข */
-    var none = document.createElement('button');
-    none.className = 'zone-btn wide' + (curName === NO_ZONE_NAME ? ' sel' : '');
-    none.setAttribute('data-zoneletter', 'none');
-    none.textContent = 'ไม่ระบุโซน';
-    none.onclick = function () { pickZoneNamed(NO_ZONE_NAME); };
-    zl.appendChild(none);
+    /* ล้างตัวกรอง — เห็นของทั้งรอบ · เป็นค่าเริ่มต้นเมื่อยังไม่ได้เลือกโซนไหน */
+    var all = document.createElement('button');
+    all.className = 'zone-btn wide' + (cur ? '' : ' sel');
+    all.setAttribute('data-zoneletter', 'all');
+    all.textContent = 'ทั้งหมด';
+    all.onclick = function () { setZoneFilter(''); };
+    zl.appendChild(all);
 
     $('zoneLead').textContent = letters.length
-      ? ('โซนมาจากตัวอักษรหน้า Location หยิบ · พบ ' + fmtNum(letters.length) + ' โซนในรอบนี้ · เลือกครั้งเดียวล็อกทั้ง session')
-      : 'รอบนี้ยังไม่มีข้อมูล Location — เลือก "ไม่ระบุโซน" เพื่อนับรวม หรือกด "เพิ่มโซนเอง" เพื่อแบ่งพื้นที่กันเอง';
-
-    /* โซนที่ตั้งชื่อเองไว้ก่อนหน้า (เช่น "โซน A ชั้น 1") ต้องเลือกต่อได้เสมอ
-       ไม่งั้นยอดที่นับค้างไว้ใต้โซนนั้นจะกลายเป็นของกำพร้า ไม่มีใครนับต่อได้ */
-    var zids = Object.keys(state.zones).filter(function (id) {
-      var nm = String(state.zones[id].name || '').trim();
-      if (nm === NO_ZONE_NAME) return false;                      // มีปุ่มของตัวเองแล้ว
-      return letters.indexOf(zoneLetterOf(nm)) < 0;               // ตัวอักษรก็มีปุ่มของตัวเองแล้ว
-    }).sort(function (a, b) {
-      return (state.zones[a].createdAt || 0) - (state.zones[b].createdAt || 0);
-    });
-    zids.forEach(function (id) {
-      var b = document.createElement('button');
-      b.className = 'pick' + (id === state.zoneId ? ' sel' : '');
-      b.setAttribute('data-zone', id);
-      b.innerHTML = '<div class="pick-title"></div><div class="pick-meta">โซนที่ตั้งชื่อเอง</div>';
-      b.querySelector('.pick-title').textContent = state.zones[id].name;
-      b.onclick = function () { useZone(id); };
-      zw.appendChild(b);
-    });
+      ? ('พบ ' + fmtNum(letters.length) + ' โซนในรอบนี้ · เลือกเพื่อกรองรายการให้ไล่เก็บทีละโซน · ไม่ต้องเลือกก็เริ่มนับได้')
+      : 'รอบนี้ยังไม่มีข้อมูล Location — นับได้ตามปกติ แต่ทุกชิ้นจะลงกลุ่ม "ไม่ระบุโซน" นำเข้าไฟล์ Location ที่แท็บ Master ก่อนจะได้รายงานแยกโซน';
   }
 
   var itemCount = Object.keys(state.systemQty).length;
@@ -8802,8 +8766,6 @@ function renderStart() {
   $('btnImportTf').disabled = !state.roundId;
   $('btnImportReport').style.display = (state.roundId && state.lastImport) ? 'flex' : 'none';
   $('btnImport').disabled = !state.roundId;
-  $('btnAddZone').disabled = !state.roundId;
-  $('zoneHint').style.display = ($('newZoneName').value.trim() && state.roundId) ? 'block' : 'none';
 
   refreshNav();
 }
@@ -8841,13 +8803,14 @@ function refreshDocMeta() {
   }).catch(function () { /* อ่านไม่ได้ก็ใช้ค่าที่มีในเครื่องไปก่อน */ });
 }
 
+/* โซนเก่าที่เคยตั้งชื่อเองยังต้องอ่านได้ เพื่อให้รายงานของรอบเก่าแปลชื่อโซนถูก
+   ตั้งแต่ v2.1.9 ไม่มีการสร้างโซนใหม่แล้ว โหนดนี้จึงเหลือแต่ของเดิม */
 function refreshZones() {
   if (!state.roundId) return Promise.resolve();
   var id = state.roundId;
   return db.get('rounds/' + id + '/zones').then(function (data) {
     if (state.roundId !== id) return;
     state.zones = data || {};
-    if (state.zoneId && !state.zones[state.zoneId]) state.zoneId = null;
     renderStart();
   }).catch(function () { /* ใช้ค่าเดิมไปก่อน */ });
 }
@@ -8901,11 +8864,15 @@ function refreshLocations() {
       offline: (data && data.offline) || {},
       online: (data && data.online) || {}
     };
+  }).catch(function () { /* ปล่อยให้ใช้ค่าเดิม */ }).then(function () {
+    /* ตั้งธงทั้งกรณีสำเร็จและล้มเหลว — ถ้าอ่านไม่ได้ก็ต้องให้นับต่อได้ ไม่ใช่ค้างรอตลอดไป
+       ตั้งแต่ v2.1.9 โซนของทุกแถวมาจากตารางนี้ ยิงก่อนตารางมาถึงจะลง "ไม่ระบุโซน" ถาวร */
+    state.locationsLoaded = true;
     if (state.page === 'master') renderMaster();
     if (state.page === 'scan') { renderLocFilter(); renderLivePanel(); }
     /* รายชื่อโซนมาจากตาราง Location — ตารางเพิ่งมาถึง ต้องวาดปุ่มโซนใหม่ */
-    if (state.roundId) renderStart();
-  }).catch(function () { /* ปล่อยให้ใช้ค่าเดิม */ });
+    renderStart();
+  });
 }
 
 function refreshStatuses() {
@@ -8974,7 +8941,6 @@ function selectRound(id) {
   state.roundId = id;
   state.cycleId = cycleOf(state.roundIndex[id]);   // ยอดระบบผูกกับรอบนับ ไม่ใช่ Job
   localStorage.setItem('isrd_round', id);
-  state.zoneId = localStorage.getItem('isrd_zone_' + id) || null;
   state.zones = {};
   state.systemQty = {};
   state.lastImport = null;
@@ -8985,8 +8951,10 @@ function selectRound(id) {
   state.jobConfirmed = false;      // เปลี่ยน Job แล้วต้องยืนยันใหม่ก่อนยิง
   /* Job เก่าก่อน v2.0.0 ไม่มีฟิลด์นี้ ให้ตกไปที่ offline ตามค่าเริ่มต้น */
   state.locationSet = ((state.roundIndex[id] || {}).locationSet === 'online') ? 'online' : 'offline';
-  state.locationFilter = '';
-  if ($('locFilter')) $('locFilter').value = '';
+  /* กลับมาที่โซนที่ไล่เก็บค้างไว้ของรอบนี้ — เป็นแค่ตัวกรอง ไม่กระทบโซนที่บันทึก */
+  state.locationFilter = localStorage.getItem('isrd_zonefilter_' + id) || '';
+  if ($('locFilter')) $('locFilter').value = state.locationFilter;
+  state.lastZoneName = '';
   state.scannerOpen = null;
   dropJobStats(id);
   resetRoundAggregates();
@@ -10063,31 +10031,6 @@ function init() {
   $('btnReopen').onclick = reopenRound;
   $('btnDeleteJob').onclick = deleteJob;
 
-  function addZone() {
-    if (!state.roundId) { toast('เลือกรอบนับก่อนเพิ่มโซน', true); return; }
-    var name = $('newZoneName').value.trim();
-    if (!name) { toast('ตั้งชื่อโซนก่อน', true); return; }
-    /* ชื่อซ้ำกับโซนที่มีอยู่ = ใช้ตัวเดิม ไม่สร้างใหม่ ยอดที่นับไว้จะได้ไม่แตกเป็นสองก้อน */
-    pickZoneNamed(name).then(function (id) {
-      if (!id) return;
-      $('newZoneName').value = '';
-      $('zoneHint').style.display = 'none';
-      toast('ใช้โซน "' + name + '" แล้ว');
-    });
-  }
-  $('btnZoneCustom').onclick = function () {
-    var box = $('zoneCustom');
-    var open = box.style.display === 'none';
-    box.style.display = open ? 'block' : 'none';
-    $('btnZoneCustom').textContent = open ? 'เพิ่มโซนเอง ▴' : 'เพิ่มโซนเอง ▾';
-    if (open) $('newZoneName').focus();
-  };
-  $('btnAddZone').onclick = addZone;
-  $('newZoneName').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); addZone(); } });
-  $('newZoneName').addEventListener('input', function () {
-    $('zoneHint').style.display = (this.value.trim() && state.roundId) ? 'block' : 'none';
-  });
-
   document.querySelectorAll('[data-imptab]').forEach(function (b) {
     b.onclick = function () { state.importTab = b.getAttribute('data-imptab'); renderStart(); };
   });
@@ -10138,9 +10081,9 @@ function init() {
     if (e.key === 'Escape') { e.preventDefault(); hideUnknownNote(); focusScan(); }
   });
 
+  /* ช่องนี้กับปุ่มโซนบนหน้าเริ่มนับเป็นตัวกรองตัวเดียวกัน พิมพ์ที่นี่ปุ่มต้องไฮไลต์ตาม */
   $('locFilter').addEventListener('input', function () {
-    state.locationFilter = this.value;
-    renderLocFilter();
+    setZoneFilter(this.value);
   });
 
   /* ปุ่มลัดสำหรับ Laptop + เครื่องยิง USB — F2 กรอกมือ · F3 ยกเลิกการยิงล่าสุด
@@ -10486,6 +10429,59 @@ init();
   สรุปการเปลี่ยนแปลง
   ====================================================================
 
+  v2.1.9 — โซนยึดจาก Location หยิบ ของ SKU + ป้ายของเลิกขายเจอบนชั้น
+
+    A) เปลี่ยนหลักการเรื่องโซน (แก้ของที่ v2.1.8 ทำผิด)
+
+       v2.1.8 ให้คนนับ "ล็อกโซน" ไว้ทั้ง session แล้วบันทึกทุกการยิงใต้โซนนั้น
+       ของบ้านอยู่ J (Location หยิบ J1-2-4) แต่ถ้าคนยืนล็อกโซน D ยอดจะไปลง D
+       รายงานแยกโซนจึงบอกว่า "เจอของที่ D" ทั้งที่ของนั้นไม่เคยอยู่ D
+
+       หลักการใหม่: โซนของทุกการยิง = ตัวอักษรหน้า Location หยิบ *ของสินค้าตัวนั้น* เสมอ
+       ไม่ขึ้นกับว่าคนยืนยิงตรงไหน
+
+       1) zoneNameForKey(key) — ตัวช่วยกลางตัวเดียว
+          writeScan · showScanHit · showScanNewCode เรียกตัวเดียวกันหมด
+          จอกับฐานจึงไม่มีทางไม่ตรง เพราะคิดจากที่เดียว
+       2) writeScan เลิกอ่าน state.zoneId
+          rec.zoneName = ตัวอักษรโซน · rec.zone = ตัวอักษรเดียวกัน หรือ 'no-zone'
+          ของที่ไม่มี Location หยิบ → "(ไม่ระบุโซน)" ซึ่งเป็นค่าเดิมที่ใช้มาตลอด
+          ข้อมูลเก่ากับใหม่จึงรวมเป็นแถวเดียวในรายงาน ไม่แตกเป็นสองกลุ่ม
+          ทุกทางที่เรียก writeScan ได้ตรรกะนี้ฟรี — ยิงปกติ · กรอกมือ · undo ·
+          บาร์โค้ดที่ไม่มีในระบบ · หน้า Master ตอนจัดการบาร์โค้ดใหม่
+          ผลพลอยได้: แถว undo ลงโซนเดียวกับแถวบวกเสมอ ซึ่งเดิมไม่รับประกัน
+       3) ไม่สร้างเรคอร์ดใน rounds/{id}/zones ตอนยิงเลย
+          เหตุผล: Rules ให้ scanner เขียน scans ได้ (บรรทัด 151) แต่เขียน zones ไม่ได้
+          (บรรทัด 122) — multi-path update ของ Firebase เป็น atomic ถ้ารวมสองอย่าง
+          ไว้ก้อนเดียว บัญชี scanner จะยิงไม่ได้เลยทั้งแถว
+          และสองเครื่องที่ยิงโซนเดียวกันพร้อมกันจะสร้างโซนชื่อซ้ำคนละ id ยอดแตกสองก้อน
+          ทุกจุดที่รายงานใช้อ่านจาก rec.zoneName อยู่แล้ว จึงไม่ต้องมีเรคอร์ด
+       4) zoneTotals เปลี่ยนไปคีย์ด้วยชื่อโซนแทน id
+          ตัวเลขบนจอหาจากตัวอักษรโซนได้ตรง ๆ และยอดเก่าที่ลงชื่อโซนเดียวกัน
+          รวมเข้ากับยอดใหม่เอง
+       5) ตัวอักษรใหญ่บนหน้ายิง = โซนของชิ้นล่าสุดที่ยิง (ไม่ใช่โซนที่ล็อก)
+          ตัวเลขใหญ่กับป้ายใต้ตัวเลขตามไปด้วย — ป้ายบอกชื่อโซนเสมอ
+          ("ชิ้นที่ยิงแล้วในโซน J") ไม่งั้นตัวเลขเปลี่ยนไปมาแล้วคนอ่านผิดโซน
+       6) ปุ่มเลือกโซนเหลือหน้าที่เดียวคือ *ตัวกรอง* ไล่เก็บทีละโซน
+          ปุ่มกับช่อง "เก็บทีละโซน" บนหน้ายิงเป็นค่าเดียวกัน แก้ที่ไหนก็เห็นตรงกัน
+          ปุ่ม "ไม่ระบุโซน" เปลี่ยนเป็น "ทั้งหมด" (ล้างตัวกรอง)
+          จำตัวกรองล่าสุดที่คีย์ใหม่ isrd_zonefilter_<roundId> ไม่ใช้ของเดิมที่เก็บ zone id
+       7) ตัดของที่ไม่มีความหมายแล้ว — ป้ายเตือน "อยู่ผิดโซน" (โซนมาจาก Location เสมอ
+          จึงไม่มีทางไม่ตรง) · แผง "เพิ่มโซนเอง" ทั้งแผง · createZone/useZone/pickZoneNamed ·
+          ตัวกัน "ยังไม่ได้เลือกโซน" ใน startBlockers (ตัวกรองไม่ควรกันการเริ่มนับ)
+          คงไว้: zoneName() · refreshZones() · state.zones เป็น fallback ให้รายงานของรอบเก่า
+       8) เพิ่มตัวกันข้อมูลเสีย: โซนขึ้นกับตาราง Location แล้ว ถ้ายิงก่อนตารางโหลดเสร็จ
+          แถวนั้นจะลง "(ไม่ระบุโซน)" ถาวร แก้ไม่ได้ตามกฎห้ามลบยอดที่นับไปแล้ว
+          startBlockers จึงกันไว้จนกว่า refreshLocations จะจบ (สำเร็จหรือล้มก็ปล่อยผ่าน)
+          รอบที่ไม่มีข้อมูล Location เลยยังนับได้ตามปกติ ไม่ถูกกัน
+
+    B) ป้าย "⚠ ของเลิกขายเจอบนชั้น" โทนแดงใน showScanHit
+       ของหมวด "ปิดใช้งาน" ไม่ควรเหลืออยู่บนชั้นแล้ว เจอเมื่อไหร่ต้องสะดุดตาทันที
+       ยังนับให้ตามปกติ — เตือนให้รู้ ไม่ใช่ปฏิเสธการนับ
+
+    ยอดที่นับไปแล้วก่อนอัปเกรดยังลงโซนเดิมตามที่เคยล็อกไว้ ไม่แตะแม้แต่แถวเดียว
+    ไม่แตะ Rules / โครงสร้างข้อมูล · v2.1.9 เขียนฐาน *น้อยลง* กว่าเดิม
+
   v2.1.8 — โซนอัตโนมัติจาก Location (ล็อกทั้ง session) + หมายเหตุใน Master
 
     A) โซนมาจาก Location ไม่ใช่การพิมพ์ตั้งชื่อเอง
@@ -10507,8 +10503,7 @@ init();
           ถ้าคนนับพิมพ์เอง ห้ามไปลบของเขา
        6) หน้ายิงโชว์ตัวอักษรโซนตัวใหญ่ (28px) อ่านออกตอนถือห่างหนึ่งช่วงแขน
        7) ยิงของที่ Location อยู่คนละโซน → ป้ายเตือน "⚠ Location อยู่โซน A (ล็อกโซน E)"
-          เตือนอย่างเดียว ยังบันทึกใต้โซนที่ล็อกไว้ เพราะจุดที่เจอของจริงคือข้อมูลที่ต้องเก็บ
-          นี่คือวิธีจับของวางผิดโซน ไม่ใช่เหตุให้ปฏิเสธการนับ
+          [ยกเลิกใน v2.1.9 — โซนมาจาก Location เสมอ จึงไม่มีทางไม่ตรง]
        8) "เพิ่มโซนเอง" ยังอยู่ (พับไว้) เป็นทางหนีของสาขาที่ยังไม่ได้นำเข้า Location
           โซนที่ตั้งชื่อเองไว้ก่อนหน้ายังเลือกได้ ยอดใต้โซนนั้นไม่กลายเป็นของกำพร้า
 
