@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.1.7">
+<meta name="version" content="2.1.8">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.1.7</title>
+<title>ISRD Stocktake v2.1.8</title>
 
 <style>
 :root{
@@ -141,6 +141,27 @@ select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,va
 .pick.sel{border-color:var(--brand);background:var(--brand-light)}
 .pick.sel .pick-meta{color:var(--brand-dark)}
 
+/* ---------- ปุ่มเลือกโซนจาก Location (v2.1.8) ----------
+   ตัวอักษรใหญ่ ปุ่มกว้าง กดด้วยนิ้วที่ใส่ถุงมือได้ ไม่ต้องเล็งเหมือนลิสต์ยาว */
+.zone-grid{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+.zone-btn{
+  font-family:inherit;cursor:pointer;flex:0 0 auto;
+  min-width:64px;min-height:var(--tap);padding:8px 14px;
+  font-size:26px;font-weight:800;line-height:1.2;text-align:center;
+  background:#faf5ff;border:2px solid #d8b4fe;border-radius:12px;color:#6b21a8;
+}
+.zone-btn.wide{font-size:16px;padding:12px 16px}
+.zone-btn.sel{background:#7e22ce;border-color:#7e22ce;color:#fff}
+
+/* โซนที่ล็อกไว้ บนหัวหน้ายิง — อ่านออกตอนยืนห่างจากมือถือหนึ่งช่วงแขน */
+.zone-lock{
+  flex:0 0 auto;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  background:#faf5ff;border:2px solid #d8b4fe;border-radius:12px;padding:5px 12px;line-height:1.15;
+}
+.zone-lock b{font-size:28px;font-weight:800;color:#6b21a8}
+.zone-lock b.long{font-size:14px;max-width:110px;word-break:break-word;text-align:center}
+.zone-lock i{font-size:10px;font-weight:700;font-style:normal;color:#7e22ce;white-space:nowrap}
+
 .banner.bad{background:var(--short-bg);color:#7f1d1d;border-color:#fca5a5}
 .hint{font-size:13px;color:var(--warn);margin-top:6px;font-weight:600}
 .hint.list{background:var(--warn-bg);border:1px solid #fcd34d;border-radius:11px;padding:10px 14px;margin-top:10px}
@@ -206,6 +227,13 @@ body.locked .topbar,body.locked .wrap,body.locked .nav{display:none}
 .pc-cat{font-size:13px;color:var(--muted);margin-top:2px;overflow-wrap:break-word}
 .pc-badges{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .pc-badges:empty{display:none}
+/* หมายเหตุจาก Master — ต้องสะดุดตาพอให้คนหยุดอ่านก่อนยิงตัวถัดไป */
+.sl-note{
+  background:#fffbeb;border-left:4px solid #f59e0b;border-radius:7px;
+  padding:7px 10px;margin-top:8px;font-size:13px;
+}
+.sl-note b{display:block;font-weight:800;color:#92400e;margin-bottom:2px}
+.sl-note span{display:block;color:#78350f;white-space:pre-wrap;word-break:break-word}
 .badge{
   display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:9px;
   font-size:13px;font-weight:700;border:2px solid;line-height:1.2;
@@ -280,10 +308,20 @@ kbd{
 .mrow .m-name{font-weight:700;word-break:break-word}
 .mrow .m-code{font-size:13px;color:var(--muted)}
 .mrow .m-cat{font-size:13px;color:var(--muted);margin-top:2px}
+/* หมายเหตุที่คนกรอกเอง — สีเดียวกับกล่องที่เด้งตอนยิง จะได้รู้ว่าเป็นของชิ้นเดียวกัน */
+.mrow .m-note{
+  font-size:13px;color:#78350f;background:#fffbeb;border-left:3px solid #f59e0b;
+  border-radius:4px;padding:2px 7px;margin-top:4px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
 .mrow .m-edit{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
 .mrow .m-edit label{display:block}
 .mrow .m-edit span{display:block;font-size:12px;color:var(--muted);margin-bottom:3px}
 .mrow .m-edit input{min-height:44px;font-size:15px;padding:8px 10px}
+.mrow .m-edit textarea{
+  width:100%;min-height:52px;font-size:15px;padding:8px 10px;font-family:inherit;
+  border:1px solid var(--line);border-radius:10px;resize:vertical;box-sizing:border-box;
+}
 .mrow .m-edit .full{grid-column:1 / -1}
 
 /* ---------- summary ---------- */
@@ -675,12 +713,17 @@ body.no-doc-images .doc .imgbox{display:none}
 <section class="page" id="pageStart">
   <div class="card">
     <h3>1. เลือกโซนในคลัง</h3>
+    <div class="muted" id="zoneLead" style="margin-bottom:10px">โซนมาจากตัวอักษรหน้า Location หยิบ · เลือกครั้งเดียวล็อกทั้ง session</div>
+    <div class="zone-grid" id="zoneLetters"></div>
     <div class="picklist" id="zoneList"></div>
-    <div class="row">
-      <input type="text" id="newZoneName" placeholder="ชื่อโซนใหม่ เช่น โซน A ชั้น 1">
-      <button class="btn ghost" id="btnAddZone" style="flex:0 0 auto">+ เพิ่มโซน</button>
+    <button class="btn ghost sm block" id="btnZoneCustom">เพิ่มโซนเอง ▾</button>
+    <div id="zoneCustom" style="display:none;margin-top:8px">
+      <div class="row">
+        <input type="text" id="newZoneName" placeholder="ชื่อโซนใหม่ เช่น โซน A ชั้น 1">
+        <button class="btn ghost" id="btnAddZone" style="flex:0 0 auto">+ เพิ่มโซน</button>
+      </div>
+      <div class="hint" id="zoneHint" style="display:none">พิมพ์แล้วต้องกด <b>+ เพิ่มโซน</b> ด้วย ถึงจะใช้โซนนี้ได้</div>
     </div>
-    <div class="hint" id="zoneHint" style="display:none">พิมพ์แล้วต้องกด <b>+ เพิ่มโซน</b> ด้วย ถึงจะใช้โซนนี้ได้</div>
   </div>
 
   <div class="card">
@@ -723,7 +766,8 @@ body.no-doc-images .doc .imgbox{display:none}
 <!-- ============ PAGE 2 : SCAN ============ -->
 <section class="page" id="pageScan">
   <div class="banner info" style="display:flex;justify-content:space-between;gap:10px;align-items:center">
-    <span id="sessionText"></span>
+    <span class="zone-lock" id="zoneLock"><b id="zoneLockLetter">–</b><i>โซน (ล็อกทั้ง session)</i></span>
+    <span id="sessionText" style="flex:1 1 auto;min-width:0"></span>
     <button class="btn sm grey" id="btnChangeSession" style="flex:0 0 auto">เปลี่ยน</button>
   </div>
 
@@ -743,6 +787,7 @@ body.no-doc-images .doc .imgbox{display:none}
           <div class="sl-name" id="slName">พร้อมรับการยิง</div>
           <div class="pc-cat" id="slCat"></div>
           <div class="pc-badges" id="slBadges"></div>
+          <div class="sl-note" id="slNote" style="display:none"><b>📋 หมายเหตุจาก Master</b><span id="slNoteText"></span></div>
           <div class="pc-nums">
             <div class="pc-num"><span>ยอดระบบ</span><b id="slSys">–</b></div>
             <div class="pc-num hi"><span>ยิงสะสม</span><b id="slQty">–</b></div>
@@ -1314,7 +1359,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.1.7';
+var APP_VERSION = '2.1.8';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -2983,10 +3028,25 @@ function fmtPercent(n) {
   return n.toLocaleString('th-TH', { maximumFractionDigits: 1 }) + '%';
 }
 
+/* ชื่อโซนสำหรับของที่ไม่มี Location — ตรงกับค่าที่ writeScan ใช้มาแต่เดิม
+   รายงานเก่าที่มีแถว "(ไม่ระบุโซน)" อยู่แล้วจึงรวมกับของใหม่เป็นก้อนเดียว */
+var NO_ZONE_NAME = '(ไม่ระบุโซน)';
+
 /* ผู้ใช้ตั้งชื่อโซนว่า "โซน A" อยู่แล้วบ่อย ๆ — อย่าเติมคำนำหน้าซ้ำ */
 function zoneLabel(name) {
   var n = String(name == null ? '' : name).trim() || '-';
+  if (n === NO_ZONE_NAME) return n;
   return /^โซน/.test(n) ? n : 'โซน ' + n;
+}
+
+/* โซนที่มาจาก Location เป็นตัวอักษรล้วน ("E") · โซนที่คนตั้งชื่อเองไม่ใช่ ("โซน A ชั้น 1")
+   แยกให้ออกเพราะมีแค่โซนตัวอักษรที่เทียบกับ Location ของสินค้าได้ */
+function zoneLetterOf(name) {
+  var n = String(name == null ? '' : name).trim();
+  return /^[A-Za-z]+$/.test(n) ? n.toUpperCase() : '';
+}
+function lockedZoneLetter() {
+  return state.zoneId ? zoneLetterOf(zoneName(state.zoneId)) : '';
 }
 function roundLabel(name) {
   var n = String(name == null ? '' : name).trim() || '-';
@@ -3424,6 +3484,47 @@ function createZone(roundId, name) {
   return db.update('rounds/' + roundId, patch).then(function () { return id; });
 }
 
+/* ล็อกโซนไว้ทั้ง session — เก็บลงเครื่องด้วย ปิดแอปแล้วเปิดใหม่จะได้อยู่โซนเดิม */
+function useZone(id) {
+  var prev = lockedZoneLetter();
+  state.zoneId = id;
+  localStorage.setItem('isrd_zone_' + state.roundId, id);
+  var letter = zoneLetterOf(zoneName(id));
+  if (letter) {
+    /* โซนตัวอักษรผูกกับ Location โดยตรง ตั้งตัวกรองให้เลย คนนับจะได้ไม่ต้องพิมพ์ซ้ำ */
+    state.locationFilter = letter;
+    if ($('locFilter')) $('locFilter').value = letter;
+  } else if (prev && String(state.locationFilter || '').trim().toUpperCase() === prev) {
+    /* ย้ายออกจากโซนตัวอักษรไปโซนที่ไม่ผูกกับ Location — ล้างเฉพาะตัวกรองที่ระบบตั้งให้เอง
+       ถ้าคนนับพิมพ์ตัวกรองเองไว้ ห้ามไปลบของเขา */
+    state.locationFilter = '';
+    if ($('locFilter')) $('locFilter').value = '';
+  }
+  if (state.page === 'scan') renderLocFilter();
+  renderZoneLock();
+  renderStart();
+}
+
+/* เลือกโซนจากชื่อ — มีโซนชื่อนี้อยู่แล้วให้ใช้ตัวเดิม ห้ามสร้างซ้ำ
+   ไม่งั้นยอดที่คนอื่นนับค้างไว้ในโซนเดียวกันจะแตกเป็นคนละก้อน รายงานแยกโซนก็เชื่อไม่ได้ */
+function pickZoneNamed(name) {
+  if (!state.roundId) { toast('เลือกรอบนับก่อน แล้วจึงเลือกโซน', true); return Promise.resolve(null); }
+  var want = normText(name);
+  var exist = null;
+  Object.keys(state.zones).forEach(function (id) {
+    if (!exist && normText(state.zones[id].name) === want) exist = id;
+  });
+  if (exist) { useZone(exist); return Promise.resolve(exist); }
+  return createZone(state.roundId, name).then(function (id) {
+    state.zones[id] = { name: name, createdAt: Date.now() };   // เห็นทันที ไม่ต้องรออ่านกลับ
+    useZone(id);
+    return id;
+  }).catch(function () {
+    toast('เลือกโซนไม่สำเร็จ กรุณาตรวจสัญญาณอินเทอร์เน็ตแล้วลองใหม่', true);
+    return null;
+  });
+}
+
 function writeScan(key, delta, mode, reason, extra) {
   var product = state.products[key] || { code: key };
   var id = db.newKey();
@@ -3500,9 +3601,10 @@ function buildProductPatch(incoming) {
       next.needsReview = fresh._needsReview;
     }
 
-    /* ราคาต้นทุนกับรูปเป็นของที่คนกรอกในแอป ไฟล์ไม่มีสิทธิ์แตะ */
+    /* ราคาต้นทุน รูป และหมายเหตุ เป็นของที่คนกรอกในแอป ไฟล์ไม่มีสิทธิ์แตะ */
     if (old && old.costPrice !== undefined && old.costPrice !== null) next.costPrice = old.costPrice;
     if (old && old.imageUrl) next.imageUrl = old.imageUrl;
+    if (old && old.note) next.note = old.note;
 
     patch[key] = next;
     if (old) updated++; else added++;
@@ -4384,6 +4486,30 @@ function locationText(key) {
   return [l.pick, l.refill].filter(Boolean).join(' / ');
 }
 
+/* โซนของสินค้า = ตัวอักษรหน้าตัวเลขตัวแรกของ Location หยิบ
+   'E1-2-6' → 'E' · 'a1-2-1' → 'A' · 'AB12-3' → 'AB' · '--' หรือว่าง → '' */
+function zonePrefixOf(loc) {
+  var m = /^\s*([A-Za-z]+)/.exec(String(loc == null ? '' : loc));
+  return m ? m[1].toUpperCase() : '';
+}
+
+/* รายชื่อโซนที่มีของให้นับจริงในรอบนี้ — ไล่จาก SKU ในรอบนับ ไม่ใช่ทั้งบริษัทหมื่นหกพันตัว
+   คนนับจะได้ไม่ต้องเลื่อนหาตัวอักษรที่สาขานี้ไม่มีของเลย
+   ถ้ายังไม่ได้นำเข้ายอดระบบ ค่อยถอยไปใช้ทั้งตาราง Location เพื่อให้เลือกโซนล่วงหน้าได้ */
+function roundZoneLetters() {
+  var table = state.locations[state.locationSet || 'offline'] || {};
+  var keys = Object.keys(state.systemQty);
+  if (!keys.length) keys = Object.keys(table);
+  var seen = Object.create(null);
+  keys.forEach(function (k) {
+    var l = table[k];
+    if (!l) return;
+    var z = zonePrefixOf(l.pick);
+    if (z) seen[z] = 1;
+  });
+  return Object.keys(seen).sort();
+}
+
 /* ---------- นำเข้าลิงก์รูปสินค้า ----------
    รับได้ทั้งไฟล์เต็ม {รหัส: URL} และไฟล์ย่อ {prefix, suffix, images:{รหัส: ส่วนท้าย}}
    ค่าที่ขึ้นต้นด้วย * คือ URL เต็มของโฮสต์อื่น ใช้ตามนั้นเลย */
@@ -4645,6 +4771,16 @@ function makeBadge(text, tone) {
   return b;
 }
 
+/* หมายเหตุที่แอดมินกรอกไว้ใน Master — ต้องล้างทุกครั้งที่เปลี่ยนสินค้า
+   ถ้าปล่อยค้าง คนนับจะอ่านหมายเหตุของตัวก่อนแล้วเข้าใจผิดว่าเป็นของตัวที่ยิงอยู่ */
+function setScanNote(text) {
+  var box = $('slNote');
+  if (!box) return;
+  var t = String(text == null ? '' : text).trim();
+  $('slNoteText').textContent = t;
+  box.style.display = t ? 'block' : 'none';
+}
+
 function showScanHit(key) {
   var p = state.products[key];
   swapScanImage(p.imageUrl);
@@ -4660,6 +4796,16 @@ function showScanHit(key) {
   if (loc && loc.pick) badges.appendChild(makeBadge('📍 หยิบ ' + loc.pick, 'loc'));
   if (loc && loc.refill) badges.appendChild(makeBadge('📦 เติม ' + loc.refill, 'loc'));
   if (!loc) badges.appendChild(makeBadge('📍 ไม่มี Location', 'grey'));
+
+  /* ของวางผิดโซน — เตือนอย่างเดียว ห้ามกันการนับ
+     จุดที่เจอของจริงคือข้อมูลที่ต้องเก็บ แถวนี้ยังบันทึกใต้โซนที่ล็อกไว้เหมือนเดิม */
+  var lockLetter = lockedZoneLetter();
+  var itemLetter = loc ? zonePrefixOf(loc.pick) : '';
+  if (lockLetter && itemLetter && lockLetter !== itemLetter) {
+    badges.appendChild(makeBadge('⚠ Location อยู่โซน ' + itemLetter + ' (ล็อกโซน ' + lockLetter + ')', 'warn'));
+  }
+
+  setScanNote(p.note);
 
   var st = productStatus(p);
   badges.appendChild(makeBadge(st, statusTone(st)));
@@ -4691,6 +4837,7 @@ function showScanNewCode(value, key) {
   var badges = $('slBadges');
   badges.innerHTML = '';
   badges.appendChild(makeBadge('ไม่มีในระบบ', 'warn'));
+  setScanNote('');                       // บาร์โค้ดที่ยังไม่มีสินค้า ไม่มีหมายเหตุให้แสดง
   $('slSys').textContent = '0';
   $('slQty').textContent = fmtNum(state.counts[key] || 0);
   $('slMeta').textContent = 'ยิงตัวถัดไปต่อได้เลย';
@@ -4847,10 +4994,25 @@ function undoLastScan() {
   $('btnUndo').disabled = state.undoStack.length === 0;
 }
 
+/* โซนที่ล็อกไว้ ต้องอ่านออกตอนถือมือถือห่างหนึ่งช่วงแขน คนนับจะได้ไม่ยิงผิดโซนทั้งกอง */
+function renderZoneLock() {
+  var box = $('zoneLock');
+  if (!box) return;
+  var nm = state.zoneId ? String(zoneName(state.zoneId) || '').trim() : '';
+  var letter = $('zoneLockLetter');
+  var show = nm === NO_ZONE_NAME ? 'ไม่ระบุ' : (nm || '–');
+  letter.textContent = show;
+  /* ชื่อโซนที่คนตั้งเองยาวเกินกล่องตัวใหญ่ ย่อฟอนต์แทนที่จะปล่อยให้ล้นออกนอกแถบ */
+  letter.className = show.length > 3 ? 'long' : '';
+  box.setAttribute('title', nm ? zoneLabel(nm) : 'ยังไม่ได้เลือกโซน');
+}
+
 function renderScanPage() {
   var round = state.roundIndex[state.roundId] || { name: '-' };
-  $('sessionText').textContent = roundLabel(round.name) + ' · ' + zoneLabel(zoneName(state.zoneId)) +
-    ' · ผู้นับ ' + state.counter;
+  /* โซนย้ายไปอยู่ในบล็อกตัวใหญ่ข้าง ๆ แล้ว ไม่ต้องเขียนซ้ำตรงนี้
+     จอมือถือ 390px แคบ ถ้าใส่ครบสามอย่างข้อความจะตกไปสามบรรทัด */
+  $('sessionText').textContent = roundLabel(round.name) + ' · ผู้นับ ' + state.counter;
+  renderZoneLock();
   renderScanTotals();
   renderSyncBar();
   renderLivePanel();
@@ -5314,6 +5476,15 @@ function saveProductEdit(key, field, value) {
   next.typeSource = 'manual';       // คนแตะแล้ว ไฟล์ import ห้ามทับอีก
   next.needsReview = false;
   next.updatedAt = Date.now();
+
+  /* ตรึงประเภทให้ตรงกับที่แสดงอยู่จริง ก่อนสลับเป็น manual
+     ของ "ปิดใช้งาน" ที่ยังไม่ได้ import ใหม่ ในฐานยังเป็น type:'product' อยู่
+     พอ typeSource เป็น manual แล้ว isInactiveProduct จะเลิกดูหมวดหมู่ ดูแต่ type
+     ถ้าไม่ตรึงไว้ แค่กรอกหมายเหตุก็ทำให้ของเด้งกลับเป็น Product เงียบ ๆ
+     อ่าน state.products ก่อนอัปเดตข้างล่าง เพื่อให้ยังเห็น typeSource เดิม
+     ปุ่มสลับประเภทส่ง field='type' มาเอง จึงไม่โดนทับ — กู้ inactive → Product ได้เหมือนเดิม */
+  var cur = state.products[key];
+  if (cur && field !== 'type') next.type = isInactiveProduct(cur) ? 'inactive' : (cur.type || 'product');
   Object.keys(next).forEach(function (f) { patch[key + '/' + f] = next[f]; });
   /* อัปเดตในเครื่องทันทีให้ครบทุกฟิลด์ที่เขียนลงฐาน เพราะ products ไม่ได้เปิดสายค้างไว้แล้ว
      ถ้าอัปเดตแค่ field เดียว typeSource ในหน่วยความจำจะยังเป็น auto
@@ -5389,6 +5560,13 @@ function renderMaster() {
     var ct = document.createElement('div'); ct.className = 'm-cat';
     ct.textContent = (p.category || 'ไม่มีหมวดหมู่') + (p.subCategory ? ' / ' + p.subCategory : '');
     texts.appendChild(nm); texts.appendChild(cd); texts.appendChild(ct);
+    if (p.note) {
+      var nt = document.createElement('div');
+      nt.className = 'm-note';
+      nt.textContent = '📋 ' + p.note;
+      nt.title = p.note;
+      texts.appendChild(nt);
+    }
     left.appendChild(texts);
 
     var right = document.createElement('div');
@@ -5490,14 +5668,36 @@ function renderMaster() {
     };
     stLab.appendChild(stSel);
 
+    /* หมายเหตุติดตัวสินค้า — เด้งให้คนนับเห็นตอนยิง แทนการบอกกันปากเปล่า
+       ใช้ textarea ไม่ใช่ input เพราะ input ตัดบรรทัดใหม่ทิ้งเงียบ ๆ
+       หมายเหตุหลายบรรทัดจะหายไปครึ่งหนึ่งตอนแอดมินเปิดมาแก้ครั้งถัดไป */
+    var noteLab = document.createElement('label');
+    noteLab.className = 'full';
+    noteLab.innerHTML = '<span>หมายเหตุ (เด้งให้คนนับเห็นตอนยิง)</span>';
+    var noteIn = document.createElement('textarea');
+    noteIn.rows = 2;
+    noteIn.setAttribute('data-field', 'note');
+    noteIn.placeholder = 'เช่น ของโชว์ห้ามนับ · อยู่หลังเคาน์เตอร์ (ลบข้อความออกเพื่อเอาหมายเหตุออก)';
+    noteIn.value = p.note || '';
+    noteIn.onchange = function () {
+      var v = noteIn.value.trim();
+      saveProductEdit(key, 'note', v).then(function () {
+        toast(v ? 'บันทึกหมายเหตุ ' + p.code + ' แล้ว' : 'เอาหมายเหตุ ' + p.code + ' ออกแล้ว');
+        renderMaster();
+      });
+    };
+    noteLab.appendChild(noteIn);
+
     /* Master เป็นข้อมูลกลางของทุกสาขา แก้ได้เฉพาะ admin (ข้อ B1)
        ล็อกช่องให้เห็นชัดว่าแก้ไม่ได้ ดีกว่าปล่อยให้พิมพ์แล้วค่อยเด้ง error */
     if (!isAdmin()) {
-      costIn.disabled = true; typeBtn.disabled = true; imgIn.disabled = true; stSel.disabled = true;
-      costIn.title = typeBtn.title = imgIn.title = roleBlockMessage('แก้ข้อมูลสินค้าไม่ได้');
+      costIn.disabled = true; typeBtn.disabled = true; imgIn.disabled = true;
+      stSel.disabled = true; noteIn.disabled = true;
+      costIn.title = typeBtn.title = imgIn.title = noteIn.title = roleBlockMessage('แก้ข้อมูลสินค้าไม่ได้');
     }
 
-    edit.appendChild(costLab); edit.appendChild(typeLab); edit.appendChild(stLab); edit.appendChild(imgLab);
+    edit.appendChild(costLab); edit.appendChild(typeLab); edit.appendChild(stLab);
+    edit.appendChild(noteLab); edit.appendChild(imgLab);
     card.appendChild(top); card.appendChild(edit);
     list.appendChild(card);
   });
@@ -8519,26 +8719,55 @@ function appendFixButtons(box) {
 }
 
 function renderStart() {
+  var zl = $('zoneLetters');
   var zw = $('zoneList');
+  zl.innerHTML = '';
   zw.innerHTML = '';
   if (!state.roundId) {
+    $('zoneLead').textContent = 'โซนมาจากตัวอักษรหน้า Location หยิบ · เลือกครั้งเดียวล็อกทั้ง session';
     zw.innerHTML = '<div class="empty">เลือกรอบนับก่อน แล้วจึงเลือกโซน</div>';
   } else {
-    var zids = Object.keys(state.zones).sort(function (a, b) {
+    var letters = roundZoneLetters();
+    var lockLetter = lockedZoneLetter();
+    var curName = state.zoneId ? zoneName(state.zoneId) : '';
+
+    letters.forEach(function (L) {
+      var b = document.createElement('button');
+      b.className = 'zone-btn' + (L === lockLetter ? ' sel' : '');
+      b.setAttribute('data-zoneletter', L);
+      b.textContent = L;
+      b.onclick = function () { pickZoneNamed(L); };
+      zl.appendChild(b);
+    });
+
+    /* ของที่ไม่มี Location ต้องนับได้เสมอ — ปุ่มนี้จึงมีให้เลือกทุกกรณี ไม่มีเงื่อนไข */
+    var none = document.createElement('button');
+    none.className = 'zone-btn wide' + (curName === NO_ZONE_NAME ? ' sel' : '');
+    none.setAttribute('data-zoneletter', 'none');
+    none.textContent = 'ไม่ระบุโซน';
+    none.onclick = function () { pickZoneNamed(NO_ZONE_NAME); };
+    zl.appendChild(none);
+
+    $('zoneLead').textContent = letters.length
+      ? ('โซนมาจากตัวอักษรหน้า Location หยิบ · พบ ' + fmtNum(letters.length) + ' โซนในรอบนี้ · เลือกครั้งเดียวล็อกทั้ง session')
+      : 'รอบนี้ยังไม่มีข้อมูล Location — เลือก "ไม่ระบุโซน" เพื่อนับรวม หรือกด "เพิ่มโซนเอง" เพื่อแบ่งพื้นที่กันเอง';
+
+    /* โซนที่ตั้งชื่อเองไว้ก่อนหน้า (เช่น "โซน A ชั้น 1") ต้องเลือกต่อได้เสมอ
+       ไม่งั้นยอดที่นับค้างไว้ใต้โซนนั้นจะกลายเป็นของกำพร้า ไม่มีใครนับต่อได้ */
+    var zids = Object.keys(state.zones).filter(function (id) {
+      var nm = String(state.zones[id].name || '').trim();
+      if (nm === NO_ZONE_NAME) return false;                      // มีปุ่มของตัวเองแล้ว
+      return letters.indexOf(zoneLetterOf(nm)) < 0;               // ตัวอักษรก็มีปุ่มของตัวเองแล้ว
+    }).sort(function (a, b) {
       return (state.zones[a].createdAt || 0) - (state.zones[b].createdAt || 0);
     });
-    if (!zids.length) zw.innerHTML = '<div class="empty">รอบนี้ยังไม่มีโซน — พิมพ์ชื่อแล้วกด "+ เพิ่มโซน"</div>';
     zids.forEach(function (id) {
       var b = document.createElement('button');
       b.className = 'pick' + (id === state.zoneId ? ' sel' : '');
       b.setAttribute('data-zone', id);
-      b.innerHTML = '<div class="pick-title"></div>';
+      b.innerHTML = '<div class="pick-title"></div><div class="pick-meta">โซนที่ตั้งชื่อเอง</div>';
       b.querySelector('.pick-title').textContent = state.zones[id].name;
-      b.onclick = function () {
-        state.zoneId = id;
-        localStorage.setItem('isrd_zone_' + state.roundId, id);
-        renderStart();
-      };
+      b.onclick = function () { useZone(id); };
       zw.appendChild(b);
     });
   }
@@ -8674,6 +8903,8 @@ function refreshLocations() {
     };
     if (state.page === 'master') renderMaster();
     if (state.page === 'scan') { renderLocFilter(); renderLivePanel(); }
+    /* รายชื่อโซนมาจากตาราง Location — ตารางเพิ่งมาถึง ต้องวาดปุ่มโซนใหม่ */
+    if (state.roundId) renderStart();
   }).catch(function () { /* ปล่อยให้ใช้ค่าเดิม */ });
 }
 
@@ -9836,15 +10067,21 @@ function init() {
     if (!state.roundId) { toast('เลือกรอบนับก่อนเพิ่มโซน', true); return; }
     var name = $('newZoneName').value.trim();
     if (!name) { toast('ตั้งชื่อโซนก่อน', true); return; }
-    createZone(state.roundId, name).then(function (id) {
+    /* ชื่อซ้ำกับโซนที่มีอยู่ = ใช้ตัวเดิม ไม่สร้างใหม่ ยอดที่นับไว้จะได้ไม่แตกเป็นสองก้อน */
+    pickZoneNamed(name).then(function (id) {
+      if (!id) return;
       $('newZoneName').value = '';
-      state.zones[id] = { name: name, createdAt: Date.now() };   // เห็นทันที ไม่ต้องรออ่านกลับ
-      state.zoneId = id;                       // โซนที่เพิ่งเพิ่ม = โซนปัจจุบันทันที
-      localStorage.setItem('isrd_zone_' + state.roundId, id);
-      renderStart();
-      toast('เพิ่มโซน "' + name + '" แล้ว');
-    }).catch(function () { toast('เพิ่มโซนไม่สำเร็จ กรุณาตรวจสัญญาณอินเทอร์เน็ตแล้วลองใหม่', true); });
+      $('zoneHint').style.display = 'none';
+      toast('ใช้โซน "' + name + '" แล้ว');
+    });
   }
+  $('btnZoneCustom').onclick = function () {
+    var box = $('zoneCustom');
+    var open = box.style.display === 'none';
+    box.style.display = open ? 'block' : 'none';
+    $('btnZoneCustom').textContent = open ? 'เพิ่มโซนเอง ▴' : 'เพิ่มโซนเอง ▾';
+    if (open) $('newZoneName').focus();
+  };
   $('btnAddZone').onclick = addZone;
   $('newZoneName').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); addZone(); } });
   $('newZoneName').addEventListener('input', function () {
@@ -10248,6 +10485,55 @@ init();
   ====================================================================
   สรุปการเปลี่ยนแปลง
   ====================================================================
+
+  v2.1.8 — โซนอัตโนมัติจาก Location (ล็อกทั้ง session) + หมายเหตุใน Master
+
+    A) โซนมาจาก Location ไม่ใช่การพิมพ์ตั้งชื่อเอง
+
+       เดิมคนนับต้องพิมพ์ชื่อโซนเองทุกครั้ง พอชื่อไม่ตรงกันระหว่างคน
+       รายงานแยกโซนก็เชื่อไม่ได้ · ตอนนี้โซน = ตัวอักษรหน้า Location หยิบ
+
+       1) zonePrefixOf(loc) — 'E1-2-6' → 'E' · 'a1-2-1' → 'A' · 'AB12-3' → 'AB'
+          Location ที่ขึ้นต้นด้วยตัวเลขหรือ "--" คืนค่าว่าง = ไม่มีโซน (ไฟล์จริงมีเคสนี้)
+       2) roundZoneLetters() — ไล่เฉพาะ SKU ที่อยู่ในรอบนับ ไม่ใช่ทั้งบริษัท 16,076 ตัว
+          คนนับจะได้เห็นแต่โซนที่มีของให้นับจริง · ถ้ายังไม่ได้นำเข้ายอดระบบ
+          ถอยไปใช้ทั้งตาราง Location เพื่อให้เลือกโซนล่วงหน้าได้
+       3) ปุ่มตัวอักษรโซนตัวใหญ่ + ปุ่ม "ไม่ระบุโซน" ที่มีให้เลือกเสมอ
+          ของที่ไม่มี Location ต้องนับได้ ห้าม block — "(ไม่ระบุโซน)" เป็นโซนจริง
+          ชื่อตรงกับค่าที่ writeScan ใช้มาแต่เดิม รายงานเก่าจึงรวมเป็นก้อนเดียวกัน
+       4) กดโซนเดิมซ้ำ = ใช้โซนเดิม ไม่สร้างซ้ำ ยอดที่คนอื่นนับค้างไว้จะได้ไม่แตกสองก้อน
+       5) โซนตัวอักษรตั้ง state.locationFilter ให้เอง ไม่ต้องพิมพ์ซ้ำ
+          ย้ายออกไปโซนที่ไม่ผูกกับ Location จะล้างเฉพาะตัวกรองที่ระบบตั้งให้
+          ถ้าคนนับพิมพ์เอง ห้ามไปลบของเขา
+       6) หน้ายิงโชว์ตัวอักษรโซนตัวใหญ่ (28px) อ่านออกตอนถือห่างหนึ่งช่วงแขน
+       7) ยิงของที่ Location อยู่คนละโซน → ป้ายเตือน "⚠ Location อยู่โซน A (ล็อกโซน E)"
+          เตือนอย่างเดียว ยังบันทึกใต้โซนที่ล็อกไว้ เพราะจุดที่เจอของจริงคือข้อมูลที่ต้องเก็บ
+          นี่คือวิธีจับของวางผิดโซน ไม่ใช่เหตุให้ปฏิเสธการนับ
+       8) "เพิ่มโซนเอง" ยังอยู่ (พับไว้) เป็นทางหนีของสาขาที่ยังไม่ได้นำเข้า Location
+          โซนที่ตั้งชื่อเองไว้ก่อนหน้ายังเลือกได้ ยอดใต้โซนนั้นไม่กลายเป็นของกำพร้า
+
+    B) หมายเหตุติดตัวสินค้า
+
+       1) ช่องหมายเหตุในแผงแก้ไขของหน้า Master (admin เท่านั้น เหมือนช่องอื่น)
+          ใช้ textarea ไม่ใช่ input เพราะ input ตัดบรรทัดใหม่ทิ้งเงียบ ๆ
+          หมายเหตุหลายบรรทัดจะหายไปครึ่งหนึ่งตอนเปิดมาแก้ครั้งถัดไป
+       2) ยิงเจอแล้วเด้งกล่องเหลือง "📋 หมายเหตุจาก Master" ใต้ป้ายต่าง ๆ
+          ล้างทุกครั้งที่เปลี่ยนสินค้า ไม่งั้นคนนับอ่านหมายเหตุของตัวก่อนแล้วเข้าใจผิด
+       3) buildProductPatch คง note ไว้เหมือน costPrice / imageUrl — ไฟล์ import ไม่มีสิทธิ์แตะ
+
+    C) แก้บั๊กแฝงจาก v2.1.7 — saveProductEdit ตรึง type
+
+       saveProductEdit ตั้ง typeSource='manual' ทุกครั้งที่แก้อะไรก็ตาม แต่ไม่แตะ type
+       พอเป็น manual แล้ว isInactiveProduct จะเลิกดูหมวดหมู่ ดูแต่ type
+       ของ "ปิดใช้งาน" ที่ยังไม่ได้ re-import (ในฐานยังเป็น type:'product')
+       จึงเด้งกลับเป็น Product เงียบ ๆ เพียงเพราะมีคนกรอกหมายเหตุ/ราคา/รูป/Status
+       ของ 9,513 ตัวที่เพิ่งจัดกลุ่มไปใน v2.1.7 จะหลุดออกทีละตัวโดยไม่มีใครรู้
+
+       แก้: ก่อนเขียน patch ถ้า field ที่แก้ไม่ใช่ 'type' ให้ตรึง type ให้ตรงกับที่แสดงจริง
+       ปุ่มสลับประเภทส่ง field='type' มาเอง จึงไม่โดนทับ — กู้ inactive → Product ได้เหมือนเดิม
+       ผลต่อเนื่อง: buildProductPatch สาย manual (next.type = old.type) คงสถานะข้าม import ได้จริง
+
+    ไม่แตะ Rules / โครงสร้างข้อมูล · scans ไม่ถูกแตะเลย · เทสต์ 682 + 43 ข้อผ่านครบ
 
   v2.1.7 — เลิก flag สินค้า "ปิดใช้งาน" เป็น "รอตรวจสอบ"
 
