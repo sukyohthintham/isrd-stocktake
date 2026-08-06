@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.1.9">
+<meta name="version" content="2.2.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.1.9</title>
+<title>ISRD Stocktake v2.2.0</title>
 
 <style>
 :root{
@@ -910,6 +910,20 @@ body.no-doc-images .doc .imgbox{display:none}
         ไฟล์นี้ทำให้ระบบ "รู้จัก" สินค้า แต่ไม่ได้บอกว่าสาขาไหนควรมีเท่าไหร่ —
         ยอดของแต่ละสาขายังมาจากไฟล์ที่นำเข้าในรอบนับเหมือนเดิม
       </p>
+      <button class="btn ghost sm block" id="btnNoteTemplate" style="margin-top:12px">⬇ ดาวน์โหลด Template (กรอก Note)</button>
+      <p class="muted" style="margin:10px 0 0">
+        ได้ไฟล์ Excel ตาม<b>รายการที่กรองอยู่บนจอตอนนี้</b> (ตัวกรอง + คำค้น) ไม่ใช่แค่ 200 แถวแรกที่เห็น<br>
+        กรอกช่อง <b>Note</b> ใน Excel แล้วอัปโหลดกลับด้วยปุ่มข้างล่าง<br>
+        อยากกรอกให้ของ <b>ปิดใช้งาน</b> ให้กดตัวกรอง "ปิดใช้งาน" ก่อนโหลด —
+        ตัวกรอง "ทั้งหมด" ซ่อนของเลิกขายที่ไม่อยู่ในรอบนับไว้อยู่แล้ว
+      </p>
+      <input type="file" id="noteFile" accept=".csv,.xlsx" style="display:none">
+      <button class="btn ghost sm block" id="btnImportNote" style="margin-top:12px">📝 อัปเดต Note จากไฟล์</button>
+      <p class="muted" style="margin:10px 0 0">
+        ไฟล์ต้องมีหัวตาราง <b>รหัสสินค้า</b> และ <b>Note</b> (จับจากชื่อหัวตาราง ไม่ใช่ตำแหน่งคอลัมน์)<br>
+        ช่อง Note ว่าง = <b>ไม่แตะ</b>หมายเหตุเดิม · รหัสที่ไม่มีใน Master จะถูกข้าม ไม่สร้างสินค้าใหม่<br>
+        ไฟล์นี้แตะเฉพาะ<b>หมายเหตุ</b> ไม่แตะประเภทสินค้า ราคา หรือยอดนับใด ๆ
+      </p>
       <button class="btn ghost sm block" id="btnImportImages" style="margin-top:12px">🖼 นำเข้ารูปสินค้า (JSON)</button>
       <p class="muted" style="margin:10px 0 0">
         รับได้ทั้ง <b>product-images.json</b> และ <b>product-images.min.json</b><br>
@@ -1355,7 +1369,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.1.9';
+var APP_VERSION = '2.2.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -2815,6 +2829,81 @@ function parseProductFile(parsed) {
   });
 
   return { products: products, systemQty: systemQty, stat: stat };
+}
+
+/* ============================================================
+   ไฟล์อัปเดต Note อย่างเดียว (ข้อ B ของ v2.2.0)
+   ต้นทางคือไฟล์ที่ downloadNoteTemplate ปล่อยออกไป แต่รับไฟล์ที่คนทำเองก็ได้
+   ขอแค่มีหัวตาราง "รหัสสินค้า" กับ "Note" — จับจากชื่อ ไม่ใช่ตำแหน่งคอลัมน์
+   ============================================================ */
+var NOTE_FILE_COLUMNS = {
+  code: COLUMN_ALIASES.code,
+  note: ['note', 'หมายเหตุ', 'remark']
+};
+
+/* คืน { updates: {key: note}, stat } — ไม่เขียนฐานเอง คนเรียกเป็นคนตัดสินใจ
+   กติกาสำคัญ: ช่อง Note ว่าง = ข้าม ไม่ใช่ลบของเดิม (กันลบหมื่นแถวโดยไม่ตั้งใจ) */
+function parseNoteFile(parsed) {
+  var rows = (parsed && parsed.rows) || [];
+  if (!rows.length) throw new Error('EMPTY_FILE');
+
+  var headerRow = findHeaderRow(rows);
+  if (headerRow < 0) throw missingColumnsError(['รหัสสินค้า', 'Note']);
+
+  var header = rows[headerRow];
+  var idx = {};
+  Object.keys(NOTE_FILE_COLUMNS).forEach(function (field) {
+    var aliases = NOTE_FILE_COLUMNS[field].map(normText);
+    for (var c = 0; c < header.length; c++) {
+      if (headerMatches(header[c], aliases)) { idx[field] = c; return; }
+    }
+  });
+
+  var missing = [];
+  if (idx.code === undefined) missing.push('รหัสสินค้า');
+  if (idx.note === undefined) missing.push('Note');
+  if (missing.length) throw missingColumnsError(missing);
+
+  /* Excel ทิ้งแถวว่างท้ายชีตไว้เยอะ ตัดก่อนวน ไม่งั้นรายงานจะบอกว่าข้ามหลายหมื่นแถว */
+  var lastReal = rows.length - 1;
+  while (lastReal > headerRow && !rowHasContent(rows[lastReal])) lastReal--;
+
+  var updates = {};
+  var stat = { rows: 0, updated: 0, noCode: 0, notFound: 0, notFoundCodes: [], blankNote: 0, same: 0 };
+
+  for (var r = headerRow + 1; r <= lastReal; r++) {
+    var row = rows[r] || [];
+    if (!rowHasContent(row)) continue;
+
+    var firstText = '';
+    for (var fc = 0; fc < row.length && !firstText; fc++) firstText = cellText(row[fc]);
+    if (isExportFooter(firstText) || isExportFooter(row[idx.code])) break;
+
+    stat.rows++;
+    var code = cellText(row[idx.code]);
+    if (!code) { stat.noCode++; continue; }
+
+    var key = safeKey(code);
+    var product = state.products[key];
+    if (!product) {
+      /* ไฟล์นี้ไม่มีสิทธิ์สร้างสินค้าใหม่ — Master มาจากไฟล์ Zort เท่านั้น */
+      stat.notFound++;
+      if (stat.notFoundCodes.length < 10) stat.notFoundCodes.push(code);
+      continue;
+    }
+
+    var note = cellText(row[idx.note]);
+    if (!note) { stat.blankNote++; continue; }
+    /* ค่าเดิมอยู่แล้วก็ไม่ต้องเขียน — อัปโหลด Template เดิมซ้ำจะได้ไม่ยิงฐานหมื่นห้าพันครั้งฟรี ๆ
+       นับเฉพาะตัวที่ยังไม่เคยเจอในไฟล์นี้ ไม่งั้นรหัสซ้ำจะทำให้ยอดในรายงานเกินจำนวนแถวจริง */
+    if (note === String(product.note || '')) { if (!updates[key]) stat.same++; continue; }
+
+    updates[key] = note;     // รหัสซ้ำในไฟล์เดียวกัน = แถวหลังชนะ
+  }
+
+  /* นับจากจำนวนคีย์ ไม่ใช่จำนวนแถว — รหัสซ้ำในไฟล์ต้องนับเป็นสินค้าตัวเดียว */
+  stat.updated = Object.keys(updates).length;
+  return { updates: updates, stat: stat };
 }
 
 /* ============================================================
@@ -5498,6 +5587,8 @@ function renderMaster() {
   /* สินค้าเป็นข้อมูลกลาง แก้ได้เฉพาะ admin — คนอื่นดูได้แต่ช่องกรอกถูกล็อก */
   $('btnImportImages').disabled = !isAdmin();
   $('btnImportMaster').disabled = !isAdmin();
+  /* ปุ่มโหลด Template ไม่ล็อก — เป็นการอ่านอย่างเดียว ใครดูหน้านี้ได้ก็โหลดไปดูได้ */
+  $('btnImportNote').disabled = !isAdmin();
 
   document.querySelectorAll('[data-mfilter]').forEach(function (b) {
     b.className = 'btn sm ' + (b.getAttribute('data-mfilter') === state.masterFilter ? '' : 'grey');
@@ -6069,6 +6160,35 @@ function exportExcel() {
   a.click();
   setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
   toast('ดาวน์โหลดไฟล์ Excel แล้ว');
+}
+
+/* ---------- Template สำหรับกรอก Note ทีละหลายพันตัว (ข้อ A ของ v2.2.0) ----------
+   สินค้ามีหมื่นห้าพันตัว กรอกหมายเหตุทีละ SKU ในหน้า Master ไม่ไหว
+   โหลดไฟล์นี้ไปกรอกใน Excel แล้วอัปโหลดกลับด้วย handleNoteImport
+
+   แถวที่ได้ = masterRows() ตรง ๆ คือ "ชุดที่กรองอยู่บนจอตอนนี้" (ตัวกรอง + คำค้น)
+   ต่างจากลิสต์บนจอตรงที่ไม่ติดเพดาน MASTER_RENDER_LIMIT — ไฟล์ต้องได้ครบทุกแถว */
+function downloadNoteTemplate() {
+  var keys = masterRows();
+  if (!keys.length) {
+    toast('ไม่มีสินค้าในรายการที่กรองอยู่ ลองล้างคำค้นหรือเปลี่ยนตัวกรองก่อน', true);
+    return;
+  }
+
+  var rows = [['รหัสสินค้า', 'ชื่อสินค้า', 'หมวดหมู่', 'Note']];
+  keys.forEach(function (key) {
+    var p = state.products[key] || {};
+    rows.push([p.code || key, p.name || '', p.category || '', p.note || '']);
+  });
+
+  var blob = buildXlsx([{ name: 'Note', rows: rows, widths: [18, 44, 24, 50] }]);
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'ISRD-Master-Note-Template.xlsx';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+  toast('ดาวน์โหลด Template แล้ว ' + fmtNum(keys.length) + ' รายการ');
 }
 
 /* ============================================================
@@ -7218,6 +7338,122 @@ function handleMasterImport(file) {
     toast(messages[code] || 'นำเข้า Master ไม่สำเร็จ กรุณาตรวจไฟล์แล้วลองใหม่', true);
   }).then(function () {
     $('btnImportMaster').disabled = false;
+    renderMaster();
+  });
+}
+
+/* ---------- อัปเดต Note จากไฟล์ (ข้อ B ของ v2.2.0) ----------
+   เขียนลงฐานแค่ field note (+updatedAt) เท่านั้น ห้ามแตะอย่างอื่นเด็ดขาด
+
+   ทำไมไม่เรียก saveProductEdit: ตัวนั้นตั้ง typeSource='manual' ให้ทุกครั้ง
+   ซึ่งเปลี่ยนกติกาการอ่านประเภทสินค้าไปทั้งตัว (ดู isInactiveProduct)
+   ของหมวด "ปิดใช้งาน" ที่ในฐานยังเป็น type:'product' จะเด้งกลับเป็น Product เงียบ ๆ
+   ไฟล์นี้อาจแตะสินค้าทีเดียวหลายพันตัว ความเสียหายจึงคูณด้วยจำนวนแถว
+   ส่วน note ถูกกันไม่ให้ไฟล์ Zort ทับอยู่แล้วใน buildProductPatch จึงไม่ต้องประกาศ manual */
+function noteMissingColumnsHelp(missing) {
+  ask('ไฟล์นี้ยังใช้ไม่ได้',
+      'ไฟล์ที่อัปโหลดมาไม่มีคอลัมน์ ' + (missing || []).join(', ') + '\n\n' +
+      'ไฟล์อัปเดตหมายเหตุต้องมีหัวตาราง และมีคอลัมน์เหล่านี้\n' +
+      'จำเป็น: รหัสสินค้า, Note (จะใช้หัวว่า "หมายเหตุ" ก็ได้)\n\n' +
+      'วิธีที่ง่ายที่สุดคือกดปุ่ม "ดาวน์โหลด Template (กรอก Note)" แล้วกรอกลงไฟล์นั้น\n' +
+      'ข้อมูลเดิมยังอยู่ครบ ไม่ถูกแตะต้อง',
+      'รับทราบ', { hideCancel: true });
+}
+
+function handleNoteImport(file) {
+  if (!requireAdmin('อัปเดต Note ไม่ได้')) return;
+  var isXlsx = /\.xlsx$/i.test(file.name);
+  $('btnImportNote').disabled = true;
+  $('masterCount').textContent = 'กำลังอ่านไฟล์...';
+
+  /* คืน promise ออกไปด้วย เพื่อให้เทสต์รอจนจบงานได้จริง ปุ่มบนจอไม่ได้ใช้ค่านี้ */
+  return file.arrayBuffer().then(function (buf) {
+    return isXlsx ? parseXlsx(buf) : Promise.resolve(parseCsv(decodeTextFile(buf)));
+  }).then(function (parsed) {
+    var res = parseNoteFile(parsed);
+    var stat = res.stat;
+    var keys = Object.keys(res.updates);
+
+    if (!keys.length) {
+      var why = 'อ่านได้ ' + fmtNum(stat.rows) + ' แถว แต่ไม่มีแถวไหนที่ต้องอัปเดต\n\n' +
+        'ช่อง Note ว่าง ' + fmtNum(stat.blankNote) + ' แถว (ว่าง = ไม่แตะของเดิม)\n' +
+        'หมายเหตุตรงกับของเดิมอยู่แล้ว ' + fmtNum(stat.same) + ' แถว\n' +
+        'รหัสไม่มีใน Master ' + fmtNum(stat.notFound) + ' แถว';
+      ask('ไม่มีอะไรต้องอัปเดต', why, 'ปิด', { hideCancel: true });
+      return;
+    }
+
+    /* ไฟล์เดียวแตะได้ทีละหลายพันตัว ให้เห็นตัวเลขก่อนแล้วค่อยตัดสินใจ */
+    return ask('ยืนยันการอัปเดตหมายเหตุ',
+        'จะเขียนหมายเหตุใหม่ ' + fmtNum(stat.updated) + ' รายการ\n\n' +
+        'ข้าม (ช่อง Note ว่าง) ' + fmtNum(stat.blankNote) + ' แถว\n' +
+        'ข้าม (ค่าเดิมอยู่แล้ว) ' + fmtNum(stat.same) + ' แถว\n' +
+        'ข้าม (รหัสไม่มีใน Master) ' + fmtNum(stat.notFound) + ' แถว\n\n' +
+        'ไฟล์นี้แตะเฉพาะหมายเหตุ ไม่แตะประเภทสินค้า ราคา หรือยอดนับ',
+        'อัปเดต ' + fmtNum(stat.updated) + ' รายการ').then(function (ok) {
+      if (!ok) { toast('ยกเลิกแล้ว ข้อมูลเดิมไม่ถูกแตะ'); return; }
+
+      var now = Date.now();
+      /* เขียนทีละ field ไม่ใช่ทั้งเรคอร์ด — ค่าอื่นของสินค้าจึงไม่มีทางหาย */
+      var pairs = [];
+      keys.forEach(function (k) {
+        pairs.push([k + '/note', res.updates[k]]);
+        pairs.push([k + '/updatedAt', now]);
+      });
+
+      var CHUNK = 400;
+      function step(i) {
+        if (i >= pairs.length) return Promise.resolve();
+        var chunk = {};
+        pairs.slice(i, i + CHUNK).forEach(function (p) { chunk[p[0]] = p[1]; });
+        return db.update('products', chunk).then(function () {
+          $('masterCount').textContent = 'กำลังบันทึก ' + fmtNum(Math.min(i + CHUNK, pairs.length)) +
+            ' / ' + fmtNum(pairs.length) + ' ...';
+          return step(i + CHUNK);
+        });
+      }
+
+      return step(0).then(function () {
+        /* อัปเดตในเครื่องเองแทนการโหลด products ทั้งก้อนกลับมา (หมื่นห้าพันตัว)
+           note ไม่ได้อยู่ใน scan index จึงไม่ต้อง buildScanIndex ใหม่ */
+        keys.forEach(function (k) {
+          if (!state.products[k]) return;
+          state.products[k].note = res.updates[k];
+          state.products[k].updatedAt = now;
+        });
+
+        var box = document.createElement('div');
+        var sec = repSection('ผลการอัปเดตหมายเหตุ');
+        repLine(sec, 'อ่านจากไฟล์', fmtNum(stat.rows) + ' แถว');
+        repLine(sec, 'อัปเดตหมายเหตุ', fmtNum(stat.updated) + ' รายการ');
+        repLine(sec, 'ข้าม (ช่อง Note ว่าง)', fmtNum(stat.blankNote) + ' แถว');
+        repLine(sec, 'ข้าม (ค่าเดิมอยู่แล้ว)', fmtNum(stat.same) + ' แถว');
+        repLine(sec, 'ข้าม (รหัสไม่มีใน Master)', fmtNum(stat.notFound) + ' แถว', stat.notFound > 0);
+        if (stat.notFoundCodes.length) {
+          repNote(sec, 'ตัวอย่างรหัสที่ไม่เจอ: ' + stat.notFoundCodes.join(', ') +
+            (stat.notFound > stat.notFoundCodes.length ? ' ...' : '') +
+            ' — ต้องนำเข้า Master ให้รู้จักสินค้าก่อน ไฟล์นี้ไม่สร้างสินค้าใหม่');
+        }
+        if (stat.noCode) repLine(sec, 'ข้าม (ไม่มีรหัสสินค้า)', fmtNum(stat.noCode) + ' แถว', true);
+        repNote(sec, 'ไฟล์นี้เขียนเฉพาะหมายเหตุ ไม่แตะประเภทสินค้า ราคาต้นทุน Status หรือยอดนับ');
+        box.appendChild(sec);
+        ask('อัปเดตหมายเหตุเรียบร้อย',
+            'เขียนหมายเหตุใหม่ ' + fmtNum(stat.updated) + ' รายการ',
+            'ปิด', { hideCancel: true, detail: box });
+      });
+    });
+  }).catch(function (err) {
+    var code = err && err.message;
+    if (code === 'MISSING_COLUMNS') { noteMissingColumnsHelp(err.missing); return; }
+    var messages = {
+      EMPTY_FILE: 'ไฟล์นี้ว่างเปล่า กรุณาตรวจไฟล์แล้วอัปโหลดใหม่',
+      NO_SHEET: 'อ่านไฟล์ Excel นี้ไม่ได้ กรุณาบันทึกเป็น .xlsx หรือ CSV แล้วอัปโหลดใหม่',
+      BAD_ZIP: 'ไฟล์ Excel นี้เสียหรือไม่ใช่ไฟล์ .xlsx กรุณาบันทึกเป็น CSV แล้วอัปโหลดใหม่',
+      NO_INFLATE: 'เครื่องนี้อ่านไฟล์ .xlsx ไม่ได้ กรุณาบันทึกเป็น CSV แล้วอัปโหลดใหม่'
+    };
+    toast(messages[code] || 'อัปเดตหมายเหตุไม่สำเร็จ กรุณาตรวจไฟล์แล้วลองใหม่', true);
+  }).then(function () {
+    $('btnImportNote').disabled = false;
     renderMaster();
   });
 }
@@ -10255,6 +10491,16 @@ function init() {
     this.value = '';
   });
 
+  $('btnNoteTemplate').onclick = downloadNoteTemplate;
+  $('btnImportNote').onclick = function () {
+    if (!requireAdmin('อัปเดต Note ไม่ได้')) return;
+    $('noteFile').click();
+  };
+  $('noteFile').addEventListener('change', function () {
+    if (this.files && this.files[0]) handleNoteImport(this.files[0]);
+    this.value = '';
+  });
+
   $('btnImportImages').onclick = function () {
     if (!requireAdmin('นำเข้ารูปสินค้าไม่ได้')) return;
     $('imageFile').click();
@@ -10428,6 +10674,42 @@ init();
   ====================================================================
   สรุปการเปลี่ยนแปลง
   ====================================================================
+
+  v2.2.0 — กรอก Note จำนวนมากผ่านไฟล์ (โหลด Template → กรอกใน Excel → อัปโหลดกลับ)
+
+    ปัญหา: หมายเหตุกรอกได้ทีละ SKU ในหน้า Master เท่านั้น สินค้ามีหมื่นห้าพันตัว ทำมือไม่ไหว
+
+    A) ปุ่ม "⬇ ดาวน์โหลด Template (กรอก Note)" — downloadNoteTemplate()
+       ชีทเดียว: รหัสสินค้า · ชื่อสินค้า · หมวดหมู่ · Note (เติมค่าปัจจุบันมาให้)
+       แถวมาจาก masterRows() ตรง ๆ = "ชุดที่กรองอยู่บนจอตอนนี้" (ตัวกรอง + คำค้น)
+       เจาะกลุ่มได้ เช่นกดตัวกรอง "ปิดใช้งาน" แล้วโหลดเฉพาะพวกนั้น
+       ต่างจากลิสต์บนจอตรงที่ไม่ติดเพดาน 200 แถว — ไฟล์ได้ครบทุกแถวเสมอ
+       ใช้ buildXlsx ตัวเดียวกับ exportExcel (ไม่มีไลบรารีนอก ตามกฎห้าม CDN)
+       ปุ่มนี้ไม่ล็อก admin เพราะเป็นการอ่านอย่างเดียว
+
+    B) ปุ่ม "📝 อัปเดต Note จากไฟล์" — parseNoteFile() + handleNoteImport()
+       แยกปุ่มและช่องไฟล์ออกจากปุ่มนำเข้า Zort Master คนละเส้นทางกันสนิท · admin เท่านั้น
+       จับคอลัมน์จากชื่อหัวตาราง ไม่ใช่ตำแหน่ง (findHeaderRow + headerMatches ชุดเดิม)
+       รับหัวว่า Note / note / หมายเหตุ / remark
+       - Note มีค่า → เขียน products/{key}/note
+       - Note ว่าง  → ข้าม ไม่แตะของเดิม (ไฟล์ที่กรอกไม่ครบต้องไม่กลายเป็นการลบหมู่)
+       - รหัสไม่มีใน Master → ข้าม + นับไว้รายงาน ไม่สร้างสินค้าใหม่
+       - ค่าเดิมอยู่แล้ว → ข้าม อัปโหลด Template เดิมซ้ำจึงไม่ยิงฐานฟรีหมื่นห้าพันครั้ง
+       เขียนเป็นก้อนละ 400 คีย์ส่งต่อกันแบบเดียวกับการนำเข้า Master
+       มีกล่องยืนยันบอกตัวเลขก่อนเขียนจริง แล้วสรุปผลท้ายงาน (อัปเดต/ข้ามอย่างละกี่แถว)
+
+       จุดสำคัญ: เขียนลงฐานแค่ note กับ updatedAt เท่านั้น
+       ไม่เรียก saveProductEdit และไม่ตั้ง typeSource='manual'
+       เพราะ manual เปลี่ยนกติกาการอ่านประเภทสินค้าทั้งตัว (isInactiveProduct)
+       ของหมวด "ปิดใช้งาน" ที่ในฐานยังเป็น type:'product' จะเด้งกลับเป็น Product เงียบ ๆ
+       ไฟล์เดียวแตะสินค้าทีละหลายพันตัว ความเสียหายจึงคูณด้วยจำนวนแถว
+       ส่วน note ถูกกันไม่ให้ไฟล์ Zort ทับอยู่แล้วใน buildProductPatch จึงไม่ต้องประกาศ manual
+
+       หลังเขียนเสร็จอัปเดต state.products ในเครื่องเอง ไม่ดึง products ทั้งก้อนกลับมา
+       (note ไม่ได้อยู่ใน scan index จึงไม่ต้อง buildScanIndex ใหม่)
+
+    ไม่แตะ Rules · โครงสร้างข้อมูล · saveProductEdit · buildProductPatch · ปุ่มนำเข้า Zort
+    ยอดนับและรอบนับไม่ถูกแตะแม้แต่แถวเดียว
 
   v2.1.9 — โซนยึดจาก Location หยิบ ของ SKU + ป้ายของเลิกขายเจอบนชั้น
 
