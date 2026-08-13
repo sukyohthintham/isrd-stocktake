@@ -2,7 +2,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="version" content="2.2.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.2.0</title>
+<title>ISRD Stocktake v2.2.1</title>
 
 <style>
 :root{
@@ -1369,7 +1369,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.2.0';
+var APP_VERSION = '2.2.1';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -7881,6 +7881,11 @@ function jobActions() {
   if (!job) return [];
   var st = job.status || 'counting';
   var acts = [];
+  /* ▶ เริ่มนับ — เข้าหน้านับของ Job นี้ได้ตรงจากเมนูจัดการ (ข้อ UX) */
+  if (canScanRole() && st === 'counting') {
+    acts.push({ id: 'start', label: '▶ เริ่มนับ', cls: 'ghost',
+      run: function () { showPage(isScannerOnly() ? 'scan' : 'start'); } });
+  }
   if (isStaff() && st === 'counting') {
     acts.push({ id: 'review', label: '→ ส่งเข้าขั้นตรวจสอบ', cls: 'ghost', run: sendToReview });
   }
