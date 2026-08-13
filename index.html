@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.2.2">
+<meta name="version" content="2.3.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.2.2</title>
+<title>ISRD Stocktake v2.3.0</title>
 
 <style>
 :root{
@@ -1369,7 +1369,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.2.2';
+var APP_VERSION = '2.3.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -6506,12 +6506,23 @@ var DOC_ITEM_HEAD = ['#', 'รูป', 'รหัสสินค้า', 'ชื
   'ยอดระบบ', 'ยิงจริง', 'ผลต่าง', 'ราคา/ตัว', 'มูลค่าระบบ', 'มูลค่าจริง',
   'ผลต่างมูลค่า', 'Reason'];
 
-function buildDocItemTable(title, rows) {
+/* opts.sysLabel / opts.sysValueLabel — เปลี่ยนชื่อคอลัมน์ฝั่ง "ยอดระบบ" ได้
+   ตารางโอนกลับใช้ยอดจากใบโอนแทนยอดระบบ ที่เหลือเป็นแถวมาตรฐานเดียวกันหมด
+   opts.note — คำเตือนใต้หัวตาราง สำหรับตารางที่ตัวเลขต้องอธิบายก่อนอ่าน */
+function buildDocItemTable(title, rows, opts) {
+  opts = opts || {};
   var box = document.createElement('div');
   var h = document.createElement('div');
   h.className = 'tbl-title';
   h.textContent = title + ' — ' + fmtNum(rows.length) + ' รายการ';
   box.appendChild(h);
+
+  if (opts.note) {
+    var note = document.createElement('div');
+    note.style.cssText = 'font-size:9pt;color:#475569;margin-bottom:4px';
+    note.textContent = opts.note;
+    box.appendChild(note);
+  }
 
   if (!rows.length) {
     var none = document.createElement('div');
@@ -6543,9 +6554,16 @@ function buildDocItemTable(title, rows) {
   });
   table.appendChild(colgroup);
 
+  /* เทียบจากชื่อคอลัมน์ ไม่ใช่เลขลำดับ — ลำดับใน DOC_ITEM_HEAD เคยเปลี่ยนมาแล้ว */
+  var head = DOC_ITEM_HEAD.map(function (t) {
+    if (t === 'ยอดระบบ') return opts.sysLabel || t;
+    if (t === 'มูลค่าระบบ') return opts.sysValueLabel || t;
+    return t;
+  });
+
   var thead = document.createElement('thead');
   var htr = document.createElement('tr');
-  DOC_ITEM_HEAD.forEach(function (t) {
+  head.forEach(function (t) {
     var th = document.createElement('th');
     th.textContent = t;
     htr.appendChild(th);
@@ -6646,48 +6664,30 @@ function buildTransferDocTable() {
   return box;
 }
 
-/* ข้อ C2 — จัดกลุ่มตามหมายเลขรายการ หัวกลุ่มบอกครบตามสเปก */
+/* ข้อ C2 — จัดกลุ่มตามหมายเลขรายการ หัวกลุ่มบอกครบตามสเปก
+   ใช้แถวมาตรฐานเดียวกับตารางสินค้า ต่างแค่ฝั่ง "ยอดระบบ" เป็นยอดจากใบโอน
+   จำนวน SKU ไม่ต้องบอกในหัวกลุ่ม — builder เติม "— N รายการ" ให้แล้ว */
 function buildTransferItemTable(t) {
-  var box = document.createElement('div');
-  box.setAttribute('data-tfgroup', t.tfNo);
-  var h = document.createElement('div');
-  h.className = 'tbl-title';
-  h.textContent = t.tfNo + ' · ' + (t.status || 'ไม่ระบุสถานะ') +
-    ' · ปลายทาง ' + (t.to || '-') +
-    ' · ' + fmtNum(t.skuCount || 0) + ' SKU · ' + fmtNum(t.pieces || 0) + ' ชิ้น';
-  box.appendChild(h);
-
-  var table = document.createElement('table');
-  table.className = 'items';
-  table.setAttribute('data-doc-table', 'โอนกลับ ' + t.tfNo);
-  var colgroup = document.createElement('colgroup');
-  [4, 16, 34, 14, 10, 10, 12].forEach(function (w) {
-    var col = document.createElement('col'); col.style.width = w + '%'; colgroup.appendChild(col);
-  });
-  table.appendChild(colgroup);
-  var thead = document.createElement('thead');
-  var htr = document.createElement('tr');
-  ['#', 'รหัสสินค้า', 'ชื่อสินค้า', 'Barcode', 'จำนวนที่โอน', 'ยิงจริง', 'Location']
-    .forEach(function (x) { var th = document.createElement('th'); th.textContent = x; htr.appendChild(th); });
-  thead.appendChild(htr);
-  table.appendChild(thead);
-
-  var tbody = document.createElement('tbody');
-  Object.keys(t.items || {}).sort().forEach(function (k, i) {
+  var priceField = state.priceField;
+  var rows = Object.keys(t.items || {}).sort().map(function (k) {
     var it = t.items[k];
-    var tr = document.createElement('tr');
-    tr.setAttribute('data-tfitem', it.code);
-    docCell(tr, String(i + 1), 'mid');
-    docCell(tr, it.code);
-    docCell(tr, it.name || it.code);
-    docCell(tr, it.barcode || '-');
-    docCell(tr, fmtNum(it.qty), 'num');
-    docCell(tr, fmtNum(state.counts[k] || 0), 'num');
-    docCell(tr, locationText(k) || '-');
-    tbody.appendChild(tr);
+    var p = state.products[k] || {};
+    var sys = Number(it.qty) || 0;
+    var act = Number(state.counts[k]) || 0;
+    return {
+      key: k, code: it.code, name: it.name || it.code,
+      category: p.category || '',
+      sys: sys, act: act, diff: act - sys,
+      price: Number(p[priceField]) || 0      // ไม่มีใน Master = คิดเป็น 0 เหมือน summaryData
+    };
   });
-  table.appendChild(tbody);
-  box.appendChild(table);
+
+  var box = buildDocItemTable(
+    t.tfNo + ' · ' + (t.status || 'ไม่ระบุสถานะ') +
+    ' · ปลายทาง ' + (t.to || '-') + ' · ' + fmtNum(t.pieces || 0) + ' ชิ้น',
+    rows,
+    { sysLabel: 'จำนวนที่โอน', sysValueLabel: 'มูลค่าที่โอน' });
+  box.setAttribute('data-tfgroup', t.tfNo);
   return box;
 }
 
@@ -6736,78 +6736,6 @@ function buildCycleJobTable(perJob) {
     docCell(tr, fmtNum(j.skuTotal), 'num');
     docCell(tr, fmtNum(j.pieces), 'num');
     docCell(tr, fmtNum(j.users) + ' คน', 'num');
-    tbody.appendChild(tr);
-  });
-  table.appendChild(tbody);
-  box.appendChild(table);
-  return box;
-}
-
-var FOREIGN_DOC_HEAD = ['#', 'รูป', 'รหัสสินค้า', 'ชื่อสินค้า', 'หมวดหมู่', 'Status',
-                        'Location', 'ยิงจริง', 'ราคา/ตัว', 'มูลค่า', 'Reason'];
-
-/* ตาราง "ไม่ใช่ของสาขานี้" — รู้จักสินค้า แต่ไม่อยู่ในไฟล์ยอดของสาขานี้ */
-function buildForeignDocTable(rows) {
-  if (!rows || !rows.length) return null;
-  var box = document.createElement('div');
-  box.setAttribute('data-foreign-table', '1');
-  var h = document.createElement('div');
-  h.className = 'tbl-title';
-  h.textContent = 'รายการที่พบแต่ไม่ใช่ของสาขานี้ — ' + fmtNum(rows.length) + ' รายการ';
-  box.appendChild(h);
-  var note = document.createElement('div');
-  note.style.cssText = 'font-size:9pt;color:#475569;margin-bottom:4px';
-  note.textContent = 'สินค้าเหล่านี้มีอยู่ใน Master ของบริษัท แต่ไม่อยู่ในไฟล์ยอดของสาขานี้ ' +
-                     'ยอดระบบจึงเป็น 0 — ต้องตรวจว่าของมาผิดสาขา หรือไฟล์ยอดตกหล่น';
-  box.appendChild(note);
-
-  var table = document.createElement('table');
-  table.className = 'items';
-  table.setAttribute('data-doc-table', 'ไม่ใช่ของสาขานี้');
-  var colgroup = document.createElement('colgroup');
-  [3, 5, 11, 19, 11, 10, 10, 7, 7, 8, 9].forEach(function (w) {
-    var col = document.createElement('col'); col.style.width = w + '%'; colgroup.appendChild(col);
-  });
-  table.appendChild(colgroup);
-  var thead = document.createElement('thead');
-  var htr = document.createElement('tr');
-  FOREIGN_DOC_HEAD.forEach(function (t) {
-    var th = document.createElement('th'); th.textContent = t; htr.appendChild(th);
-  });
-  thead.appendChild(htr);
-  table.appendChild(thead);
-
-  var tbody = document.createElement('tbody');
-  rows.forEach(function (r, i) {
-    var tr = document.createElement('tr');
-    tr.setAttribute('data-foreign-code', r.code);
-    docCell(tr, String(i + 1), 'mid');
-    var imgTd = document.createElement('td');
-    imgTd.className = 'mid';
-    imgTd.appendChild(imageBox((state.products[r.key] || {}).imageUrl));
-    tr.appendChild(imgTd);
-    docCell(tr, r.code);
-    docCell(tr, r.name);
-    docCell(tr, r.category || '-');
-    docCell(tr, r.status || DEFAULT_STATUS, 'mid');
-    docCell(tr, r.location || '-');
-    docCell(tr, fmtNum(r.act), 'num pos');
-    docCell(tr, fmtMoney(r.price), 'num');
-    docCell(tr, fmtMoney(r.act * r.price), 'num');
-
-    var rtd = document.createElement('td');
-    var input = document.createElement('input');
-    input.type = 'text';
-    input.className = 'reason-in';
-    input.setAttribute('data-reason', r.key);
-    input.value = state.reasons[r.key] || '';
-    var printed = document.createElement('span');
-    printed.className = 'reason-print';
-    printed.textContent = input.value;
-    input.oninput = function () { printed.textContent = input.value; };
-    input.onchange = function () { saveReason(r.key, input.value.trim()); };
-    rtd.appendChild(input); rtd.appendChild(printed);
-    tr.appendChild(rtd);
     tbody.appendChild(tr);
   });
   table.appendChild(tbody);
@@ -7044,9 +6972,15 @@ function renderDoc() {
   }
   host.appendChild(buildDocItemTable('รายการสินค้า (ขาด)', short));
   host.appendChild(buildDocItemTable('รายการสินค้า (เกิน)', over));
-  /* ข้อ A4 — ของมาผิดสาขา แยกตารางจากของที่ไม่รู้จักเลย */
-  var foreignTable = buildForeignDocTable(foreignRows(data));
-  if (foreignTable) host.appendChild(foreignTable);
+  /* ข้อ A4 — ของมาผิดสาขา แยกตารางจากของที่ไม่รู้จักเลย
+     ไม่มีของมาผิดสาขา = ไม่ต้องมีตารางนี้ในเอกสารเลย */
+  var fRows = foreignRows(data);
+  if (fRows.length) {
+    host.appendChild(buildDocItemTable('รายการที่พบแต่ไม่ใช่ของสาขานี้', fRows, {
+      note: 'สินค้าเหล่านี้มีอยู่ใน Master ของบริษัท แต่ไม่อยู่ในไฟล์ยอดของสาขานี้ ' +
+            'ยอดระบบจึงเป็น 0 — ต้องตรวจว่าของมาผิดสาขา หรือไฟล์ยอดตกหล่น'
+    }));
+  }
   /* วางต่อจากตารางสินค้าเกิน เพราะเป็นของที่เจอเกินมาเหมือนกัน */
   var unknownTable = buildUnknownDocTable();
   if (unknownTable) host.appendChild(unknownTable);
