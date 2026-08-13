@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.3.2">
+<meta name="version" content="2.3.3">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.3.2</title>
+<title>ISRD Stocktake v2.3.3</title>
 
 <style>
 :root{
@@ -1369,7 +1369,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.3.2';
+var APP_VERSION = '2.3.3';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -5491,6 +5491,11 @@ function renderBranchPicker() {
 
   if (!Object.keys(state.branches).length) {
     box.innerHTML = '<div class="empty">ยังไม่มีทะเบียนสาขา — ไปที่แท็บ Master แล้วนำเข้าก่อน</div>';
+    return;
+  }
+  /* ยังไม่พิมพ์ค้นหา = ซ่อนรายการ พิมพ์รหัส/ชื่อแล้วค่อยเด้ง (ข้อ UX) */
+  if (!term.trim()) {
+    box.innerHTML = '<div class="empty">พิมพ์รหัสหรือชื่อสาขาเพื่อค้นหา</div>';
     return;
   }
   var hits = branchList(term, includeClosed).slice(0, 25);
