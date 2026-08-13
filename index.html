@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.3.3">
+<meta name="version" content="2.3.4">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.3.3</title>
+<title>ISRD Stocktake v2.3.4</title>
 
 <style>
 :root{
@@ -1369,7 +1369,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.3.3';
+var APP_VERSION = '2.3.4';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -5204,7 +5204,10 @@ var BRANCH_COLUMNS = {
   code: ['รหัส', 'รหัสคลัง/สาขา', 'รหัสคลังสินค้า/สาขา', 'รหัสสาขา', 'รหัสคลัง', 'รหัสคลังสินค้า',
          'code', 'branchcode', 'warehousecode'],
   name: ['ชื่อคลัง/สาขา', 'ชื่อคลังสินค้า/สาขา', 'ชื่อสาขา', 'ชื่อคลัง', 'ชื่อ',
-         'name', 'branch', 'branchname', 'warehouse']
+         'name', 'branch', 'branchname', 'warehouse'],
+  /* คอลัมน์ลำดับ — ไม่ได้ใช้เป็นข้อมูล ใช้ดูว่าแถวไหนเป็นแถวจริง
+     ไฟล์ที่ export มามักมีแถวท้ายไฟล์ที่ # ว่างแต่ช่องอื่นมีเศษข้อความติดมา */
+  seq: ['#', 'ลำดับ', 'ลำดับที่', 'no']
 };
 
 /* สาขาที่เลิกใช้: รหัสขึ้นต้นด้วย X (X 001 / X-01 / X001) หรือชื่อขึ้นต้นด้วย Close
@@ -5214,10 +5217,12 @@ function isClosedBranch(code, name) {
          /^close(?![a-z])/i.test(String(name || '').trim());
 }
 
-/* หัวตารางคือแถวที่เจอ "ทั้ง" คอลัมน์รหัสและคอลัมน์ชื่อ */
+/* หัวตารางคือแถวที่เจอ "ทั้ง" คอลัมน์รหัสและคอลัมน์ชื่อ
+   คอลัมน์ลำดับเก็บเพิ่มถ้าเจอ ไม่เจอก็ไม่เป็นไร ไม่ใช่เงื่อนไขของหัวตาราง */
 function findBranchHeader(rows) {
   var codeAliases = BRANCH_COLUMNS.code.map(normText);
   var nameAliases = BRANCH_COLUMNS.name.map(normText);
+  var seqAliases = BRANCH_COLUMNS.seq.map(normText);
   var seen = [], checked = 0;
   for (var r = 0; r < rows.length && checked < 10; r++) {
     if (!rowHasContent(rows[r])) continue;
@@ -5227,7 +5232,8 @@ function findBranchHeader(rows) {
       var cell = cellText(rows[r][c]);
       if (!cell) continue;
       if (found.code === undefined && headerMatches(cell, codeAliases)) { found.code = c; continue; }
-      if (found.name === undefined && headerMatches(cell, nameAliases)) { found.name = c; }
+      if (found.name === undefined && headerMatches(cell, nameAliases)) { found.name = c; continue; }
+      if (found.seq === undefined && headerMatches(cell, seqAliases)) { found.seq = c; }
     }
     if (found.code !== undefined && found.name !== undefined) {
       return { row: r, idx: found };
@@ -5251,6 +5257,7 @@ function parseBranchFile(parsed) {
   for (var r = head.row + 1; r < rows.length; r++) {
     var row = rows[r] || [];
     if (!rowHasContent(row)) continue;
+    if (idx.seq !== undefined && !cellText(row[idx.seq])) continue;  // แถวขยะท้ายไฟล์ # ว่าง
     stat.rows++;
     var code = cellText(row[idx.code]);
     var name = cellText(row[idx.name]);
