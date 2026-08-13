@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.3.0">
+<meta name="version" content="2.3.1">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.3.0</title>
+<title>ISRD Stocktake v2.3.1</title>
 
 <style>
 :root{
@@ -1369,7 +1369,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.3.0';
+var APP_VERSION = '2.3.1';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -2933,6 +2933,7 @@ var state = {
   customStatuses: [],                       // ค่า status ที่แอดมินเพิ่มเอง
   customStoreTypes: [],                     // ประเภทคลังย่อยที่แอดมินเพิ่มเอง
   docScope: 'job',                          // เอกสาร: 'job' = เฉพาะ Job นี้ · 'cycle' = รวมทั้งสาขา
+  docScopeTouched: false,                   // ผู้ใช้กดสลับปุ่มขอบเขตเองหรือยัง
   cycleData: null,                          // แคชยอดรวมทั้ง cycle
   cycles: {},                               // cycleId -> { status, info } ระเบียนรอบนับ
   cycleId: null,                            // รอบนับของ Job ที่เปิดอยู่
@@ -6852,8 +6853,12 @@ function ensureCycleData() {
 
 function renderDoc() {
   var round = state.roundIndex[state.roundId] || { name: '-', branch: '-' };
-  var cycleMode = state.docScope === 'cycle';
   var cid = cycleOf(round);
+  /* default อัจฉริยะ: รอบมีหลาย Job → รวมทั้งสาขา ; ผู้ใช้สลับเองแล้วเคารพค่าเดิม */
+  if (!state.docScopeTouched) {
+    state.docScope = jobsInCycle(cid).length > 1 ? 'cycle' : 'job';
+  }
+  var cycleMode = state.docScope === 'cycle';
 
   document.querySelectorAll('[data-docscope]').forEach(function (b) {
     b.className = 'btn sm ' + (b.getAttribute('data-docscope') === state.docScope ? '' : 'grey');
@@ -9134,6 +9139,7 @@ function selectRound(id) {
   state.lastImport = null;
   state.reasons = {};
   state.docType = DEFAULT_DOC_TYPE;
+  state.docScopeTouched = false;   // Job ใหม่ = ให้ default อัจฉริยะตัดสินใหม่
   state.docNo = {};
   state.legacyTransferNo = '';
   state.jobConfirmed = false;      // เปลี่ยน Job แล้วต้องยืนยันใหม่ก่อนยิง
@@ -10468,6 +10474,7 @@ function init() {
   document.querySelectorAll('[data-docscope]').forEach(function (b) {
     b.onclick = function () {
       state.docScope = b.getAttribute('data-docscope');
+      state.docScopeTouched = true;   // เลือกเองแล้ว default อัจฉริยะห้ามเปลี่ยนทับ
       state.cycleData = null;      // บังคับโหลดใหม่ เผื่อมีคนยิงเพิ่มระหว่างนี้
       renderDoc();
     };
