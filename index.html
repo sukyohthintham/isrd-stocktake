@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.3.1">
+<meta name="version" content="2.3.2">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.3.1</title>
+<title>ISRD Stocktake v2.3.2</title>
 
 <style>
 :root{
@@ -1369,7 +1369,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.3.1';
+var APP_VERSION = '2.3.2';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -3143,6 +3143,7 @@ function zoneName(zoneId) {
 function applyScanRecord(id, rec) {
   if (!rec || state.appliedScanIds[id]) return false;
   state.appliedScanIds[id] = 1;
+  state.cycleData = null;   // มี scan ใหม่ → cache รายงานรวมทั้งสาขา outdated ต้องโหลดใหม่
 
   var key = safeKey(rec.code);
   var delta = Number(rec.delta) || 0;
