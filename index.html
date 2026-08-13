@@ -2,7 +2,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="version" content="2.2.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.2.1</title>
+<title>ISRD Stocktake v2.2.2</title>
 
 <style>
 :root{
@@ -1369,7 +1369,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.2.1';
+var APP_VERSION = '2.2.2';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -3433,14 +3433,27 @@ function pickCycleForNewJob(branch) {
     { cancelLabel: 'ยกเลิก', fields: [{
         key: 'cid', label: 'เลือกรอบนับ', type: 'choice', value: open,
         options: [
-          { value: open, label: 'เข้ารอบเดิม ' + open,
-            note: 'ใช้ยอดระบบก้อนเดิมของรอบนี้' +
-                  (skus ? ' (' + fmtNum(skus) + ' SKU)' : '') + ' ไม่ต้องอัปโหลดไฟล์ซ้ำ' },
-          { value: fresh, label: 'เปิดรอบนับใหม่ ' + fresh,
-            note: 'เริ่มนับสาขานี้รอบใหม่ ยอดระบบแยกขาดจากรอบเดิม ต้องนำเข้าไฟล์ยอดระบบใหม่' }
+          { value: open, label: '✅ เข้ารอบเดิม ' + open + ' (แนะนำ)',
+            note: 'SHOW/STOCK สาขาเดียวกันใช้ยอดระบบ + ใบโอนก้อนเดียวกัน' +
+                  (skus ? ' (' + fmtNum(skus) + ' SKU)' : '') + ' ไม่ต้องอัปโหลดซ้ำ' },
+          { value: fresh, label: '⚠️ เปิดรอบนับใหม่ ' + fresh,
+            note: 'เฉพาะกรณีเริ่มนับสาขานี้ใหม่ทั้งรอบ — ยอดระบบและใบโอนแยกขาดจากรอบเดิม ต้องนำเข้าไฟล์ใหม่ทั้งคู่' }
         ]
       }] })
-    .then(function (v) { return v ? v.cid : null; });
+    .then(function (v) {
+      if (!v) return null;                 // กดยกเลิก
+      if (v.cid !== fresh) return v.cid;   // เข้ารอบเดิม — ทำต่อได้เลย
+      /* เลือกเปิดรอบใหม่ = แตกยอด+ใบโอน ต้องยืนยันอีกชั้นกันมือลั่น (ข้อ F3) */
+      return ask('⚠️ ยืนยันเปิดรอบนับใหม่',
+        'รอบ ' + open + ' มี ' + fmtNum(jobs.length) + ' Job นับค้างอยู่\n\n' +
+        'ถ้าเปิดรอบใหม่ ' + fresh + ':\n' +
+        '• ยอดระบบเป็นก้อนใหม่ ว่างเปล่า ต้องอัปโหลดไฟล์ใหม่\n' +
+        '• ใบโอน (TF) แยกขาดจากรอบเดิม ต้องนำเข้าใหม่\n' +
+        '• Job ในรอบ ' + open + ' จะไม่เห็นก้อนนี้\n\n' +
+        'ปกติ SHOW กับ STOCK สาขาเดียวกันควรอยู่รอบเดียวกัน\nแน่ใจว่าจะเปิดรอบใหม่?',
+        'ใช่ เปิดรอบใหม่', { danger: true })
+        .then(function (ok) { return ok ? fresh : null; });
+    });
 }
 
 /* สร้างระเบียนรอบนับถ้ายังไม่มี — ต้องมีก่อนนำเข้าไฟล์ เพราะ Rules อ่าน status จากตรงนี้ */
