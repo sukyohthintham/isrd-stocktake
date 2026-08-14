@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.3.8">
+<meta name="version" content="2.3.9">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.3.8</title>
+<title>ISRD Stocktake v2.3.9</title>
 
 <style>
 :root{
@@ -664,6 +664,13 @@ body.no-doc-images .doc .imgbox{display:none}
 <section class="page active" id="pageJobs">
   <div id="modeBanner"></div>
 
+  <!-- รายการกับฟอร์มสร้างเคยซ้อนกันหน้าเดียว พอ Job เยอะฟอร์มถูกดันลงล่างจนหาไม่เจอ -->
+  <div class="filters" id="jobViewTabs" style="margin-bottom:12px">
+    <button class="btn sm" data-jobview="list">📋 Job งาน</button>
+    <button class="btn sm grey" data-jobview="create">➕ สร้าง Job</button>
+  </div>
+
+  <div id="jobViewList">
   <div class="card">
     <h3>รายการ Job</h3>
     <div class="filters" id="jobStatusFilters">
@@ -686,8 +693,10 @@ body.no-doc-images .doc .imgbox{display:none}
   </div>
 
   <div class="clist" id="jobList" style="margin-bottom:14px"></div>
+  </div>
 
-  <!-- ฟอร์มสร้างอยู่ล่างรายการ เพราะเปิดแอปมาส่วนใหญ่คือมาเลือกงานที่ค้างอยู่ ไม่ใช่สร้างใหม่ -->
+  <!-- ฟอร์มสร้างเริ่มต้นซ่อนไว้ เพราะเปิดแอปมาส่วนใหญ่คือมาเลือกงานที่ค้างอยู่ ไม่ใช่สร้างใหม่ -->
+  <div id="jobViewCreate" style="display:none">
   <div class="card">
     <h3>สร้าง Job ใหม่</h3>
     <label class="fld" style="margin-bottom:6px">
@@ -717,6 +726,7 @@ body.no-doc-images .doc .imgbox{display:none}
     </label>
     <button class="btn ghost block" id="btnAddRound">+ สร้าง Job</button>
     <div class="hint" id="jobCodePreview" style="display:none"></div>
+  </div>
   </div>
 
   <div class="foot">เวอร์ชัน <span id="verText"></span></div>
@@ -1395,7 +1405,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.3.8';
+var APP_VERSION = '2.3.9';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -3081,6 +3091,7 @@ var state = {
   users: {},             // ทะเบียนผู้ใช้ทั้งหมด (โหลดเฉพาะตอน admin เปิดหน้าจัดการ)
   counter: '',           // ชื่อผู้นับ = ชื่อจากบัญชี ไม่ใช่ช่องให้พิมพ์เองแล้ว
   page: 'jobs',          // ต้องตรงกับ section ที่ติด class active ไว้ใน HTML
+  jobView: 'list',       // แท็บในหน้า Job: list (รายการ) / create (ฟอร์มสร้าง)
   products: {},          // master ถาวร
   systemQty: {},         // ยอดระบบของรอบที่เลือก
   zones: {},
@@ -8854,6 +8865,19 @@ function applyNavVisibility() {
   });
 }
 
+/* สลับแท็บในหน้า Job — 'list' รายการงาน / 'create' ฟอร์มสร้าง
+   สลับด้วย display อย่างเดียว ไม่ถอด DOM ทิ้ง ค่าที่คนกรอกค้างไว้ในฟอร์มจึงไม่หาย */
+function setJobView(v) {
+  state.jobView = v;
+  var L = document.getElementById('jobViewList');
+  var C = document.getElementById('jobViewCreate');
+  if (L) L.style.display = (v === 'create') ? 'none' : '';
+  if (C) C.style.display = (v === 'create') ? '' : 'none';
+  document.querySelectorAll('#jobViewTabs [data-jobview]').forEach(function (b) {
+    b.classList.toggle('grey', b.getAttribute('data-jobview') !== v);
+  });
+}
+
 function showPage(name) {
   /* กันเข้าหน้าที่ไม่มีสิทธิ์ผ่านทางอื่น เช่น เรียกฟังก์ชันตรง ๆ หรือกลับมาจากหน้าเก่า */
   if (!canSeePage(name)) name = canScanRole() ? 'scan' : 'summary';
@@ -8864,6 +8888,9 @@ function showPage(name) {
     $('nav' + p).classList.toggle('on', key === name);
   });
   window.scrollTo(0, 0);
+  /* เข้าหน้า Job ทีไรเริ่มที่รายการเสมอ — คนเข้ามาเพื่อเลือกงานที่ค้าง ไม่ใช่สร้างใหม่
+     ถ้าค้างที่แท็บฟอร์มไว้ คนที่เพิ่งสร้าง Job เสร็จจะกลับมาเจอฟอร์มเปล่าแล้วงงว่ารายการหาย */
+  if (name === 'jobs') setJobView('list');
   if (name === 'jobs') renderJobs();
   if (name === 'summary') { renderSummary(); setSummaryTab(state.summaryTab); }
   if (name === 'master') renderMaster();
@@ -10682,6 +10709,9 @@ function init() {
   $('btnStart').onclick = goScan;
   $('btnChangeSession').onclick = function () { showPage('start'); };
   $('navJobs').onclick = function () { showPage('jobs'); };
+  document.querySelectorAll('#jobViewTabs [data-jobview]').forEach(function (b) {
+    b.onclick = function () { setJobView(b.getAttribute('data-jobview')); };
+  });
   $('navStart').onclick = function () { if (state.roundId) showPage('start'); };
   $('navScan').onclick = goScan;
   $('navMaster').onclick = function () { showPage('master'); };
