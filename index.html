@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.4.3">
+<meta name="version" content="2.5.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.4.3</title>
+<title>ISRD Stocktake v2.5.0</title>
 
 <style>
 :root{
@@ -1469,7 +1469,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.4.3';
+var APP_VERSION = '2.5.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -5332,13 +5332,15 @@ function pushRecent(name, delta, ts) {
 
 /* ตัวเลขใหญ่ = ยอดของโซนที่ของชิ้นล่าสุดสังกัดอยู่
    ป้ายใต้ตัวเลขต้องบอกชื่อโซนด้วย ไม่งั้นตัวเลขเปลี่ยนไปมาแล้วคนอ่านผิดโซน */
-/* ผลต่างสดบนหน้ายิง — admin เท่านั้น (ลิสต์เดียวกับหน้าสรุป คนละชุด id)
-   ถ้าไม่ใช่ admin จะไม่คำนวณเลย: summaryData() วนทุก SKU ในรอบ และตัวนี้ถูกเรียก
-   ทุกครั้งที่ยิง เด็กหน้าร้านที่ใช้มือถือรุ่นเล็กจึงไม่ต้องจ่ายค่านี้ */
-var SCAN_ADMIN_ONLY = ['scanDiffCards', 'btnScanExport'];
+/* ผลต่างสดบนหน้ายิง — staff เท่านั้น (ลิสต์เดียวกับหน้าสรุป คนละชุด id)
+   ถ้าไม่ใช่ staff จะไม่คำนวณเลย: summaryData() วนทุก SKU ในรอบ และตัวนี้ถูกเรียก
+   ทุกครั้งที่ยิง scanner ที่ใช้มือถือรุ่นเล็กจึงไม่ต้องจ่ายค่านี้ */
+var SCAN_STAFF_ONLY = ['scanDiffCards', 'btnScanExport'];
 
 function renderScanDiffCards() {
-  if (!applyAdminOnly(SCAN_ADMIN_ONLY)) return;
+  var staff = applyStaffOnly(SCAN_STAFF_ONLY);
+  $('btnScanExport').disabled = !staff;      // ซ่อนแล้วยังล็อกซ้ำ กันเรียกผ่านทางอื่น
+  if (!staff) return;
   var m = 0, s = 0, o = 0;
   summaryData().rows.forEach(function (r) {
     if (r.diff === 0) m++; else if (r.diff < 0) s++; else o++;
@@ -6432,8 +6434,10 @@ function sumCardRow(r, kind) {
   row.appendChild(moneyLine);
 
   /* ยิงเกินโดยไม่ตั้งใจต้องแก้ได้จากตรงนี้เลย ไม่ต้องเดินกลับไปหน้ายิง
-     ปุ่มนี้เป็นของ admin เท่านั้น เพราะการปรับยอดลงคือจุดที่ทุจริตได้ง่ายที่สุด */
-  if (kind === 'over' && isAdmin()) {
+     แสดงทุกกลุ่มที่ยิงไปแล้วจริง (act > 0) ไม่ใช่แค่กลุ่ม "เกิน" — ของที่ยอดตรงพอดี
+     ก็ยิงเกินมาแล้วแก้ผิดตัวได้เหมือนกัน ที่ act = 0 ไม่มีอะไรให้เอาออก
+     เป็นของ staff (admin + counter) เพราะการปรับยอดลงคือจุดที่ทุจริตได้ง่ายที่สุด */
+  if (r.act > 0 && isStaff()) {
     var act = document.createElement('button');
     act.type = 'button';
     act.className = 'btn grey block sm';
@@ -6442,27 +6446,30 @@ function sumCardRow(r, kind) {
     act.textContent = '➖ เอาออก 1 ชิ้น';
     act.disabled = !canScan();
     if (act.disabled) act.title = blockedMessage();
-    act.onclick = function () { removeOverScan(r); };
+    act.onclick = function () { removeOverScan(r, kind); };
     row.appendChild(act);
   }
   return row;
 }
 
 /* เอาของที่ยิงเกินออกทีละชิ้น — เขียนเป็นแถวใหม่ delta -1 ไม่ได้ลบแถวเดิม
-   ตามกฎบ้าน "ห้ามลบยอดที่นับไปแล้ว" ประวัติจึงยังตรวจย้อนหลังได้ว่าใครเอาออกเมื่อไหร่ */
-function removeOverScan(r) {
-  if (!isAdmin()) { toast(roleBlockMessage('เอาของออกจากสรุปไม่ได้'), true); return; }
+   ตามกฎบ้าน "ห้ามลบยอดที่นับไปแล้ว" ประวัติจึงยังตรวจย้อนหลังได้ว่าใครเอาออกเมื่อไหร่
+   kind = กลุ่มที่กดมา ต้องเปิดกลุ่มเดิมกลับ ไม่ใช่เด้งไปกลุ่ม "เกิน" เสมอ
+   ของที่ยอดลดจนเปลี่ยนกลุ่ม (ตรง → ขาด) จะหายจากลิสต์เดิมเอง ซึ่งถูกแล้ว */
+function removeOverScan(r, kind) {
+  if (!isStaff()) { toast(roleBlockMessage('เอาของออกจากสรุปไม่ได้'), true); return; }
   if (!canScan()) { toast(blockedMessage() + ' — เอาออกไม่ได้', true); return; }
 
   writeScan(r.key, -1, 'scan', 'เอาออกจากสรุป (ยิงเกิน)');
   toast('เอา ' + (r.code || r.key) + ' ออก 1 ชิ้นแล้ว — บันทึกเป็นประวัติไว้ ไม่ได้ลบยอดเดิม');
   renderSummary();
-  $('modalOk').click();       // ปิดกล่องเดิม...
-  openSumCard('over');        // ...แล้วเปิดใหม่ให้เห็นตัวเลขที่เพิ่งเปลี่ยน
+  if (state.page === 'scan') renderScanTotals();   // การ์ดสดบนหน้ายิงต้องตามด้วย
+  $('modalOk').click();                            // ปิดกล่องเดิม...
+  openSumCard(kind || 'over');                     // ...แล้วเปิดกลุ่มเดิมใหม่
 }
 
 function openSumCard(kind) {
-  if (!isAdmin()) { toast(roleBlockMessage('ดูรายละเอียดผลต่างไม่ได้'), true); return Promise.resolve(); }
+  if (!isStaff()) { toast(roleBlockMessage('ดูรายละเอียดผลต่างไม่ได้'), true); return Promise.resolve(); }
   var spec = SUM_CARD_SPEC[kind];
   var rows = sumCardRows(summaryData(), kind);
   var money = sumCardValue(rows);
@@ -6481,15 +6488,17 @@ function openSumCard(kind) {
 
   var msg = fmtNum(rows.length) + ' รายการ' +
     (kind === 'match' ? '' : ' · มูลค่าผลต่างรวม ' + signedMoney(money));
-  if (kind === 'over' && rows.length && isAdmin()) {
+  /* บอกวิธีใช้ปุ่มเมื่อมีปุ่มให้กดจริง — ปุ่มขึ้นทุกกลุ่มที่ยิงไปแล้ว ไม่ใช่แค่กลุ่ม "เกิน" */
+  if (isStaff() && rows.some(function (r) { return r.act > 0; })) {
     msg += '\nยิงเกินโดยไม่ตั้งใจ กด "เอาออก 1 ชิ้น" ได้ — ระบบบันทึกเป็นประวัติ ไม่ได้ลบยอดเดิม';
   }
   return ask(spec.title, msg, 'ปิด', { hideCancel: true, detail: box });
 }
 
-/* ตัวเลขผลต่างคือเครื่องมือจับทุจริต ถ้าคนนับเห็นว่าตัวไหนขาดอยู่เท่าไหร่
-   ก็ยิงเพิ่มให้ยอดตรงได้ก่อนหัวหน้ามาตรวจ จึงเปิดให้เฉพาะ admin
-   เด็กหน้าร้านเหลือแค่ผลงานตัวเอง (ยิงไปกี่ชิ้น กี่ SKU) ซึ่งไม่บอกว่าขาดหรือเกิน */
+/* ตัวเลขผลต่างคือเครื่องมือจับทุจริต ถ้าคนยิงเห็นว่าตัวไหนขาดอยู่เท่าไหร่
+   ก็ยิงเพิ่มให้ยอดตรงได้ก่อนหัวหน้ามาตรวจ จึงเปิดให้เฉพาะ admin กับ counter (isStaff)
+   ซึ่งเป็นคนที่รับผิดชอบผลการนับอยู่แล้ว
+   scanner (เด็กหน้าร้าน) เหลือแค่ผลงานตัวเอง (ยิงไปกี่ชิ้น กี่ SKU) ซึ่งไม่บอกว่าขาดหรือเกิน */
 /* ทุกตัวในลิสต์นี้ต้องมี style="display:none" ติดมาใน HTML ตั้งแต่แรกด้วย
    ฟังก์ชันข้างล่างเป็นคน "เปิด" ให้ admin ไม่ใช่คน "ซ่อน" จาก counter
    ถ้าปล่อยให้เริ่มด้วยการโชว์ ช่วงก่อน renderSummary ทำงานคนนับจะเห็นตัวเลขผลต่างแวบหนึ่ง */
@@ -6497,28 +6506,28 @@ var SUMMARY_ADMIN_ONLY = ['sumCards', 'sumTableWrap', 'costNote', 'foreignCard',
                           'unknownCard', 'statusCard', 'manualCard', 'btnExport',
                           'priceFilters'];
 
-/* เปิดให้ admin / คงซ่อนสำหรับคนอื่น — คืนค่าว่าเป็น admin ไหม ให้คนเรียกใช้ต่อ
+/* เปิดให้ staff (admin + counter) / คงซ่อนสำหรับคนอื่น — คืนค่าว่าเป็น staff ไหม
    ใช้ร่วมกันทั้งหน้าสรุปและหน้ายิง กติกาการซ่อนจะได้ไม่แตกเป็นสองชุด */
-function applyAdminOnly(ids) {
-  var admin = isAdmin();
+function applyStaffOnly(ids) {
+  var staff = isStaff();
   ids.forEach(function (id) {
     var el = document.getElementById(id);
-    if (el) el.style.display = admin ? '' : 'none';
+    if (el) el.style.display = staff ? '' : 'none';
   });
-  return admin;
+  return staff;
 }
 
 function applySummaryPermissions() {
-  var admin = applyAdminOnly(SUMMARY_ADMIN_ONLY);
-  $('btnExport').disabled = !admin;
+  var staff = applyStaffOnly(SUMMARY_ADMIN_ONLY);
+  $('btnExport').disabled = !staff;
 
   var box = $('myProgress');
-  box.style.display = admin ? 'none' : '';
-  if (admin) return;
+  box.style.display = staff ? 'none' : '';
+  if (staff) return;
   var mine = scannerStats().filter(function (s) { return s.user === state.counter; })[0];
   box.textContent = 'คุณยิงไปแล้ว ' + fmtNum(mine ? mine.pieces : 0) + ' ชิ้น / ' +
     fmtNum(mine ? mine.skus : 0) + ' SKU · ' +
-    'ตัวเลขผลต่างของรอบนี้เปิดให้เฉพาะผู้ดูแลระบบ';
+    'ตัวเลขผลต่างของรอบนี้เปิดให้เฉพาะผู้ดูแลระบบและผู้นับสต๊อก';
 }
 
 function renderSummary() {
@@ -8673,8 +8682,14 @@ function jobActions() {
   if (isAdmin() && st === 'closed') {
     acts.push({ id: 'reopen', label: '🔓 เปิดรอบนับกลับมาแก้', cls: '', run: reopenRound });
   }
-  acts.push({ id: 'summary', label: '📊 ไปหน้าสรุปผล', cls: 'grey', run: function () { showPage('summary'); } });
-  acts.push({ id: 'doc', label: '📄 ไปหน้าเอกสาร', cls: 'grey', run: function () { showPage('doc'); } });
+  /* สองปุ่มนี้พาไปหน้าอื่น ต้องเช็คสิทธิ์หน้านั้นก่อน ไม่งั้น scanner กดแล้วเด้งกลับเปล่า ๆ
+     ซึ่งขัดกับกติกาของเมนูนี้ที่ว่า "โชว์เฉพาะปุ่มที่ทำได้จริง" */
+  if (canSeePage('summary')) {
+    acts.push({ id: 'summary', label: '📊 ไปหน้าสรุปผล', cls: 'grey', run: function () { showPage('summary'); } });
+  }
+  if (canSeePage('doc')) {
+    acts.push({ id: 'doc', label: '📄 ไปหน้าเอกสาร', cls: 'grey', run: function () { showPage('doc'); } });
+  }
   if (isAdmin()) {
     acts.push({ id: 'delete', label: '🗑 ลบ Job นี้', cls: 'grey', run: deleteJob });
   }
@@ -8735,7 +8750,19 @@ function renderReopenBanner() {
   host.appendChild(box);
 }
 
+/* scanner เข้าหน้า Job ได้เพื่อ "เลือกงานที่จะยิง" อย่างเดียว
+   ทุกอย่างที่เป็นการจัดการรอบหรือดึงตัวเลขออกไปเป็นไฟล์ ต้องไม่โผล่ให้เห็น
+   (ปุ่มส่งตรวจ/ปิด/เปิด/ลบ Job อยู่ใน jobActions ซึ่งกรองด้วย isStaff อยู่แล้ว) */
+function applyJobsPermissions() {
+  var staff = isStaff();
+  var tabs = $('jobViewTabs');
+  if (tabs) tabs.style.display = staff ? '' : 'none';
+  /* กันค้างอยู่แท็บ "สร้าง Job" ตอนสลับบัญชี — ไม่มีแท็บให้กดกลับแล้ว */
+  if (!staff) setJobView('list');
+}
+
 function renderJobs() {
+  applyJobsPermissions();
   renderExportBar();
   document.querySelectorAll('[data-jstatus]').forEach(function (b) {
     b.className = 'btn sm ' + (b.getAttribute('data-jstatus') === state.jobFilter ? '' : 'grey');
@@ -8956,38 +8983,43 @@ function renderJobCard(id, list) {
     };
     acts.appendChild(mb);
 
-    /* ข้อ C1 — ดาวน์โหลด Excel ของ Job ใบนี้ได้จากการ์ดเลย ไม่ต้องเปิดเข้าไปก่อน */
-    var xb = document.createElement('button');
-    xb.className = 'btn sm grey';
-    xb.style.flex = '0 0 auto';
-    xb.setAttribute('data-cardact', 'excel');
-    xb.textContent = '⬇ Excel';
-    xb.onclick = function (e) {
-      e.stopPropagation();
-      exportJobsExcel([id]);
-    };
-    acts.appendChild(xb);
+    /* ข้อ C1 — ดาวน์โหลด Excel ของ Job ใบนี้ได้จากการ์ดเลย ไม่ต้องเปิดเข้าไปก่อน
+       ไฟล์มีผลต่างรายตัวทั้งใบ scanner จึงไม่ได้ปุ่มนี้ */
+    if (isStaff()) {
+      var xb = document.createElement('button');
+      xb.className = 'btn sm grey';
+      xb.style.flex = '0 0 auto';
+      xb.setAttribute('data-cardact', 'excel');
+      xb.textContent = '⬇ Excel';
+      xb.onclick = function (e) {
+        e.stopPropagation();
+        exportJobsExcel([id]);
+      };
+      acts.appendChild(xb);
+    }
     card.appendChild(acts);
 
-    /* ข้อ C2 — ติ๊กเลือกหลายใบแล้วรวมเป็นไฟล์เดียว */
-    var pick = document.createElement('label');
-    pick.style.cssText = 'display:flex;align-items:center;gap:8px;margin-top:8px;font-size:13px;color:var(--muted)';
-    var cb = document.createElement('input');
-    cb.type = 'checkbox';
-    cb.style.cssText = 'width:20px;height:20px;min-height:0;flex:0 0 auto';
-    cb.setAttribute('data-jobpick', id);
-    cb.checked = state.exportPick.indexOf(id) >= 0;
-    cb.onclick = function (e) { e.stopPropagation(); };
-    cb.onchange = function () {
-      var i = state.exportPick.indexOf(id);
-      if (cb.checked && i < 0) state.exportPick.push(id);
-      if (!cb.checked && i >= 0) state.exportPick.splice(i, 1);
-      renderExportBar();
-    };
-    pick.appendChild(cb);
-    pick.appendChild(document.createTextNode('เลือกใบนี้เพื่อรวมดาวน์โหลด'));
-    pick.onclick = function (e) { e.stopPropagation(); };
-    card.appendChild(pick);
+    /* ข้อ C2 — ติ๊กเลือกหลายใบแล้วรวมเป็นไฟล์เดียว (staff เท่านั้น ด้วยเหตุผลเดียวกัน) */
+    if (isStaff()) {
+      var pick = document.createElement('label');
+      pick.style.cssText = 'display:flex;align-items:center;gap:8px;margin-top:8px;font-size:13px;color:var(--muted)';
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.style.cssText = 'width:20px;height:20px;min-height:0;flex:0 0 auto';
+      cb.setAttribute('data-jobpick', id);
+      cb.checked = state.exportPick.indexOf(id) >= 0;
+      cb.onclick = function (e) { e.stopPropagation(); };
+      cb.onchange = function () {
+        var i = state.exportPick.indexOf(id);
+        if (cb.checked && i < 0) state.exportPick.push(id);
+        if (!cb.checked && i >= 0) state.exportPick.splice(i, 1);
+        renderExportBar();
+      };
+      pick.appendChild(cb);
+      pick.appendChild(document.createTextNode('เลือกใบนี้เพื่อรวมดาวน์โหลด'));
+      pick.onclick = function (e) { e.stopPropagation(); };
+      card.appendChild(pick);
+    }
 
     card.onclick = function () { openJob(id); };
     list.appendChild(card);
@@ -9009,7 +9041,8 @@ function renderJobCard(id, list) {
 
 function openJob(id) {
   selectRound(id);
-  showPage('start');
+  /* scanner ไม่มีหน้า "ตั้งค่า" ให้เข้า — เลือก Job แล้วพาไปหน้ายิงเลย */
+  showPage(isScannerOnly() ? 'scan' : 'start');
 }
 
 function renderStoreTypePicker() {
@@ -9221,13 +9254,16 @@ function sessionReady() { return startBlockers().length === 0; }
    กดแล้วขึ้นว่า "ไม่มีสิทธิ์" คือให้ความหวังแล้วปฏิเสธ ซ่อนไปเลยตรงกว่า
    ตัวจริงยังบังคับที่ Database Rules อีกชั้น ไม่ได้พึ่งการซ่อนอย่างเดียว */
 var PAGE_ROLES = {
-  jobs:    function () { return !isScannerOnly(); },
+  /* scanner เข้าหน้า Job ได้ด้วย — ต้องเลือกเองว่าจะยิงเข้างานไหน
+     แต่เห็นแค่ลิสต์ ปุ่มจัดการรอบทั้งหมดถูกซ่อน (applyJobsPermissions) */
+  jobs:    function () { return true; },
   start:   function () { return !isScannerOnly(); },
   scan:    function () { return canScanRole(); },
   master:  function () { return !isScannerOnly(); },
   summary: function () { return !isScannerOnly(); },
-  /* เอกสารมีตัวเลขผลต่างรายตัวทั้งใบ ปิดให้เหลือ admin เท่านั้น */
-  doc:     function () { return isAdmin(); }
+  /* เอกสารมีตัวเลขผลต่างรายตัวทั้งใบ — admin กับ counter ออกเอกสารได้ตามหน้าที่
+     scanner ไม่ได้ เพราะเห็นผลต่างไม่ได้อยู่แล้ว */
+  doc:     function () { return isStaff(); }
 };
 
 function canSeePage(name) {
@@ -9258,9 +9294,9 @@ function setJobView(v) {
 
 function showPage(name) {
   /* หน้าเอกสารต้องบอกเหตุผลตรง ๆ ไม่ใช่เด้งไปหน้าอื่นเงียบ ๆ แล้วคนงงว่าปุ่มเสีย */
-  if (name === 'doc' && !isAdmin()) {
-    toast('หน้าเอกสารเปิดให้เฉพาะผู้ดูแลระบบ', true);
-    name = canSeePage('summary') ? 'summary' : 'scan';
+  if (name === 'doc' && !isStaff()) {
+    toast('หน้าเอกสารเปิดให้เฉพาะผู้ดูแลระบบและผู้นับสต๊อก', true);
+    name = canSeePage('summary') ? 'summary' : (canScanRole() ? 'scan' : 'jobs');
   }
   /* กันเข้าหน้าที่ไม่มีสิทธิ์ผ่านทางอื่น เช่น เรียกฟังก์ชันตรง ๆ หรือกลับมาจากหน้าเก่า */
   if (!canSeePage(name)) name = canScanRole() ? 'scan' : 'summary';
@@ -9287,7 +9323,7 @@ function refreshNav() {
   $('navStart').disabled = !state.roundId;
   $('navScan').disabled = !ready;
   $('navSummary').disabled = !state.roundId;
-  $('navDoc').disabled = !state.roundId || !isAdmin();   // เอกสารเป็นของ admin เท่านั้น
+  $('navDoc').disabled = !state.roundId || !isStaff();   // เอกสารเป็นของ admin กับ counter
   renderJobBar();
 
   /* ล็อกหน้ายิงตามสถานะ Job — ปุ่มต้องกดไม่ได้ ไม่ใช่แค่แจ้งเตือนทีหลัง */
@@ -9473,7 +9509,8 @@ function loadJobsRaw(ids) {
 
 function renderExportBar() {
   var bar = $('exportBar');
-  var n = state.exportPick.length;
+  /* ไฟล์รวมหลาย Job มีตัวเลขผลต่างทุกใบ — scanner ต้องไม่มีทางกดได้ */
+  var n = isStaff() ? state.exportPick.length : 0;
   bar.style.display = n ? 'block' : 'none';
   $('exportPickInfo').textContent = n
     ? ('เลือกไว้ ' + fmtNum(n) + ' Job — ไฟล์เดียวจะมีชีทสรุปรวมบนสุด แล้วตามด้วยชีทของแต่ละ Job')
@@ -11485,8 +11522,8 @@ function startApp() {
   renderJobs();
   renderBranchPicker();
   applyNavVisibility();
-  /* scanner เห็นแค่หน้ายิง เปิดแอปมาต้องพาไปหน้านั้นเลย ไม่ใช่หน้ารายการ Job ที่เขาไม่เห็น */
-  if (isScannerOnly()) showPage('scan');
+  /* scanner เปิดแอปมาที่หน้ารายการ Job เหมือนคนอื่น — ต้องเลือกเองว่าจะยิงเข้างานไหน
+     (เดิมบังคับพาไปหน้ายิงเลย เพราะยังเข้าหน้า Job ไม่ได้) */
 }
 
 init();
