@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.3.6">
+<meta name="version" content="2.3.7">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.3.6</title>
+<title>ISRD Stocktake v2.3.7</title>
 
 <style>
 :root{
@@ -498,6 +498,9 @@ table.grid td.neg{color:var(--short);font-weight:700}
    ไม่ใส่ text-overflow:ellipsis ตั้งใจ — ถ้าวันหนึ่งมีรหัสยาวกว่าช่อง ต้องเห็นว่ามันล้น
    ไม่ใช่โดนตัดหายเงียบ ๆ จนไปอ่านผิดตัวกันทั้งทีม */
 .doc table.items td.sku{white-space:nowrap;font-variant-numeric:tabular-nums}
+/* คอลัมน์ลำดับ (#) ต้องอยู่บรรทัดเดียวเสมอ เลขสามหลักเคยถูกตัดเป็น "12" กับ "3" คนละบรรทัด
+   ทำให้แถวสูงไม่เท่ากันและไล่ลำดับตอนตรวจเอกสารผิด */
+.doc table.items td:first-child,.doc table.items th:first-child{white-space:nowrap}
 /* ช่องรูปบีบระยะขอบเหลือ 2px แบบเดียวกับเอกสารของ dashboard
    ระยะขอบ 4px สองด้านบวกกับกล่อง 30px รวมแล้วเกินความกว้างคอลัมน์ รูปจะเลยเส้นออกไป */
 .doc table.items td.imgcell{padding:2px}
@@ -524,6 +527,14 @@ table.grid td.neg{color:var(--short);font-weight:700}
 .doc .pos{color:#15803d;font-weight:700}
 .doc .neg{color:#b91c1c;font-weight:700}
 .doc .tbl-title{font-weight:800;font-size:10.5pt;margin:14px 0 6px}
+/* หัวข้อกลุ่มใหญ่ Product / Not Product — ต้องชนะ .tbl-title ด้วยตาเปล่า
+   ไม่งั้นคนอ่านแยกไม่ออกว่าตาราง (ขาด) ที่เห็นอยู่เป็นของกลุ่มไหน */
+.doc .doc-group-title{
+  font-weight:800;font-size:13pt;margin:22px 0 2px;
+  border-bottom:1.5pt solid #334155;padding-bottom:3px;
+}
+/* หัวข้อกลุ่มใหญ่ต้องไม่ค้างท้ายหน้ากระดาษโดยไม่มีตารางตามมา */
+@media print{.doc .doc-group-title{break-after:avoid;page-break-after:avoid}}
 /* ปิดสวิตช์ "พิมพ์พร้อมรูปสินค้า" — ซ่อนกรอบรูปในเอกสาร ไม่ต้องโหลดอะไรเลย */
 body.no-doc-images .doc .imgbox{display:none}
 /* กล่องรูปในตารางเอกสาร — ขนาดคงที่ทุกแถว จัดกึ่งกลาง เหมือนเอกสารของ dashboard
@@ -1384,7 +1395,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.3.6';
+var APP_VERSION = '2.3.7';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -6701,6 +6712,30 @@ var DOC_ITEM_HEAD = ['#', 'รูป', 'รหัสสินค้า', 'ชื
   'ยอดระบบ', 'ยิงจริง', 'ผลต่าง', 'ราคา/ตัว', 'มูลค่าระบบ', 'มูลค่าจริง',
   'ผลต่างมูลค่า', 'Reason'];
 
+/* กลุ่มใหญ่ของรายการสินค้าในเอกสาร — r.type มาจาก summaryData เป็น
+   'product' หรือ 'notProduct' อยู่แล้ว (bucket เดียวกับที่ Dashboard ใช้แบ่ง) */
+var DOC_ITEM_GROUPS = [
+  { title: '📦 Product', pick: function (r) { return r.type !== 'notProduct'; } },
+  { title: '🏷 Not Product', pick: function (r) { return r.type === 'notProduct'; } }
+];
+
+/* ตารางย่อยในแต่ละกลุ่มใหญ่ — เรียงตามความเร่งด่วนของคนตรวจ: ขาดก่อน แล้วเกิน แล้วตรง */
+var DOC_ITEM_SPLITS = [
+  { label: 'ขาด', pick: function (r) { return r.diff < 0; } },
+  { label: 'เกิน', pick: function (r) { return r.diff > 0; } },
+  { label: 'ตรง', pick: function (r) { return r.diff === 0; } }
+];
+
+/* หัวข้อกลุ่มใหญ่ ต้องเด่นกว่าหัวตารางย่อย (.tbl-title) ไม่งั้นอ่านไม่ออกว่าอันไหนคุมอันไหน
+   ตัวใหญ่กว่า + มีเส้นคาดใต้หัวข้อ + เว้นบนเยอะกว่า ให้เห็นการแบ่งกลุ่มตั้งแต่เหลือบมอง */
+function docGroupHeading(title, count) {
+  var h = document.createElement('div');
+  h.className = 'doc-group-title';
+  h.setAttribute('data-doc-group', title);
+  h.textContent = title + ' — ' + fmtNum(count) + ' รายการ';
+  return h;
+}
+
 /* opts.sysLabel / opts.sysValueLabel — เปลี่ยนชื่อคอลัมน์ฝั่ง "ยอดระบบ" ได้
    ตารางโอนกลับใช้ยอดจากใบโอนแทนยอดระบบ ที่เหลือเป็นแถวมาตรฐานเดียวกันหมด
    opts.note — คำเตือนใต้หัวตาราง สำหรับตารางที่ตัวเลขต้องอธิบายก่อนอ่าน */
@@ -6739,8 +6774,10 @@ function buildDocItemTable(title, rows, opts) {
      ราคา มูลค่าระบบ มูลค่าจริง ผลต่างมูลค่า Reason — รวม 100% พอดี
      รหัสสินค้าได้ 17% ≈ 32mm บนกระดาษ 190mm พอสำหรับรหัสยาวสุดในไฟล์จริง 18 ตัวอักษร
      (NTTW0008WH00FF-2F1 และอีก 77 ตัวที่ยาวเท่ากัน) ที่ 8pt โดยไม่ตัดบรรทัด
-     ที่ว่างจากการตัด Status กับ ยอดรอโอน ยกไปให้ชื่อสินค้าเป็นหลัก */
-  var widths = [2.5, 5, 17, 15, 6.5, 5.5, 5.5, 5.5, 7, 8, 8, 8.5, 6];
+     ที่ว่างจากการตัด Status กับ ยอดรอโอน ยกไปให้ชื่อสินค้าเป็นหลัก
+     คอลัมน์ # ต้องได้ 4% — ที่ 2.5% เลขสามหลักตัดบรรทัดในตารางที่มีหลายร้อยแถว
+     ส่วนที่เพิ่มมาหักจากชื่อสินค้า (15 → 13.5) รวมยังเป็น 100% พอดีเท่าเดิม */
+  var widths = [4, 5, 17, 13.5, 6.5, 5.5, 5.5, 5.5, 7, 8, 8, 8.5, 6];
   var colgroup = document.createElement('colgroup');
   widths.forEach(function (w) {
     var col = document.createElement('col');
@@ -7127,10 +7164,6 @@ function renderDoc() {
   renderDocDashboard(data);
   renderDonuts(data);
 
-  var short = data.rows.filter(function (r) { return r.diff < 0; });
-  var over = data.rows.filter(function (r) { return r.diff > 0; });
-  var match = data.rows.filter(function (r) { return r.diff === 0; });
-
   var host = $('docItemTables');
   host.innerHTML = '';
 
@@ -7169,11 +7202,40 @@ function renderDoc() {
     var jt = buildCycleJobTable(state.cycleData.raw.perJob);
     if (jt) host.appendChild(jt);
   }
-  host.appendChild(buildDocItemTable('รายการสินค้า (ขาด)', short));
-  host.appendChild(buildDocItemTable('รายการสินค้า (เกิน)', over));
   /* ข้อ A4 — ของมาผิดสาขา แยกตารางจากของที่ไม่รู้จักเลย
-     ไม่มีของมาผิดสาขา = ไม่ต้องมีตารางนี้ในเอกสารเลย */
+     คำนวณไว้ตรงนี้ก่อน เพราะกลุ่มใหญ่ข้างล่างต้องรู้ว่ารหัสไหนมีตารางของตัวเองแล้ว
+     ตัวตารางยังวางท้ายเอกสารเหมือนเดิม */
   var fRows = foreignRows(data);
+
+  /* แยกรายการสินค้าเป็นสองกลุ่มใหญ่ก่อน แล้วค่อยแยก ขาด/เกิน/ตรง ในแต่ละกลุ่ม
+     คนตรวจเอกสารอ่านคนละแบบ: ของขายจริงต้องไล่หาสาเหตุผลต่างทีละตัว
+     ส่วน Not Product (ถุง กล่อง อุปกรณ์) ดูรวม ๆ พอ ปนกันแล้วหาไม่เจอ
+
+     เอาเฉพาะของสาขานี้ — ของที่ไม่ inRound คือ "ไม่ใช่ของสาขานี้" กับ "ไม่มีในระบบ"
+     ซึ่งมีตารางของตัวเองท้ายเอกสารแล้ว ก่อนหน้านี้สามตารางนี้ไม่ได้กรอง inRound
+     ของพวกนั้นจึงโผล่ซ้ำในตาราง (เกิน) ด้วย
+
+     แต่กรอง inRound เฉย ๆ ไม่พอ: ของสาขาอื่นที่ยิงแล้วปรับยอดกลับเป็น 0
+     ไม่เข้าตาราง foreign (foreignRows ตัด act===0 ทิ้ง) และไม่เข้าตาราง unknown
+     ถ้าตัดออกด้วย inRound ตรง ๆ แถวพวกนี้จะหายจากเอกสารไปเงียบ ๆ
+     จึงเช็คจากตารางท้ายเอกสารจริง ๆ ว่ารหัสไหนถูกแสดงไปแล้ว ที่เหลือเก็บเข้ากลุ่มใหญ่หมด */
+  var shownElsewhere = {};
+  fRows.forEach(function (r) { shownElsewhere[r.key] = 1; });
+  Object.keys(state.unknownKeys).forEach(function (k) { shownElsewhere[k] = 1; });
+  var mine = data.rows.filter(function (r) { return r.inRound || !shownElsewhere[r.key]; });
+
+  DOC_ITEM_GROUPS.forEach(function (g) {
+    var rows = mine.filter(g.pick);
+    if (!rows.length) return;                       // กลุ่มใหญ่ไม่มีของ = ไม่ต้องมีหัวข้อ
+    host.appendChild(docGroupHeading(g.title, rows.length));
+    DOC_ITEM_SPLITS.forEach(function (s) {
+      var part = rows.filter(s.pick);
+      if (!part.length) return;                     // ตารางย่อยว่าง = ข้าม ไม่ต้องขึ้นหัวเปล่า
+      host.appendChild(buildDocItemTable('รายการสินค้า (' + s.label + ')', part));
+    });
+  });
+
+  /* ไม่มีของมาผิดสาขา = ไม่ต้องมีตารางนี้ในเอกสารเลย */
   if (fRows.length) {
     host.appendChild(buildDocItemTable('รายการที่พบแต่ไม่ใช่ของสาขานี้', fRows, {
       note: 'สินค้าเหล่านี้มีอยู่ใน Master ของบริษัท แต่ไม่อยู่ในไฟล์ยอดของสาขานี้ ' +
@@ -7183,7 +7245,6 @@ function renderDoc() {
   /* วางต่อจากตารางสินค้าเกิน เพราะเป็นของที่เจอเกินมาเหมือนกัน */
   var unknownTable = buildUnknownDocTable();
   if (unknownTable) host.appendChild(unknownTable);
-  host.appendChild(buildDocItemTable('รายการสินค้า (ตรง)', match));
 
   renderDocSigns();
 }
