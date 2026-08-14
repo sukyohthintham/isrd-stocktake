@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.4.0">
+<meta name="version" content="2.4.1">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.4.0</title>
+<title>ISRD Stocktake v2.4.1</title>
 
 <style>
 :root{
@@ -1187,8 +1187,13 @@ body.no-doc-images .doc .imgbox{display:none}
     <div id="statusLogBox" style="margin-top:14px"></div>
   </div>
 
-  <!-- คุมเฉพาะตัวเลขมูลค่า ซึ่งเป็นของ admin — ไม่ใช่ admin ก็ไม่ต้องมีปุ่มนี้ให้กดเล่น -->
-  <div class="filters" id="priceFilters">
+  <!-- คุมเฉพาะตัวเลขมูลค่า ซึ่งเป็นของ admin — ไม่ใช่ admin ก็ไม่ต้องมีปุ่มนี้ให้กดเล่น
+
+       ทุก element ในลิสต์ SUMMARY_ADMIN_ONLY เริ่มต้นซ่อนไว้ใน HTML เลย
+       แล้วให้ applySummaryPermissions เป็นคนเปิดให้ admin ทีหลัง
+       ถ้าเริ่มด้วยการโชว์แล้วค่อยซ่อนตอน render เน็ตช้า ๆ คนนับจะเห็นตัวเลขผลต่างแวบหนึ่ง
+       ซึ่งเป็นสิ่งเดียวที่ทั้งเรื่องนี้ตั้งใจไม่ให้เห็น -->
+  <div class="filters" id="priceFilters" style="display:none">
     <button class="btn sm" data-price="sellPrice">ราคาขาย</button>
     <button class="btn sm grey" data-price="costPrice">ราคาต้นทุน</button>
   </div>
@@ -1199,7 +1204,7 @@ body.no-doc-images .doc .imgbox{display:none}
   </div>
 
   <!-- กดการ์ดเพื่อไล่ดูรายตัวว่า SKU ไหนขาดไหนเกิน — เดิมต้องโหลด Excel ออกไปดูถึงจะรู้ -->
-  <div class="stats" id="sumCards">
+  <div class="stats" id="sumCards" style="display:none">
     <button type="button" class="stat tap" id="cardMatch" data-sumcard="match">
       <div class="s-num" id="cardMatchNum">0</div>
       <div class="s-lab">✅ ตรง (SKU)</div>
@@ -1217,7 +1222,7 @@ body.no-doc-images .doc .imgbox{display:none}
     </button>
   </div>
 
-  <div class="tablewrap" id="sumTableWrap">
+  <div class="tablewrap" id="sumTableWrap" style="display:none">
     <table class="grid" id="sumTable">
       <thead><tr>
         <th>กลุ่ม</th><th>จำนวนระบบ</th><th>จำนวนจริง</th><th>ผลต่าง (ชิ้น)</th>
@@ -1228,15 +1233,15 @@ body.no-doc-images .doc .imgbox{display:none}
       <tbody id="sumBody"></tbody>
     </table>
   </div>
-  <div class="muted" id="costNote" style="margin-bottom:14px"></div>
+  <div class="muted" id="costNote" style="margin-bottom:14px;display:none"></div>
 
-  <div class="card" id="foreignCard">
+  <div class="card" id="foreignCard" style="display:none">
     <h3>ไม่ใช่ของสาขานี้ <span class="chip" id="foreignChip">0</span></h3>
     <div class="muted" id="foreignHint" style="margin-bottom:10px"></div>
     <div class="clist" id="foreignList"></div>
   </div>
 
-  <div class="card" id="unknownCard">
+  <div class="card" id="unknownCard" style="display:none">
     <h3>บาร์โค้ดที่ไม่มีในระบบ <span class="chip" id="unknownChip">0</span></h3>
     <div class="muted" id="unknownHint" style="margin-bottom:10px"></div>
     <div class="clist" id="unknownList"></div>
@@ -1248,18 +1253,18 @@ body.no-doc-images .doc .imgbox{display:none}
     <div class="clist" id="scannerList"></div>
   </div>
 
-  <div class="card" id="statusCard">
+  <div class="card" id="statusCard" style="display:none">
     <h3>สินค้าสถานะพิเศษที่ยิงเจอ <span class="chip" id="statusChip">0</span></h3>
     <div class="muted" id="statusHint" style="margin-bottom:10px"></div>
     <div class="clist" id="statusList"></div>
   </div>
 
-  <div class="card" id="manualCard">
+  <div class="card" id="manualCard" style="display:none">
     <h3>ยอดที่กรอกมือ <span class="chip" id="manualChip">0</span></h3>
     <div class="clist" id="manualList"></div>
   </div>
 
-  <button class="btn big block" id="btnExport">⬇ ดาวน์โหลด Excel (ฉบับเต็ม)</button>
+  <button class="btn big block" id="btnExport" style="display:none">⬇ ดาวน์โหลด Excel (ฉบับเต็ม)</button>
  </div>
 </section>
 
@@ -1439,7 +1444,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.4.0';
+var APP_VERSION = '2.4.1';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -6405,6 +6410,9 @@ function openSumCard(kind) {
 /* ตัวเลขผลต่างคือเครื่องมือจับทุจริต ถ้าคนนับเห็นว่าตัวไหนขาดอยู่เท่าไหร่
    ก็ยิงเพิ่มให้ยอดตรงได้ก่อนหัวหน้ามาตรวจ จึงเปิดให้เฉพาะ admin
    เด็กหน้าร้านเหลือแค่ผลงานตัวเอง (ยิงไปกี่ชิ้น กี่ SKU) ซึ่งไม่บอกว่าขาดหรือเกิน */
+/* ทุกตัวในลิสต์นี้ต้องมี style="display:none" ติดมาใน HTML ตั้งแต่แรกด้วย
+   ฟังก์ชันข้างล่างเป็นคน "เปิด" ให้ admin ไม่ใช่คน "ซ่อน" จาก counter
+   ถ้าปล่อยให้เริ่มด้วยการโชว์ ช่วงก่อน renderSummary ทำงานคนนับจะเห็นตัวเลขผลต่างแวบหนึ่ง */
 var SUMMARY_ADMIN_ONLY = ['sumCards', 'sumTableWrap', 'costNote', 'foreignCard',
                           'unknownCard', 'statusCard', 'manualCard', 'btnExport',
                           'priceFilters'];
