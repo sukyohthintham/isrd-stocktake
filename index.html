@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.3.5">
+<meta name="version" content="2.3.6">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.3.5</title>
+<title>ISRD Stocktake v2.3.6</title>
 
 <style>
 :root{
@@ -1384,7 +1384,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.3.5';
+var APP_VERSION = '2.3.6';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -2955,8 +2955,12 @@ function templateTypeOf(product) {
   return (product && product.type === 'notProduct') ? 'notProduct' : 'product';
 }
 
-/* คืน { updates: {key: 'product'|'notProduct'}, stat } — ไม่เขียนฐานเอง คนเรียกตัดสินใจ
-   กติกาสำคัญ: ช่องประเภทว่าง = ข้าม ไม่ใช่ตีเป็น Product (กันพลิกหมื่นแถวโดยไม่ตั้งใจ) */
+/* คืน { updates: {key: type}, stat } — ไม่เขียนฐานเอง คนเรียกตัดสินใจ
+   กติกาสำคัญ: ช่องประเภทว่าง = ข้าม ไม่ใช่ตีเป็น Product (กันพลิกหมื่นแถวโดยไม่ตั้งใจ)
+
+   รหัสที่โผล่ในไฟล์ = คนดูแล้วยืนยันว่าประเภทถูกต้อง จึงเขียนแม้ค่าจะเท่าเดิม
+   เพื่อปั๊ม typeSource='manual' + needsReview=false ให้ (เคลียร์ออกจาก "รอตรวจสอบ")
+   ข้ามเฉพาะแถวที่ยืนยันไว้ครบแล้วจริง ๆ — manual + ไม่ค้างรอตรวจ + ค่าเท่าเดิม */
 function parseTypeFile(parsed) {
   var rows = (parsed && parsed.rows) || [];
   if (!rows.length) throw new Error('EMPTY_FILE');
@@ -2983,10 +2987,11 @@ function parseTypeFile(parsed) {
   while (lastReal > headerRow && !rowHasContent(rows[lastReal])) lastReal--;
 
   var updates = {};
+  var kind = {};                    // key -> 'changed' | 'confirmed' (นับตอนท้าย กันรหัสซ้ำนับสองรอบ)
   var stat = {
     rows: 0, updated: 0, noCode: 0, notFound: 0, notFoundCodes: [],
     blank: 0, invalid: 0, invalidValues: [], same: 0,
-    toNotProduct: 0, toProduct: 0
+    changed: 0, confirmed: 0, toNotProduct: 0, toProduct: 0, keptInactive: 0
   };
 
   for (var r = headerRow + 1; r <= lastReal; r++) {
@@ -3022,16 +3027,32 @@ function parseTypeFile(parsed) {
       continue;
     }
 
-    /* ค่าเดิมอยู่แล้วก็ไม่ต้องเขียน — อัปโหลด Template เดิมซ้ำจะได้ไม่ยิงฐานหมื่นห้าพันครั้งฟรี ๆ
+    var changed = (type !== templateTypeOf(product));
+    /* ยืนยันครบแล้วจริง ๆ ก็ไม่ต้องเขียน — อัปโหลดไฟล์เดิมซ้ำรอบสองจะได้ไม่ยิงฐานฟรี ๆ
        นับเฉพาะตัวที่ยังไม่เคยเจอในไฟล์นี้ ไม่งั้นรหัสซ้ำจะทำให้ยอดในรายงานเกินจำนวนแถวจริง */
-    if (type === templateTypeOf(product)) { if (!updates[key]) stat.same++; continue; }
+    if (!changed && product.typeSource === 'manual' && !product.needsReview) {
+      if (!updates[key]) stat.same++;
+      continue;
+    }
 
-    updates[key] = type;     // รหัสซ้ำในไฟล์เดียวกัน = แถวหลังชนะ
+    /* คนไม่ได้แก้ค่า = ยืนยันของที่เห็นอยู่บนไฟล์ ต้องตรึงประเภทที่ใช้อยู่จริงไว้ก่อนสลับเป็น manual
+       (กติกาเดียวกับ saveProductEdit) ของ "ปิดใช้งาน" ถูกเติมลงไฟล์ว่า Product เหมือนกัน
+       ถ้าเขียนตามค่าในช่องตรง ๆ การยืนยันเฉย ๆ จะพลิกของเลิกขายทั้งกองเป็น Product เงียบ ๆ
+       อยากกู้ของเลิกขายกลับมาเป็น Product ให้ใช้ปุ่มสลับประเภทในหน้า Master ทีละตัวเหมือนเดิม */
+    var pinned = isInactiveProduct(product) ? 'inactive' : (product.type || 'product');
+    updates[key] = changed ? type : pinned;     // รหัสซ้ำในไฟล์เดียวกัน = แถวหลังชนะ
+    kind[key] = changed ? 'changed' : 'confirmed';
   }
 
   /* นับจากจำนวนคีย์ ไม่ใช่จำนวนแถว — รหัสซ้ำในไฟล์ต้องนับเป็นสินค้าตัวเดียว */
   Object.keys(updates).forEach(function (k) {
-    if (updates[k] === 'notProduct') stat.toNotProduct++; else stat.toProduct++;
+    if (kind[k] === 'changed') {
+      stat.changed++;
+      if (updates[k] === 'notProduct') stat.toNotProduct++; else stat.toProduct++;
+    } else {
+      stat.confirmed++;
+      if (updates[k] === 'inactive') stat.keptInactive++;
+    }
   });
   stat.updated = Object.keys(updates).length;
   return { updates: updates, stat: stat };
@@ -7584,11 +7605,12 @@ function handleNoteImport(file) {
 }
 
 /* ---------- เปลี่ยนประเภทสินค้าจากไฟล์ ----------
-   ต่างจากไฟล์ Note ตรงที่ตัวนี้ตั้ง typeSource='manual' ให้ด้วย
-   ตั้งใจให้เป็นแบบนั้น: ประเภทที่คนกรอกมากับไฟล์คือค่าที่คนตัดสินใจเอง
-   ไฟล์ Zort รอบหน้าต้องไม่มาทับ (buildProductPatch เช็ค typeSource='manual')
-   ที่ปลอดภัยได้เพราะ parseTypeFile ข้ามแถวที่ค่าตรงกับที่ Template เติมมาให้แล้ว
-   ของ "ปิดใช้งาน" ที่ไม่ได้ถูกแก้จริง ๆ จึงไม่หลุดเข้ามาถึงตรงนี้ */
+   ต่างจากไฟล์ Note ตรงที่ตัวนี้ตั้ง typeSource='manual' + needsReview=false ให้ด้วย
+   ตั้งใจให้เป็นแบบนั้น: การที่รหัสอยู่ในไฟล์ที่อัปโหลด = คนดูแล้วยืนยันประเภท
+   ทั้งตัวที่แก้และตัวที่ปล่อยไว้เหมือนเดิม จึงเคลียร์ออกจาก "รอตรวจสอบ" ทั้งไฟล์
+   ไฟล์ Zort รอบหน้าจะไม่ทับอีก (buildProductPatch เช็ค typeSource='manual')
+   ที่ทำแบบนี้ได้ไม่พังเพราะ parseTypeFile ตรึงประเภทที่ใช้อยู่จริงให้ก่อน
+   ของ "ปิดใช้งาน" ที่คนไม่ได้แก้จริง ๆ จึงยังเป็น inactive ไม่ถูกยืนยันเป็น Product */
 function typeMissingColumnsHelp(missing) {
   ask('ไฟล์นี้ยังใช้ไม่ได้',
       'ไฟล์ที่อัปโหลดมาไม่มีคอลัมน์ ' + (missing || []).join(', ') + '\n\n' +
@@ -7614,32 +7636,37 @@ function handleTypeImport(file) {
     var keys = Object.keys(res.updates);
 
     if (!keys.length) {
-      var why = 'อ่านได้ ' + fmtNum(stat.rows) + ' แถว แต่ไม่มีแถวไหนที่ต้องเปลี่ยน\n\n' +
+      var why = 'อ่านได้ ' + fmtNum(stat.rows) + ' แถว แต่ไม่มีแถวไหนที่ต้องเขียน\n\n' +
         'ช่องประเภทว่าง ' + fmtNum(stat.blank) + ' แถว (ว่าง = ไม่แตะของเดิม)\n' +
-        'ประเภทตรงกับของเดิมอยู่แล้ว ' + fmtNum(stat.same) + ' แถว\n' +
+        'ยืนยันประเภทไว้แล้ว ' + fmtNum(stat.same) + ' แถว\n' +
         'ช่องประเภทกรอกมาไม่ถูก ' + fmtNum(stat.invalid) + ' แถว\n' +
         'รหัสไม่มีใน Master ' + fmtNum(stat.notFound) + ' แถว';
       ask('ไม่มีอะไรต้องเปลี่ยน', why, 'ปิด', { hideCancel: true });
       return;
     }
 
-    /* ไฟล์เดียวแตะได้ทีละหลายพันตัว ให้เห็นตัวเลขก่อนแล้วค่อยตัดสินใจ */
+    /* ไฟล์เดียวแตะได้ทีละหลายพันตัว ให้เห็นตัวเลขก่อนแล้วค่อยตัดสินใจ
+       ต้องบอกให้ชัดว่าการกดยืนยันแตะทุกแถวในไฟล์ ไม่ใช่แค่แถวที่แก้ค่ามา */
     var skipped = stat.blank + stat.same + stat.invalid + stat.notFound;
-    return ask('ยืนยันการเปลี่ยนประเภทสินค้า',
-        'จะเปลี่ยนประเภท ' + fmtNum(stat.updated) + ' รายการ\n\n' +
-        'เป็น Not Product ' + fmtNum(stat.toNotProduct) + ' รายการ\n' +
-        'เป็น Product ' + fmtNum(stat.toProduct) + ' รายการ\n' +
+    return ask('ยืนยันประเภทสินค้าทั้งไฟล์',
+        'การอัปโหลดไฟล์นี้ = ยืนยันว่า "ทุกแถวในไฟล์" มีประเภทถูกต้องแล้ว\n' +
+        'ทั้งแถวที่แก้และแถวที่ปล่อยไว้เหมือนเดิม จะถูกเคลียร์ออกจาก "รอตรวจสอบ"\n\n' +
+        'จะเขียนทั้งหมด ' + fmtNum(stat.updated) + ' รายการ\n' +
+        'เปลี่ยนเป็น Not Product ' + fmtNum(stat.toNotProduct) + ' รายการ\n' +
+        'เปลี่ยนเป็น Product ' + fmtNum(stat.toProduct) + ' รายการ\n' +
+        'ยืนยันประเภทเดิม (ไม่เปลี่ยนค่า) ' + fmtNum(stat.confirmed) + ' รายการ\n' +
         'ข้าม ' + fmtNum(skipped) + ' แถว (ว่าง ' + fmtNum(stat.blank) +
-        ' · เหมือนเดิม ' + fmtNum(stat.same) + ' · กรอกไม่ถูก ' + fmtNum(stat.invalid) +
+        ' · ยืนยันไว้แล้ว ' + fmtNum(stat.same) + ' · กรอกไม่ถูก ' + fmtNum(stat.invalid) +
         ' · ไม่มีใน Master ' + fmtNum(stat.notFound) + ')\n\n' +
-        'ประเภทที่ตั้งจากไฟล์นี้นับเป็นค่าที่คนตั้งเอง นำเข้า Master รอบหน้าจะไม่ทับ\n' +
+        'ประเภทที่ยืนยันจากไฟล์นี้นับเป็นค่าที่คนตั้งเอง นำเข้า Master รอบหน้าจะไม่ทับ\n' +
         'ไฟล์นี้แตะเฉพาะประเภทสินค้า ไม่แตะราคา หมายเหตุ หรือยอดนับ',
-        'เปลี่ยน ' + fmtNum(stat.updated) + ' รายการ').then(function (ok) {
+        'ยืนยันทั้งไฟล์ ' + fmtNum(stat.updated) + ' รายการ').then(function (ok) {
       if (!ok) { toast('ยกเลิกแล้ว ข้อมูลเดิมไม่ถูกแตะ'); return; }
 
       var now = Date.now();
       /* เขียนทีละ field ไม่ใช่ทั้งเรคอร์ด — ค่าอื่นของสินค้าจึงไม่มีทางหาย
-         needsReview=false ด้วย เพราะมีคนตัดสินประเภทให้แล้ว ไม่ต้องรอตรวจอีก */
+         needsReview=false ทุกแถวที่เขียน เพราะรหัสอยู่ในไฟล์แปลว่ามีคนดูแล้ว
+         ไม่ว่าจะแก้ค่าหรือปล่อยไว้เหมือนเดิม ก็ถือว่าตัดสินประเภทให้แล้ว */
       var pairs = [];
       keys.forEach(function (k) {
         pairs.push([k + '/type', res.updates[k]]);
@@ -7672,12 +7699,18 @@ function handleTypeImport(file) {
         });
 
         var box = document.createElement('div');
-        var sec = repSection('ผลการเปลี่ยนประเภทสินค้า');
+        var sec = repSection('ผลการยืนยันประเภทสินค้า');
         repLine(sec, 'อ่านจากไฟล์', fmtNum(stat.rows) + ' แถว');
         repLine(sec, 'เปลี่ยนเป็น Not Product', fmtNum(stat.toNotProduct) + ' รายการ');
         repLine(sec, 'เปลี่ยนเป็น Product', fmtNum(stat.toProduct) + ' รายการ');
+        repLine(sec, 'ยืนยันประเภทเดิม (เคลียร์รอตรวจสอบ)', fmtNum(stat.confirmed) + ' รายการ');
+        if (stat.keptInactive) {
+          repNote(sec, 'ในนั้นเป็นของ "ปิดใช้งาน" ' + fmtNum(stat.keptInactive) + ' รายการ — ' +
+            'คงสถานะเลิกขายไว้ตามเดิม ไม่ถูกยืนยันเป็น Product ' +
+            'ถ้าต้องการกู้กลับมาขาย ให้กดปุ่มสลับประเภทในหน้า Master ทีละตัว');
+        }
         repLine(sec, 'ข้าม (ช่องประเภทว่าง)', fmtNum(stat.blank) + ' แถว');
-        repLine(sec, 'ข้าม (ค่าเดิมอยู่แล้ว)', fmtNum(stat.same) + ' แถว');
+        repLine(sec, 'ข้าม (ยืนยันไว้แล้ว)', fmtNum(stat.same) + ' แถว');
         repLine(sec, 'ข้าม (กรอกประเภทไม่ถูก)', fmtNum(stat.invalid) + ' แถว', stat.invalid > 0);
         if (stat.invalidValues.length) {
           repNote(sec, 'ตัวอย่างค่าที่อ่านไม่ออก: ' + stat.invalidValues.join(', ') +
@@ -7691,10 +7724,12 @@ function handleTypeImport(file) {
         }
         if (stat.noCode) repLine(sec, 'ข้าม (ไม่มีรหัสสินค้า)', fmtNum(stat.noCode) + ' แถว', true);
         repNote(sec, 'ไฟล์นี้เขียนเฉพาะประเภทสินค้า ไม่แตะราคาต้นทุน หมายเหตุ Status หรือยอดนับ · ' +
-          'ประเภทที่ตั้งจากไฟล์นี้เป็นค่าที่คนตั้งเอง นำเข้า Master รอบหน้าจะไม่ทับ');
+          'ทุกรายการในไฟล์ถูกเคลียร์ออกจาก "รอตรวจสอบ" และนับเป็นค่าที่คนตั้งเอง ' +
+          'นำเข้า Master รอบหน้าจะไม่ทับ');
         box.appendChild(sec);
-        ask('เปลี่ยนประเภทสินค้าเรียบร้อย',
-            'เปลี่ยนประเภทแล้ว ' + fmtNum(stat.updated) + ' รายการ',
+        ask('ยืนยันประเภทสินค้าเรียบร้อย',
+            'ยืนยันประเภทแล้ว ' + fmtNum(stat.updated) + ' รายการ ' +
+            '(เปลี่ยนค่าจริง ' + fmtNum(stat.changed) + ' รายการ)',
             'ปิด', { hideCancel: true, detail: box });
       });
     });
