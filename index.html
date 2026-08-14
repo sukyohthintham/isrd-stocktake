@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.4.1">
+<meta name="version" content="2.4.2">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.4.1</title>
+<title>ISRD Stocktake v2.4.2</title>
 
 <style>
 :root{
@@ -957,20 +957,22 @@ body.no-doc-images .doc .imgbox{display:none}
         ช่อง Note ว่าง = <b>ไม่แตะ</b>หมายเหตุเดิม · รหัสที่ไม่มีใน Master จะถูกข้าม ไม่สร้างสินค้าใหม่<br>
         ไฟล์นี้แตะเฉพาะ<b>หมายเหตุ</b> ไม่แตะประเภทสินค้า ราคา หรือยอดนับใด ๆ
       </p>
-      <button class="btn ghost sm block" id="btnTypeTemplate" style="margin-top:12px">⬇ ดาวน์โหลด Template (กรอกประเภท)</button>
+      <button class="btn ghost sm block" id="btnTypeTemplate" style="margin-top:12px">⬇ ดาวน์โหลด Template (ประเภท + สถานะ)</button>
       <p class="muted" style="margin:10px 0 0">
         ได้ไฟล์ Excel ตาม<b>รายการที่กรองอยู่บนจอตอนนี้</b> (ตัวกรอง + คำค้น) ไม่ใช่แค่ 200 แถวแรกที่เห็น<br>
-        ช่อง <b>ประเภท</b> เติมค่าปัจจุบันมาให้แล้ว แก้เป็น <b>Product</b> หรือ <b>Not Product</b>
-        แล้วอัปโหลดกลับด้วยปุ่มข้างล่าง<br>
+        ช่อง <b>ประเภท</b> กับ <b>สถานะ</b> เติมค่าปัจจุบันมาให้แล้ว —
+        ประเภทแก้เป็น <b>Product</b> หรือ <b>Not Product</b> · สถานะพิมพ์ค่าไหนก็ได้
+        (ค่าใหม่จะถูกเพิ่มเข้าทะเบียนให้เอง) แล้วอัปโหลดกลับด้วยปุ่มข้างล่าง<br>
         อยากไล่ของที่ระบบเดาไว้ ให้กดตัวกรอง "รอตรวจสอบ" ก่อนโหลด
       </p>
       <input type="file" id="typeFile" accept=".csv,.xlsx" style="display:none">
-      <button class="btn ghost sm block" id="btnImportType" style="margin-top:12px">🏷 เปลี่ยนประเภทจากไฟล์</button>
+      <button class="btn ghost sm block" id="btnImportType" style="margin-top:12px">🏷 เปลี่ยนประเภท + สถานะ จากไฟล์</button>
       <p class="muted" style="margin:10px 0 0">
-        ไฟล์ต้องมีหัวตาราง <b>รหัสสินค้า</b> และ <b>ประเภท</b> (จับจากชื่อหัวตาราง ไม่ใช่ตำแหน่งคอลัมน์)<br>
-        ช่องประเภทว่าง = <b>ไม่แตะ</b>ของเดิม · รหัสที่ไม่มีใน Master จะถูกข้าม ไม่สร้างสินค้าใหม่<br>
-        ไฟล์นี้แตะเฉพาะ<b>ประเภทสินค้า</b> ไม่แตะราคา หมายเหตุ หรือยอดนับใด ๆ ·
-        ประเภทที่ตั้งจากไฟล์นี้นับเป็น<b>ค่าที่คนตั้งเอง</b> นำเข้า Master รอบหน้าจะไม่ทับ
+        ไฟล์ต้องมีหัวตาราง <b>รหัสสินค้า</b> และ <b>ประเภท</b> ส่วน <b>สถานะ</b> มีก็ได้ไม่มีก็ได้
+        (จับจากชื่อหัวตาราง ไม่ใช่ตำแหน่งคอลัมน์)<br>
+        ช่องไหนว่าง = <b>ไม่แตะ</b>ของเดิมช่องนั้น · รหัสที่ไม่มีใน Master จะถูกข้าม ไม่สร้างสินค้าใหม่<br>
+        ไฟล์นี้แตะเฉพาะ<b>ประเภทสินค้า</b>กับ<b>สถานะ</b> ไม่แตะราคา หมายเหตุ หรือยอดนับใด ๆ ·
+        ค่าที่ตั้งจากไฟล์นี้นับเป็น<b>ค่าที่คนตั้งเอง</b> นำเข้า Master รอบหน้าจะไม่ทับ
       </p>
       <button class="btn ghost sm block" id="btnImportImages" style="margin-top:12px">🖼 นำเข้ารูปสินค้า (JSON / CSV)</button>
       <p class="muted" style="margin:10px 0 0">
@@ -1444,7 +1446,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.4.1';
+var APP_VERSION = '2.4.2';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -2989,7 +2991,9 @@ function parseNoteFile(parsed) {
    ============================================================ */
 var TYPE_FILE_COLUMNS = {
   code: COLUMN_ALIASES.code,
-  type: ['ประเภท', 'ประเภทสินค้า', 'type', 'producttype', 'itemtype']
+  type: ['ประเภท', 'ประเภทสินค้า', 'type', 'producttype', 'itemtype'],
+  /* สถานะเป็นคอลัมน์เสริม ไม่มีก็ยังใช้ไฟล์ได้ — ไฟล์รุ่นก่อนที่มีแต่ประเภทต้องไม่พัง */
+  status: COLUMN_ALIASES.status
 };
 
 /* คำที่ยอมรับในช่องประเภท — เทียบหลัง normText (ตัดช่องว่างและ _ ออก ตัวพิมพ์เล็ก)
@@ -3048,11 +3052,16 @@ function parseTypeFile(parsed) {
 
   var updates = {};
   var kind = {};                    // key -> 'changed' | 'confirmed' (นับตอนท้าย กันรหัสซ้ำนับสองรอบ)
+  var statusUpdates = {};
+  var newStatuses = [];
+  var knownStatuses = statusList();  // ค่ามาตรฐาน + ที่แอดมินเพิ่มไว้แล้ว
   var stat = {
     rows: 0, updated: 0, noCode: 0, notFound: 0, notFoundCodes: [],
     blank: 0, invalid: 0, invalidValues: [], same: 0,
-    changed: 0, confirmed: 0, toNotProduct: 0, toProduct: 0, keptInactive: 0
+    changed: 0, confirmed: 0, toNotProduct: 0, toProduct: 0, keptInactive: 0,
+    statusUpdated: 0, statusChanged: 0, statusBlank: 0, statusSame: 0, hasStatusColumn: false
   };
+  stat.hasStatusColumn = idx.status !== undefined;
 
   for (var r = headerRow + 1; r <= lastReal; r++) {
     var row = rows[r] || [];
@@ -3073,6 +3082,25 @@ function parseTypeFile(parsed) {
       stat.notFound++;
       if (stat.notFoundCodes.length < 10) stat.notFoundCodes.push(code);
       continue;
+    }
+
+    /* สถานะต้องอ่านก่อนถึงจุดที่ฝั่งประเภท continue ทิ้ง — คนละคอลัมน์กัน
+       แถวที่ช่องประเภทว่างแต่กรอกสถานะมา ต้องได้สถานะใหม่ ไม่ใช่ถูกข้ามทั้งแถว */
+    if (idx.status !== undefined) {
+      var rawStatus = cellText(row[idx.status]);
+      if (!rawStatus) {
+        stat.statusBlank++;                       // ว่าง = ไม่แตะของเดิม เหมือนฝั่งประเภท
+      } else if (rawStatus === productStatus(product) && product.statusSource === 'manual') {
+        /* ยืนยันไว้ครบแล้ว อัปโหลดไฟล์เดิมซ้ำรอบสองจึงไม่ยิงฐานอีก */
+        if (!statusUpdates[key]) stat.statusSame++;
+      } else {
+        statusUpdates[key] = rawStatus;           // รหัสซ้ำในไฟล์ = แถวหลังชนะ
+        /* ค่าที่ไม่เคยมีในทะเบียน ต้องขึ้นทะเบียนด้วย ไม่งั้นช่องเลือกในหน้า Master
+           จะไม่มีค่านี้ให้เลือก แล้วสินค้าตัวนั้นแก้สถานะกลับไม่ได้ */
+        if (knownStatuses.indexOf(rawStatus) < 0 && newStatuses.indexOf(rawStatus) < 0) {
+          newStatuses.push(rawStatus);
+        }
+      }
     }
 
     var raw = cellText(row[idx.type]);
@@ -3115,7 +3143,14 @@ function parseTypeFile(parsed) {
     }
   });
   stat.updated = Object.keys(updates).length;
-  return { updates: updates, stat: stat };
+
+  /* นับสถานะที่ "เปลี่ยนค่าจริง" แยกจากที่เขียนเพื่อยืนยัน (ค่าเท่าเดิมแต่ยังไม่ manual) */
+  Object.keys(statusUpdates).forEach(function (k) {
+    if (statusUpdates[k] !== productStatus(state.products[k])) stat.statusChanged++;
+  });
+  stat.statusUpdated = Object.keys(statusUpdates).length;
+
+  return { updates: updates, statusUpdates: statusUpdates, newStatuses: newStatuses, stat: stat };
 }
 
 /* ============================================================
@@ -3868,8 +3903,13 @@ function buildProductPatch(incoming) {
     };
 
     /* Status: ไฟล์ทับได้เฉพาะเมื่อมีคอลัมน์นี้จริงและมีค่า
-       ไฟล์ Zort ปกติไม่มีคอลัมน์นี้ ค่าที่แอดมินตั้งเองไว้จึงต้องอยู่ครบ */
-    if (fresh.status) next.status = fresh.status;
+       ไฟล์ Zort ปกติไม่มีคอลัมน์นี้ ค่าที่แอดมินตั้งเองไว้จึงต้องอยู่ครบ
+       สถานะที่ตั้งจาก Template ประเภท+สถานะ (statusSource='manual') ชนะไฟล์เสมอ
+       กติกาเดียวกับ typeSource ข้างล่าง — คนตัดสินใจไว้แล้ว ไฟล์ห้ามมาทับ */
+    if (old && old.statusSource === 'manual') {
+      next.status = old.status || DEFAULT_STATUS;
+      next.statusSource = 'manual';
+    } else if (fresh.status) next.status = fresh.status;
     else if (old && old.status) next.status = old.status;
     else next.status = DEFAULT_STATUS;
 
@@ -6674,17 +6714,18 @@ function downloadTypeTemplate() {
     return;
   }
 
-  var rows = [['รหัสสินค้า', 'ชื่อสินค้า', 'หมวดหมู่', 'ประเภท']];
+  var rows = [['รหัสสินค้า', 'ชื่อสินค้า', 'หมวดหมู่', 'ประเภท', 'สถานะ']];
   keys.forEach(function (key) {
     var p = state.products[key] || {};
     rows.push([p.code || key, p.name || '', p.category || '',
-               p.type === 'notProduct' ? 'Not Product' : 'Product']);
+               p.type === 'notProduct' ? 'Not Product' : 'Product',
+               p.status || DEFAULT_STATUS]);
   });
 
-  var blob = buildXlsx([{ name: 'Type', rows: rows, widths: [18, 44, 24, 16] }]);
+  var blob = buildXlsx([{ name: 'Type', rows: rows, widths: [18, 44, 24, 16, 20] }]);
   var a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'ISRD-Master-Type-Template.xlsx';
+  a.download = 'ISRD-Master-Type-Status-Template.xlsx';
   document.body.appendChild(a);
   a.click();
   setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
@@ -7976,12 +8017,18 @@ function handleTypeImport(file) {
     var res = parseTypeFile(parsed);
     var stat = res.stat;
     var keys = Object.keys(res.updates);
+    var statusKeys = Object.keys(res.statusUpdates);
+    /* คีย์ทั้งหมดที่ต้องแตะ — บางแถวมีแต่ประเภท บางแถวมีแต่สถานะ */
+    var touched = {};
+    keys.forEach(function (k) { touched[k] = 1; });
+    statusKeys.forEach(function (k) { touched[k] = 1; });
 
-    if (!keys.length) {
+    if (!keys.length && !statusKeys.length) {
       var why = 'อ่านได้ ' + fmtNum(stat.rows) + ' แถว แต่ไม่มีแถวไหนที่ต้องเขียน\n\n' +
         'ช่องประเภทว่าง ' + fmtNum(stat.blank) + ' แถว (ว่าง = ไม่แตะของเดิม)\n' +
         'ยืนยันประเภทไว้แล้ว ' + fmtNum(stat.same) + ' แถว\n' +
         'ช่องประเภทกรอกมาไม่ถูก ' + fmtNum(stat.invalid) + ' แถว\n' +
+        (stat.hasStatusColumn ? 'ยืนยันสถานะไว้แล้ว ' + fmtNum(stat.statusSame) + ' แถว\n' : '') +
         'รหัสไม่มีใน Master ' + fmtNum(stat.notFound) + ' แถว';
       ask('ไม่มีอะไรต้องเปลี่ยน', why, 'ปิด', { hideCancel: true });
       return;
@@ -7990,19 +8037,28 @@ function handleTypeImport(file) {
     /* ไฟล์เดียวแตะได้ทีละหลายพันตัว ให้เห็นตัวเลขก่อนแล้วค่อยตัดสินใจ
        ต้องบอกให้ชัดว่าการกดยืนยันแตะทุกแถวในไฟล์ ไม่ใช่แค่แถวที่แก้ค่ามา */
     var skipped = stat.blank + stat.same + stat.invalid + stat.notFound;
-    return ask('ยืนยันประเภทสินค้าทั้งไฟล์',
-        'การอัปโหลดไฟล์นี้ = ยืนยันว่า "ทุกแถวในไฟล์" มีประเภทถูกต้องแล้ว\n' +
+    return ask('ยืนยันประเภท + สถานะทั้งไฟล์',
+        'การอัปโหลดไฟล์นี้ = ยืนยันว่า "ทุกแถวในไฟล์" มีประเภทและสถานะถูกต้องแล้ว\n' +
         'ทั้งแถวที่แก้และแถวที่ปล่อยไว้เหมือนเดิม จะถูกเคลียร์ออกจาก "รอตรวจสอบ"\n\n' +
-        'จะเขียนทั้งหมด ' + fmtNum(stat.updated) + ' รายการ\n' +
+        'จะเขียนประเภททั้งหมด ' + fmtNum(stat.updated) + ' รายการ\n' +
         'เปลี่ยนเป็น Not Product ' + fmtNum(stat.toNotProduct) + ' รายการ\n' +
         'เปลี่ยนเป็น Product ' + fmtNum(stat.toProduct) + ' รายการ\n' +
         'ยืนยันประเภทเดิม (ไม่เปลี่ยนค่า) ' + fmtNum(stat.confirmed) + ' รายการ\n' +
-        'ข้าม ' + fmtNum(skipped) + ' แถว (ว่าง ' + fmtNum(stat.blank) +
+        (stat.hasStatusColumn
+          ? '\nจะเขียนสถานะ ' + fmtNum(stat.statusUpdated) + ' รายการ ' +
+            '(เปลี่ยนค่าจริง ' + fmtNum(stat.statusChanged) + ' รายการ)\n' +
+            (res.newStatuses.length
+              ? 'เพิ่มค่าสถานะใหม่เข้าทะเบียน ' + fmtNum(res.newStatuses.length) + ' ค่า: ' +
+                res.newStatuses.slice(0, 5).join(', ') +
+                (res.newStatuses.length > 5 ? ' ...' : '') + '\n'
+              : '')
+          : '\nไฟล์นี้ไม่มีคอลัมน์สถานะ — สถานะเดิมไม่ถูกแตะ\n') +
+        '\nข้าม ' + fmtNum(skipped) + ' แถว (ว่าง ' + fmtNum(stat.blank) +
         ' · ยืนยันไว้แล้ว ' + fmtNum(stat.same) + ' · กรอกไม่ถูก ' + fmtNum(stat.invalid) +
         ' · ไม่มีใน Master ' + fmtNum(stat.notFound) + ')\n\n' +
-        'ประเภทที่ยืนยันจากไฟล์นี้นับเป็นค่าที่คนตั้งเอง นำเข้า Master รอบหน้าจะไม่ทับ\n' +
-        'ไฟล์นี้แตะเฉพาะประเภทสินค้า ไม่แตะราคา หมายเหตุ หรือยอดนับ',
-        'ยืนยันทั้งไฟล์ ' + fmtNum(stat.updated) + ' รายการ').then(function (ok) {
+        'ประเภทและสถานะที่ยืนยันจากไฟล์นี้นับเป็นค่าที่คนตั้งเอง นำเข้า Master รอบหน้าจะไม่ทับ\n' +
+        'ไฟล์นี้ไม่แตะราคา หมายเหตุ หรือยอดนับ',
+        'ยืนยันทั้งไฟล์ ' + fmtNum(Object.keys(touched).length) + ' รายการ').then(function (ok) {
       if (!ok) { toast('ยกเลิกแล้ว ข้อมูลเดิมไม่ถูกแตะ'); return; }
 
       var now = Date.now();
@@ -8015,6 +8071,13 @@ function handleTypeImport(file) {
         pairs.push([k + '/typeSource', 'manual']);
         pairs.push([k + '/needsReview', false]);
         pairs.push([k + '/updatedAt', now]);
+      });
+      /* สถานะแยกลูปเพราะบางแถวมีสถานะแต่ไม่มีประเภท (ช่องประเภทว่าง)
+         statusSource='manual' ทำให้ไฟล์ Zort รอบหน้าไม่ทับ (buildProductPatch) */
+      statusKeys.forEach(function (k) {
+        pairs.push([k + '/status', res.statusUpdates[k]]);
+        pairs.push([k + '/statusSource', 'manual']);
+        if (keys.indexOf(k) < 0) pairs.push([k + '/updatedAt', now]);
       });
 
       var CHUNK = 400;
@@ -8029,14 +8092,30 @@ function handleTypeImport(file) {
         });
       }
 
-      return step(0).then(function () {
+      /* ขึ้นทะเบียนค่าสถานะใหม่ก่อนเขียนสินค้า — ถ้าเขียนสินค้าก่อนแล้วขั้นนี้ล้ม
+         จะมีสินค้าถือสถานะที่ไม่มีในช่องเลือก แก้กลับในหน้า Master ไม่ได้ */
+      var registerStatuses = res.newStatuses.length
+        ? db.update('settings', {
+            productStatuses: (state.customStatuses || []).concat(res.newStatuses)
+          }).then(function () {
+            state.customStatuses = (state.customStatuses || []).concat(res.newStatuses);
+          })
+        : Promise.resolve();
+
+      return registerStatuses.then(function () { return step(0); }).then(function () {
         /* อัปเดตในเครื่องเองแทนการโหลด products ทั้งก้อนกลับมา (หมื่นห้าพันตัว)
-           type ไม่ได้อยู่ใน scan index จึงไม่ต้อง buildScanIndex ใหม่ */
+           type กับ status ไม่ได้อยู่ใน scan index จึงไม่ต้อง buildScanIndex ใหม่ */
         keys.forEach(function (k) {
           if (!state.products[k]) return;
           state.products[k].type = res.updates[k];
           state.products[k].typeSource = 'manual';
           state.products[k].needsReview = false;
+          state.products[k].updatedAt = now;
+        });
+        statusKeys.forEach(function (k) {
+          if (!state.products[k]) return;
+          state.products[k].status = res.statusUpdates[k];
+          state.products[k].statusSource = 'manual';
           state.products[k].updatedAt = now;
         });
 
@@ -8046,6 +8125,18 @@ function handleTypeImport(file) {
         repLine(sec, 'เปลี่ยนเป็น Not Product', fmtNum(stat.toNotProduct) + ' รายการ');
         repLine(sec, 'เปลี่ยนเป็น Product', fmtNum(stat.toProduct) + ' รายการ');
         repLine(sec, 'ยืนยันประเภทเดิม (เคลียร์รอตรวจสอบ)', fmtNum(stat.confirmed) + ' รายการ');
+        if (stat.hasStatusColumn) {
+          repLine(sec, 'เขียนสถานะ', fmtNum(stat.statusUpdated) + ' รายการ');
+          repLine(sec, 'ในนั้นเปลี่ยนค่าจริง', fmtNum(stat.statusChanged) + ' รายการ');
+          repLine(sec, 'ข้าม (ช่องสถานะว่าง)', fmtNum(stat.statusBlank) + ' แถว');
+          repLine(sec, 'ข้าม (ยืนยันสถานะไว้แล้ว)', fmtNum(stat.statusSame) + ' แถว');
+          if (res.newStatuses.length) {
+            repNote(sec, 'เพิ่มค่าสถานะใหม่เข้าทะเบียน: ' + res.newStatuses.join(', ') +
+              ' — เลือกได้จากหน้า Master แล้ว');
+          }
+        } else {
+          repNote(sec, 'ไฟล์นี้ไม่มีคอลัมน์สถานะ — สถานะเดิมของทุกรายการไม่ถูกแตะ');
+        }
         if (stat.keptInactive) {
           repNote(sec, 'ในนั้นเป็นของ "ปิดใช้งาน" ' + fmtNum(stat.keptInactive) + ' รายการ — ' +
             'คงสถานะเลิกขายไว้ตามเดิม ไม่ถูกยืนยันเป็น Product ' +
@@ -8065,13 +8156,17 @@ function handleTypeImport(file) {
             ' — ต้องนำเข้า Master ให้รู้จักสินค้าก่อน ไฟล์นี้ไม่สร้างสินค้าใหม่');
         }
         if (stat.noCode) repLine(sec, 'ข้าม (ไม่มีรหัสสินค้า)', fmtNum(stat.noCode) + ' แถว', true);
-        repNote(sec, 'ไฟล์นี้เขียนเฉพาะประเภทสินค้า ไม่แตะราคาต้นทุน หมายเหตุ Status หรือยอดนับ · ' +
+        repNote(sec, 'ไฟล์นี้เขียนเฉพาะประเภทสินค้าและสถานะ ไม่แตะราคาต้นทุน หมายเหตุ หรือยอดนับ · ' +
           'ทุกรายการในไฟล์ถูกเคลียร์ออกจาก "รอตรวจสอบ" และนับเป็นค่าที่คนตั้งเอง ' +
           'นำเข้า Master รอบหน้าจะไม่ทับ');
         box.appendChild(sec);
-        ask('ยืนยันประเภทสินค้าเรียบร้อย',
-            'ยืนยันประเภทแล้ว ' + fmtNum(stat.updated) + ' รายการ ' +
-            '(เปลี่ยนค่าจริง ' + fmtNum(stat.changed) + ' รายการ)',
+        ask('ยืนยันประเภท + สถานะเรียบร้อย',
+            'ยืนยันประเภท ' + fmtNum(stat.updated) + ' รายการ ' +
+            '(เปลี่ยนค่าจริง ' + fmtNum(stat.changed) + ' รายการ)' +
+            (stat.hasStatusColumn
+              ? '\nยืนยันสถานะ ' + fmtNum(stat.statusUpdated) + ' รายการ ' +
+                '(เปลี่ยนค่าจริง ' + fmtNum(stat.statusChanged) + ' รายการ)'
+              : ''),
             'ปิด', { hideCancel: true, detail: box });
       });
     });
