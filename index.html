@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.3.7">
+<meta name="version" content="2.3.8">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.3.7</title>
+<title>ISRD Stocktake v2.3.8</title>
 
 <style>
 :root{
@@ -950,9 +950,9 @@ body.no-doc-images .doc .imgbox{display:none}
         ไฟล์นี้แตะเฉพาะ<b>ประเภทสินค้า</b> ไม่แตะราคา หมายเหตุ หรือยอดนับใด ๆ ·
         ประเภทที่ตั้งจากไฟล์นี้นับเป็น<b>ค่าที่คนตั้งเอง</b> นำเข้า Master รอบหน้าจะไม่ทับ
       </p>
-      <button class="btn ghost sm block" id="btnImportImages" style="margin-top:12px">🖼 นำเข้ารูปสินค้า (JSON)</button>
+      <button class="btn ghost sm block" id="btnImportImages" style="margin-top:12px">🖼 นำเข้ารูปสินค้า (JSON / CSV)</button>
       <p class="muted" style="margin:10px 0 0">
-        รับได้ทั้ง <b>product-images.json</b> และ <b>product-images.min.json</b><br>
+        รับได้ทั้ง <b>product-images.json</b>, <b>product-images.min.json</b> และไฟล์ <b>CSV จาก Supabase</b><br>
         จับคู่ด้วยรหัสสินค้า แล้วเก็บลิงก์รูปไว้กับสินค้าใน Master
       </p>
     </div>
@@ -964,7 +964,7 @@ body.no-doc-images .doc .imgbox{display:none}
       <h3>คลังสินค้า/สาขา</h3>
       <div id="branchStatus" class="muted" style="margin-bottom:12px">ยังไม่ได้นำเข้าทะเบียนสาขา</div>
       <input type="file" id="branchFile" accept=".csv,.xlsx" style="display:none">
-      <input type="file" id="imageFile" accept=".json" style="display:none">
+      <input type="file" id="imageFile" accept=".json,.csv" style="display:none">
       <button class="btn ghost block" id="btnImportBranch">📄 นำเข้าทะเบียนสาขา (Excel / CSV)</button>
       <button class="btn grey block" id="btnResetBranch" style="margin-top:10px">🗑 ล้างทะเบียนสาขาแล้วนำเข้าใหม่</button>
       <p class="muted" style="margin:12px 0 0">
@@ -1395,7 +1395,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.3.7';
+var APP_VERSION = '2.3.8';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -4752,13 +4752,48 @@ function roundZoneLetters() {
   return Object.keys(seen).sort();
 }
 
+/* ---------- CSV ที่ Supabase export ออกมา ----------
+   คืน object เดียวกับที่ JSON.parse ควรได้ ให้ parseImageMap เอาไปย่อยต่อตามปกติ
+   อ่านไม่ออกคืน null ไม่ throw เอง — คนเรียกเป็นคนตัดสินใจว่าจะ throw อะไร
+
+   แบบ A (หลัก): jsonb_object_agg มาเป็นคอลัมน์เดียวชื่อ images
+                 ข้างในเป็นก้อน JSON ที่ถูก escape แบบ CSV (" ซ้อนเป็น "")
+   แบบ B (เผื่อไว้): สองคอลัมน์ sku,image_url */
+function parseImageCsv(text) {
+  var t = text.replace(/^\uFEFF/, '').trim();
+  var nl = t.indexOf('\n');
+  if (nl < 0) return null;
+  var header = t.slice(0, nl).trim().toLowerCase();
+  var body = t.slice(nl + 1).trim();
+
+  if (header === 'images' || header === '"images"') {
+    var s = body;
+    if (s.charAt(0) === '"') s = s.slice(1, s.lastIndexOf('"'));
+    s = s.replace(/""/g, '"');
+    try { return JSON.parse(s); } catch (e) { return null; }
+  }
+
+  var out = {};
+  body.split(/\r?\n/).forEach(function (line) {
+    if (!line) return;
+    var i = line.indexOf(',');
+    if (i < 0) return;
+    var k = line.slice(0, i).trim().replace(/^"|"$/g, '');
+    var v = line.slice(i + 1).trim().replace(/^"|"$/g, '');
+    if (k && v) out[k] = v;
+  });
+  return Object.keys(out).length ? out : null;
+}
+
 /* ---------- นำเข้าลิงก์รูปสินค้า ----------
    รับได้ทั้งไฟล์เต็ม {รหัส: URL} และไฟล์ย่อ {prefix, suffix, images:{รหัส: ส่วนท้าย}}
-   ค่าที่ขึ้นต้นด้วย * คือ URL เต็มของโฮสต์อื่น ใช้ตามนั้นเลย */
+   ค่าที่ขึ้นต้นด้วย * คือ URL เต็มของโฮสต์อื่น ใช้ตามนั้นเลย
+   ไม่ใช่ JSON ก็ลองอ่านเป็น CSV ของ Supabase ต่อ ก่อนจะยอมแพ้ */
 function parseImageMap(text) {
   var data;
   try { data = JSON.parse(text); }
-  catch (e) { throw new Error('BAD_JSON'); }
+  catch (e) { data = parseImageCsv(text); }
+  if (!data) throw new Error('BAD_JSON');
 
   var map = {};
   if (data && data.images && typeof data.images === 'object') {
@@ -4898,7 +4933,7 @@ function handleImageImport(file) {
     });
   }).catch(function (err) {
     var messages = {
-      BAD_JSON: 'อ่านไฟล์ไม่ได้ ต้องเป็นไฟล์ JSON ที่ถูกต้อง',
+      BAD_JSON: 'อ่านไฟล์ไม่ได้ — ต้องเป็นไฟล์ JSON หรือ CSV (จาก Supabase) ที่ถูกต้อง',
       NO_ROWS: 'ไม่พบลิงก์รูปในไฟล์ กรุณาตรวจไฟล์แล้วลองใหม่'
     };
     toast(messages[err && err.message] || 'นำเข้ารูปไม่สำเร็จ กรุณาตรวจไฟล์แล้วลองใหม่', true);
