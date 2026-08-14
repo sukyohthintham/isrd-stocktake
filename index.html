@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.3.9">
+<meta name="version" content="2.4.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.3.9</title>
+<title>ISRD Stocktake v2.4.0</title>
 
 <style>
 :root{
@@ -346,6 +346,15 @@ table.grid td.neg{color:var(--short);font-weight:700}
 .stat{background:#fff;border:1px solid var(--line-soft);border-radius:12px;padding:10px;text-align:center}
 .stat .s-num{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
 .stat .s-lab{font-size:12px;color:var(--muted);margin-top:2px}
+/* การ์ด ตรง/ขาด/เกิน กดเข้าไปดูรายตัวได้ — เป็น <button> จริงเพื่อให้กดด้วยคีย์บอร์ดได้ด้วย
+   ต้องรีเซ็ต font/สีเอง ไม่งั้นเบราว์เซอร์ยัดสไตล์ปุ่มของตัวเองมาทับ */
+.stat.tap{font:inherit;color:inherit;width:100%;cursor:pointer;border-color:var(--line)}
+.stat.tap:active{background:#f1f5f9}
+.stat .s-num.pos{color:var(--over)}
+.stat .s-num.neg{color:var(--short)}
+.stat .s-sub{font-size:12px;font-weight:800;font-variant-numeric:tabular-nums;margin-top:3px}
+.stat .s-sub.pos{color:var(--over)}
+.stat .s-sub.neg{color:var(--short)}
 .filters{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;margin-bottom:10px}
 .filters .btn{flex:0 0 auto}
 /* หน้าสรุปใช้การ์ดแทนตาราง เพื่อให้ "ผลต่าง" กับ "สถานะ" อยู่ในจอมือถือเสมอ
@@ -357,6 +366,9 @@ table.grid td.neg{color:var(--short);font-weight:700}
 .s-name{font-weight:700;word-break:break-word}
 .s-nums{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:10px;text-align:center}
 .s-nums > div{background:#f8fafc;border-radius:9px;padding:7px 4px}
+/* สีผลต่างในป๊อปอัป ตรง/ขาด/เกิน — ใช้คู่สีเดียวกับตารางสรุปและเอกสาร */
+.srow .rep-line b.pos{color:var(--over)}
+.srow .rep-line b.neg{color:var(--short)}
 .s-cap{display:block;font-size:12px;color:var(--muted)}
 .s-val{font-size:19px;font-weight:800;font-variant-numeric:tabular-nums}
 .s-val.over{color:var(--over)}
@@ -1161,6 +1173,8 @@ body.no-doc-images .doc .imgbox{display:none}
 
  <div id="sumJob">
   <div class="banner info" id="sumHead"></div>
+  <!-- เด็กหน้าร้านไม่เห็นตัวเลขผลต่าง เห็นแค่ผลงานตัวเอง — เติมบรรทัดนี้แทน -->
+  <div class="banner ok" id="myProgress" style="display:none"></div>
 
   <!-- อยู่บนสุดเพราะเป็นสิ่งที่คนเปิดหน้านี้ตั้งใจมาทำ ไม่ใช่สิ่งที่ทำหลังอ่านตารางจบ -->
   <div class="card" id="jobManageCard">
@@ -1173,7 +1187,8 @@ body.no-doc-images .doc .imgbox{display:none}
     <div id="statusLogBox" style="margin-top:14px"></div>
   </div>
 
-  <div class="filters">
+  <!-- คุมเฉพาะตัวเลขมูลค่า ซึ่งเป็นของ admin — ไม่ใช่ admin ก็ไม่ต้องมีปุ่มนี้ให้กดเล่น -->
+  <div class="filters" id="priceFilters">
     <button class="btn sm" data-price="sellPrice">ราคาขาย</button>
     <button class="btn sm grey" data-price="costPrice">ราคาต้นทุน</button>
   </div>
@@ -1183,7 +1198,26 @@ body.no-doc-images .doc .imgbox{display:none}
     <div class="clist" id="tfList"></div>
   </div>
 
-  <div class="tablewrap">
+  <!-- กดการ์ดเพื่อไล่ดูรายตัวว่า SKU ไหนขาดไหนเกิน — เดิมต้องโหลด Excel ออกไปดูถึงจะรู้ -->
+  <div class="stats" id="sumCards">
+    <button type="button" class="stat tap" id="cardMatch" data-sumcard="match">
+      <div class="s-num" id="cardMatchNum">0</div>
+      <div class="s-lab">✅ ตรง (SKU)</div>
+      <div class="s-sub" id="cardMatchVal">&nbsp;</div>
+    </button>
+    <button type="button" class="stat tap" id="cardShort" data-sumcard="short">
+      <div class="s-num neg" id="cardShortNum">0</div>
+      <div class="s-lab">❌ ขาด (SKU)</div>
+      <div class="s-sub neg" id="cardShortVal">&nbsp;</div>
+    </button>
+    <button type="button" class="stat tap" id="cardOver" data-sumcard="over">
+      <div class="s-num pos" id="cardOverNum">0</div>
+      <div class="s-lab">➕ เกิน (SKU)</div>
+      <div class="s-sub pos" id="cardOverVal">&nbsp;</div>
+    </button>
+  </div>
+
+  <div class="tablewrap" id="sumTableWrap">
     <table class="grid" id="sumTable">
       <thead><tr>
         <th>กลุ่ม</th><th>จำนวนระบบ</th><th>จำนวนจริง</th><th>ผลต่าง (ชิ้น)</th>
@@ -1196,13 +1230,13 @@ body.no-doc-images .doc .imgbox{display:none}
   </div>
   <div class="muted" id="costNote" style="margin-bottom:14px"></div>
 
-  <div class="card">
+  <div class="card" id="foreignCard">
     <h3>ไม่ใช่ของสาขานี้ <span class="chip" id="foreignChip">0</span></h3>
     <div class="muted" id="foreignHint" style="margin-bottom:10px"></div>
     <div class="clist" id="foreignList"></div>
   </div>
 
-  <div class="card">
+  <div class="card" id="unknownCard">
     <h3>บาร์โค้ดที่ไม่มีในระบบ <span class="chip" id="unknownChip">0</span></h3>
     <div class="muted" id="unknownHint" style="margin-bottom:10px"></div>
     <div class="clist" id="unknownList"></div>
@@ -1214,13 +1248,13 @@ body.no-doc-images .doc .imgbox{display:none}
     <div class="clist" id="scannerList"></div>
   </div>
 
-  <div class="card">
+  <div class="card" id="statusCard">
     <h3>สินค้าสถานะพิเศษที่ยิงเจอ <span class="chip" id="statusChip">0</span></h3>
     <div class="muted" id="statusHint" style="margin-bottom:10px"></div>
     <div class="clist" id="statusList"></div>
   </div>
 
-  <div class="card">
+  <div class="card" id="manualCard">
     <h3>ยอดที่กรอกมือ <span class="chip" id="manualChip">0</span></h3>
     <div class="clist" id="manualList"></div>
   </div>
@@ -1405,7 +1439,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.3.9';
+var APP_VERSION = '2.4.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -6204,6 +6238,194 @@ function pctSkuOf(g) {
 
 var GROUP_LABEL = { product: 'Product', notProduct: 'Not Product', total: 'รวมทั้งหมด' };
 
+/* ============================================================
+   13b. การ์ด ตรง / ขาด / เกิน — กดเข้าไปไล่ดูรายตัว
+        เดิมต้องโหลด Excel ออกไปเปิดในคอมถึงจะรู้ว่า SKU ไหนขาดไหนเกิน
+        ตัวเลขผลต่างเป็นข้อมูลอ่อนไหว เปิดให้เฉพาะ admin (ดู applySummaryPermissions)
+   ============================================================ */
+
+var SUM_CARD_SPEC = {
+  match: {
+    title: '✅ สินค้าที่นับตรง',
+    pick: function (r) { return r.diff === 0; },
+    sort: function (a, b) { return String(a.code).localeCompare(String(b.code), 'th'); },
+    empty: 'รอบนี้ยังไม่มีสินค้าที่นับตรง'
+  },
+  short: {
+    title: '❌ สินค้าที่ขาด',
+    pick: function (r) { return r.diff < 0; },
+    sort: function (a, b) { return a.diff - b.diff; },          // ขาดหนักสุดขึ้นก่อน
+    empty: 'รอบนี้ไม่มีสินค้าขาด'
+  },
+  over: {
+    title: '➕ สินค้าที่เกิน',
+    pick: function (r) { return r.diff > 0; },
+    sort: function (a, b) { return b.diff - a.diff; },          // เกินเยอะสุดขึ้นก่อน
+    empty: 'รอบนี้ไม่มีสินค้าเกิน'
+  }
+};
+
+function sumCardRows(data, kind) {
+  var spec = SUM_CARD_SPEC[kind];
+  return data.rows.filter(spec.pick).slice().sort(spec.sort);
+}
+
+/* มูลค่าผลต่างรวมของกลุ่ม — คิดจาก diff × ราคาต่อตัว ตามช่องราคาที่เลือกอยู่ */
+function sumCardValue(rows) {
+  return rows.reduce(function (s, r) { return s + r.diff * r.price; }, 0);
+}
+
+function signedMoney(v) {
+  if (!v) return '฿' + fmtMoney(0);
+  return (v > 0 ? '+' : '-') + '฿' + fmtMoney(Math.abs(v));
+}
+
+function renderSumCards(data) {
+  ['match', 'short', 'over'].forEach(function (kind) {
+    var rows = sumCardRows(data, kind);
+    var cap = kind.charAt(0).toUpperCase() + kind.slice(1);
+    $('card' + cap + 'Num').textContent = fmtNum(rows.length);
+    var sub = $('card' + cap + 'Val');
+    /* กลุ่ม "ตรง" ผลต่างเป็น 0 เสมอ ไม่ต้องมีบรรทัดมูลค่า แต่ต้องกันความสูงไว้ให้การ์ดเท่ากัน */
+    if (kind === 'match') { sub.innerHTML = '&nbsp;'; return; }
+    sub.textContent = signedMoney(sumCardValue(rows));
+  });
+}
+
+/* หนึ่งแถวในป๊อปอัป — ใช้การ์ด .srow ไม่ใช่ตารางเลื่อนซ้ายขวา
+   เพราะคนอ่านคือทีมคลังบนมือถือ ผลต่างต้องอยู่ในจอเสมอ (เหตุผลเดียวกับคอมเมนต์ที่ .srow) */
+function sumCardRow(r, kind) {
+  var row = document.createElement('div');
+  row.className = 'srow';
+  row.setAttribute('data-sku', r.code || r.key);
+
+  var head = document.createElement('div');
+  head.className = 's-head';
+  var left = document.createElement('div');
+  var code = document.createElement('div');
+  code.className = 's-code';
+  code.textContent = r.code || r.key;
+  var name = document.createElement('div');
+  name.className = 's-name';
+  name.textContent = r.name || '(ไม่มีชื่อ)';
+  left.appendChild(code); left.appendChild(name);
+  head.appendChild(left);
+  row.appendChild(head);
+
+  var diffCls = r.diff > 0 ? 'over' : (r.diff < 0 ? 'short' : '');
+  var nums = document.createElement('div');
+  nums.className = 's-nums';
+  [['ระบบ', fmtNum(r.sys), '', 'sys'],
+   ['ยิงจริง', fmtNum(r.act), '', 'act'],
+   ['ผลต่าง', (r.diff > 0 ? '+' : '') + fmtNum(r.diff), diffCls, 'diff']
+  ].forEach(function (c) {
+    var box = document.createElement('div');
+    var cap = document.createElement('span');
+    cap.className = 's-cap';
+    cap.textContent = c[0];
+    var val = document.createElement('span');
+    val.className = 's-val' + (c[2] ? ' ' + c[2] : '');
+    val.setAttribute('data-cell', c[3]);
+    val.textContent = c[1];
+    box.appendChild(cap); box.appendChild(val);
+    nums.appendChild(box);
+  });
+  row.appendChild(nums);
+
+  /* มูลค่าต่างแยกเป็นบรรทัดเต็มความกว้าง ไม่ยัดเป็นช่องที่สี่
+     ตัวเลขเงินยาวกว่าจำนวนชิ้นมาก ยัดลงช่องแคบแล้วเครื่องหมาย + ตกไปอยู่คนละบรรทัด */
+  var moneyLine = document.createElement('div');
+  moneyLine.className = 'rep-line';
+  moneyLine.style.marginTop = '8px';
+  var mcap = document.createElement('span');
+  mcap.textContent = 'มูลค่าต่าง';
+  var mval = document.createElement('b');
+  mval.className = diffCls === 'over' ? 'pos' : (diffCls === 'short' ? 'neg' : '');
+  mval.setAttribute('data-cell', 'value');
+  mval.textContent = signedMoney(r.diff * r.price);
+  moneyLine.appendChild(mcap); moneyLine.appendChild(mval);
+  row.appendChild(moneyLine);
+
+  /* ยิงเกินโดยไม่ตั้งใจต้องแก้ได้จากตรงนี้เลย ไม่ต้องเดินกลับไปหน้ายิง
+     ปุ่มนี้เป็นของ admin เท่านั้น เพราะการปรับยอดลงคือจุดที่ทุจริตได้ง่ายที่สุด */
+  if (kind === 'over' && isAdmin()) {
+    var act = document.createElement('button');
+    act.type = 'button';
+    act.className = 'btn grey block sm';
+    act.style.marginTop = '10px';
+    act.setAttribute('data-removeover', r.code || r.key);
+    act.textContent = '➖ เอาออก 1 ชิ้น';
+    act.disabled = !canScan();
+    if (act.disabled) act.title = blockedMessage();
+    act.onclick = function () { removeOverScan(r); };
+    row.appendChild(act);
+  }
+  return row;
+}
+
+/* เอาของที่ยิงเกินออกทีละชิ้น — เขียนเป็นแถวใหม่ delta -1 ไม่ได้ลบแถวเดิม
+   ตามกฎบ้าน "ห้ามลบยอดที่นับไปแล้ว" ประวัติจึงยังตรวจย้อนหลังได้ว่าใครเอาออกเมื่อไหร่ */
+function removeOverScan(r) {
+  if (!isAdmin()) { toast(roleBlockMessage('เอาของออกจากสรุปไม่ได้'), true); return; }
+  if (!canScan()) { toast(blockedMessage() + ' — เอาออกไม่ได้', true); return; }
+
+  writeScan(r.key, -1, 'scan', 'เอาออกจากสรุป (ยิงเกิน)');
+  toast('เอา ' + (r.code || r.key) + ' ออก 1 ชิ้นแล้ว — บันทึกเป็นประวัติไว้ ไม่ได้ลบยอดเดิม');
+  renderSummary();
+  $('modalOk').click();       // ปิดกล่องเดิม...
+  openSumCard('over');        // ...แล้วเปิดใหม่ให้เห็นตัวเลขที่เพิ่งเปลี่ยน
+}
+
+function openSumCard(kind) {
+  if (!isAdmin()) { toast(roleBlockMessage('ดูรายละเอียดผลต่างไม่ได้'), true); return Promise.resolve(); }
+  var spec = SUM_CARD_SPEC[kind];
+  var rows = sumCardRows(summaryData(), kind);
+  var money = sumCardValue(rows);
+
+  var box = document.createElement('div');
+  box.className = 'clist';
+  box.setAttribute('data-sumcard-list', kind);
+  if (!rows.length) {
+    var none = document.createElement('div');
+    none.className = 'empty';
+    none.textContent = spec.empty;
+    box.appendChild(none);
+  } else {
+    rows.forEach(function (r) { box.appendChild(sumCardRow(r, kind)); });
+  }
+
+  var msg = fmtNum(rows.length) + ' รายการ' +
+    (kind === 'match' ? '' : ' · มูลค่าผลต่างรวม ' + signedMoney(money));
+  if (kind === 'over' && rows.length && isAdmin()) {
+    msg += '\nยิงเกินโดยไม่ตั้งใจ กด "เอาออก 1 ชิ้น" ได้ — ระบบบันทึกเป็นประวัติ ไม่ได้ลบยอดเดิม';
+  }
+  return ask(spec.title, msg, 'ปิด', { hideCancel: true, detail: box });
+}
+
+/* ตัวเลขผลต่างคือเครื่องมือจับทุจริต ถ้าคนนับเห็นว่าตัวไหนขาดอยู่เท่าไหร่
+   ก็ยิงเพิ่มให้ยอดตรงได้ก่อนหัวหน้ามาตรวจ จึงเปิดให้เฉพาะ admin
+   เด็กหน้าร้านเหลือแค่ผลงานตัวเอง (ยิงไปกี่ชิ้น กี่ SKU) ซึ่งไม่บอกว่าขาดหรือเกิน */
+var SUMMARY_ADMIN_ONLY = ['sumCards', 'sumTableWrap', 'costNote', 'foreignCard',
+                          'unknownCard', 'statusCard', 'manualCard', 'btnExport',
+                          'priceFilters'];
+
+function applySummaryPermissions() {
+  var admin = isAdmin();
+  SUMMARY_ADMIN_ONLY.forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el) el.style.display = admin ? '' : 'none';
+  });
+  $('btnExport').disabled = !admin;
+
+  var box = $('myProgress');
+  box.style.display = admin ? 'none' : '';
+  if (admin) return;
+  var mine = scannerStats().filter(function (s) { return s.user === state.counter; })[0];
+  box.textContent = 'คุณยิงไปแล้ว ' + fmtNum(mine ? mine.pieces : 0) + ' ชิ้น / ' +
+    fmtNum(mine ? mine.skus : 0) + ' SKU · ' +
+    'ตัวเลขผลต่างของรอบนี้เปิดให้เฉพาะผู้ดูแลระบบ';
+}
+
 function renderSummary() {
   var round = state.roundIndex[state.roundId] || { name: '-' };
   $('sumHead').textContent = roundLabel(round.name) +
@@ -6214,6 +6436,7 @@ function renderSummary() {
   });
 
   var data = summaryData();
+  renderSumCards(data);
   var body = $('sumBody');
   body.innerHTML = '';
 
@@ -6331,6 +6554,10 @@ function renderSummary() {
       ml.appendChild(d);
     });
   }
+
+  /* ปิดท้ายด้วยการซ่อนทุกส่วนที่โชว์ผลต่างถ้าไม่ใช่ admin — ต้องอยู่ท้ายสุด
+     เพราะโค้ดข้างบนตั้ง display ของบางปุ่มเองระหว่างทาง */
+  applySummaryPermissions();
 }
 
 /* ============================================================
@@ -8849,7 +9076,8 @@ var PAGE_ROLES = {
   scan:    function () { return canScanRole(); },
   master:  function () { return !isScannerOnly(); },
   summary: function () { return !isScannerOnly(); },
-  doc:     function () { return !isScannerOnly(); }
+  /* เอกสารมีตัวเลขผลต่างรายตัวทั้งใบ ปิดให้เหลือ admin เท่านั้น */
+  doc:     function () { return isAdmin(); }
 };
 
 function canSeePage(name) {
@@ -8879,6 +9107,11 @@ function setJobView(v) {
 }
 
 function showPage(name) {
+  /* หน้าเอกสารต้องบอกเหตุผลตรง ๆ ไม่ใช่เด้งไปหน้าอื่นเงียบ ๆ แล้วคนงงว่าปุ่มเสีย */
+  if (name === 'doc' && !isAdmin()) {
+    toast('หน้าเอกสารเปิดให้เฉพาะผู้ดูแลระบบ', true);
+    name = canSeePage('summary') ? 'summary' : 'scan';
+  }
   /* กันเข้าหน้าที่ไม่มีสิทธิ์ผ่านทางอื่น เช่น เรียกฟังก์ชันตรง ๆ หรือกลับมาจากหน้าเก่า */
   if (!canSeePage(name)) name = canScanRole() ? 'scan' : 'summary';
   state.page = name;
@@ -8904,7 +9137,7 @@ function refreshNav() {
   $('navStart').disabled = !state.roundId;
   $('navScan').disabled = !ready;
   $('navSummary').disabled = !state.roundId;
-  $('navDoc').disabled = !state.roundId;
+  $('navDoc').disabled = !state.roundId || !isAdmin();   // เอกสารเป็นของ admin เท่านั้น
   renderJobBar();
 
   /* ล็อกหน้ายิงตามสถานะ Job — ปุ่มต้องกดไม่ได้ ไม่ใช่แค่แจ้งเตือนทีหลัง */
@@ -10832,6 +11065,9 @@ function init() {
     b.onclick = function () { setPriceField(b.getAttribute('data-docprice')); };
   });
   $('btnExport').onclick = exportExcel;
+  document.querySelectorAll('#sumCards [data-sumcard]').forEach(function (b) {
+    b.onclick = function () { openSumCard(b.getAttribute('data-sumcard')); };
+  });
   $('btnExportPicked').onclick = function () { exportJobsExcel(state.exportPick.slice()); };
   $('btnExportClear').onclick = function () {
     state.exportPick = [];
