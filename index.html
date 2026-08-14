@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.4.2">
+<meta name="version" content="2.4.3">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.4.2</title>
+<title>ISRD Stocktake v2.4.3</title>
 
 <style>
 :root{
@@ -841,6 +841,29 @@ body.no-doc-images .doc .imgbox{display:none}
       <button class="btn grey sm" id="btnKeyboard">⌨ เปิดแป้นพิมพ์</button>
     </div>
 
+    <!-- ผลต่างสดระหว่างยิง — admin เท่านั้น ซ่อนไว้ตั้งแต่ HTML เหมือนหน้าสรุป (กัน FOUC)
+         กดการ์ดเข้าไปดูรายตัวได้ด้วย openSumCard ตัวเดียวกับหน้าสรุป
+
+         ต้องอยู่ในคอลัมน์หลัก ไม่ใช่ .scan-col-side เพราะคอลัมน์ข้างซ่อนตัวเองต่ำกว่า 1024px
+         แอดมินเดินยิงในคลังใช้มือถือ ถ้าวางไว้ข้างจะไม่มีวันได้เห็นผลต่างสดเลย
+         วางใต้แถวปุ่ม ไม่ใช่ใต้ช่องยิง เพื่อไม่ให้ดันปุ่มยกเลิก/กรอกมือหลุดจอตอนกำลังยิง -->
+    <div class="stats" id="scanDiffCards" style="display:none;margin-bottom:12px">
+      <button type="button" class="stat tap" id="scanCardMatch" data-sumcard="match">
+        <div class="s-num" id="scanCardMatchNum">0</div>
+        <div class="s-lab">✅ ตรง (SKU)</div>
+      </button>
+      <button type="button" class="stat tap" id="scanCardShort" data-sumcard="short">
+        <div class="s-num neg" id="scanCardShortNum">0</div>
+        <div class="s-lab">❌ ขาด (SKU)</div>
+      </button>
+      <button type="button" class="stat tap" id="scanCardOver" data-sumcard="over">
+        <div class="s-num pos" id="scanCardOverNum">0</div>
+        <div class="s-lab">➕ เกิน (SKU)</div>
+      </button>
+    </div>
+    <button class="btn ghost sm block" id="btnScanExport"
+            style="display:none;margin-bottom:12px">⬇ Export Excel</button>
+
     <label class="fld" style="margin-bottom:12px">
       <span>เก็บทีละโซน — แสดงเฉพาะ Location ที่ขึ้นต้นด้วย</span>
       <input type="text" id="locFilter" placeholder="เช่น A หรือ B4" autocomplete="off"
@@ -1446,7 +1469,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.4.2';
+var APP_VERSION = '2.4.3';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -5309,9 +5332,26 @@ function pushRecent(name, delta, ts) {
 
 /* ตัวเลขใหญ่ = ยอดของโซนที่ของชิ้นล่าสุดสังกัดอยู่
    ป้ายใต้ตัวเลขต้องบอกชื่อโซนด้วย ไม่งั้นตัวเลขเปลี่ยนไปมาแล้วคนอ่านผิดโซน */
+/* ผลต่างสดบนหน้ายิง — admin เท่านั้น (ลิสต์เดียวกับหน้าสรุป คนละชุด id)
+   ถ้าไม่ใช่ admin จะไม่คำนวณเลย: summaryData() วนทุก SKU ในรอบ และตัวนี้ถูกเรียก
+   ทุกครั้งที่ยิง เด็กหน้าร้านที่ใช้มือถือรุ่นเล็กจึงไม่ต้องจ่ายค่านี้ */
+var SCAN_ADMIN_ONLY = ['scanDiffCards', 'btnScanExport'];
+
+function renderScanDiffCards() {
+  if (!applyAdminOnly(SCAN_ADMIN_ONLY)) return;
+  var m = 0, s = 0, o = 0;
+  summaryData().rows.forEach(function (r) {
+    if (r.diff === 0) m++; else if (r.diff < 0) s++; else o++;
+  });
+  $('scanCardMatchNum').textContent = fmtNum(m);
+  $('scanCardShortNum').textContent = fmtNum(s);
+  $('scanCardOverNum').textContent = fmtNum(o);
+}
+
 function renderScanTotals() {
   var nm = String(state.lastZoneName || '').trim();
   $('scanTotal').textContent = fmtNum(nm ? (state.zoneTotals[nm] || 0) : 0);
+  renderScanDiffCards();
   var lab = $('scanTotalLab');
   if (!lab) return;
   lab.textContent = !nm ? 'ชิ้นที่ยิงแล้วในโซนนี้'
@@ -6457,12 +6497,19 @@ var SUMMARY_ADMIN_ONLY = ['sumCards', 'sumTableWrap', 'costNote', 'foreignCard',
                           'unknownCard', 'statusCard', 'manualCard', 'btnExport',
                           'priceFilters'];
 
-function applySummaryPermissions() {
+/* เปิดให้ admin / คงซ่อนสำหรับคนอื่น — คืนค่าว่าเป็น admin ไหม ให้คนเรียกใช้ต่อ
+   ใช้ร่วมกันทั้งหน้าสรุปและหน้ายิง กติกาการซ่อนจะได้ไม่แตกเป็นสองชุด */
+function applyAdminOnly(ids) {
   var admin = isAdmin();
-  SUMMARY_ADMIN_ONLY.forEach(function (id) {
+  ids.forEach(function (id) {
     var el = document.getElementById(id);
     if (el) el.style.display = admin ? '' : 'none';
   });
+  return admin;
+}
+
+function applySummaryPermissions() {
+  var admin = applyAdminOnly(SUMMARY_ADMIN_ONLY);
   $('btnExport').disabled = !admin;
 
   var box = $('myProgress');
@@ -11168,7 +11215,9 @@ function init() {
     b.onclick = function () { setPriceField(b.getAttribute('data-docprice')); };
   });
   $('btnExport').onclick = exportExcel;
-  document.querySelectorAll('#sumCards [data-sumcard]').forEach(function (b) {
+  $('btnScanExport').onclick = exportExcel;      // ปุ่มเดียวกันกับหน้าสรุป คนละที่วาง
+  /* ครอบทั้งการ์ดหน้าสรุปและการ์ดผลต่างสดบนหน้ายิง — openSumCard เช็คสิทธิ์ในตัวเองอยู่แล้ว */
+  document.querySelectorAll('[data-sumcard]').forEach(function (b) {
     b.onclick = function () { openSumCard(b.getAttribute('data-sumcard')); };
   });
   $('btnExportPicked').onclick = function () { exportJobsExcel(state.exportPick.slice()); };
