@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.3.4">
+<meta name="version" content="2.3.5">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.3.4</title>
+<title>ISRD Stocktake v2.3.5</title>
 
 <style>
 :root{
@@ -924,6 +924,21 @@ body.no-doc-images .doc .imgbox{display:none}
         ช่อง Note ว่าง = <b>ไม่แตะ</b>หมายเหตุเดิม · รหัสที่ไม่มีใน Master จะถูกข้าม ไม่สร้างสินค้าใหม่<br>
         ไฟล์นี้แตะเฉพาะ<b>หมายเหตุ</b> ไม่แตะประเภทสินค้า ราคา หรือยอดนับใด ๆ
       </p>
+      <button class="btn ghost sm block" id="btnTypeTemplate" style="margin-top:12px">⬇ ดาวน์โหลด Template (กรอกประเภท)</button>
+      <p class="muted" style="margin:10px 0 0">
+        ได้ไฟล์ Excel ตาม<b>รายการที่กรองอยู่บนจอตอนนี้</b> (ตัวกรอง + คำค้น) ไม่ใช่แค่ 200 แถวแรกที่เห็น<br>
+        ช่อง <b>ประเภท</b> เติมค่าปัจจุบันมาให้แล้ว แก้เป็น <b>Product</b> หรือ <b>Not Product</b>
+        แล้วอัปโหลดกลับด้วยปุ่มข้างล่าง<br>
+        อยากไล่ของที่ระบบเดาไว้ ให้กดตัวกรอง "รอตรวจสอบ" ก่อนโหลด
+      </p>
+      <input type="file" id="typeFile" accept=".csv,.xlsx" style="display:none">
+      <button class="btn ghost sm block" id="btnImportType" style="margin-top:12px">🏷 เปลี่ยนประเภทจากไฟล์</button>
+      <p class="muted" style="margin:10px 0 0">
+        ไฟล์ต้องมีหัวตาราง <b>รหัสสินค้า</b> และ <b>ประเภท</b> (จับจากชื่อหัวตาราง ไม่ใช่ตำแหน่งคอลัมน์)<br>
+        ช่องประเภทว่าง = <b>ไม่แตะ</b>ของเดิม · รหัสที่ไม่มีใน Master จะถูกข้าม ไม่สร้างสินค้าใหม่<br>
+        ไฟล์นี้แตะเฉพาะ<b>ประเภทสินค้า</b> ไม่แตะราคา หมายเหตุ หรือยอดนับใด ๆ ·
+        ประเภทที่ตั้งจากไฟล์นี้นับเป็น<b>ค่าที่คนตั้งเอง</b> นำเข้า Master รอบหน้าจะไม่ทับ
+      </p>
       <button class="btn ghost sm block" id="btnImportImages" style="margin-top:12px">🖼 นำเข้ารูปสินค้า (JSON)</button>
       <p class="muted" style="margin:10px 0 0">
         รับได้ทั้ง <b>product-images.json</b> และ <b>product-images.min.json</b><br>
@@ -1369,7 +1384,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.3.4';
+var APP_VERSION = '2.3.5';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -2902,6 +2917,122 @@ function parseNoteFile(parsed) {
   }
 
   /* นับจากจำนวนคีย์ ไม่ใช่จำนวนแถว — รหัสซ้ำในไฟล์ต้องนับเป็นสินค้าตัวเดียว */
+  stat.updated = Object.keys(updates).length;
+  return { updates: updates, stat: stat };
+}
+
+/* ============================================================
+   ไฟล์เปลี่ยนประเภทสินค้าอย่างเดียว (Product / Not Product)
+   โครงเดียวกับไฟล์ Note ต่างแค่คอลัมน์สุดท้ายและกติกาการแปลงค่า
+   ต้นทางคือไฟล์ที่ downloadTypeTemplate ปล่อยออกไป แต่รับไฟล์ที่คนทำเองก็ได้
+   ขอแค่มีหัวตาราง "รหัสสินค้า" กับ "ประเภท" — จับจากชื่อ ไม่ใช่ตำแหน่งคอลัมน์
+   ============================================================ */
+var TYPE_FILE_COLUMNS = {
+  code: COLUMN_ALIASES.code,
+  type: ['ประเภท', 'ประเภทสินค้า', 'type', 'producttype', 'itemtype']
+};
+
+/* คำที่ยอมรับในช่องประเภท — เทียบหลัง normText (ตัดช่องว่างและ _ ออก ตัวพิมพ์เล็ก)
+   'Not Product' จึงกลายเป็น 'notproduct' ตรงกับที่ Template ปล่อยออกไป */
+var TYPE_FILE_WORDS = {
+  notProduct: ['notproduct', 'np', 'ไม่ใช่สินค้า', 'ไม่ใช่สินค้าขาย'],
+  product: ['product', 'p', 'สินค้า']
+};
+
+function parseTypeWord(raw) {
+  var n = normText(raw);
+  if (!n) return '';                                        // ว่าง = ไม่แตะของเดิม
+  if (TYPE_FILE_WORDS.notProduct.indexOf(n) >= 0) return 'notProduct';
+  if (TYPE_FILE_WORDS.product.indexOf(n) >= 0) return 'product';
+  return null;                                              // พิมพ์อะไรมาก็ไม่รู้จัก
+}
+
+/* ประเภทที่ Template เติมลงช่องให้ตอนดาวน์โหลด — ใช้เป็นตัวเทียบว่า "ค่าเดิมอยู่แล้ว"
+   ต้องเทียบกับค่านี้ ไม่ใช่ p.type ดิบ ๆ เพราะของ "ปิดใช้งาน" (type:'inactive')
+   ถูกเติมลงไฟล์ว่า Product เหมือนกัน ถ้าเทียบกับ type ดิบ การอัปโหลด Template
+   เดิมกลับมาโดยไม่แก้อะไรเลย จะพลิกของเลิกขายทั้งกองเป็น Product เงียบ ๆ */
+function templateTypeOf(product) {
+  return (product && product.type === 'notProduct') ? 'notProduct' : 'product';
+}
+
+/* คืน { updates: {key: 'product'|'notProduct'}, stat } — ไม่เขียนฐานเอง คนเรียกตัดสินใจ
+   กติกาสำคัญ: ช่องประเภทว่าง = ข้าม ไม่ใช่ตีเป็น Product (กันพลิกหมื่นแถวโดยไม่ตั้งใจ) */
+function parseTypeFile(parsed) {
+  var rows = (parsed && parsed.rows) || [];
+  if (!rows.length) throw new Error('EMPTY_FILE');
+
+  var headerRow = findHeaderRow(rows);
+  if (headerRow < 0) throw missingColumnsError(['รหัสสินค้า', 'ประเภท']);
+
+  var header = rows[headerRow];
+  var idx = {};
+  Object.keys(TYPE_FILE_COLUMNS).forEach(function (field) {
+    var aliases = TYPE_FILE_COLUMNS[field].map(normText);
+    for (var c = 0; c < header.length; c++) {
+      if (headerMatches(header[c], aliases)) { idx[field] = c; return; }
+    }
+  });
+
+  var missing = [];
+  if (idx.code === undefined) missing.push('รหัสสินค้า');
+  if (idx.type === undefined) missing.push('ประเภท');
+  if (missing.length) throw missingColumnsError(missing);
+
+  /* Excel ทิ้งแถวว่างท้ายชีตไว้เยอะ ตัดก่อนวน ไม่งั้นรายงานจะบอกว่าข้ามหลายหมื่นแถว */
+  var lastReal = rows.length - 1;
+  while (lastReal > headerRow && !rowHasContent(rows[lastReal])) lastReal--;
+
+  var updates = {};
+  var stat = {
+    rows: 0, updated: 0, noCode: 0, notFound: 0, notFoundCodes: [],
+    blank: 0, invalid: 0, invalidValues: [], same: 0,
+    toNotProduct: 0, toProduct: 0
+  };
+
+  for (var r = headerRow + 1; r <= lastReal; r++) {
+    var row = rows[r] || [];
+    if (!rowHasContent(row)) continue;
+
+    var firstText = '';
+    for (var fc = 0; fc < row.length && !firstText; fc++) firstText = cellText(row[fc]);
+    if (isExportFooter(firstText) || isExportFooter(row[idx.code])) break;
+
+    stat.rows++;
+    var code = cellText(row[idx.code]);
+    if (!code) { stat.noCode++; continue; }
+
+    var key = safeKey(code);
+    var product = state.products[key];
+    if (!product) {
+      /* ไฟล์นี้ไม่มีสิทธิ์สร้างสินค้าใหม่ — Master มาจากไฟล์ Zort เท่านั้น */
+      stat.notFound++;
+      if (stat.notFoundCodes.length < 10) stat.notFoundCodes.push(code);
+      continue;
+    }
+
+    var raw = cellText(row[idx.type]);
+    var type = parseTypeWord(raw);
+    if (type === '') { stat.blank++; continue; }
+    if (type === null) {
+      /* พิมพ์ผิดต้องข้าม ไม่ใช่เดาให้ — เดาผิดทีเดียวคือพลิกประเภทสินค้าจริง */
+      stat.invalid++;
+      if (stat.invalidValues.length < 10 && stat.invalidValues.indexOf(raw) < 0) {
+        stat.invalidValues.push(raw);
+      }
+      continue;
+    }
+
+    /* ค่าเดิมอยู่แล้วก็ไม่ต้องเขียน — อัปโหลด Template เดิมซ้ำจะได้ไม่ยิงฐานหมื่นห้าพันครั้งฟรี ๆ
+       นับเฉพาะตัวที่ยังไม่เคยเจอในไฟล์นี้ ไม่งั้นรหัสซ้ำจะทำให้ยอดในรายงานเกินจำนวนแถวจริง */
+    if (type === templateTypeOf(product)) { if (!updates[key]) stat.same++; continue; }
+
+    updates[key] = type;     // รหัสซ้ำในไฟล์เดียวกัน = แถวหลังชนะ
+  }
+
+  /* นับจากจำนวนคีย์ ไม่ใช่จำนวนแถว — รหัสซ้ำในไฟล์ต้องนับเป็นสินค้าตัวเดียว */
+  Object.keys(updates).forEach(function (k) {
+    if (updates[k] === 'notProduct') stat.toNotProduct++; else stat.toProduct++;
+  });
   stat.updated = Object.keys(updates).length;
   return { updates: updates, stat: stat };
 }
@@ -5616,6 +5747,7 @@ function renderMaster() {
   $('btnImportMaster').disabled = !isAdmin();
   /* ปุ่มโหลด Template ไม่ล็อก — เป็นการอ่านอย่างเดียว ใครดูหน้านี้ได้ก็โหลดไปดูได้ */
   $('btnImportNote').disabled = !isAdmin();
+  $('btnImportType').disabled = !isAdmin();
 
   document.querySelectorAll('[data-mfilter]').forEach(function (b) {
     b.className = 'btn sm ' + (b.getAttribute('data-mfilter') === state.masterFilter ? '' : 'grey');
@@ -6212,6 +6344,34 @@ function downloadNoteTemplate() {
   var a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = 'ISRD-Master-Note-Template.xlsx';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+  toast('ดาวน์โหลด Template แล้ว ' + fmtNum(keys.length) + ' รายการ');
+}
+
+/* ---------- Template สำหรับกรอกประเภทสินค้าทีละหลายพันตัว ----------
+   โครงเดียวกับ Template ของ Note ต่างแค่คอลัมน์สุดท้าย
+   ช่อง "ประเภท" เติมค่าปัจจุบันมาให้ คนกรอกจะได้เห็นว่าระบบเดาอะไรไว้
+   แล้วแก้เฉพาะตัวที่ผิด ไม่ต้องพิมพ์ใหม่ทุกแถว */
+function downloadTypeTemplate() {
+  var keys = masterRows();
+  if (!keys.length) {
+    toast('ไม่มีสินค้าในรายการที่กรองอยู่ ลองล้างคำค้นหรือเปลี่ยนตัวกรองก่อน', true);
+    return;
+  }
+
+  var rows = [['รหัสสินค้า', 'ชื่อสินค้า', 'หมวดหมู่', 'ประเภท']];
+  keys.forEach(function (key) {
+    var p = state.products[key] || {};
+    rows.push([p.code || key, p.name || '', p.category || '',
+               p.type === 'notProduct' ? 'Not Product' : 'Product']);
+  });
+
+  var blob = buildXlsx([{ name: 'Type', rows: rows, widths: [18, 44, 24, 16] }]);
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'ISRD-Master-Type-Template.xlsx';
   document.body.appendChild(a);
   a.click();
   setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
@@ -7419,6 +7579,137 @@ function handleNoteImport(file) {
     toast(messages[code] || 'อัปเดตหมายเหตุไม่สำเร็จ กรุณาตรวจไฟล์แล้วลองใหม่', true);
   }).then(function () {
     $('btnImportNote').disabled = false;
+    renderMaster();
+  });
+}
+
+/* ---------- เปลี่ยนประเภทสินค้าจากไฟล์ ----------
+   ต่างจากไฟล์ Note ตรงที่ตัวนี้ตั้ง typeSource='manual' ให้ด้วย
+   ตั้งใจให้เป็นแบบนั้น: ประเภทที่คนกรอกมากับไฟล์คือค่าที่คนตัดสินใจเอง
+   ไฟล์ Zort รอบหน้าต้องไม่มาทับ (buildProductPatch เช็ค typeSource='manual')
+   ที่ปลอดภัยได้เพราะ parseTypeFile ข้ามแถวที่ค่าตรงกับที่ Template เติมมาให้แล้ว
+   ของ "ปิดใช้งาน" ที่ไม่ได้ถูกแก้จริง ๆ จึงไม่หลุดเข้ามาถึงตรงนี้ */
+function typeMissingColumnsHelp(missing) {
+  ask('ไฟล์นี้ยังใช้ไม่ได้',
+      'ไฟล์ที่อัปโหลดมาไม่มีคอลัมน์ ' + (missing || []).join(', ') + '\n\n' +
+      'ไฟล์เปลี่ยนประเภทสินค้าต้องมีหัวตาราง และมีคอลัมน์เหล่านี้\n' +
+      'จำเป็น: รหัสสินค้า, ประเภท (จะใช้หัวว่า "ประเภทสินค้า" ก็ได้)\n\n' +
+      'วิธีที่ง่ายที่สุดคือกดปุ่ม "ดาวน์โหลด Template (กรอกประเภท)" แล้วกรอกลงไฟล์นั้น\n' +
+      'ข้อมูลเดิมยังอยู่ครบ ไม่ถูกแตะต้อง',
+      'รับทราบ', { hideCancel: true });
+}
+
+function handleTypeImport(file) {
+  if (!requireAdmin('เปลี่ยนประเภทสินค้าไม่ได้')) return;
+  var isXlsx = /\.xlsx$/i.test(file.name);
+  $('btnImportType').disabled = true;
+  $('masterCount').textContent = 'กำลังอ่านไฟล์...';
+
+  /* คืน promise ออกไปด้วย เพื่อให้เทสต์รอจนจบงานได้จริง ปุ่มบนจอไม่ได้ใช้ค่านี้ */
+  return file.arrayBuffer().then(function (buf) {
+    return isXlsx ? parseXlsx(buf) : Promise.resolve(parseCsv(decodeTextFile(buf)));
+  }).then(function (parsed) {
+    var res = parseTypeFile(parsed);
+    var stat = res.stat;
+    var keys = Object.keys(res.updates);
+
+    if (!keys.length) {
+      var why = 'อ่านได้ ' + fmtNum(stat.rows) + ' แถว แต่ไม่มีแถวไหนที่ต้องเปลี่ยน\n\n' +
+        'ช่องประเภทว่าง ' + fmtNum(stat.blank) + ' แถว (ว่าง = ไม่แตะของเดิม)\n' +
+        'ประเภทตรงกับของเดิมอยู่แล้ว ' + fmtNum(stat.same) + ' แถว\n' +
+        'ช่องประเภทกรอกมาไม่ถูก ' + fmtNum(stat.invalid) + ' แถว\n' +
+        'รหัสไม่มีใน Master ' + fmtNum(stat.notFound) + ' แถว';
+      ask('ไม่มีอะไรต้องเปลี่ยน', why, 'ปิด', { hideCancel: true });
+      return;
+    }
+
+    /* ไฟล์เดียวแตะได้ทีละหลายพันตัว ให้เห็นตัวเลขก่อนแล้วค่อยตัดสินใจ */
+    var skipped = stat.blank + stat.same + stat.invalid + stat.notFound;
+    return ask('ยืนยันการเปลี่ยนประเภทสินค้า',
+        'จะเปลี่ยนประเภท ' + fmtNum(stat.updated) + ' รายการ\n\n' +
+        'เป็น Not Product ' + fmtNum(stat.toNotProduct) + ' รายการ\n' +
+        'เป็น Product ' + fmtNum(stat.toProduct) + ' รายการ\n' +
+        'ข้าม ' + fmtNum(skipped) + ' แถว (ว่าง ' + fmtNum(stat.blank) +
+        ' · เหมือนเดิม ' + fmtNum(stat.same) + ' · กรอกไม่ถูก ' + fmtNum(stat.invalid) +
+        ' · ไม่มีใน Master ' + fmtNum(stat.notFound) + ')\n\n' +
+        'ประเภทที่ตั้งจากไฟล์นี้นับเป็นค่าที่คนตั้งเอง นำเข้า Master รอบหน้าจะไม่ทับ\n' +
+        'ไฟล์นี้แตะเฉพาะประเภทสินค้า ไม่แตะราคา หมายเหตุ หรือยอดนับ',
+        'เปลี่ยน ' + fmtNum(stat.updated) + ' รายการ').then(function (ok) {
+      if (!ok) { toast('ยกเลิกแล้ว ข้อมูลเดิมไม่ถูกแตะ'); return; }
+
+      var now = Date.now();
+      /* เขียนทีละ field ไม่ใช่ทั้งเรคอร์ด — ค่าอื่นของสินค้าจึงไม่มีทางหาย
+         needsReview=false ด้วย เพราะมีคนตัดสินประเภทให้แล้ว ไม่ต้องรอตรวจอีก */
+      var pairs = [];
+      keys.forEach(function (k) {
+        pairs.push([k + '/type', res.updates[k]]);
+        pairs.push([k + '/typeSource', 'manual']);
+        pairs.push([k + '/needsReview', false]);
+        pairs.push([k + '/updatedAt', now]);
+      });
+
+      var CHUNK = 400;
+      function step(i) {
+        if (i >= pairs.length) return Promise.resolve();
+        var chunk = {};
+        pairs.slice(i, i + CHUNK).forEach(function (p) { chunk[p[0]] = p[1]; });
+        return db.update('products', chunk).then(function () {
+          $('masterCount').textContent = 'กำลังบันทึก ' + fmtNum(Math.min(i + CHUNK, pairs.length)) +
+            ' / ' + fmtNum(pairs.length) + ' ...';
+          return step(i + CHUNK);
+        });
+      }
+
+      return step(0).then(function () {
+        /* อัปเดตในเครื่องเองแทนการโหลด products ทั้งก้อนกลับมา (หมื่นห้าพันตัว)
+           type ไม่ได้อยู่ใน scan index จึงไม่ต้อง buildScanIndex ใหม่ */
+        keys.forEach(function (k) {
+          if (!state.products[k]) return;
+          state.products[k].type = res.updates[k];
+          state.products[k].typeSource = 'manual';
+          state.products[k].needsReview = false;
+          state.products[k].updatedAt = now;
+        });
+
+        var box = document.createElement('div');
+        var sec = repSection('ผลการเปลี่ยนประเภทสินค้า');
+        repLine(sec, 'อ่านจากไฟล์', fmtNum(stat.rows) + ' แถว');
+        repLine(sec, 'เปลี่ยนเป็น Not Product', fmtNum(stat.toNotProduct) + ' รายการ');
+        repLine(sec, 'เปลี่ยนเป็น Product', fmtNum(stat.toProduct) + ' รายการ');
+        repLine(sec, 'ข้าม (ช่องประเภทว่าง)', fmtNum(stat.blank) + ' แถว');
+        repLine(sec, 'ข้าม (ค่าเดิมอยู่แล้ว)', fmtNum(stat.same) + ' แถว');
+        repLine(sec, 'ข้าม (กรอกประเภทไม่ถูก)', fmtNum(stat.invalid) + ' แถว', stat.invalid > 0);
+        if (stat.invalidValues.length) {
+          repNote(sec, 'ตัวอย่างค่าที่อ่านไม่ออก: ' + stat.invalidValues.join(', ') +
+            ' — ช่องประเภทรับได้แค่ Product หรือ Not Product');
+        }
+        repLine(sec, 'ข้าม (รหัสไม่มีใน Master)', fmtNum(stat.notFound) + ' แถว', stat.notFound > 0);
+        if (stat.notFoundCodes.length) {
+          repNote(sec, 'ตัวอย่างรหัสที่ไม่เจอ: ' + stat.notFoundCodes.join(', ') +
+            (stat.notFound > stat.notFoundCodes.length ? ' ...' : '') +
+            ' — ต้องนำเข้า Master ให้รู้จักสินค้าก่อน ไฟล์นี้ไม่สร้างสินค้าใหม่');
+        }
+        if (stat.noCode) repLine(sec, 'ข้าม (ไม่มีรหัสสินค้า)', fmtNum(stat.noCode) + ' แถว', true);
+        repNote(sec, 'ไฟล์นี้เขียนเฉพาะประเภทสินค้า ไม่แตะราคาต้นทุน หมายเหตุ Status หรือยอดนับ · ' +
+          'ประเภทที่ตั้งจากไฟล์นี้เป็นค่าที่คนตั้งเอง นำเข้า Master รอบหน้าจะไม่ทับ');
+        box.appendChild(sec);
+        ask('เปลี่ยนประเภทสินค้าเรียบร้อย',
+            'เปลี่ยนประเภทแล้ว ' + fmtNum(stat.updated) + ' รายการ',
+            'ปิด', { hideCancel: true, detail: box });
+      });
+    });
+  }).catch(function (err) {
+    var code = err && err.message;
+    if (code === 'MISSING_COLUMNS') { typeMissingColumnsHelp(err.missing); return; }
+    var messages = {
+      EMPTY_FILE: 'ไฟล์นี้ว่างเปล่า กรุณาตรวจไฟล์แล้วอัปโหลดใหม่',
+      NO_SHEET: 'อ่านไฟล์ Excel นี้ไม่ได้ กรุณาบันทึกเป็น .xlsx หรือ CSV แล้วอัปโหลดใหม่',
+      BAD_ZIP: 'ไฟล์ Excel นี้เสียหรือไม่ใช่ไฟล์ .xlsx กรุณาบันทึกเป็น CSV แล้วอัปโหลดใหม่',
+      NO_INFLATE: 'เครื่องนี้อ่านไฟล์ .xlsx ไม่ได้ กรุณาบันทึกเป็น CSV แล้วอัปโหลดใหม่'
+    };
+    toast(messages[code] || 'เปลี่ยนประเภทสินค้าไม่สำเร็จ กรุณาตรวจไฟล์แล้วลองใหม่', true);
+  }).then(function () {
+    $('btnImportType').disabled = false;
     renderMaster();
   });
 }
@@ -10469,6 +10760,16 @@ function init() {
   };
   $('noteFile').addEventListener('change', function () {
     if (this.files && this.files[0]) handleNoteImport(this.files[0]);
+    this.value = '';
+  });
+
+  $('btnTypeTemplate').onclick = downloadTypeTemplate;
+  $('btnImportType').onclick = function () {
+    if (!requireAdmin('เปลี่ยนประเภทสินค้าไม่ได้')) return;
+    $('typeFile').click();
+  };
+  $('typeFile').addEventListener('change', function () {
+    if (this.files && this.files[0]) handleTypeImport(this.files[0]);
     this.value = '';
   });
 
