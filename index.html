@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.5.1">
+<meta name="version" content="2.6.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.5.1</title>
+<title>ISRD Stocktake v2.6.0</title>
 
 <style>
 :root{
@@ -227,6 +227,9 @@ body.locked .topbar,body.locked .wrap,body.locked .nav{display:none}
 .prodcard .pc-info{flex:1 1 auto;min-width:0}
 .pc-code{font-family:ui-monospace,Consolas,monospace;font-size:14px;font-weight:700;color:var(--muted)}
 .pc-cat{font-size:13px;color:var(--muted);margin-top:2px;overflow-wrap:break-word}
+/* ราคาขายบนการ์ดสินค้าที่ยิง — เข้มกว่าหมวดหมู่เพราะเป็นตัวเลขที่ต้องอ่านออกทันที */
+.pc-price{font-size:14px;font-weight:800;margin-top:3px;font-variant-numeric:tabular-nums}
+.pc-price.none{font-weight:600;color:var(--muted)}
 .pc-badges{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .pc-badges:empty{display:none}
 /* หมายเหตุจาก Master — ต้องสะดุดตาพอให้คนหยุดอ่านก่อนยิงตัวถัดไป */
@@ -815,6 +818,9 @@ body.no-doc-images .doc .imgbox{display:none}
           <div class="pc-code" id="slCode"></div>
           <div class="sl-name" id="slName">พร้อมรับการยิง</div>
           <div class="pc-cat" id="slCat"></div>
+          <!-- ราคาขายต่อชิ้น — คนนับต้องเห็นว่าของที่ถืออยู่มูลค่าเท่าไหร่
+               ถ้ายังไม่ได้กรอกราคา จะขึ้นขีดกลางให้รู้ว่าไม่ใช่ราคา 0 บาทจริง ๆ -->
+          <div class="pc-price" id="slPrice"></div>
           <div class="pc-badges" id="slBadges"></div>
           <div class="sl-note" id="slNote" style="display:none"><b>📋 หมายเหตุจาก Master</b><span id="slNoteText"></span></div>
           <div class="pc-nums">
@@ -980,21 +986,23 @@ body.no-doc-images .doc .imgbox{display:none}
         ช่อง Note ว่าง = <b>ไม่แตะ</b>หมายเหตุเดิม · รหัสที่ไม่มีใน Master จะถูกข้าม ไม่สร้างสินค้าใหม่<br>
         ไฟล์นี้แตะเฉพาะ<b>หมายเหตุ</b> ไม่แตะประเภทสินค้า ราคา หรือยอดนับใด ๆ
       </p>
-      <button class="btn ghost sm block" id="btnTypeTemplate" style="margin-top:12px">⬇ ดาวน์โหลด Template (ประเภท + สถานะ)</button>
+      <button class="btn ghost sm block" id="btnTypeTemplate" style="margin-top:12px">⬇ ดาวน์โหลด Template (ประเภท + สถานะ + ราคา)</button>
       <p class="muted" style="margin:10px 0 0">
         ได้ไฟล์ Excel ตาม<b>รายการที่กรองอยู่บนจอตอนนี้</b> (ตัวกรอง + คำค้น) ไม่ใช่แค่ 200 แถวแรกที่เห็น<br>
-        ช่อง <b>ประเภท</b> กับ <b>สถานะ</b> เติมค่าปัจจุบันมาให้แล้ว —
+        ช่อง <b>ประเภท</b> · <b>สถานะ</b> · <b>ราคาขาย</b> เติมค่าปัจจุบันมาให้แล้ว —
         ประเภทแก้เป็น <b>Product</b> หรือ <b>Not Product</b> · สถานะพิมพ์ค่าไหนก็ได้
-        (ค่าใหม่จะถูกเพิ่มเข้าทะเบียนให้เอง) แล้วอัปโหลดกลับด้วยปุ่มข้างล่าง<br>
+        (ค่าใหม่จะถูกเพิ่มเข้าทะเบียนให้เอง) · ราคาขายใส่เป็นตัวเลข
+        แล้วอัปโหลดกลับด้วยปุ่มข้างล่าง<br>
         อยากไล่ของที่ระบบเดาไว้ ให้กดตัวกรอง "รอตรวจสอบ" ก่อนโหลด
       </p>
       <input type="file" id="typeFile" accept=".csv,.xlsx" style="display:none">
-      <button class="btn ghost sm block" id="btnImportType" style="margin-top:12px">🏷 เปลี่ยนประเภท + สถานะ จากไฟล์</button>
+      <button class="btn ghost sm block" id="btnImportType" style="margin-top:12px">🏷 เปลี่ยนประเภท + สถานะ + ราคา จากไฟล์</button>
       <p class="muted" style="margin:10px 0 0">
-        ไฟล์ต้องมีหัวตาราง <b>รหัสสินค้า</b> และ <b>ประเภท</b> ส่วน <b>สถานะ</b> มีก็ได้ไม่มีก็ได้
-        (จับจากชื่อหัวตาราง ไม่ใช่ตำแหน่งคอลัมน์)<br>
+        ไฟล์ต้องมีหัวตาราง <b>รหัสสินค้า</b> และ <b>ประเภท</b> ส่วน <b>สถานะ</b> กับ <b>ราคาขาย</b>
+        มีก็ได้ไม่มีก็ได้ (จับจากชื่อหัวตาราง ไม่ใช่ตำแหน่งคอลัมน์)<br>
         ช่องไหนว่าง = <b>ไม่แตะ</b>ของเดิมช่องนั้น · รหัสที่ไม่มีใน Master จะถูกข้าม ไม่สร้างสินค้าใหม่<br>
-        ไฟล์นี้แตะเฉพาะ<b>ประเภทสินค้า</b>กับ<b>สถานะ</b> ไม่แตะราคา หมายเหตุ หรือยอดนับใด ๆ ·
+        ไฟล์นี้แตะเฉพาะ<b>ประเภทสินค้า</b> · <b>สถานะ</b> · <b>ราคาขาย</b>
+        ไม่แตะราคาต้นทุน หมายเหตุ หรือยอดนับใด ๆ ·
         ค่าที่ตั้งจากไฟล์นี้นับเป็น<b>ค่าที่คนตั้งเอง</b> นำเข้า Master รอบหน้าจะไม่ทับ
       </p>
       <button class="btn ghost sm block" id="btnImportImages" style="margin-top:12px">🖼 นำเข้ารูปสินค้า (JSON / CSV)</button>
@@ -1469,7 +1477,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.5.1';
+var APP_VERSION = '2.6.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -3015,8 +3023,10 @@ function parseNoteFile(parsed) {
 var TYPE_FILE_COLUMNS = {
   code: COLUMN_ALIASES.code,
   type: ['ประเภท', 'ประเภทสินค้า', 'type', 'producttype', 'itemtype'],
-  /* สถานะเป็นคอลัมน์เสริม ไม่มีก็ยังใช้ไฟล์ได้ — ไฟล์รุ่นก่อนที่มีแต่ประเภทต้องไม่พัง */
-  status: COLUMN_ALIASES.status
+  /* สถานะกับราคาขายเป็นคอลัมน์เสริม ไม่มีก็ยังใช้ไฟล์ได้
+     ไฟล์รุ่นก่อนที่มีแต่ประเภท (หรือประเภท+สถานะ) ต้องไม่พัง */
+  status: COLUMN_ALIASES.status,
+  price: COLUMN_ALIASES.sellPrice
 };
 
 /* คำที่ยอมรับในช่องประเภท — เทียบหลัง normText (ตัดช่องว่างและ _ ออก ตัวพิมพ์เล็ก)
@@ -3076,15 +3086,19 @@ function parseTypeFile(parsed) {
   var updates = {};
   var kind = {};                    // key -> 'changed' | 'confirmed' (นับตอนท้าย กันรหัสซ้ำนับสองรอบ)
   var statusUpdates = {};
+  var priceUpdates = {};
   var newStatuses = [];
   var knownStatuses = statusList();  // ค่ามาตรฐาน + ที่แอดมินเพิ่มไว้แล้ว
   var stat = {
     rows: 0, updated: 0, noCode: 0, notFound: 0, notFoundCodes: [],
     blank: 0, invalid: 0, invalidValues: [], same: 0,
     changed: 0, confirmed: 0, toNotProduct: 0, toProduct: 0, keptInactive: 0,
-    statusUpdated: 0, statusChanged: 0, statusBlank: 0, statusSame: 0, hasStatusColumn: false
+    statusUpdated: 0, statusChanged: 0, statusBlank: 0, statusSame: 0, hasStatusColumn: false,
+    priceUpdated: 0, priceChanged: 0, priceBlank: 0, priceSame: 0, priceBad: 0,
+    priceBadValues: [], hasPriceColumn: false
   };
   stat.hasStatusColumn = idx.status !== undefined;
+  stat.hasPriceColumn = idx.price !== undefined;
 
   for (var r = headerRow + 1; r <= lastReal; r++) {
     var row = rows[r] || [];
@@ -3123,6 +3137,27 @@ function parseTypeFile(parsed) {
         if (knownStatuses.indexOf(rawStatus) < 0 && newStatuses.indexOf(rawStatus) < 0) {
           newStatuses.push(rawStatus);
         }
+      }
+    }
+
+    /* ราคาขาย — อ่านก่อนจุดที่ฝั่งประเภท continue ทิ้งเหมือนกัน คนละคอลัมน์กัน
+       ราคาติดลบไม่มีความหมายในสต๊อก ตีเป็นกรอกผิดแล้วข้าม ไม่ใช่เขียนลงไป */
+    if (idx.price !== undefined) {
+      var rawPrice = cellText(row[idx.price]);
+      var parsedPrice = parseNumberCell(rawPrice);
+      if (parsedPrice.blank) {
+        stat.priceBlank++;                        // ว่าง = ไม่แตะของเดิม
+      } else if (parsedPrice.bad || parsedPrice.value < 0) {
+        stat.priceBad++;
+        if (stat.priceBadValues.length < 10 && stat.priceBadValues.indexOf(rawPrice) < 0) {
+          stat.priceBadValues.push(rawPrice);
+        }
+      } else if (parsedPrice.value === (Number(product.sellPrice) || 0) &&
+                 product.priceSource === 'manual') {
+        /* ยืนยันไว้ครบแล้ว อัปโหลดไฟล์เดิมซ้ำรอบสองจึงไม่ยิงฐานอีก */
+        if (priceUpdates[key] === undefined) stat.priceSame++;
+      } else {
+        priceUpdates[key] = parsedPrice.value;    // รหัสซ้ำในไฟล์ = แถวหลังชนะ
       }
     }
 
@@ -3173,7 +3208,13 @@ function parseTypeFile(parsed) {
   });
   stat.statusUpdated = Object.keys(statusUpdates).length;
 
-  return { updates: updates, statusUpdates: statusUpdates, newStatuses: newStatuses, stat: stat };
+  Object.keys(priceUpdates).forEach(function (k) {
+    if (priceUpdates[k] !== (Number((state.products[k] || {}).sellPrice) || 0)) stat.priceChanged++;
+  });
+  stat.priceUpdated = Object.keys(priceUpdates).length;
+
+  return { updates: updates, statusUpdates: statusUpdates, priceUpdates: priceUpdates,
+           newStatuses: newStatuses, stat: stat };
 }
 
 /* ============================================================
@@ -3964,6 +4005,14 @@ function buildProductPatch(incoming) {
       sellPrice: fresh.sellPrice,
       updatedAt: Date.now()
     };
+
+    /* ราคาขายที่ตั้งจาก Template (priceSource='manual') ชนะไฟล์เสมอ
+       กติกาเดียวกับ typeSource/statusSource — คนตัดสินใจไว้แล้ว ไฟล์ห้ามมาทับ
+       ไฟล์ Zort บางงวดส่งราคามาเป็น 0 ซึ่งจะล้างราคาที่กรอกไว้ทั้งกองถ้าไม่กัน */
+    if (old && old.priceSource === 'manual') {
+      next.sellPrice = Number(old.sellPrice) || 0;
+      next.priceSource = 'manual';
+    }
 
     /* Status: ไฟล์ทับได้เฉพาะเมื่อมีคอลัมน์นี้จริงและมีค่า
        ไฟล์ Zort ปกติไม่มีคอลัมน์นี้ ค่าที่แอดมินตั้งเองไว้จึงต้องอยู่ครบ
@@ -5203,6 +5252,16 @@ function makeBadge(text, tone) {
 
 /* หมายเหตุที่แอดมินกรอกไว้ใน Master — ต้องล้างทุกครั้งที่เปลี่ยนสินค้า
    ถ้าปล่อยค้าง คนนับจะอ่านหมายเหตุของตัวก่อนแล้วเข้าใจผิดว่าเป็นของตัวที่ยิงอยู่ */
+/* ราคาขายบนการ์ดสินค้าที่ยิง — ยังไม่กรอกราคาต้องขึ้นขีดกลาง
+   ถ้าโชว์ "฿0.00" คนนับจะเข้าใจว่าของชิ้นนี้ราคาศูนย์บาทจริง ๆ ซึ่งคนละเรื่องกัน */
+function setScanPrice(p) {
+  var box = $('slPrice');
+  if (!box) return;
+  var v = Number(p && p.sellPrice) || 0;
+  box.textContent = v > 0 ? 'ราคาขาย ฿' + fmtMoney(v) : 'ราคาขาย — (ยังไม่กรอก)';
+  box.className = 'pc-price' + (v > 0 ? '' : ' none');
+}
+
 function setScanNote(text) {
   var box = $('slNote');
   if (!box) return;
@@ -5219,6 +5278,7 @@ function showScanHit(key) {
   $('slName').textContent = p.name;
   $('slName').className = 'sl-name';
   $('slCat').textContent = [p.category, p.subCategory].filter(Boolean).join(' · ') || '(ไม่มีหมวดหมู่)';
+  setScanPrice(p);
 
   var badges = $('slBadges');
   badges.innerHTML = '';
@@ -5263,6 +5323,7 @@ function showScanNewCode(value, key) {
   $('slName').textContent = 'บันทึกแล้ว · ไม่มีในระบบ ต้องตรวจสอบภายหลัง';
   $('slName').className = 'sl-name';
   $('slCat').textContent = '';
+  setScanPrice(null);                    // ยังไม่มีสินค้าในระบบ จึงยังไม่มีราคา
   var badges = $('slBadges');
   badges.innerHTML = '';
   badges.appendChild(makeBadge('ไม่มีในระบบ', 'warn'));
@@ -6810,18 +6871,19 @@ function downloadTypeTemplate() {
     return;
   }
 
-  var rows = [['รหัสสินค้า', 'ชื่อสินค้า', 'หมวดหมู่', 'ประเภท', 'สถานะ']];
+  var rows = [['รหัสสินค้า', 'ชื่อสินค้า', 'หมวดหมู่', 'ประเภท', 'สถานะ', 'ราคาขาย']];
   keys.forEach(function (key) {
     var p = state.products[key] || {};
     rows.push([p.code || key, p.name || '', p.category || '',
                p.type === 'notProduct' ? 'Not Product' : 'Product',
-               p.status || DEFAULT_STATUS]);
+               p.status || DEFAULT_STATUS,
+               Number(p.sellPrice) || 0]);
   });
 
-  var blob = buildXlsx([{ name: 'Type', rows: rows, widths: [18, 44, 24, 16, 20] }]);
+  var blob = buildXlsx([{ name: 'Type', rows: rows, widths: [18, 44, 24, 16, 20, 14] }]);
   var a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'ISRD-Master-Type-Status-Template.xlsx';
+  a.download = 'ISRD-Master-Type-Status-Price-Template.xlsx';
   document.body.appendChild(a);
   a.click();
   setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
@@ -8094,8 +8156,9 @@ function typeMissingColumnsHelp(missing) {
   ask('ไฟล์นี้ยังใช้ไม่ได้',
       'ไฟล์ที่อัปโหลดมาไม่มีคอลัมน์ ' + (missing || []).join(', ') + '\n\n' +
       'ไฟล์เปลี่ยนประเภทสินค้าต้องมีหัวตาราง และมีคอลัมน์เหล่านี้\n' +
-      'จำเป็น: รหัสสินค้า, ประเภท (จะใช้หัวว่า "ประเภทสินค้า" ก็ได้)\n\n' +
-      'วิธีที่ง่ายที่สุดคือกดปุ่ม "ดาวน์โหลด Template (กรอกประเภท)" แล้วกรอกลงไฟล์นั้น\n' +
+      'จำเป็น: รหัสสินค้า, ประเภท (จะใช้หัวว่า "ประเภทสินค้า" ก็ได้)\n' +
+      'ไม่บังคับ: สถานะ, ราคาขาย\n\n' +
+      'วิธีที่ง่ายที่สุดคือกดปุ่ม "ดาวน์โหลด Template (ประเภท + สถานะ + ราคา)" แล้วกรอกลงไฟล์นั้น\n' +
       'ข้อมูลเดิมยังอยู่ครบ ไม่ถูกแตะต้อง',
       'รับทราบ', { hideCancel: true });
 }
@@ -8114,17 +8177,20 @@ function handleTypeImport(file) {
     var stat = res.stat;
     var keys = Object.keys(res.updates);
     var statusKeys = Object.keys(res.statusUpdates);
-    /* คีย์ทั้งหมดที่ต้องแตะ — บางแถวมีแต่ประเภท บางแถวมีแต่สถานะ */
+    var priceKeys = Object.keys(res.priceUpdates);
+    /* คีย์ทั้งหมดที่ต้องแตะ — บางแถวมีแต่ประเภท บางแถวมีแต่สถานะ บางแถวมีแต่ราคา */
     var touched = {};
     keys.forEach(function (k) { touched[k] = 1; });
     statusKeys.forEach(function (k) { touched[k] = 1; });
+    priceKeys.forEach(function (k) { touched[k] = 1; });
 
-    if (!keys.length && !statusKeys.length) {
+    if (!keys.length && !statusKeys.length && !priceKeys.length) {
       var why = 'อ่านได้ ' + fmtNum(stat.rows) + ' แถว แต่ไม่มีแถวไหนที่ต้องเขียน\n\n' +
         'ช่องประเภทว่าง ' + fmtNum(stat.blank) + ' แถว (ว่าง = ไม่แตะของเดิม)\n' +
         'ยืนยันประเภทไว้แล้ว ' + fmtNum(stat.same) + ' แถว\n' +
         'ช่องประเภทกรอกมาไม่ถูก ' + fmtNum(stat.invalid) + ' แถว\n' +
         (stat.hasStatusColumn ? 'ยืนยันสถานะไว้แล้ว ' + fmtNum(stat.statusSame) + ' แถว\n' : '') +
+        (stat.hasPriceColumn ? 'ยืนยันราคาไว้แล้ว ' + fmtNum(stat.priceSame) + ' แถว\n' : '') +
         'รหัสไม่มีใน Master ' + fmtNum(stat.notFound) + ' แถว';
       ask('ไม่มีอะไรต้องเปลี่ยน', why, 'ปิด', { hideCancel: true });
       return;
@@ -8133,8 +8199,8 @@ function handleTypeImport(file) {
     /* ไฟล์เดียวแตะได้ทีละหลายพันตัว ให้เห็นตัวเลขก่อนแล้วค่อยตัดสินใจ
        ต้องบอกให้ชัดว่าการกดยืนยันแตะทุกแถวในไฟล์ ไม่ใช่แค่แถวที่แก้ค่ามา */
     var skipped = stat.blank + stat.same + stat.invalid + stat.notFound;
-    return ask('ยืนยันประเภท + สถานะทั้งไฟล์',
-        'การอัปโหลดไฟล์นี้ = ยืนยันว่า "ทุกแถวในไฟล์" มีประเภทและสถานะถูกต้องแล้ว\n' +
+    return ask('ยืนยันประเภท + สถานะ + ราคาทั้งไฟล์',
+        'การอัปโหลดไฟล์นี้ = ยืนยันว่า "ทุกแถวในไฟล์" มีประเภท สถานะ และราคาถูกต้องแล้ว\n' +
         'ทั้งแถวที่แก้และแถวที่ปล่อยไว้เหมือนเดิม จะถูกเคลียร์ออกจาก "รอตรวจสอบ"\n\n' +
         'จะเขียนประเภททั้งหมด ' + fmtNum(stat.updated) + ' รายการ\n' +
         'เปลี่ยนเป็น Not Product ' + fmtNum(stat.toNotProduct) + ' รายการ\n' +
@@ -8149,11 +8215,19 @@ function handleTypeImport(file) {
                 (res.newStatuses.length > 5 ? ' ...' : '') + '\n'
               : '')
           : '\nไฟล์นี้ไม่มีคอลัมน์สถานะ — สถานะเดิมไม่ถูกแตะ\n') +
+        (stat.hasPriceColumn
+          ? '\nจะเขียนราคาขาย ' + fmtNum(stat.priceUpdated) + ' รายการ ' +
+            '(เปลี่ยนค่าจริง ' + fmtNum(stat.priceChanged) + ' รายการ)\n' +
+            (stat.priceBad
+              ? 'ข้าม (ราคากรอกไม่ถูก) ' + fmtNum(stat.priceBad) + ' แถว: ' +
+                stat.priceBadValues.slice(0, 5).join(', ') + '\n'
+              : '')
+          : '\nไฟล์นี้ไม่มีคอลัมน์ราคาขาย — ราคาเดิมไม่ถูกแตะ\n') +
         '\nข้าม ' + fmtNum(skipped) + ' แถว (ว่าง ' + fmtNum(stat.blank) +
         ' · ยืนยันไว้แล้ว ' + fmtNum(stat.same) + ' · กรอกไม่ถูก ' + fmtNum(stat.invalid) +
         ' · ไม่มีใน Master ' + fmtNum(stat.notFound) + ')\n\n' +
-        'ประเภทและสถานะที่ยืนยันจากไฟล์นี้นับเป็นค่าที่คนตั้งเอง นำเข้า Master รอบหน้าจะไม่ทับ\n' +
-        'ไฟล์นี้ไม่แตะราคา หมายเหตุ หรือยอดนับ',
+        'ประเภท สถานะ และราคาที่ยืนยันจากไฟล์นี้นับเป็นค่าที่คนตั้งเอง นำเข้า Master รอบหน้าจะไม่ทับ\n' +
+        'ไฟล์นี้ไม่แตะราคาต้นทุน หมายเหตุ หรือยอดนับ',
         'ยืนยันทั้งไฟล์ ' + fmtNum(Object.keys(touched).length) + ' รายการ').then(function (ok) {
       if (!ok) { toast('ยกเลิกแล้ว ข้อมูลเดิมไม่ถูกแตะ'); return; }
 
@@ -8174,6 +8248,13 @@ function handleTypeImport(file) {
         pairs.push([k + '/status', res.statusUpdates[k]]);
         pairs.push([k + '/statusSource', 'manual']);
         if (keys.indexOf(k) < 0) pairs.push([k + '/updatedAt', now]);
+      });
+      /* ราคาขายก็แยกลูปด้วยเหตุผลเดียวกัน — บางแถวมีแต่ราคา
+         priceSource='manual' ทำให้ไฟล์ Zort รอบหน้าไม่ทับ (buildProductPatch) */
+      priceKeys.forEach(function (k) {
+        pairs.push([k + '/sellPrice', res.priceUpdates[k]]);
+        pairs.push([k + '/priceSource', 'manual']);
+        if (keys.indexOf(k) < 0 && statusKeys.indexOf(k) < 0) pairs.push([k + '/updatedAt', now]);
       });
 
       var CHUNK = 400;
@@ -8214,6 +8295,12 @@ function handleTypeImport(file) {
           state.products[k].statusSource = 'manual';
           state.products[k].updatedAt = now;
         });
+        priceKeys.forEach(function (k) {
+          if (!state.products[k]) return;
+          state.products[k].sellPrice = res.priceUpdates[k];
+          state.products[k].priceSource = 'manual';
+          state.products[k].updatedAt = now;
+        });
 
         var box = document.createElement('div');
         var sec = repSection('ผลการยืนยันประเภทสินค้า');
@@ -8232,6 +8319,19 @@ function handleTypeImport(file) {
           }
         } else {
           repNote(sec, 'ไฟล์นี้ไม่มีคอลัมน์สถานะ — สถานะเดิมของทุกรายการไม่ถูกแตะ');
+        }
+        if (stat.hasPriceColumn) {
+          repLine(sec, 'เขียนราคาขาย', fmtNum(stat.priceUpdated) + ' รายการ');
+          repLine(sec, 'ในนั้นเปลี่ยนค่าจริง', fmtNum(stat.priceChanged) + ' รายการ');
+          repLine(sec, 'ข้าม (ช่องราคาว่าง)', fmtNum(stat.priceBlank) + ' แถว');
+          repLine(sec, 'ข้าม (ยืนยันราคาไว้แล้ว)', fmtNum(stat.priceSame) + ' แถว');
+          repLine(sec, 'ข้าม (ราคากรอกไม่ถูก)', fmtNum(stat.priceBad) + ' แถว', stat.priceBad > 0);
+          if (stat.priceBadValues.length) {
+            repNote(sec, 'ตัวอย่างราคาที่อ่านไม่ออก: ' + stat.priceBadValues.join(', ') +
+              ' — ช่องราคาต้องเป็นตัวเลขไม่ติดลบ');
+          }
+        } else {
+          repNote(sec, 'ไฟล์นี้ไม่มีคอลัมน์ราคาขาย — ราคาเดิมของทุกรายการไม่ถูกแตะ');
         }
         if (stat.keptInactive) {
           repNote(sec, 'ในนั้นเป็นของ "ปิดใช้งาน" ' + fmtNum(stat.keptInactive) + ' รายการ — ' +
@@ -8252,16 +8352,20 @@ function handleTypeImport(file) {
             ' — ต้องนำเข้า Master ให้รู้จักสินค้าก่อน ไฟล์นี้ไม่สร้างสินค้าใหม่');
         }
         if (stat.noCode) repLine(sec, 'ข้าม (ไม่มีรหัสสินค้า)', fmtNum(stat.noCode) + ' แถว', true);
-        repNote(sec, 'ไฟล์นี้เขียนเฉพาะประเภทสินค้าและสถานะ ไม่แตะราคาต้นทุน หมายเหตุ หรือยอดนับ · ' +
+        repNote(sec, 'ไฟล์นี้เขียนเฉพาะประเภทสินค้า สถานะ และราคาขาย ไม่แตะราคาต้นทุน หมายเหตุ หรือยอดนับ · ' +
           'ทุกรายการในไฟล์ถูกเคลียร์ออกจาก "รอตรวจสอบ" และนับเป็นค่าที่คนตั้งเอง ' +
           'นำเข้า Master รอบหน้าจะไม่ทับ');
         box.appendChild(sec);
-        ask('ยืนยันประเภท + สถานะเรียบร้อย',
+        ask('ยืนยันประเภท + สถานะ + ราคาเรียบร้อย',
             'ยืนยันประเภท ' + fmtNum(stat.updated) + ' รายการ ' +
             '(เปลี่ยนค่าจริง ' + fmtNum(stat.changed) + ' รายการ)' +
             (stat.hasStatusColumn
               ? '\nยืนยันสถานะ ' + fmtNum(stat.statusUpdated) + ' รายการ ' +
                 '(เปลี่ยนค่าจริง ' + fmtNum(stat.statusChanged) + ' รายการ)'
+              : '') +
+            (stat.hasPriceColumn
+              ? '\nยืนยันราคาขาย ' + fmtNum(stat.priceUpdated) + ' รายการ ' +
+                '(เปลี่ยนค่าจริง ' + fmtNum(stat.priceChanged) + ' รายการ)'
               : ''),
             'ปิด', { hideCancel: true, detail: box });
       });
