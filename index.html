@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.5.0">
+<meta name="version" content="2.5.1">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.5.0</title>
+<title>ISRD Stocktake v2.5.1</title>
 
 <style>
 :root{
@@ -1469,7 +1469,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.5.0';
+var APP_VERSION = '2.5.1';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -3632,6 +3632,46 @@ function beDateStamp(when) {
 
 function jobBranchName(round) { return (round && (round.branchName || round.branch)) || '-'; }
 function jobBranchCode(round) { return (round && round.branchCode) || ''; }
+
+/* ---------- สาขาที่ผู้ใช้ดูแล ----------
+   เก็บที่ users/{uid}/branches — Firebase คืนมาเป็น array หรือ object แล้วแต่รูปที่เขียนลง
+   ว่าง = ไม่จำกัด (บัญชีเก่าทุกใบไม่มีฟิลด์นี้ ต้องยังเห็นทุกสาขาเหมือนเดิม) */
+function normBranchCodes(v) {
+  var arr = Array.isArray(v) ? v
+    : (v && typeof v === 'object' ? Object.keys(v).map(function (k) { return v[k]; }) : []);
+  var seen = {}, out = [];
+  arr.forEach(function (c) {
+    var s = String(c == null ? '' : c).trim();
+    if (!s || seen[s]) return;
+    seen[s] = 1;
+    out.push(s);
+  });
+  return out;
+}
+
+function myBranches() { return (state.me && state.me.branches) || []; }
+
+/* admin เห็นทุกสาขาเสมอ · คนที่ยังไม่ได้กำหนดสาขาก็เห็นทุกสาขา
+   Job เก่าที่ไม่มี branchCode ถือว่าไม่ผูกสาขา จึงไม่ถูกกรองทิ้ง
+   (ถ้ากรองทิ้ง งานเก่าก่อนมีทะเบียนสาขาจะหายไปจากจอคนที่ถูกจำกัดสาขา) */
+function canSeeBranch(code) {
+  if (isAdmin()) return true;
+  var mine = myBranches();
+  if (!mine.length) return true;
+  var c = String(code || '').trim();
+  if (!c) return true;
+  return mine.indexOf(c) >= 0;
+}
+
+function canSeeJob(job) { return canSeeBranch(jobBranchCode(job)); }
+
+/* ข้อความบอกว่าถูกจำกัดสาขาอยู่ ใช้ทั้งตอนปฏิเสธและตอนลิสต์ว่าง */
+function myBranchLabel() {
+  return myBranches().map(function (c) {
+    var b = state.branches[safeKey(c)] || state.branches[c];
+    return b && b.name ? c + ' · ' + b.name : c;
+  }).join(', ');
+}
 function jobBranchLabel(round) {
   var code = jobBranchCode(round);
   return (code ? code + ' · ' : '') + jobBranchName(round);
@@ -8771,7 +8811,11 @@ function renderJobs() {
   /* ข้ามเรคอร์ดว่างตั้งแต่ต้น — ถ้าปล่อยให้ไปพังตอนอ่าน .status ข้างล่าง
      ฟังก์ชันจะโยนก่อนถึงบรรทัดล้างลิสต์ แล้วลิสต์เก่าจะค้างบนจอทั้งดุ้น
      ผู้ใช้จะเห็นเป็น "กดตัวกรองแล้วไม่มีอะไรเปลี่ยน" ซึ่งหาสาเหตุยากมาก */
-  var ids = Object.keys(state.roundIndex).filter(function (id) { return !!state.roundIndex[id]; });
+  /* กรองตามสาขาที่ผู้ใช้ดูแลตั้งแต่ต้น — ทั้งลิสต์และตัวเลือก "กรองตามสาขา"
+     จะได้ไม่มีชื่อสาขาที่เขาเข้าไม่ได้โผล่ในดรอปดาวน์ให้เลือกแล้วได้ลิสต์ว่าง */
+  var ids = Object.keys(state.roundIndex).filter(function (id) {
+    return !!state.roundIndex[id] && canSeeJob(state.roundIndex[id]);
+  });
   var branches = {};
   ids.forEach(function (id) {
     var j = state.roundIndex[id];
@@ -8801,8 +8845,12 @@ function renderJobs() {
   var list = $('jobList');
   list.innerHTML = '';
   if (!shown.length) {
-    list.innerHTML = '<div class="empty">' +
-      (ids.length ? 'ไม่มี Job ในตัวกรองนี้' : 'ยังไม่มี Job — สร้างอันแรกด้านบน') + '</div>';
+    var empty = ids.length ? 'ไม่มี Job ในตัวกรองนี้'
+      : (myBranches().length && !isAdmin()
+          ? 'ยังไม่มี Job ของสาขาที่คุณดูแล (' + myBranchLabel() + ') — ให้ผู้ดูแลระบบสร้างให้ก่อน'
+          : (isStaff() ? 'ยังไม่มี Job — สร้างอันแรกด้านบน' : 'ยังไม่มี Job ให้เลือก'));
+    list.innerHTML = '<div class="empty"></div>';
+    list.firstChild.textContent = empty;
     return;
   }
 
@@ -8966,7 +9014,7 @@ function renderJobCard(id, list) {
       qb.textContent = quick.label;
       qb.onclick = function (e) {
         e.stopPropagation();
-        if (state.roundId !== id) selectRound(id);
+        if (state.roundId !== id && !selectRound(id)) return;
         setTimeout(quick.run, 120);      // รอให้ Job ถูกเลือกก่อน ฟังก์ชันอ่านจาก currentJob()
       };
       acts.appendChild(qb);
@@ -8978,7 +9026,7 @@ function renderJobCard(id, list) {
     mb.textContent = 'จัดการ ▾';
     mb.onclick = function (e) {
       e.stopPropagation();
-      if (state.roundId !== id) selectRound(id);
+      if (state.roundId !== id && !selectRound(id)) return;
       setTimeout(openJobMenu, 120);
     };
     acts.appendChild(mb);
@@ -9040,7 +9088,7 @@ function renderJobCard(id, list) {
 }
 
 function openJob(id) {
-  selectRound(id);
+  if (!selectRound(id)) return;      // สาขาไม่ตรง — selectRound แจ้งเหตุผลให้แล้ว
   /* scanner ไม่มีหน้า "ตั้งค่า" ให้เข้า — เลือก Job แล้วพาไปหน้ายิงเลย */
   showPage(isScannerOnly() ? 'scan' : 'start');
 }
@@ -10012,7 +10060,16 @@ function clearSubs() {
   state.unsub = [];
 }
 
+/* คืน true เมื่อเลือกได้จริง — คนเรียกต้องเช็คก่อนพาไปหน้าถัดไป
+   กันเหนียวอีกชั้นนอกจากการกรองลิสต์ เผื่อมีทางเข้าอื่น เช่น Job ที่ค้างใน localStorage
+   จากตอนที่ยังไม่ถูกจำกัดสาขา หรือแอดมินเพิ่งย้ายสาขาที่ดูแลของคนนั้น */
 function selectRound(id) {
+  var job = state.roundIndex[id];
+  if (job && !canSeeJob(job)) {
+    toast('Job นี้เป็นของสาขา ' + jobBranchLabel(job) + ' ซึ่งไม่ได้อยู่ในความดูแลของคุณ' +
+          (myBranches().length ? ' (คุณดูแล ' + myBranchLabel() + ')' : ''), true);
+    return false;
+  }
   state.roundId = id;
   state.cycleId = cycleOf(state.roundIndex[id]);   // ยอดระบบผูกกับรอบนับ ไม่ใช่ Job
   localStorage.setItem('isrd_round', id);
@@ -10064,6 +10121,7 @@ function selectRound(id) {
   });
 
   renderStart();
+  return true;
 }
 
 /* ============================================================
@@ -10142,7 +10200,9 @@ function setMe(user, rec) {
     uid: user.uid,
     email: rec.email || user.email || '',
     name: rec.name || defaultNameFromEmail(user.email),
-    role: /^(admin|viewer|scanner)$/.test(rec.role) ? rec.role : 'counter'
+    role: /^(admin|viewer|scanner)$/.test(rec.role) ? rec.role : 'counter',
+    /* สาขาที่ดูแล — ว่าง = เห็นทุกสาขา (ดู canSeeBranch) */
+    branches: normBranchCodes(rec.branches)
   };
   state.counter = state.me.name;      // ผู้นับ = ชื่อจากบัญชี ไม่ให้พิมพ์เอง
   return state.me;
@@ -10698,6 +10758,12 @@ function saveUserField(uid, patchFields) {
       renderAccount();
       refreshNav();
     }
+    /* แก้สาขาของตัวเอง ต้องมีผลทันทีโดยไม่ต้องล็อกอินใหม่
+       (undefined = ไม่ได้แตะฟิลด์นี้ · null = สั่งให้กลับไปเห็นทุกสาขา) */
+    if (state.me && state.me.uid === uid && patchFields.branches !== undefined) {
+      state.me.branches = normBranchCodes(patchFields.branches);
+      if (state.page === 'jobs') renderJobs();
+    }
     renderUsers();
   }).catch(function () {
     toast('บันทึกไม่สำเร็จ ฐานข้อมูลปฏิเสธการเขียน หรือเน็ตหลุด', true);
@@ -10946,7 +11012,60 @@ function renderUsers() {
     };
     roleLab.appendChild(roleSp); roleLab.appendChild(sel);
 
+    /* ---------- สาขาที่ดูแล ----------
+       เลือกได้หลายสาขา · ไม่เลือกเลย = เห็นทุกสาขา (เท่ากับพฤติกรรมเดิมก่อนมีฟิลด์นี้)
+       ใช้ select multiple เพราะเป็นตัวเดียวจบ ไม่ต้องเก็บ state ระหว่างวาด
+       และมือถือทั้งสองค่ายมีตัวเลือกแบบติ๊กให้อยู่แล้ว */
+    var brLab = document.createElement('label');
+    brLab.className = 'fld';
+    brLab.style.margin = '10px 0 0';
+    var brSp = document.createElement('span');
+    brSp.textContent = 'สาขาที่ดูแล (ไม่เลือก = เห็นทุกสาขา)';
+    var brSel = document.createElement('select');
+    brSel.multiple = true;
+    brSel.size = 6;
+    brSel.setAttribute('data-action', 'branches');
+    var picked = normBranchCodes(u.branches);
+    var inRegistry = {};
+    branchList('', true).forEach(function (b) {
+      inRegistry[b.code] = 1;
+      var o = document.createElement('option');
+      o.value = b.code;
+      o.textContent = b.code + ' — ' + b.name;
+      if (picked.indexOf(b.code) >= 0) o.selected = true;
+      brSel.appendChild(o);
+    });
+    /* สาขาที่เคยกำหนดไว้แต่ถูกลบออกจากทะเบียนแล้ว ต้องยังเห็นและไม่หายตอนบันทึกรอบหน้า */
+    picked.forEach(function (c) {
+      if (inRegistry[c]) return;
+      var o = document.createElement('option');
+      o.value = c;
+      o.textContent = c + ' — (ไม่มีในทะเบียนแล้ว)';
+      o.selected = true;
+      brSel.appendChild(o);
+    });
+
+    var brHint = document.createElement('div');
+    brHint.className = 'hint';
+    brHint.setAttribute('data-branchhint', uid);
+    var describeBranches = function (list) {
+      return list.length
+        ? 'เห็นเฉพาะ ' + fmtNum(list.length) + ' สาขา: ' + list.join(', ')
+        : 'ยังไม่จำกัดสาขา — เห็น Job ได้ทุกสาขา';
+    };
+    brHint.textContent = describeBranches(picked);
+
+    brSel.onchange = function () {
+      var vals = Array.prototype.filter.call(this.options, function (o) { return o.selected; })
+        .map(function (o) { return o.value; });
+      brHint.textContent = describeBranches(vals);
+      /* ว่าง = ลบฟิลด์ทิ้ง (null) ให้กลับไปเป็น "เห็นทุกสาขา" ตามค่าเริ่มต้น */
+      saveUserField(uid, { branches: vals.length ? vals : null });
+    };
+    brLab.appendChild(brSp); brLab.appendChild(brSel);
+
     row.appendChild(nameLab); row.appendChild(roleLab);
+    row.appendChild(brLab); row.appendChild(brHint);
 
     /* ปุ่มรีเซ็ตรหัสผ่าน — มีทุกแถว รวมถึงของตัวเอง */
     var rst = document.createElement('button');
@@ -11514,6 +11633,9 @@ function startApp() {
     db.get('roundIndex/' + saved).then(function (r) {
       if (!r) return;
       state.roundIndex[saved] = state.roundIndex[saved] || r;
+      /* Job ที่ค้างไว้อาจเป็นของสาขาที่เขาไม่ได้ดูแลแล้ว (แอดมินเพิ่งย้ายสาขาให้)
+         ทิ้งเงียบ ๆ ไม่ต้องเด้ง toast ใส่หน้าตอนเพิ่งเปิดแอป */
+      if (!canSeeJob(state.roundIndex[saved])) { localStorage.removeItem('isrd_round'); return; }
       selectRound(saved);
     });
   }
