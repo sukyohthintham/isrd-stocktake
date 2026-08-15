@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.6.2">
+<meta name="version" content="2.6.3">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.6.2</title>
+<title>ISRD Stocktake v2.6.3</title>
 
 <style>
 :root{
@@ -1493,7 +1493,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.6.2';
+var APP_VERSION = '2.6.3';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -3508,6 +3508,9 @@ function applyScanRecord(id, rec) {
       u.note = rec.reason;
       u.noteTs = rec.ts;
     }
+    /* ถูกสั่งลบทิ้ง (ยิงหลุด/บาร์โค้ดขยะ) — ต่างจากตัวที่ผูกหรือสร้างเป็นสินค้าแล้ว
+       ตัวนั้นต้องคงอยู่ในเอกสารเป็นหลักฐาน ส่วนตัวนี้ต้องหลุดออกไปทั้งใบ */
+    if (rec.discard) u.discarded = true;
   }
 
   state.scanLog.push({ id: id, rec: rec });
@@ -3529,7 +3532,7 @@ function unknownRows(includeResolved) {
     return {
       key: u.key, value: u.value, qty: u.qty, note: u.note || '',
       firstTs: u.firstTs, zone: u.zone, user: u.user,
-      resolved: unknownResolved(u), legacy: false
+      resolved: unknownResolved(u), legacy: false, discarded: !!u.discarded
     };
   });
   /* รอบเก่าก่อน v1.9.3 เก็บไว้ที่ unknown/ โดยไม่มียอด — ยังต้องเห็นในรายงาน */
@@ -6783,6 +6786,20 @@ function renderSummary() {
       b.textContent = u.legacy ? 'รอบเก่า' : fmtNum(u.qty) + ' ชิ้น';
       d.appendChild(s); d.appendChild(b);
       ul.appendChild(d);
+
+      /* ลบของที่ยิงหลุดได้จากตรงนี้เลย ไม่ต้องเข้าแท็บ Master (ซึ่ง counter ก็เข้าไม่ได้)
+         แถวรอบเก่าไม่มียอดให้หัก จึงไม่มีปุ่ม */
+      if (isStaff() && !u.legacy) {
+        var drop = document.createElement('button');
+        drop.className = 'btn grey sm block';
+        drop.style.margin = '0 0 8px';
+        drop.setAttribute('data-discard', u.value);
+        drop.textContent = '🗑 ลบทิ้ง (ยิงหลุด/บาร์โค้ดขยะ)';
+        drop.disabled = !canScan();
+        if (drop.disabled) drop.title = blockedMessage();
+        drop.onclick = function () { discardUnknown(u); };
+        ul.appendChild(drop);
+      }
     });
   }
 
@@ -7510,7 +7527,10 @@ function buildCycleJobTable(perJob) {
 
 /* ตาราง "รายการที่พบแต่ไม่มีในระบบ" — ไม่มีรายการเลยให้ซ่อนทั้งตาราง */
 function buildUnknownDocTable() {
-  var rows = unknownRows(true);
+  /* ตัวที่ถูกสั่งลบทิ้งไม่ต้องอยู่ในเอกสาร — มันคือของที่ยิงหลุด ไม่ใช่ของที่เจอบนชั้นจริง
+     ต่างจากตัวที่ผูก/สร้างเป็นสินค้าแล้ว ซึ่งคงไว้เป็นหลักฐานว่าเจออะไรและจัดการยังไง
+     (ประวัติการลบยังอยู่ครบในชีท "ประวัติการนับ" ของไฟล์ Excel) */
+  var rows = unknownRows(true).filter(function (r) { return !r.discarded; });
   if (!rows.length) return null;
 
   var box = document.createElement('div');
@@ -10600,6 +10620,31 @@ function linkUnknownToProduct(u, targetKey) {
   });
 }
 
+/* ลบบาร์โค้ดที่ยิงหลุด/ขยะออกจากรายการที่ต้องจัดการ
+   เขียนแถวใหม่ delta = -qty ไม่ได้ลบแถวเดิม ตามกฎบ้าน "ห้ามลบยอดที่นับไปแล้ว"
+   ยอดเหลือ 0 → unknownResolved เป็นจริง → หลุดจากรายการที่ต้องจัดการ
+   ติดธง discard ไว้ด้วย เพื่อให้ตารางท้ายเอกสารตัดออก (ดู buildUnknownDocTable) */
+function discardUnknown(u) {
+  if (!isStaff()) { toast(roleBlockMessage('ลบบาร์โค้ดออกจากรายการไม่ได้'), true); return Promise.resolve(false); }
+  if (!canScan()) { toast(blockedMessage() + ' — ลบไม่ได้', true); return Promise.resolve(false); }
+
+  return ask('ลบบาร์โค้ดนี้ทิ้ง?',
+      'ลบ "' + u.value + '" ออกจากรายการที่ต้องจัดการ\n' +
+      'ใช้กับของที่ยิงหลุดหรือบาร์โค้ดขยะเท่านั้น ไม่ใช่สินค้าจริง\n\n' +
+      'ยอดที่นับไว้ ' + fmtNum(u.qty) + ' ชิ้น จะถูกหักออกให้เหลือ 0\n' +
+      'ระบบบันทึกเป็นประวัติไว้ ไม่ได้ลบยอดเดิมทิ้ง ตรวจย้อนหลังได้เสมอ',
+      'ลบทิ้ง', { danger: true }).then(function (ok) {
+    if (!ok) return false;
+    writeScan(u.key, -u.qty, 'resolve', 'ลบทิ้ง (ยิงหลุด)',
+              { unknown: true, raw: u.value, discard: true });
+    toast('ลบ ' + u.value + ' ออกจากรายการแล้ว — บันทึกเป็นประวัติไว้ ไม่ได้ลบยอดเดิม');
+    if (state.page === 'summary') renderSummary();
+    if (state.page === 'doc') renderDoc();
+    if (state.page === 'master') renderNewCodes();
+    return true;
+  });
+}
+
 /* สร้างเป็นสินค้าใหม่ — คีย์เท่ากับ safeKey(บาร์โค้ด) ยอดที่ยิงไว้จึงเกาะเข้ามาเอง */
 function createProductFromUnknown(u, name, sellPrice) {
   if (!requireAdmin('สร้างสินค้าใหม่ไม่ได้')) return Promise.resolve();
@@ -10702,6 +10747,17 @@ function renderNewCodes() {
       bNew.onclick = function () { openNewProduct(u); };
 
       act.appendChild(bLink); act.appendChild(bNew);
+
+      /* ทางที่สาม — ของที่ยิงหลุดจริง ๆ ไม่ควรต้องผูกหรือสร้างสินค้าหลอกให้รก */
+      if (isStaff()) {
+        var bDrop = document.createElement('button');
+        bDrop.className = 'btn grey sm block';
+        bDrop.style.marginTop = '8px';
+        bDrop.setAttribute('data-action', 'discard');
+        bDrop.textContent = '🗑 ลบทิ้ง (ยิงหลุด/บาร์โค้ดขยะ)';
+        bDrop.onclick = function () { discardUnknown(u); };
+        act.appendChild(bDrop);
+      }
       card.appendChild(act);
     }
     host.appendChild(card);
