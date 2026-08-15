@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.6.0">
+<meta name="version" content="2.6.1">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.6.0</title>
+<title>ISRD Stocktake v2.6.1</title>
 
 <style>
 :root{
@@ -200,6 +200,20 @@ body.locked .topbar,body.locked .wrap,body.locked .nav{display:none}
   font-family:ui-monospace,Menlo,Consolas,monospace;user-select:all;
 }
 .urow.off{background:var(--line-soft);opacity:.75}
+/* กล่องติ๊กสาขาที่ดูแล — เลื่อนอ่านในกล่องตัวเอง ไม่ดันการ์ดผู้ใช้ยาวเป็นหางว่าว
+   แถวสูง 40px+ ให้คนใส่ถุงมือแตะโดนช่องติ๊กได้ ไม่ต้องเล็งจิ้ม */
+.brlist{
+  max-height:220px;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  border:1px solid var(--line);border-radius:10px;background:#fff;margin-top:8px;
+}
+.brline{
+  display:flex;align-items:center;gap:10px;padding:9px 10px;
+  border-bottom:1px solid var(--line-soft);font-size:14px;cursor:pointer;
+}
+.brline:last-child{border-bottom:0}
+.brline:active{background:var(--brand-light)}
+.brline input{width:20px;height:20px;min-height:0;flex:0 0 auto;margin:0}
+.brline span{word-break:break-word}
 .urow .u-edit{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end;margin-top:10px}
 
 /* ---------- หน้ายิงบาร์โค้ด ---------- */
@@ -1477,7 +1491,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.6.0';
+var APP_VERSION = '2.6.1';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -10847,7 +10861,10 @@ function refreshUsers() {
   }).catch(function () { return state.users; });
 }
 
-function saveUserField(uid, patchFields) {
+/* opts.keepUi = ห้ามวาดลิสต์ผู้ใช้ใหม่หลังบันทึก
+   ใช้ตอนติ๊กสาขา เพราะการวาดใหม่จะล้างคำค้นในกล่องสาขาและเด้งสกอลล์กลับหัวลิสต์
+   ทุกครั้งที่ติ๊ก ซึ่งกำหนดสาขาให้คนที่ดูแล 5 สาขาแทบไม่ได้ */
+function saveUserField(uid, patchFields, opts) {
   if (!requireAdmin('แก้ไขผู้ใช้ไม่ได้')) return Promise.resolve();
   var patch = {};
   Object.keys(patchFields).forEach(function (f) { patch[uid + '/' + f] = patchFields[f]; });
@@ -10868,7 +10885,7 @@ function saveUserField(uid, patchFields) {
       state.me.branches = normBranchCodes(patchFields.branches);
       if (state.page === 'jobs') renderJobs();
     }
-    renderUsers();
+    if (!(opts && opts.keepUi)) renderUsers();
   }).catch(function () {
     toast('บันทึกไม่สำเร็จ ฐานข้อมูลปฏิเสธการเขียน หรือเน็ตหลุด', true);
   });
@@ -11117,59 +11134,93 @@ function renderUsers() {
     roleLab.appendChild(roleSp); roleLab.appendChild(sel);
 
     /* ---------- สาขาที่ดูแล ----------
-       เลือกได้หลายสาขา · ไม่เลือกเลย = เห็นทุกสาขา (เท่ากับพฤติกรรมเดิมก่อนมีฟิลด์นี้)
-       ใช้ select multiple เพราะเป็นตัวเดียวจบ ไม่ต้องเก็บ state ระหว่างวาด
-       และมือถือทั้งสองค่ายมีตัวเลือกแบบติ๊กให้อยู่แล้ว */
-    var brLab = document.createElement('label');
-    brLab.className = 'fld';
-    brLab.style.margin = '10px 0 0';
+       ไม่ติ๊กเลย = เห็นทุกสาขา (เท่ากับพฤติกรรมเดิมก่อนมีฟิลด์นี้)
+       ใช้ checkbox ทีละสาขาแทน select multiple เพราะ select หลายค่าบนมือถือ
+       ต้องกดค้าง/กด Ctrl ถึงจะเลือกได้หลายอัน ทีมคลังใส่ถุงมือกดไม่ถูก
+       ค่าที่ติ๊กอยู่เก็บใน picked ตัวเดียว ไม่ต้องไล่อ่าน DOM ตอนบันทึก */
+    var brBox = document.createElement('div');
+    brBox.className = 'fld';
+    brBox.style.margin = '10px 0 0';
     var brSp = document.createElement('span');
-    brSp.textContent = 'สาขาที่ดูแล (ไม่เลือก = เห็นทุกสาขา)';
-    var brSel = document.createElement('select');
-    brSel.multiple = true;
-    brSel.size = 6;
-    brSel.setAttribute('data-action', 'branches');
+    brSp.textContent = 'สาขาที่ดูแล (ไม่ติ๊ก = เห็นทุกสาขา)';
+    brBox.appendChild(brSp);
+
     var picked = normBranchCodes(u.branches);
     var inRegistry = {};
-    branchList('', true).forEach(function (b) {
+    var options = branchList('', true).map(function (b) {
       inRegistry[b.code] = 1;
-      var o = document.createElement('option');
-      o.value = b.code;
-      o.textContent = b.code + ' — ' + b.name;
-      if (picked.indexOf(b.code) >= 0) o.selected = true;
-      brSel.appendChild(o);
+      return { code: b.code, label: b.code + ' — ' + b.name };
     });
     /* สาขาที่เคยกำหนดไว้แต่ถูกลบออกจากทะเบียนแล้ว ต้องยังเห็นและไม่หายตอนบันทึกรอบหน้า */
     picked.forEach(function (c) {
       if (inRegistry[c]) return;
-      var o = document.createElement('option');
-      o.value = c;
-      o.textContent = c + ' — (ไม่มีในทะเบียนแล้ว)';
-      o.selected = true;
-      brSel.appendChild(o);
+      options.push({ code: c, label: c + ' — (ไม่มีในทะเบียนแล้ว)' });
     });
+
+    /* ~40 สาขาขึ้นไป เลื่อนหาทีละอันไม่ไหว ต้องมีช่องค้นหา */
+    var brSearch = document.createElement('input');
+    brSearch.type = 'text';
+    brSearch.setAttribute('data-action', 'branchsearch');
+    brSearch.setAttribute('autocomplete', 'off');
+    brSearch.placeholder = 'ค้นหาสาขา (รหัสหรือชื่อ)';
+    brBox.appendChild(brSearch);
+
+    var brList = document.createElement('div');
+    brList.className = 'brlist';
+    brList.setAttribute('data-branchlist', uid);
+    brBox.appendChild(brList);
 
     var brHint = document.createElement('div');
     brHint.className = 'hint';
     brHint.setAttribute('data-branchhint', uid);
     var describeBranches = function (list) {
       return list.length
-        ? 'เห็นเฉพาะ ' + fmtNum(list.length) + ' สาขา: ' + list.join(', ')
+        ? 'เห็น ' + fmtNum(list.length) + ' สาขา: ' + list.join(', ')
         : 'ยังไม่จำกัดสาขา — เห็น Job ได้ทุกสาขา';
     };
     brHint.textContent = describeBranches(picked);
 
-    brSel.onchange = function () {
-      var vals = Array.prototype.filter.call(this.options, function (o) { return o.selected; })
-        .map(function (o) { return o.value; });
-      brHint.textContent = describeBranches(vals);
-      /* ว่าง = ลบฟิลด์ทิ้ง (null) ให้กลับไปเป็น "เห็นทุกสาขา" ตามค่าเริ่มต้น */
-      saveUserField(uid, { branches: vals.length ? vals : null });
+    /* วาดเฉพาะสาขาที่ตรงคำค้น — ตัวที่ถูกกรองออกไม่ได้ถูกเอาติ๊กออก
+       เพราะ picked เป็นตัวจริง ไม่ได้อ่านค่าจาก checkbox ที่ยังอยู่บนจอ */
+    var drawBranchList = function () {
+      var q = normText(brSearch.value);
+      brList.innerHTML = '';
+      var shownAny = false;
+      options.forEach(function (o) {
+        if (q && normText(o.label).indexOf(q) < 0) return;
+        shownAny = true;
+        var lab = document.createElement('label');
+        lab.className = 'brline';
+        var cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.setAttribute('data-branchpick', o.code);
+        cb.checked = picked.indexOf(o.code) >= 0;
+        cb.onchange = function () {
+          var i = picked.indexOf(o.code);
+          if (cb.checked && i < 0) picked.push(o.code);
+          if (!cb.checked && i >= 0) picked.splice(i, 1);
+          brHint.textContent = describeBranches(picked);
+          /* ว่าง = ลบฟิลด์ทิ้ง (null) ให้กลับไปเป็น "เห็นทุกสาขา" ตามค่าเริ่มต้น */
+          saveUserField(uid, { branches: picked.length ? picked.slice() : null }, { keepUi: true });
+        };
+        var txt = document.createElement('span');
+        txt.textContent = o.label;
+        lab.appendChild(cb); lab.appendChild(txt);
+        brList.appendChild(lab);
+      });
+      if (!shownAny) {
+        var none = document.createElement('div');
+        none.className = 'hint';
+        none.style.padding = '6px 8px';
+        none.textContent = 'ไม่มีสาขาที่ตรงกับคำค้น';
+        brList.appendChild(none);
+      }
     };
-    brLab.appendChild(brSp); brLab.appendChild(brSel);
+    brSearch.oninput = drawBranchList;
+    drawBranchList();
 
     row.appendChild(nameLab); row.appendChild(roleLab);
-    row.appendChild(brLab); row.appendChild(brHint);
+    row.appendChild(brBox); row.appendChild(brHint);
 
     /* ปุ่มรีเซ็ตรหัสผ่าน — มีทุกแถว รวมถึงของตัวเอง */
     var rst = document.createElement('button');
