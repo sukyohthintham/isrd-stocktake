@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.6.1">
+<meta name="version" content="2.6.2">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.6.1</title>
+<title>ISRD Stocktake v2.6.2</title>
 
 <style>
 :root{
@@ -988,7 +988,8 @@ body.no-doc-images .doc .imgbox{display:none}
       </p>
       <button class="btn ghost sm block" id="btnNoteTemplate" style="margin-top:12px">⬇ ดาวน์โหลด Template (กรอก Note)</button>
       <p class="muted" style="margin:10px 0 0">
-        ได้ไฟล์ Excel ตาม<b>รายการที่กรองอยู่บนจอตอนนี้</b> (ตัวกรอง + คำค้น) ไม่ใช่แค่ 200 แถวแรกที่เห็น<br>
+        ดาวน์โหลด<b>ตามตัวกรองที่เลือก</b> (ไม่ขึ้นกับช่องค้นหา) — ตอนนี้ <b data-tplcount>0</b> รายการ<br>
+        ได้ครบทุกแถวตามตัวกรอง ไม่ใช่แค่ 200 แถวแรกที่แสดงบนจอ<br>
         กรอกช่อง <b>Note</b> ใน Excel แล้วอัปโหลดกลับด้วยปุ่มข้างล่าง<br>
         อยากกรอกให้ของ <b>ปิดใช้งาน</b> ให้กดตัวกรอง "ปิดใช้งาน" ก่อนโหลด —
         ตัวกรอง "ทั้งหมด" ซ่อนของเลิกขายที่ไม่อยู่ในรอบนับไว้อยู่แล้ว
@@ -1002,7 +1003,8 @@ body.no-doc-images .doc .imgbox{display:none}
       </p>
       <button class="btn ghost sm block" id="btnTypeTemplate" style="margin-top:12px">⬇ ดาวน์โหลด Template (ประเภท + สถานะ + ราคา)</button>
       <p class="muted" style="margin:10px 0 0">
-        ได้ไฟล์ Excel ตาม<b>รายการที่กรองอยู่บนจอตอนนี้</b> (ตัวกรอง + คำค้น) ไม่ใช่แค่ 200 แถวแรกที่เห็น<br>
+        ดาวน์โหลด<b>ตามตัวกรองที่เลือก</b> (ไม่ขึ้นกับช่องค้นหา) — ตอนนี้ <b data-tplcount>0</b> รายการ<br>
+        ได้ครบทุกแถวตามตัวกรอง ไม่ใช่แค่ 200 แถวแรกที่แสดงบนจอ<br>
         ช่อง <b>ประเภท</b> · <b>สถานะ</b> · <b>ราคาขาย</b> เติมค่าปัจจุบันมาให้แล้ว —
         ประเภทแก้เป็น <b>Product</b> หรือ <b>Not Product</b> · สถานะพิมพ์ค่าไหนก็ได้
         (ค่าใหม่จะถูกเพิ่มเข้าทะเบียนให้เอง) · ราคาขายใส่เป็นตัวเลข
@@ -1491,7 +1493,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.6.1';
+var APP_VERSION = '2.6.2';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -5984,8 +5986,11 @@ function renderBranchPicker() {
 
 var MASTER_RENDER_LIMIT = 200;
 
-function masterRows() {
-  var term = String($('masterSearch').value || '').trim().toLowerCase();
+/* ignoreSearch = ยึดตามตัวกรองอย่างเดียว ไม่สนใจช่องค้นหา
+   ใช้กับปุ่มดาวน์โหลด Template — ช่องค้นหามีไว้หาของทีละตัวบนจอ
+   ไม่ควรไปตัดจำนวนแถวในไฟล์ที่ตั้งใจเอาไปกรอกทีละหลายพันตัว */
+function masterRows(ignoreSearch) {
+  var term = ignoreSearch ? '' : String($('masterSearch').value || '').trim().toLowerCase();
   var keys = Object.keys(state.products);
   return keys.filter(function (key) {
     var p = state.products[key];
@@ -6067,8 +6072,33 @@ function renderMaster() {
     b.className = 'btn sm ' + (b.getAttribute('data-mfilter') === state.masterFilter ? '' : 'grey');
   });
 
-  var keys = masterRows();
   var total = Object.keys(state.products).length;
+  var list = $('masterList');
+  list.innerHTML = '';
+
+  /* ปุ่มดาวน์โหลด Template ยึดตามตัวกรองอย่างเดียว บอกจำนวนจริงไว้ข้างปุ่มเลย
+     ไม่งั้นพอลิสต์ถูกซ่อนตอนยังไม่ค้นหา คนจะเดาไม่ออกว่าไฟล์จะได้กี่แถว */
+  var tplCount = masterRows(true).length;
+  document.querySelectorAll('[data-tplcount]').forEach(function (el) {
+    el.textContent = fmtNum(tplCount);
+  });
+
+  /* สินค้ามีหมื่นห้าพันตัว — วาดทั้งหมดตั้งแต่เปิดหน้าไม่ได้ช่วยใคร
+     คนเข้ามาหน้านี้เพื่อ "หาตัวใดตัวหนึ่ง" ไม่ใช่มาเลื่อนอ่านทั้งบริษัท
+     ให้พิมพ์ค้นหาหรือกดตัวกรองก่อนถึงจะเริ่มวาด (กติกาเดียวกับ renderBranchPicker)
+     ตัวกรอง "ทั้งหมด" ไม่นับเป็นเงื่อนไข เพราะเป็นค่าเริ่มต้นที่ไม่ได้กรองอะไรเลย */
+  if (total && !String($('masterSearch').value || '').trim() && state.masterFilter === 'all') {
+    $('masterCount').textContent = 'มีสินค้าทั้งหมด ' + fmtNum(total) + ' รายการ';
+    var prompt = document.createElement('div');
+    prompt.className = 'empty';
+    prompt.setAttribute('data-masterprompt', '1');
+    prompt.textContent = '🔍 พิมพ์รหัสสินค้า หรือชื่อ เพื่อค้นหา · มีสินค้าทั้งหมด ' +
+      fmtNum(total) + ' รายการ';
+    list.appendChild(prompt);
+    return;
+  }
+
+  var keys = masterRows();
   var shown = keys.slice(0, MASTER_RENDER_LIMIT);
   /* ของที่ถูกซ่อนเพราะเลิกขายต้องบอกให้รู้ ไม่ใช่หายไปเงียบ ๆ แล้วคนงงว่าของหาย
      ใช้ Set ไม่ใช่ indexOf — สินค้ามีหมื่นห้าพันตัว การไล่หาในอาเรย์ทุกรอบจะหน่วงจนหน้าค้าง */
@@ -6086,8 +6116,17 @@ function renderMaster() {
        (hiddenInactive ? ' · ซ่อนของเลิกขาย ' + fmtNum(hiddenInactive) + ' รายการ (ดูที่ชิป "ปิดใช้งาน")' : ''))
     : 'ยังไม่มีข้อมูลสินค้า — นำเข้าไฟล์ที่หน้า "เริ่มนับ" ก่อน';
 
-  var list = $('masterList');
-  list.innerHTML = '';
+  /* ค้นแล้วไม่เจอ ต้องบอกตรง ๆ ไม่ใช่ปล่อยลิสต์ว่างให้คนเดาว่าแอปค้างหรือไม่มีของ */
+  if (total && !keys.length) {
+    var none = document.createElement('div');
+    none.className = 'empty';
+    none.setAttribute('data-masterempty', '1');
+    none.textContent = 'ไม่พบสินค้าที่ตรงกับที่ค้น — ลองพิมพ์รหัสหรือชื่อให้สั้นลง ' +
+      'หรือเปลี่ยนตัวกรองด้านบน';
+    list.appendChild(none);
+    return;
+  }
+
   shown.forEach(function (key) {
     var p = state.products[key];
     var card = document.createElement('div');
@@ -6852,7 +6891,7 @@ function exportExcel() {
    แถวที่ได้ = masterRows() ตรง ๆ คือ "ชุดที่กรองอยู่บนจอตอนนี้" (ตัวกรอง + คำค้น)
    ต่างจากลิสต์บนจอตรงที่ไม่ติดเพดาน MASTER_RENDER_LIMIT — ไฟล์ต้องได้ครบทุกแถว */
 function downloadNoteTemplate() {
-  var keys = masterRows();
+  var keys = masterRows(true);
   if (!keys.length) {
     toast('ไม่มีสินค้าในรายการที่กรองอยู่ ลองล้างคำค้นหรือเปลี่ยนตัวกรองก่อน', true);
     return;
@@ -6879,7 +6918,7 @@ function downloadNoteTemplate() {
    ช่อง "ประเภท" เติมค่าปัจจุบันมาให้ คนกรอกจะได้เห็นว่าระบบเดาอะไรไว้
    แล้วแก้เฉพาะตัวที่ผิด ไม่ต้องพิมพ์ใหม่ทุกแถว */
 function downloadTypeTemplate() {
-  var keys = masterRows();
+  var keys = masterRows(true);
   if (!keys.length) {
     toast('ไม่มีสินค้าในรายการที่กรองอยู่ ลองล้างคำค้นหรือเปลี่ยนตัวกรองก่อน', true);
     return;
