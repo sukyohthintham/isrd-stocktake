@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.6.8">
+<meta name="version" content="2.6.9">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.6.8</title>
+<title>ISRD Stocktake v2.6.9</title>
 
 <style>
 :root{
@@ -1511,7 +1511,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.6.8';
+var APP_VERSION = '2.6.9';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -6384,6 +6384,14 @@ function summaryData() {
        ถ้าหักรายการโอนกลับซ้ำอีกจะกลายเป็นหักสองรอบ */
     var sys = Number(state.systemQty[key]) || 0;
     var act = Number(state.counts[key]) || 0;
+    /* บาร์โค้ดที่ไม่มีในระบบ (unknown) ที่ยอดสุทธิเหลือ ≤ 0 — ถูกลบทิ้ง ผูกไปที่อื่น
+       หรือหักเบิ้ลจนติดลบ — ไม่ใช่ของจริง ถ้าปล่อยไว้ act ติดลบจะกลายเป็น "ขาด"
+       ทั้งที่ไม่เคยมีของ ลาก pcShort กับ %Success ให้เพี้ยนทั้งใบ
+       ตัวที่แอดมินสั่งลบทิ้งก็ต้องหลุดทั้งใบเหมือนกัน แม้จะยิงซ้ำจนยอดกลับมาเป็นบวก
+       เงื่อนไข !sys กันไว้อีกชั้น — มียอดระบบเมื่อไหร่แปลว่าเป็นแถวจริงเสมอ ห้ามตัด
+       และเช็ค state.products[key] ตรง ๆ ไม่ใช่ p เพราะ p มีค่าเสมอ (มี fallback ข้างบน) */
+    if (!sys && !state.products[key] &&
+        (act <= 0 || (unknownInfo && unknownInfo.discarded))) return;
     /* ยอดถูกย้ายออกไปหมดแล้ว (ผูกกับสินค้าอื่น) และไม่มียอดระบบ = ไม่ใช่แถวจริง
        ถ้าไม่ตัดออก SKU รวมจะถูกนับเกินและ %Success จะเพี้ยน */
     if (!sys && !act && !state.products[key]) return;
@@ -6493,6 +6501,10 @@ function summaryDataFrom(sysMap, countMap, jobsPerSku) {
     var p = state.products[key];
     var sys = Number(sysMap[key]) || 0;
     var act = Number(countMap[key]) || 0;
+    /* เหมือน summaryData() — บาร์โค้ดที่ไม่มีในระบบและยอดสุทธิ ≤ 0 ไม่ใช่แถวจริง
+       ตรงนี้ไม่มีธง discarded ให้ดู (unknownKeys เป็นของรอบเดียว ไม่ใช่ทั้ง cycle)
+       แต่ตัวที่ถูกลบทิ้งจะถูกหักจนเหลือ 0 อยู่แล้ว เงื่อนไข act <= 0 จึงครอบคลุม */
+    if (!sys && !p && act <= 0) return;
     if (!sys && !act && !p) return;
     if (!p) p = { code: key, name: 'ไม่มีในระบบ — ' + key, type: 'product', unit: '' };
     var price = Number(p[priceField]) || 0;
