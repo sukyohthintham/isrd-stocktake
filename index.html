@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.6.7">
+<meta name="version" content="2.6.8">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.6.7</title>
+<title>ISRD Stocktake v2.6.8</title>
 
 <style>
 :root{
@@ -1511,7 +1511,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.6.7';
+var APP_VERSION = '2.6.8';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -6678,24 +6678,61 @@ function sumCardRow(r, kind) {
     if (act.disabled) act.title = blockedMessage();
     act.onclick = function () { removeOverScan(r, kind); };
     row.appendChild(act);
+
+    /* ยิงรัวติดกันสิบยี่สิบครั้งเพราะเครื่องค้าง ต้องเอาออกทีเดียวได้
+       ไม่ใช่กดทีละชิ้นยี่สิบครั้ง · มีเฉพาะตอนเหลือให้เอาออกมากกว่า 1 ชิ้น
+       สีแดงเพราะย้อนกลับยากกว่าปุ่มบน และ removeOverScan จะถามยืนยันก่อนอีกชั้น */
+    if (r.act > 1) {
+      var actAll = document.createElement('button');
+      actAll.type = 'button';
+      actAll.className = 'btn danger block sm';
+      actAll.style.marginTop = '8px';
+      actAll.setAttribute('data-removeall', r.code || r.key);
+      actAll.textContent = '🗑 เอาออกทั้งหมด (' + fmtNum(r.act) + ' ชิ้น)';
+      actAll.disabled = !canScan();
+      if (actAll.disabled) actAll.title = blockedMessage();
+      actAll.onclick = function () { removeOverScan(r, kind, r.act); };
+      row.appendChild(actAll);
+    }
   }
   return row;
 }
 
-/* เอาของที่ยิงเกินออกทีละชิ้น — เขียนเป็นแถวใหม่ delta -1 ไม่ได้ลบแถวเดิม
+/* เอาของที่ยิงเกินออก — เขียนเป็นแถวใหม่ delta ติดลบ ไม่ได้ลบแถวเดิม
    ตามกฎบ้าน "ห้ามลบยอดที่นับไปแล้ว" ประวัติจึงยังตรวจย้อนหลังได้ว่าใครเอาออกเมื่อไหร่
    kind = กลุ่มที่กดมา ต้องเปิดกลุ่มเดิมกลับ ไม่ใช่เด้งไปกลุ่ม "เกิน" เสมอ
-   ของที่ยอดลดจนเปลี่ยนกลุ่ม (ตรง → ขาด) จะหายจากลิสต์เดิมเอง ซึ่งถูกแล้ว */
-function removeOverScan(r, kind) {
+   ของที่ยอดลดจนเปลี่ยนกลุ่ม (ตรง → ขาด) จะหายจากลิสต์เดิมเอง ซึ่งถูกแล้ว
+   qty = จำนวนที่จะหัก (ไม่ส่งมา = 1) · มากกว่า 1 ต้องถามยืนยันก่อนเสมอ */
+function removeOverScan(r, kind, qty) {
+  qty = Math.max(1, Number(qty) || 1);
   if (!isStaff()) { toast(roleBlockMessage('เอาของออกจากสรุปไม่ได้'), true); return; }
   if (!canScan()) { toast(blockedMessage() + ' — เอาออกไม่ได้', true); return; }
 
-  writeScan(r.key, -1, 'scan', 'เอาออกจากสรุป (ยิงเกิน)');
-  toast('เอา ' + (r.code || r.key) + ' ออก 1 ชิ้นแล้ว — บันทึกเป็นประวัติไว้ ไม่ได้ลบยอดเดิม');
-  renderSummary();
-  if (state.page === 'scan') renderScanTotals();   // การ์ดสดบนหน้ายิงต้องตามด้วย
-  $('modalOk').click();                            // ปิดกล่องเดิม...
-  openSumCard(kind || 'over');                     // ...แล้วเปิดกลุ่มเดิมใหม่
+  var write = function () {
+    writeScan(r.key, -qty, 'scan',
+              qty > 1 ? 'เอาออกทั้งหมดจากสรุป' : 'เอาออกจากสรุป (ยิงเกิน)');
+    toast('เอา ' + (r.code || r.key) + ' ออก ' + fmtNum(qty) +
+          ' ชิ้นแล้ว — บันทึกเป็นประวัติไว้ ไม่ได้ลบยอดเดิม');
+    renderSummary();
+    if (state.page === 'scan') renderScanTotals();   // การ์ดสดบนหน้ายิงต้องตามด้วย
+    $('modalOk').click();                            // ปิดกล่องเดิม...
+    openSumCard(kind || 'over');                     // ...แล้วเปิดกลุ่มเดิมใหม่
+  };
+
+  if (qty <= 1) { write(); return; }
+
+  /* หักทีเดียวหลายชิ้นย้อนกลับลำบากกว่ากดทีละชิ้น ต้องถามก่อนกันมือลั่นตอนเลื่อนจอ
+     กล่องยืนยันนี้ทับป๊อปอัปลิสต์ที่เปิดอยู่ กดยกเลิกจึงต้องเปิดลิสต์เดิมกลับให้ด้วย
+     ไม่งั้นคนจะถูกเด้งออกไปหน้าสรุปทั้งที่แค่กดผิด */
+  ask('เอาออกทั้งหมด?',
+      'เอา ' + (r.code || r.key) + ' ออกทั้งหมด ' + fmtNum(qty) + ' ชิ้น?\n' +
+      (r.name ? r.name + '\n' : '') +
+      '\nยอดที่ยิงไว้จะถูกหักจนเหลือ 0\n' +
+      'ระบบบันทึกเป็นประวัติไว้ ไม่ได้ลบยอดเดิมทิ้ง ตรวจย้อนหลังได้เสมอ',
+      'เอาออก ' + fmtNum(qty) + ' ชิ้น', { danger: true }).then(function (ok) {
+    if (!ok) { openSumCard(kind || 'over'); return; }
+    write();
+  });
 }
 
 function openSumCard(kind) {
@@ -6707,14 +6744,44 @@ function openSumCard(kind) {
   var box = document.createElement('div');
   box.className = 'clist';
   box.setAttribute('data-sumcard-list', kind);
-  if (!rows.length) {
-    var none = document.createElement('div');
-    none.className = 'empty';
-    none.textContent = spec.empty;
-    box.appendChild(none);
-  } else {
-    rows.forEach(function (r) { box.appendChild(sumCardRow(r, kind)); });
+
+  /* กลุ่ม "ตรง" ของรอบจริงมีเป็นพันแถว เลื่อนหาทีละตัวไม่ไหว ต้องมีช่องกรอง
+     โผล่เฉพาะตอนมีของให้กรองจริง ๆ ลิสต์ว่างแล้วมีช่องค้นหาก็กวนเปล่า ๆ */
+  var listHost = document.createElement('div');
+  listHost.className = 'clist';
+  listHost.setAttribute('data-sumcard-rows', kind);
+
+  var search = null;
+  if (rows.length) {
+    search = document.createElement('input');
+    search.type = 'text';
+    search.setAttribute('data-sumcard-search', kind);
+    search.setAttribute('autocomplete', 'off');
+    search.placeholder = '🔍 พิมพ์รหัส/ชื่อ กรองรายการ';
+    search.style.marginBottom = '10px';
+    box.appendChild(search);
   }
+  box.appendChild(listHost);
+
+  var renderRows = function (term) {
+    var q = String(term || '').trim().toUpperCase();
+    listHost.innerHTML = '';
+    var hits = !q ? rows : rows.filter(function (r) {
+      return String(r.code || '').toUpperCase().indexOf(q) >= 0 ||
+             String(r.name || '').toUpperCase().indexOf(q) >= 0;
+    });
+    if (!hits.length) {
+      var none = document.createElement('div');
+      none.className = 'empty';
+      none.setAttribute('data-sumcard-empty', '1');
+      none.textContent = q ? 'ไม่พบรายการที่ค้น' : spec.empty;
+      listHost.appendChild(none);
+      return;
+    }
+    hits.forEach(function (r) { listHost.appendChild(sumCardRow(r, kind)); });
+  };
+  if (search) search.oninput = function () { renderRows(this.value); };
+  renderRows('');
 
   var msg = fmtNum(rows.length) + ' รายการ' +
     (kind === 'match' ? '' : ' · มูลค่าผลต่างรวม ' + signedMoney(money));
