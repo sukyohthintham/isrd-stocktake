@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.6.3">
+<meta name="version" content="2.6.4">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.6.3</title>
+<title>ISRD Stocktake v2.6.4</title>
 
 <style>
 :root{
@@ -369,7 +369,10 @@ table.grid td.neg{color:var(--short);font-weight:700}
 .stat.tap:active{background:#f1f5f9}
 .stat .s-num.pos{color:var(--over)}
 .stat .s-num.neg{color:var(--short)}
-.stat .s-sub{font-size:12px;font-weight:800;font-variant-numeric:tabular-nums;margin-top:3px}
+/* nowrap — ตัวเลขเงินกับเครื่องหมายบวกลบต้องอยู่บรรทัดเดียวกันเสมอ
+   ถ้าตัดบรรทัดได้ "-฿8,420.00" จะกลายเป็น "-" ลอยอยู่บรรทัดบนแล้วอ่านผิดทันที */
+.stat .s-sub{font-size:12px;font-weight:800;font-variant-numeric:tabular-nums;
+  margin-top:3px;white-space:nowrap}
 .stat .s-sub.pos{color:var(--over)}
 .stat .s-sub.neg{color:var(--short)}
 .filters{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;margin-bottom:10px}
@@ -871,14 +874,17 @@ body.no-doc-images .doc .imgbox{display:none}
       <button type="button" class="stat tap" id="scanCardMatch" data-sumcard="match">
         <div class="s-num" id="scanCardMatchNum">0</div>
         <div class="s-lab">✅ ตรง (SKU)</div>
+        <div class="s-sub" id="scanCardMatchPc">0 ชิ้น</div>
       </button>
       <button type="button" class="stat tap" id="scanCardShort" data-sumcard="short">
         <div class="s-num neg" id="scanCardShortNum">0</div>
         <div class="s-lab">❌ ขาด (SKU)</div>
+        <div class="s-sub neg" id="scanCardShortPc">0 ชิ้น</div>
       </button>
       <button type="button" class="stat tap" id="scanCardOver" data-sumcard="over">
         <div class="s-num pos" id="scanCardOverNum">0</div>
         <div class="s-lab">➕ เกิน (SKU)</div>
+        <div class="s-sub pos" id="scanCardOverPc">0 ชิ้น</div>
       </button>
     </div>
     <button class="btn ghost sm block" id="btnScanExport"
@@ -1257,16 +1263,19 @@ body.no-doc-images .doc .imgbox{display:none}
     <button type="button" class="stat tap" id="cardMatch" data-sumcard="match">
       <div class="s-num" id="cardMatchNum">0</div>
       <div class="s-lab">✅ ตรง (SKU)</div>
+      <div class="s-sub" id="cardMatchPc">0 ชิ้น</div>
       <div class="s-sub" id="cardMatchVal">&nbsp;</div>
     </button>
     <button type="button" class="stat tap" id="cardShort" data-sumcard="short">
       <div class="s-num neg" id="cardShortNum">0</div>
       <div class="s-lab">❌ ขาด (SKU)</div>
+      <div class="s-sub" id="cardShortPc">0 ชิ้น</div>
       <div class="s-sub neg" id="cardShortVal">&nbsp;</div>
     </button>
     <button type="button" class="stat tap" id="cardOver" data-sumcard="over">
       <div class="s-num pos" id="cardOverNum">0</div>
       <div class="s-lab">➕ เกิน (SKU)</div>
+      <div class="s-sub" id="cardOverPc">0 ชิ้น</div>
       <div class="s-sub pos" id="cardOverVal">&nbsp;</div>
     </button>
   </div>
@@ -1493,7 +1502,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.6.3';
+var APP_VERSION = '2.6.4';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -5461,13 +5470,15 @@ function renderScanDiffCards() {
   var staff = applyStaffOnly(SCAN_STAFF_ONLY);
   $('btnScanExport').disabled = !staff;      // ซ่อนแล้วยังล็อกซ้ำ กันเรียกผ่านทางอื่น
   if (!staff) return;
-  var m = 0, s = 0, o = 0;
-  summaryData().rows.forEach(function (r) {
-    if (r.diff === 0) m++; else if (r.diff < 0) s++; else o++;
+  /* ใช้ sumCardRows ตัวเดียวกับหน้าสรุป ตัวเลขสองหน้าจะได้ตรงกันเสมอ
+     ไม่ใช่ต่างคนต่างนับแล้ววันหนึ่งเพี้ยนกันโดยไม่มีใครรู้ */
+  var data = summaryData();
+  ['match', 'short', 'over'].forEach(function (kind) {
+    var rows = sumCardRows(data, kind);
+    var cap = kind.charAt(0).toUpperCase() + kind.slice(1);
+    $('scanCard' + cap + 'Num').textContent = fmtNum(rows.length);
+    $('scanCard' + cap + 'Pc').textContent = fmtNum(sumCardPieces(rows, kind)) + ' ชิ้น';
   });
-  $('scanCardMatchNum').textContent = fmtNum(m);
-  $('scanCardShortNum').textContent = fmtNum(s);
-  $('scanCardOverNum').textContent = fmtNum(o);
 }
 
 function renderScanTotals() {
@@ -6519,6 +6530,16 @@ function sumCardValue(rows) {
   return rows.reduce(function (s, r) { return s + r.diff * r.price; }, 0);
 }
 
+/* จำนวน "ชิ้น" ของกลุ่ม — คนละความหมายกับจำนวน SKU บนตัวเลขใหญ่
+   ตรง  = ชิ้นที่นับได้จริงในกลุ่มนั้น (r.act)
+   ขาด  = ยอดที่ขาดไป (sys - act) · เกิน = ยอดที่เกินมา (act - sys)
+   ทั้งสองกรณีคือ |diff| จึงคิดด้วยสูตรเดียว ไม่ต้องแยกเงื่อนไข */
+function sumCardPieces(rows, kind) {
+  return rows.reduce(function (s, r) {
+    return s + (kind === 'match' ? (Number(r.act) || 0) : Math.abs(Number(r.diff) || 0));
+  }, 0);
+}
+
 function signedMoney(v) {
   if (!v) return '฿' + fmtMoney(0);
   return (v > 0 ? '+' : '-') + '฿' + fmtMoney(Math.abs(v));
@@ -6529,10 +6550,14 @@ function renderSumCards(data) {
     var rows = sumCardRows(data, kind);
     var cap = kind.charAt(0).toUpperCase() + kind.slice(1);
     $('card' + cap + 'Num').textContent = fmtNum(rows.length);
-    var sub = $('card' + cap + 'Val');
-    /* กลุ่ม "ตรง" ผลต่างเป็น 0 เสมอ ไม่ต้องมีบรรทัดมูลค่า แต่ต้องกันความสูงไว้ให้การ์ดเท่ากัน */
-    if (kind === 'match') { sub.innerHTML = '&nbsp;'; return; }
-    sub.textContent = signedMoney(sumCardValue(rows));
+    /* ตัวเลขใหญ่ = SKU · บรรทัดถัดมา = จำนวนชิ้น · บรรทัดล่างสุด = มูลค่า
+       แยกคนละบรรทัด ไม่ต่อกันด้วย " · " เพราะการ์ดกว้างแค่ ~110px บนมือถือ
+       พอรวมบรรทัดเดียวแล้วตัวเลขเงินตัดบรรทัด เครื่องหมายลบหลุดไปอยู่คนละแถวกับตัวเลข */
+    $('card' + cap + 'Pc').textContent = fmtNum(sumCardPieces(rows, kind)) + ' ชิ้น';
+    var money = $('card' + cap + 'Val');
+    /* กลุ่ม "ตรง" ผลต่างเป็น 0 เสมอ ไม่มีมูลค่าให้บอก แต่ต้องกันความสูงไว้ให้การ์ดเท่ากัน */
+    if (kind === 'match') { money.innerHTML = '&nbsp;'; return; }
+    money.textContent = signedMoney(sumCardValue(rows));
   });
 }
 
