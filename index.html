@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.6.6">
+<meta name="version" content="2.6.7">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.6.6</title>
+<title>ISRD Stocktake v2.6.7</title>
 
 <style>
 :root{
@@ -292,7 +292,12 @@ kbd{
 }
 .scan-total{font-size:52px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;text-align:center}
 .scan-total-lab{text-align:center;font-size:13px;color:var(--muted);margin-top:4px}
-.scan-total-all{text-align:center;font-size:12px;color:var(--muted);margin-top:2px;font-variant-numeric:tabular-nums}
+.scan-total-all{text-align:center;font-size:12px;color:var(--muted);margin-top:2px;font-variant-numeric:tabular-nums;line-height:1.7}
+/* แจกแจงยอดทีละโซน — inline-block + nowrap ให้ตกบรรทัดได้ระหว่างโซน
+   แต่ห้ามตกกลางชื่อโซนกับตัวเลขของมันเอง จอ 390px ที่มีหลายโซนจึงพับลงมาสวย ๆ */
+.zone-pill{display:inline-block;white-space:nowrap;padding:1px 5px;border-radius:6px;background:var(--line-soft)}
+.zone-pill.active{background:var(--brand-light);color:var(--brand);font-weight:800}
+.zone-pill.total{background:none;font-weight:800;color:#334155}
 #scanInput{
   font-size:20px;text-align:center;letter-spacing:1px;min-height:64px;margin-top:14px;
   border-color:var(--brand);
@@ -1506,7 +1511,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.6.6';
+var APP_VERSION = '2.6.7';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -5496,9 +5501,36 @@ function renderScanTotals() {
      ต้องอยู่ก่อน guard ของ lab ข้างล่าง ไม่งั้นถ้าวันหนึ่ง lab หายไป บรรทัดนี้จะเงียบตาม */
   var allEl = $('scanTotalAll');
   if (allEl) {
-    var all = 0;
-    for (var zk in state.zoneTotals) all += (state.zoneTotals[zk] || 0);
-    allEl.textContent = all > 0 ? ('รวมทุกโซน ' + fmtNum(all) + ' ชิ้น') : '';
+    allEl.innerHTML = '';
+    var all = 0, zones = [];
+    for (var zk in state.zoneTotals) {
+      var q = Number(state.zoneTotals[zk]) || 0;
+      all += q;                                  // ยอดรวมนับทุกโซน รวมตัวที่ยอดหักจนติดลบ
+      if (q > 0) zones.push({ name: zk, qty: q });   // แต่โชว์เฉพาะโซนที่ยังมีของ
+    }
+    zones.sort(function (a, b) { return String(a.name).localeCompare(String(b.name), 'th'); });
+
+    /* วาดด้วย DOM ไม่ใช่ต่อ string ใส่ innerHTML — ชื่อโซนมาจาก Location ในไฟล์ที่คนอัปโหลด
+       ถ้าวันหนึ่งมีอักขระ < > ปนมา การต่อ string จะกลายเป็นช่องโหว่ทันที
+       ไม่มีโซนไหนเหลือของ = ไม่ต่ออะไรเลย บรรทัดว่างและยุบหายไปเอง (ซ่อนเหมือน v2.6.5)
+       ห้าม return ตรงนี้ ไม่งั้นป้ายชื่อโซนข้างล่างจะไม่ถูกอัปเดตตอนเริ่มรอบใหม่ */
+    zones.forEach(function (z, i) {
+      if (i) allEl.appendChild(document.createTextNode(' · '));
+      var s = document.createElement('span');
+      /* โซนล่าสุดเน้นไว้ ให้รู้ว่าตัวเลขใหญ่ข้างบนเป็นของโซนไหนในบรรทัดนี้ */
+      s.className = 'zone-pill' + (z.name === nm ? ' active' : '');
+      s.setAttribute('data-zone', z.name);
+      s.textContent = z.name + ' ' + fmtNum(z.qty);
+      allEl.appendChild(s);
+    });
+    if (zones.length) {
+      allEl.appendChild(document.createTextNode(' · '));
+      var tot = document.createElement('span');
+      tot.className = 'zone-pill total';
+      tot.setAttribute('data-zone-total', '1');
+      tot.textContent = 'รวม ' + fmtNum(all);
+      allEl.appendChild(tot);
+    }
   }
 
   var lab = $('scanTotalLab');
