@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.6.5">
+<meta name="version" content="2.6.6">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.6.5</title>
+<title>ISRD Stocktake v2.6.6</title>
 
 <style>
 :root{
@@ -1506,7 +1506,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.6.5';
+var APP_VERSION = '2.6.6';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -10512,44 +10512,150 @@ function renderLocationMaster() {
 
   var map = state.locations[locViewSet] || {};
   var term = String($('locSearch').value || '').trim().toUpperCase();
-  var keys = Object.keys(map).filter(function (k) {
-    if (!term) return true;
-    var l = map[k];
-    return String(l.sku).toUpperCase().indexOf(term) >= 0 ||
-           String(l.pick || '').toUpperCase().indexOf(term) >= 0 ||
-           String(l.refill || '').toUpperCase().indexOf(term) >= 0 ||
-           String(l.name || '').toUpperCase().indexOf(term) >= 0;
-  }).sort();
-  var shown = keys.slice(0, LOC_RENDER_LIMIT);
-  $('locCount').textContent = Object.keys(map).length
-    ? ('พบ ' + fmtNum(keys.length) + ' จาก ' + fmtNum(Object.keys(map).length) + ' SKU' +
-       (keys.length > shown.length ? ' — แสดง ' + fmtNum(shown.length) + ' รายการแรก' : ''))
-    : 'ชุดนี้ยังไม่มีข้อมูล';
-
   var host = $('locList');
   host.innerHTML = '';
+
+  /* search-to-reveal เหมือนหน้าสินค้า — สินค้ามีหมื่นห้าพันตัว ถล่มลิสต์ตั้งแต่เปิดหน้าไม่ช่วยใคร
+     คนเข้ามาหน้านี้เพื่อ "ตั้ง Location ให้ตัวใดตัวหนึ่ง" ไม่ใช่มาไล่อ่านทั้งบริษัท */
+  if (!term) {
+    $('locCount').textContent = Object.keys(map).length
+      ? ('ชุดนี้มี ' + fmtNum(Object.keys(map).length) + ' SKU ที่ตั้ง Location ไว้แล้ว')
+      : 'ชุดนี้ยังไม่มีข้อมูล';
+    var prompt = document.createElement('div');
+    prompt.className = 'empty';
+    prompt.setAttribute('data-locprompt', '1');
+    prompt.textContent = '🔍 พิมพ์รหัสสินค้า ชื่อ หรือ Location เพื่อค้นหา';
+    host.appendChild(prompt);
+    return;
+  }
+
+  /* ค้นทั้ง Master ไม่ใช่แค่ตัวที่มี Location อยู่แล้ว
+     ไม่งั้นสินค้าที่ยังไม่เคยตั้ง Location จะหาไม่เจอ แล้วก็ตั้งให้มันไม่ได้เลย */
+  var hits = Object.create(null);
+  Object.keys(state.products).forEach(function (k) {
+    var p = state.products[k];
+    if (String(p.code || '').toUpperCase().indexOf(term) >= 0 ||
+        String(p.name || '').toUpperCase().indexOf(term) >= 0 ||
+        String(p.barcode || '').toUpperCase().indexOf(term) >= 0) hits[k] = 1;
+  });
+  Object.keys(map).forEach(function (k) {
+    var l = map[k];
+    if (String(l.sku || '').toUpperCase().indexOf(term) >= 0 ||
+        String(l.pick || '').toUpperCase().indexOf(term) >= 0 ||
+        String(l.refill || '').toUpperCase().indexOf(term) >= 0 ||
+        String(l.name || '').toUpperCase().indexOf(term) >= 0) hits[k] = 1;
+  });
+
+  var keys = Object.keys(hits).sort();
+  var shown = keys.slice(0, LOC_RENDER_LIMIT);
+  $('locCount').textContent = 'พบ ' + fmtNum(keys.length) + ' รายการ' +
+    (keys.length > shown.length ? ' — แสดง ' + fmtNum(shown.length) + ' รายการแรก' : '') +
+    ' · ชุดนี้ตั้ง Location ไว้แล้ว ' + fmtNum(Object.keys(map).length) + ' SKU';
+
+  if (!keys.length) {
+    var none = document.createElement('div');
+    none.className = 'empty';
+    none.setAttribute('data-locempty', '1');
+    none.textContent = 'ไม่พบสินค้าหรือ Location ที่ตรงกับที่ค้น';
+    host.appendChild(none);
+    return;
+  }
+
   shown.forEach(function (k) {
     var l = map[k];
+    var p = state.products[k] || {};
+    var sku = p.code || (l && l.sku) || k;
+    var name = p.name || (l && l.name) || '(ไม่มีชื่อในไฟล์)';
+
     var row = document.createElement('div');
     row.className = 'mrow';
-    row.setAttribute('data-loc', l.sku);
+    row.setAttribute('data-loc', sku);
     var top = document.createElement('div');
     top.className = 'm-top';
     var left = document.createElement('div');
     var nm = document.createElement('div');
     nm.className = 'm-name';
-    nm.textContent = l.sku;
+    nm.textContent = sku;
     var sub = document.createElement('div');
     sub.className = 'm-cat';
-    sub.textContent = l.name || '(ไม่มีชื่อในไฟล์)';
+    sub.textContent = name;
     left.appendChild(nm); left.appendChild(sub);
     var right = document.createElement('div');
     right.style.textAlign = 'right';
-    if (l.pick) right.appendChild(makeBadge('📍 ' + l.pick, 'loc'));
-    if (l.refill) right.appendChild(makeBadge('📦 ' + l.refill, 'loc'));
+    if (l && l.pick) right.appendChild(makeBadge('📍 ' + l.pick, 'loc'));
+    if (l && l.refill) right.appendChild(makeBadge('📦 ' + l.refill, 'loc'));
+    /* ตัวที่ยังไม่มี Location ต้องเห็นชัดว่า "ยังไม่ได้ตั้ง" ไม่ใช่ช่องว่างเงียบ ๆ */
+    if (!l || (!l.pick && !l.refill)) right.appendChild(makeBadge('ยังไม่มี Location', 'grey'));
     top.appendChild(left); top.appendChild(right);
     row.appendChild(top);
+
+    /* Location เป็นข้อมูลกลางของทุกสาขา แก้ได้เฉพาะ admin (กติกาเดียวกับหน้าสินค้า)
+       คนอื่นเห็นค่าปัจจุบันได้ แต่ไม่มีช่องกรอกให้เลย */
+    if (isAdmin()) {
+      var edit = document.createElement('div');
+      edit.className = 'm-edit';
+
+      var pickLab = document.createElement('label');
+      var pickSp = document.createElement('span');
+      pickSp.textContent = 'Location หยิบ';
+      var pickIn = document.createElement('input');
+      pickIn.type = 'text';
+      pickIn.setAttribute('data-action', 'pick');
+      pickIn.setAttribute('autocomplete', 'off');
+      pickIn.setAttribute('autocapitalize', 'characters');
+      pickIn.value = (l && l.pick) || '';
+      pickLab.appendChild(pickSp); pickLab.appendChild(pickIn);
+
+      var refLab = document.createElement('label');
+      var refSp = document.createElement('span');
+      refSp.textContent = 'Location เติม';
+      var refIn = document.createElement('input');
+      refIn.type = 'text';
+      refIn.setAttribute('data-action', 'refill');
+      refIn.setAttribute('autocomplete', 'off');
+      refIn.setAttribute('autocapitalize', 'characters');
+      refIn.value = (l && l.refill) || '';
+      refLab.appendChild(refSp); refLab.appendChild(refIn);
+
+      /* ช่องไหนเปลี่ยนก็ส่งทั้งคู่ — เรคอร์ดเดียวเก็บทั้ง pick และ refill
+         ถ้าส่งไปทีละช่องอีกช่องจะถูกล้างทิ้ง */
+      var save = function () {
+        saveLocationEdit(k, sku, name, pickIn.value, refIn.value).then(function () {
+          toast('บันทึก Location ' + sku + ' แล้ว');
+          renderLocationMaster();
+        });
+      };
+      pickIn.onchange = save;
+      refIn.onchange = save;
+
+      edit.appendChild(pickLab); edit.appendChild(refLab);
+      row.appendChild(edit);
+    }
     host.appendChild(row);
+  });
+}
+
+/* แก้ Location รายตัวจากหน้าจอ — ไม่ต้องแก้ในไฟล์แล้วนำเข้าใหม่ทั้งชุด
+   ทั้งสองช่องว่าง = ลบเรคอร์ดทิ้ง (null) เพราะ "ไม่มี Location" กับ "มีแต่ว่าง"
+   ต้องเป็นอย่างเดียวกัน ไม่งั้น locStatus จะนับ SKU ที่ไม่มี Location จริงเข้าไปด้วย
+   RTDB ลบคีย์ด้วย null ได้ และ Rules ของ locations เป็น .write ระดับ admin
+   ไม่มี .validate บังคับรูปเรคอร์ด จึงลบได้จริงทั้งบนฐานกลางและโหมดทดสอบในเครื่อง */
+function saveLocationEdit(key, sku, name, pick, refill) {
+  if (!requireAdmin('แก้ Location ไม่ได้')) return Promise.resolve();
+  var set = locViewSet;
+  pick = String(pick == null ? '' : pick).trim();
+  refill = String(refill == null ? '' : refill).trim();
+  var rec = (pick || refill) ? { sku: sku, name: name || '', pick: pick, refill: refill } : null;
+  var patch = {};
+  patch[key] = rec;
+  return db.update('locations/' + set, patch).then(function () {
+    if (!state.locations[set]) state.locations[set] = {};
+    if (rec) state.locations[set][key] = rec;
+    else delete state.locations[set][key];
+    /* หน้ายิงอ่าน Location ตรง ๆ ทั้งตัวกรองโซนและแผงข้าง ต้องตามให้ทัน */
+    if (state.page === 'scan') { renderLocFilter(); renderLivePanel(); }
+  }).catch(function () {
+    toast('บันทึก Location ไม่สำเร็จ ฐานข้อมูลปฏิเสธการเขียน หรือเน็ตหลุด', true);
   });
 }
 
