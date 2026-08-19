@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.6.9">
+<meta name="version" content="2.7.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.6.9</title>
+<title>ISRD Stocktake v2.7.0</title>
 
 <style>
 :root{
@@ -1237,6 +1237,9 @@ body.no-doc-images .doc .imgbox{display:none}
 
  <div id="sumJob">
   <div class="banner info" id="sumHead"></div>
+  <!-- รอบที่มีหลาย Job ต้องบอกให้ชัดว่าตัวเลขข้างล่างเป็นยอดรวมทุกใบ ไม่ใช่ของใบนี้ใบเดียว
+       ก่อน v2.7.0 หน้านี้นับแค่ Job ที่เปิดอยู่ คนอ่านจึงเห็น "ขาด" ทั้งที่ของไปนับอยู่ใบอื่น -->
+  <div class="muted" id="sumScopeInfo" style="margin:-4px 0 10px"></div>
   <!-- เด็กหน้าร้านไม่เห็นตัวเลขผลต่าง เห็นแค่ผลงานตัวเอง — เติมบรรทัดนี้แทน -->
   <div class="banner ok" id="myProgress" style="display:none"></div>
 
@@ -1511,7 +1514,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.6.9';
+var APP_VERSION = '2.7.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -6453,6 +6456,9 @@ function loadCycleRaw(cid) {
 
 function buildCycleData(raw) {
   var sysAll = raw.sys || {}, countAll = {}, jobsPerSku = {}, perJob = [];
+  /* แยกยอดที่กรอกมือออกจากยอดที่ยิง — คอลัมน์นี้มีในไฟล์ Excel ตั้งแต่รุ่นแรก
+     ตอนรวมทั้งรอบก็ต้องแยกได้เหมือนกัน ไม่งั้นช่อง "จากการกรอกมือ" จะเป็น 0 ทั้งใบ */
+  var manualAll = {};
 
   raw.jobs.forEach(function (p) {
     var job = state.roundIndex[p.id] || {};
@@ -6461,7 +6467,9 @@ function buildCycleData(raw) {
       var rec = p.scans[sid];
       if (!rec) return;
       var k = safeKey(rec.code);
-      counts[k] = (counts[k] || 0) + (Number(rec.delta) || 0);
+      var delta = Number(rec.delta) || 0;
+      counts[k] = (counts[k] || 0) + delta;
+      if (rec.mode === 'manual') manualAll[k] = (manualAll[k] || 0) + delta;
       if (rec.user) users[rec.user] = 1;
     });
     Object.keys(counts).forEach(function (k) {
@@ -6485,11 +6493,16 @@ function buildCycleData(raw) {
     });
   });
 
-  return { sys: sysAll, counts: countAll, jobsPerSku: jobsPerSku, perJob: perJob };
+  /* เก็บ scan ดิบของทุกใบไว้ด้วย — ชีท "ประวัติการนับ" ใน Excel ต้องใช้
+     โหลดมาแล้วตั้งแต่ loadCycleRaw ถ้าทิ้งไปจะต้องอ่านเน็ตซ้ำทั้งรอบเพื่อเอาของเดิม
+     แลกกับหน่วยความจำที่โตขึ้นตามจำนวนใบ — ยอมรับได้ เพราะรอบหนึ่งมีไม่กี่ใบ */
+  return { sys: sysAll, counts: countAll, manual: manualAll, jobs: raw.jobs,
+           jobsPerSku: jobsPerSku, perJob: perJob };
 }
 
-/* ทำให้หน้าตาเหมือน summaryData() เป๊ะ เพื่อให้ตาราง/กราฟ/Excel ใช้โค้ดชุดเดิมได้หมด */
-function summaryDataFrom(sysMap, countMap, jobsPerSku) {
+/* ทำให้หน้าตาเหมือน summaryData() เป๊ะ เพื่อให้ตาราง/กราฟ/Excel ใช้โค้ดชุดเดิมได้หมด
+   manualMap ใส่หรือไม่ใส่ก็ได้ — ไม่ใส่แปลว่าไม่รู้ที่มา ให้ถือว่ามาจากการยิงทั้งหมด */
+function summaryDataFrom(sysMap, countMap, jobsPerSku, manualMap) {
   var priceField = state.priceField;
   var groups = { product: blankGroup(), notProduct: blankGroup(), total: blankGroup() };
   var keys = {};
@@ -6520,11 +6533,16 @@ function summaryDataFrom(sysMap, countMap, jobsPerSku) {
       g.actValue += act * price;
     });
 
+    var manual = Number((manualMap || {})[key]) || 0;
     rows.push({
       key: key, code: p.code, name: p.name, unit: p.unit || '', type: bucket,
       category: p.category || '', status: productStatus(p), location: locationText(key),
+      /* ข้อ A2 — สามสถานะเดียวกับ summaryData() ต้องมีครบ ไม่งั้นตารางที่กรองด้วย
+         known / inRound (ของมาผิดสาขา · ไม่มีในระบบ) จะว่างเปล่าเงียบ ๆ ตอนดูยอดรวม */
+      inRound: sysMap[key] !== undefined,
+      known: !!state.products[key],
       sys: sys, act: act, diff: act - sys, price: price,
-      scanQty: act, manualQty: 0,
+      scanQty: act - manual, manualQty: manual,
       /* ข้อ D2 — SKU นี้ถูกยิงจากกี่ Job */
       jobCount: Object.keys((jobsPerSku || {})[key] || {}).length
     });
@@ -6675,11 +6693,30 @@ function sumCardRow(r, kind) {
   moneyLine.appendChild(mcap); moneyLine.appendChild(mval);
   row.appendChild(moneyLine);
 
+  /* ---------- ปุ่มเอาออก ต้องผูกกับยอดของ "Job ใบนี้" เท่านั้น (v2.7.0) ----------
+     ตั้งแต่รวมทุก Job แล้ว r.act เป็นยอดรวมของทั้งรอบ แต่ writeScan เขียนลงใบที่เปิดอยู่ใบเดียว
+     ถ้าเอา r.act ไปหัก ของที่คนอื่นนับไว้ในใบอื่นจะถูกหักออกจากใบเรา จนยอดใบเราติดลบ
+     และประวัติจะโกหกว่าใบนี้เคยมีของเท่านั้น — หักได้เท่าที่ใบนี้ยิงไว้จริงเท่านั้น
+     รอบที่มี Job เดียว jobAct จะเท่ากับ r.act เสมอ พฤติกรรมจึงเหมือนเดิมทุกประการ */
+  var jobAct = Number(state.counts[r.key]) || 0;
+
+  /* ยิงจากหลายใบ ต้องบอกให้เห็นว่าตัวเลขบนปุ่มมาจากไหน ไม่ใช่ให้เดาเอง */
+  if (jobAct !== r.act) {
+    var scopeLine = document.createElement('div');
+    scopeLine.className = 'muted';
+    scopeLine.style.marginTop = '6px';
+    scopeLine.setAttribute('data-jobact', String(jobAct));
+    scopeLine.textContent = 'ยอดนี้รวมทุก Job ในรอบ — Job ที่เปิดอยู่ยิงไว้ ' +
+                            fmtNum(jobAct) + ' ชิ้น' +
+                            (r.jobCount > 1 ? ' · ยิงจาก ' + fmtNum(r.jobCount) + ' ใบ' : '');
+    row.appendChild(scopeLine);
+  }
+
   /* ยิงเกินโดยไม่ตั้งใจต้องแก้ได้จากตรงนี้เลย ไม่ต้องเดินกลับไปหน้ายิง
-     แสดงทุกกลุ่มที่ยิงไปแล้วจริง (act > 0) ไม่ใช่แค่กลุ่ม "เกิน" — ของที่ยอดตรงพอดี
-     ก็ยิงเกินมาแล้วแก้ผิดตัวได้เหมือนกัน ที่ act = 0 ไม่มีอะไรให้เอาออก
+     แสดงทุกกลุ่มที่ยิงไปแล้วจริง (jobAct > 0) ไม่ใช่แค่กลุ่ม "เกิน" — ของที่ยอดตรงพอดี
+     ก็ยิงเกินมาแล้วแก้ผิดตัวได้เหมือนกัน ที่ยังไม่ได้ยิงในใบนี้ ไม่มีอะไรให้เอาออก
      เป็นของ staff (admin + counter) เพราะการปรับยอดลงคือจุดที่ทุจริตได้ง่ายที่สุด */
-  if (r.act > 0 && isStaff()) {
+  if (jobAct > 0 && isStaff()) {
     var act = document.createElement('button');
     act.type = 'button';
     act.className = 'btn grey block sm';
@@ -6694,16 +6731,16 @@ function sumCardRow(r, kind) {
     /* ยิงรัวติดกันสิบยี่สิบครั้งเพราะเครื่องค้าง ต้องเอาออกทีเดียวได้
        ไม่ใช่กดทีละชิ้นยี่สิบครั้ง · มีเฉพาะตอนเหลือให้เอาออกมากกว่า 1 ชิ้น
        สีแดงเพราะย้อนกลับยากกว่าปุ่มบน และ removeOverScan จะถามยืนยันก่อนอีกชั้น */
-    if (r.act > 1) {
+    if (jobAct > 1) {
       var actAll = document.createElement('button');
       actAll.type = 'button';
       actAll.className = 'btn danger block sm';
       actAll.style.marginTop = '8px';
       actAll.setAttribute('data-removeall', r.code || r.key);
-      actAll.textContent = '🗑 เอาออกทั้งหมด (' + fmtNum(r.act) + ' ชิ้น)';
+      actAll.textContent = '🗑 เอาออกทั้งหมด (' + fmtNum(jobAct) + ' ชิ้น)';
       actAll.disabled = !canScan();
       if (actAll.disabled) actAll.title = blockedMessage();
-      actAll.onclick = function () { removeOverScan(r, kind, r.act); };
+      actAll.onclick = function () { removeOverScan(r, kind, jobAct); };
       row.appendChild(actAll);
     }
   }
@@ -6720,6 +6757,16 @@ function removeOverScan(r, kind, qty) {
   if (!isStaff()) { toast(roleBlockMessage('เอาของออกจากสรุปไม่ได้'), true); return; }
   if (!canScan()) { toast(blockedMessage() + ' — เอาออกไม่ได้', true); return; }
 
+  /* หักได้ไม่เกินที่ Job ใบนี้ยิงไว้จริง — ยอดบนจออาจเป็นยอดรวมทุกใบ (v2.7.0)
+     หรือเป็นตัวเลขค้างจากก่อนที่คนอื่นจะแก้ ปล่อยให้หักเกินคือทำยอดใบนี้ติดลบ */
+  var jobAct = Number(state.counts[r.key]) || 0;
+  if (jobAct <= 0) {
+    toast('Job ที่เปิดอยู่ไม่ได้ยิง ' + (r.code || r.key) + ' ไว้ — ' +
+          'ของนี้ถูกนับที่ Job อื่น ต้องไปเอาออกจากใบนั้น', true);
+    return;
+  }
+  if (qty > jobAct) qty = jobAct;
+
   var write = function () {
     writeScan(r.key, -qty, 'scan',
               qty > 1 ? 'เอาออกทั้งหมดจากสรุป' : 'เอาออกจากสรุป (ยิงเกิน)');
@@ -6728,7 +6775,15 @@ function removeOverScan(r, kind, qty) {
     renderSummary();
     if (state.page === 'scan') renderScanTotals();   // การ์ดสดบนหน้ายิงต้องตามด้วย
     $('modalOk').click();                            // ปิดกล่องเดิม...
-    openSumCard(kind || 'over');                     // ...แล้วเปิดกลุ่มเดิมใหม่
+    /* ...แล้วเปิดกลุ่มเดิมใหม่
+       รอบที่มี Job เดียวต้องเปิดกลับ "ทันที" ไม่ผ่าน Promise เลย — ไม่ใช่แค่เรื่องเร็ว
+       แต่ถ้าเลื่อนไปรอบถัดไป ลิสต์จะไปโผล่ทีหลังตอนคนกดออกจากหน้าไปแล้ว */
+    if (!cycleScope().multi) { openSumCard(kind || 'over'); return; }
+    /* หลาย Job — ยอดรวมเพิ่งถูกล้างไปตอนเขียนแถวใหม่ ต้องรวมใหม่ก่อนเปิดลิสต์กลับ
+       ไม่งั้นตัวเลขจะกระโดดลงไปเป็นของใบนี้ใบเดียวแวบหนึ่งแล้วเด้งกลับ
+       เช็คว่ายังอยู่หน้าสรุปก่อนเปิด — ระหว่างรอ คนอาจกดออกไปหน้าอื่นแล้ว */
+    var reopen = function () { if (state.page === 'summary') openSumCard(kind || 'over'); };
+    ensureReportData().then(reopen, reopen);
   };
 
   if (qty <= 1) { write(); return; }
@@ -6750,7 +6805,7 @@ function removeOverScan(r, kind, qty) {
 function openSumCard(kind) {
   if (!isStaff()) { toast(roleBlockMessage('ดูรายละเอียดผลต่างไม่ได้'), true); return Promise.resolve(); }
   var spec = SUM_CARD_SPEC[kind];
-  var rows = sumCardRows(summaryData(), kind);
+  var rows = sumCardRows(reportDataSync(), kind);
   var money = sumCardValue(rows);
 
   var box = document.createElement('div');
@@ -6839,6 +6894,18 @@ function applySummaryPermissions() {
     'ตัวเลขผลต่างของรอบนี้เปิดให้เฉพาะผู้ดูแลระบบและผู้นับสต๊อก';
 }
 
+/* บอกให้ชัดว่าตัวเลขบนหน้านี้นับจากกี่ใบ — ตัวเลขเดียวกันแต่คนละขอบเขต
+   คือที่มาของการอ่านรายงานผิดทั้งฉบับ ต้องเห็นก่อนตัวเลข ไม่ใช่ไปรู้ทีหลัง */
+function renderSummaryScopeInfo(scope, rolledUp) {
+  var el = $('sumScopeInfo');
+  if (!el) return;
+  if (!scope.multi) { el.textContent = ''; return; }
+  var n = jobsInCycle(scope.cid).length;
+  el.textContent = rolledUp
+    ? ('ตัวเลขข้างล่างรวมทุก Job ในรอบ ' + scope.cid + ' แล้ว (' + fmtNum(n) + ' ใบ)')
+    : ('รอบนี้มี ' + fmtNum(n) + ' Job — กำลังรวมยอดทุกใบ ตัวเลขที่เห็นตอนนี้ยังเป็นของใบนี้ใบเดียว ...');
+}
+
 function renderSummary() {
   var round = state.roundIndex[state.roundId] || { name: '-' };
   $('sumHead').textContent = roundLabel(round.name) +
@@ -6848,7 +6915,20 @@ function renderSummary() {
     b.className = 'btn sm ' + (b.getAttribute('data-price') === state.priceField ? '' : 'grey');
   });
 
-  var data = summaryData();
+  /* ข้อ F5 — ยอดระบบเป็นของทั้งรอบ ยอดนับจึงต้องรวมทุก Job มาเทียบ ไม่ใช่แค่ใบที่เปิดอยู่
+     วาดด้วยของที่มีในมือก่อนเสมอ (จอไม่ว่าง) แล้วค่อยวาดทับเมื่อยอดรวมมาถึง */
+  var scope = cycleScope();
+  var rolledUp = cycleDataReady();
+  var data = rolledUp ? state.cycleData.data : summaryData();
+  renderSummaryScopeInfo(scope, rolledUp);
+  if (scope.multi && !rolledUp) {
+    ensureCycleData().then(function () {
+      if (state.page === 'summary') renderSummary();
+    }, function () {
+      $('sumScopeInfo').textContent =
+        'รวมยอดทุก Job ไม่สำเร็จ — ตัวเลขข้างล่างเป็นของ Job นี้ใบเดียว ลองเปิดหน้านี้ใหม่อีกครั้ง';
+    });
+  }
   renderSumCards(data);
   var body = $('sumBody');
   body.innerHTML = '';
@@ -6890,7 +6970,11 @@ function renderSummary() {
   /* ปุ่มจัดการรอบ — เปลี่ยนตามสถานะ Job และตามสิทธิ์ของคนที่ล็อกอินอยู่
      viewer ไม่ต้องเห็นปุ่มที่กดไปก็โดนปฏิเสธ · เปิดรอบ/ลบ Job เป็นของ admin เท่านั้น */
   var st = jobStatus();
-  var notScanned = Object.keys(state.systemQty).filter(function (k) { return !state.counts[k]; }).length;
+  /* "ยังไม่ถูกยิงเลย" ต้องคิดจากยอดชุดเดียวกับตารางข้างบน ไม่งั้นของที่ไปนับอยู่ Job อื่น
+     จะถูกรายงานว่าไม่มีใครแตะ ทั้งที่นับไปแล้ว */
+  var actByKey = {};
+  data.rows.forEach(function (r) { actByKey[r.key] = r.act; });
+  var notScanned = Object.keys(state.systemQty).filter(function (k) { return !actByKey[k]; }).length;
   var unknownLeft = unknownPending();
   $('btnReview').style.display = (isStaff() && st !== 'closed') ? 'flex' : 'none';
   $('btnReview').textContent = st === 'reviewing' ? '← กลับไปขั้นนับ' : '→ ส่งเข้าขั้นตรวจสอบ';
@@ -6991,9 +7075,19 @@ function renderSummary() {
    14. Export Excel
    ============================================================ */
 
+/* ไฟล์นี้คือของที่ถูกส่งต่อออกไปนอกแอป ผิดแล้วตามแก้ไม่ได้
+   จึงต้อง "รอ" ยอดรวมทุก Job ให้มาถึงก่อนเสมอ ไม่ใช่วาดด้วยของที่มีในมือแบบหน้าจอ
+   รอบที่มี Job เดียว ensureReportData คืนค่าทันทีโดยไม่แตะเน็ต — เร็วเท่าเดิมทุกประการ */
 function exportExcel() {
+  var scope = cycleScope();
+  if (scope.multi && !cycleDataReady()) toast('กำลังรวมยอดทุก Job ในรอบก่อนสร้างไฟล์ ...');
+  return ensureReportData().then(buildSummaryExcel, function () {
+    toast('รวมยอดทุก Job ไม่สำเร็จ ยังสร้างไฟล์ไม่ได้ — เช็คเน็ตแล้วลองใหม่', true);
+  });
+}
+
+function buildSummaryExcel(data) {
   var round = state.roundIndex[state.roundId] || { name: 'stocktake' };
-  var data = summaryData();
   var priceLabel = state.priceField === 'costPrice' ? 'ราคาต้นทุน' : 'ราคาขาย';
 
   var s1 = [['กลุ่ม', 'จำนวนระบบ', 'จำนวนจริง', 'ผลต่าง (ชิ้น)', 'SKU ตรง', 'SKU ขาด', 'SKU เกิน',
@@ -7012,6 +7106,11 @@ function exportExcel() {
   s1.push([]);
   s1.push(['คิดมูลค่าด้วย', priceLabel]);
   s1.push(['สาขา', jobBranchLabel(round)]);
+  /* คนเปิดไฟล์ทีหลังต้องรู้ว่าตัวเลขนับจากกี่ใบ ไม่ใช่เดาจากชื่อไฟล์ */
+  var xScope = cycleScope();
+  s1.push(['ขอบเขตตัวเลข', xScope.multi
+    ? ('รวมทุก Job ในรอบ ' + xScope.cid + ' (' + jobsInCycle(xScope.cid).length + ' ใบ)')
+    : ('เฉพาะ Job ' + (round.jobCode || state.roundId || '-'))]);
 
   var s2 = [['รหัสสินค้า', 'ชื่อสินค้า', 'Location', 'Status', 'หน่วย', 'ประเภท',
              'จำนวนระบบ', 'จำนวนจริง', 'ผลต่าง',
@@ -7023,12 +7122,41 @@ function exportExcel() {
              Math.round(r.sys * r.price * 100) / 100, Math.round(r.act * r.price * 100) / 100]);
   });
 
-  var s3 = [['วันเวลา', 'รหัสสินค้า', 'ชื่อสินค้า', 'โซน', 'ผู้นับ', 'จำนวน', 'วิธีนับ', 'เหตุผล', 'รหัสรายการ']];
-  state.scanLog.slice().sort(function (a, b) { return (b.rec.ts || 0) - (a.rec.ts || 0); }).forEach(function (s) {
-    var p = state.products[safeKey(s.rec.code)] || { name: s.rec.code };
-    s3.push([fmtTime(s.rec.ts), s.rec.code, p.name, s.rec.zoneName || zoneName(s.rec.zone),
-             s.rec.user, s.rec.delta, s.rec.mode === 'manual' ? 'กรอกมือ' : 'ยิงบาร์โค้ด',
-             s.rec.reason || '', s.id]);
+  /* ---------- ประวัติการนับ ต้องครอบคลุมเท่ากับตัวเลขในชีทสรุป ----------
+     รวมทั้งรอบ: ใช้ scan ดิบทุกใบที่ ensureCycleData โหลดมาแล้ว ไม่อ่านเน็ตซ้ำ
+     Job เดียว:  ใช้ state.scanLog ของใบที่เปิดอยู่ เหมือนเดิมทุกบรรทัด
+     ผลรวมช่อง "จำนวน" จึงเท่ากับ "จำนวนจริง" ในชีทสรุป (ยกเว้นบาร์โค้ดผีที่ถูกตัด
+     ออกจากการคิดผลต่างตั้งแต่ v2.6.9 — แถวพวกนั้นยังอยู่ในประวัติเป็นหลักฐาน) */
+  var histAll = xScope.multi && cycleCacheFresh() && state.cycleData.raw.jobs;
+  var hist = [];
+  if (histAll) {
+    state.cycleData.raw.jobs.forEach(function (j) {
+      var jobCode = (state.roundIndex[j.id] || {}).jobCode || j.id;
+      Object.keys(j.scans || {}).forEach(function (sid) {
+        if (j.scans[sid]) hist.push({ id: sid, job: jobCode, rec: j.scans[sid] });
+      });
+    });
+  } else {
+    var myJob = round.jobCode || state.roundId || '-';
+    state.scanLog.forEach(function (s) { hist.push({ id: s.id, job: myJob, rec: s.rec }); });
+  }
+  hist.sort(function (a, b) { return (b.rec.ts || 0) - (a.rec.ts || 0); });
+
+  /* คอลัมน์ Job โผล่เฉพาะตอนรวมหลายใบ — รวมประวัติสามใบเข้าด้วยกันโดยไม่บอกว่าแถวไหนมาจากใบไหน
+     คือการทำให้ตรวจย้อนหลังไม่ได้ ส่วนรอบใบเดียวไม่ต้องมี ไฟล์จะได้หน้าตาเดิมเป๊ะ */
+  var s3 = [[histAll
+    ? ('ประวัติด้านล่างรวมทุก Job ในรอบ ' + xScope.cid + ' แล้ว — ดูช่อง Job ว่าแถวไหนมาจากใบไหน')
+    : ('ประวัติด้านล่างเป็นของ Job ' + (round.jobCode || state.roundId || '-') + ' เท่านั้น')],
+    histAll
+      ? ['วันเวลา', 'Job', 'รหัสสินค้า', 'ชื่อสินค้า', 'โซน', 'ผู้นับ', 'จำนวน', 'วิธีนับ', 'เหตุผล', 'รหัสรายการ']
+      : ['วันเวลา', 'รหัสสินค้า', 'ชื่อสินค้า', 'โซน', 'ผู้นับ', 'จำนวน', 'วิธีนับ', 'เหตุผล', 'รหัสรายการ']];
+  hist.forEach(function (h) {
+    var p = state.products[safeKey(h.rec.code)] || { name: h.rec.code };
+    var line = [fmtTime(h.rec.ts), h.rec.code, p.name, h.rec.zoneName || zoneName(h.rec.zone),
+                h.rec.user, h.rec.delta, h.rec.mode === 'manual' ? 'กรอกมือ' : 'ยิงบาร์โค้ด',
+                h.rec.reason || '', h.id];
+    if (histAll) line.splice(1, 0, h.job);
+    s3.push(line);
   });
 
   var s4 = [UNKNOWN_HEAD.slice()];
@@ -7037,7 +7165,9 @@ function exportExcel() {
   var blob = buildXlsx([
     { name: 'สรุป', rows: s1, widths: [16, 12, 12, 13, 10, 10, 10, 14, 14, 14, 14, 14] },
     { name: 'รายสินค้า', rows: s2, widths: [18, 34, 16, 18, 10, 12, 12, 12, 10, 11, 14, 12, 14, 14] },
-    { name: 'ประวัติการนับ', rows: s3, widths: [22, 18, 36, 16, 14, 10, 13, 22, 24] },
+    { name: 'ประวัติการนับ', rows: s3,
+      widths: histAll ? [22, 16, 18, 36, 16, 14, 10, 13, 22, 24]
+                      : [22, 18, 36, 16, 14, 10, 13, 22, 24] },
     { name: 'ไม่มีในระบบ', rows: s4, widths: [5, 24, 28, 12, 16, 14, 22, 24, 14] }
   ]);
 
@@ -7601,13 +7731,17 @@ function buildTransferDocTable() {
 /* ข้อ C2 — จัดกลุ่มตามหมายเลขรายการ หัวกลุ่มบอกครบตามสเปก
    ใช้แถวมาตรฐานเดียวกับตารางสินค้า ต่างแค่ฝั่ง "ยอดระบบ" เป็นยอดจากใบโอน
    จำนวน SKU ไม่ต้องบอกในหัวกลุ่ม — builder เติม "— N รายการ" ให้แล้ว */
-function buildTransferItemTable(t) {
+/* counts = ยอดนับที่ใช้เทียบ ส่งมาจากคนเรียกเพื่อให้เป็นชุดเดียวกับตารางอื่นในเอกสาร
+   รอบหลาย Job ต้องเป็นยอดรวมทุกใบ ไม่ใช่ state.counts ของใบที่เปิดอยู่ (v2.7.0)
+   ใบโอนกลับเป็นของทั้งรอบ เทียบกับยอดใบเดียวแล้วได้ "ขาด" หลอกทุกตัวที่นับที่ใบอื่น */
+function buildTransferItemTable(t, counts) {
   var priceField = state.priceField;
+  var countMap = counts || state.counts;
   var rows = Object.keys(t.items || {}).sort().map(function (k) {
     var it = t.items[k];
     var p = state.products[k] || {};
     var sys = Number(it.qty) || 0;
-    var act = Number(state.counts[k]) || 0;
+    var act = Number(countMap[k]) || 0;
     return {
       key: k, code: it.code, name: it.name || it.code,
       category: p.category || '',
@@ -7773,18 +7907,69 @@ function renderDocSigns() {
   });
 }
 
-/* เอกสารโหมด "รวมทั้งสาขา" ต้องอ่านทุก Job ใน cycle ก่อน จึงแคชไว้แล้ววาดซ้ำ */
+/* เอกสารโหมด "รวมทั้งสาขา" ต้องอ่านทุก Job ใน cycle ก่อน จึงแคชไว้แล้ววาดซ้ำ
+
+   ตั้งแต่ v2.7.0 หน้าสรุปกับ Excel ใช้ตัวนี้ด้วย ไม่ใช่แค่หน้าเอกสาร
+   จึงต้องกันการยิงซ้อน: ทุกครั้งที่มีคนยิง applyScanRecord จะล้าง state.cycleData
+   ถ้าปล่อยให้เรียกซ้อนกันได้ การกดปุ่มรัว ๆ หรือ render หลายรอบจะอ่านทั้งรอบซ้ำหลายชุด
+   เก็บ promise ที่ค้างอยู่ไว้ แล้วให้ทุกคนที่ขอระหว่างนั้นรอชุดเดียวกัน */
+var cycleDataPending = null;
+
 function ensureCycleData() {
   var cid = cycleOf(currentJob());
   if (state.cycleData && state.cycleData.cid === cid) return Promise.resolve(state.cycleData);
-  return loadCycleRaw(cid).then(function (parts) {
+  if (cycleDataPending && cycleDataPending.cid === cid) return cycleDataPending.promise;
+
+  var p = loadCycleRaw(cid).then(function (parts) {
     var raw = buildCycleData(parts);
     state.cycleData = {
-      cid: cid, raw: raw,
-      data: summaryDataFrom(raw.sys, raw.counts, raw.jobsPerSku)
+      cid: cid, raw: raw, at: Date.now(),
+      data: summaryDataFrom(raw.sys, raw.counts, raw.jobsPerSku, raw.manual)
     };
     return state.cycleData;
   });
+  /* ปล่อยที่จองไว้ทั้งตอนสำเร็จและตอนพัง ไม่งั้นเน็ตหลุดครั้งเดียวแล้วค้างถาวร */
+  var clear = function () { if (cycleDataPending && cycleDataPending.promise === p) cycleDataPending = null; };
+  p.then(clear, clear);
+  cycleDataPending = { cid: cid, promise: p };
+  return p;
+}
+
+/* ---------- ขอบเขตของตัวเลขในรายงาน (v2.7.0) ----------
+   รอบนับหนึ่งรอบมีได้หลาย Job (STOCK-01 · STOCK-02 · SHOW-01) ยอดระบบเป็นของทั้งรอบ
+   แต่ state.counts มีแค่ยอดของ Job ที่เปิดอยู่ เทียบกันตรง ๆ จึงได้ "ขาด" หลอก
+   ของที่ไปนับอยู่ใบอื่นถูกมองว่าไม่มีใครนับ
+
+   กติกา: รอบมีหลาย Job → ใช้ยอดรวมทุกใบ · รอบมีใบเดียว → ใช้ของเดิม (ไม่ต้องโหลดอะไรเพิ่ม)
+   ตัวเดียวกับที่หน้าเอกสารใช้อยู่แล้ว ไม่ได้เขียนตรรกะรวม Job ขึ้นใหม่               */
+function cycleScope() {
+  var cid = cycleOf(currentJob());
+  return { cid: cid, multi: !!cid && jobsInCycle(cid).length > 1 };
+}
+
+/* แคชยอดรวมที่ถืออยู่ตรงกับรอบที่เปิดอยู่หรือเปล่า — ไม่สนว่ารอบมีกี่ Job
+   หน้าเอกสารสลับเป็น "รวมทั้งสาขา" เองได้แม้รอบมีใบเดียว จึงต้องเช็คแยกจาก multi
+   ถ้าเอา cycleDataReady() ไปใช้กับหน้านั้นจะกลายเป็นวนโหลดไม่รู้จบ */
+function cycleCacheFresh() {
+  return !!(state.cycleData && state.cycleData.cid === cycleOf(currentJob()));
+}
+
+/* มียอดรวมพร้อมใช้อยู่แล้วหรือยัง — ใช้ตัดสินว่าจะวาดเลยหรือต้องโหลดก่อน */
+function cycleDataReady() {
+  return cycleScope().multi && cycleCacheFresh();
+}
+
+/* แบบไม่รอ — เอาไว้วาดหน้าจอทันทีด้วยของที่มีในมือ
+   ยังไม่มียอดรวม = วาดของ Job นี้ไปก่อน แล้วให้คนเรียกสั่งโหลดต่อเอง */
+function reportDataSync() {
+  return cycleDataReady() ? state.cycleData.data : summaryData();
+}
+
+/* แบบรอ — เอาไว้กับงานที่ผิดไม่ได้ เช่น Excel ที่ส่งให้หัวหน้า
+   รอบใบเดียวคืนทันที ไม่แตะเน็ตเลย พฤติกรรมเหมือนก่อน v2.7.0 เป๊ะ */
+function ensureReportData() {
+  if (!cycleScope().multi) return Promise.resolve(summaryData());
+  return ensureCycleData().then(function (cd) { return cd.data; });
 }
 
 function renderDoc() {
@@ -7897,7 +8082,8 @@ function renderDoc() {
       none.textContent = 'รอบนี้ยังไม่มีรายการโอนกลับ';
       host.appendChild(none);
     } else {
-      tfl.forEach(function (t) { host.appendChild(buildTransferItemTable(t)); });
+      var tfCounts = cycleMode ? state.cycleData.raw.counts : state.counts;
+      tfl.forEach(function (t) { host.appendChild(buildTransferItemTable(t, tfCounts)); });
     }
     renderDocSigns();
     return;
@@ -7954,9 +8140,17 @@ function renderDoc() {
   renderDocSigns();
 }
 
+/* ไฟล์นี้ต้องตรงกับ PDF ที่พิมพ์ออกมาทุกช่อง จึงต้องใช้ "ขอบเขตเดียวกับที่หน้าเอกสารเลือกอยู่"
+   ไม่ใช่ยอดของ Job ที่เปิดอยู่ — ก่อน v2.7.0 PDF รวมทุกใบ แต่ Excel นับใบเดียว ตัวเลขจึงไม่ตรงกัน */
 function exportDocExcel() {
+  if (state.docScope === 'cycle' && !cycleCacheFresh()) {
+    toast('กำลังรวมยอดทุก Job ในรอบก่อนสร้างไฟล์ ...');
+    return ensureCycleData().then(exportDocExcel, function () {
+      toast('รวมยอดทุก Job ไม่สำเร็จ ยังสร้างไฟล์ไม่ได้ — เช็คเน็ตแล้วลองใหม่', true);
+    });
+  }
   var round = state.roundIndex[state.roundId] || { name: 'stocktake', branch: '' };
-  var data = summaryData();
+  var data = state.docScope === 'cycle' ? state.cycleData.data : summaryData();
   var priceLabel = state.priceField === 'costPrice' ? 'ราคาต้นทุน' : 'ราคาขาย';
 
   /* คอลัมน์ต้องเรียงตรงกับตาราง Dashboard ใน PDF ทุกช่อง */
