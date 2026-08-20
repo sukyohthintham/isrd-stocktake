@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.7.0">
+<meta name="version" content="2.7.1">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.7.0</title>
+<title>ISRD Stocktake v2.7.1</title>
 
 <style>
 :root{
@@ -1354,7 +1354,8 @@ body.no-doc-images .doc .imgbox{display:none}
     </label>
     <div class="filters" id="docScopeFilters" style="margin-bottom:8px">
       <button class="btn sm" data-docscope="job">เฉพาะ Job นี้</button>
-      <button class="btn sm grey" data-docscope="cycle">รวมทั้งสาขา</button>
+      <!-- "รวมทั้งสาขา" เดิมทำให้เข้าใจผิดว่ารวมข้ามสาขา — เอกสารเป็นของสาขาเดียวเสมอ -->
+      <button class="btn sm grey" data-docscope="cycle">รวมทุก Job ในรอบ</button>
     </div>
     <div class="muted" id="docScopeInfo" style="margin-bottom:8px"></div>
     <label class="fld" style="margin-bottom:6px">
@@ -1514,7 +1515,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.7.0';
+var APP_VERSION = '2.7.1';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -7975,7 +7976,7 @@ function ensureReportData() {
 function renderDoc() {
   var round = state.roundIndex[state.roundId] || { name: '-', branch: '-' };
   var cid = cycleOf(round);
-  /* default อัจฉริยะ: รอบมีหลาย Job → รวมทั้งสาขา ; ผู้ใช้สลับเองแล้วเคารพค่าเดิม */
+  /* default อัจฉริยะ: รอบมีหลาย Job → รวมทุก Job ; ผู้ใช้สลับเองแล้วเคารพค่าเดิม */
   if (!state.docScopeTouched) {
     state.docScope = jobsInCycle(cid).length > 1 ? 'cycle' : 'job';
   }
@@ -8026,10 +8027,22 @@ function renderDoc() {
   $('docSubject').textContent = spec.subject(round);
   $('docBranchLine').textContent = 'สาขา: ' + jobBranchLabel(round);
   $('docRefLine').textContent = spec.refLine(round);
-  var who = scannerStats();
+  /* ---------- ผู้นับ ต้องมีขอบเขตเดียวกับตารางในเอกสาร ----------
+     โหมดรวม: นับผู้นับจากทุก Job — คนที่ไปนับอยู่ใบอื่นต้องมีชื่อในเอกสารด้วย
+     ก่อนแก้ หัวเอกสารอ่าน scanLog ของใบที่เปิดอยู่ใบเดียว จึงขึ้น "1 คน" ทั้งที่รอบมีหลายคน
+     และยอดของคนนั้นก็เป็นแค่ส่วนที่ยิงในใบนั้น ไม่ตรงกับตารางข้างล่างในเอกสารฉบับเดียวกัน */
+  var who = cycleMode ? scannerStats(cycleScannerEntries()) : scannerStats();
+  var whoPieces = who.reduce(function (s, w) { return s + w.pieces; }, 0);
+  /* ยอดรวมของผู้นับทุกคน ควรเท่ากับ "จำนวนจริง" ในตาราง — เขียนไว้ให้กระทบยอดได้ในตัว
+     ไม่เท่าเมื่อไหร่แปลว่ามีบาร์โค้ดที่ไม่นับเป็นสินค้าจริงถูกตัดออกจากผลต่าง (ตั้งแต่ v2.6.9)
+     แต่แถวที่ยิงยังอยู่ในประวัติเป็นหลักฐาน — บอกส่วนต่างไปตรง ๆ ดีกว่าเงียบให้คนไปจับผิดเอง */
+  var whoGap = whoPieces - data.groups.total.actQty;
   $('docScanners').textContent = who.length
     ? ('ผู้นับในรอบนี้ ' + fmtNum(who.length) + ' คน: ' +
-       who.map(function (w) { return w.user + ' (' + fmtNum(w.pieces) + ' ชิ้น)'; }).join(' · '))
+       who.map(function (w) { return w.user + ' (' + fmtNum(w.pieces) + ' ชิ้น)'; }).join(' · ') +
+       ' — รวม ' + fmtNum(whoPieces) + ' ชิ้น' +
+       (whoGap ? ' (ยอดจริงในตาราง ' + fmtNum(data.groups.total.actQty) + ' ชิ้น — ต่างกัน ' +
+                 fmtNum(Math.abs(whoGap)) + ' ชิ้น จากบาร์โค้ดที่ไม่นับเป็นสินค้าจริง)' : ''))
     : 'ยังไม่มีผู้นับในรอบนี้';
   /* ข้อ D4 — ระบุในเอกสารว่า %Success คิดจากฐานไหน */
   var tfPieces = transferList().reduce(function (s, t) { return s + (t.pieces || 0); }, 0);
@@ -8037,7 +8050,12 @@ function renderDoc() {
      จำนวนที่ส่งกลับยังบอกไว้เพราะช่วยอธิบายว่าทำไมของถึงขาด แต่ไม่ใช่ตัวแปรในการคำนวณ */
   $('docBasis').textContent = 'ฐานคำนวณ %Success: ยอดระบบจาก Zort' +
     (tfPieces ? ' · รอบนี้ส่งกลับคลังกลางแล้ว ' + fmtNum(tfPieces) + ' ชิ้น' : '') +
-    (state.docScope === 'cycle' ? ' · ขอบเขต: รวมทั้งสาขา' : ' · ขอบเขต: เฉพาะ Job นี้');
+    /* เอกสารฉบับหนึ่งเป็นของสาขาเดียวเสมอ (มีบรรทัด "สาขา:" อยู่ข้างบน)
+       คำว่า "รวมทั้งสาขา" จึงอ่านได้เป็น "รวมข้ามสาขา" ซึ่งไม่จริงและอันตราย
+       สิ่งที่รวมจริง ๆ คือทุก Job ของรอบนับนี้ — เขียนให้ตรงตามนั้น */
+    (state.docScope === 'cycle'
+      ? ' · ขอบเขต: รวมทุก Job ในรอบนี้ (' + fmtNum(jobsInCycle(cid).length) + ' ใบ)'
+      : ' · ขอบเขต: เฉพาะ Job นี้');
   $('docNoLabelPrint').textContent = spec.noLabel + ':';
   $('docNoShow').textContent = currentDocNo() || '—';
   $('docNoLabel').textContent = spec.noLabel;
@@ -10157,11 +10175,13 @@ function renderTransfers() {
   });
 }
 
-/* ---------- ใครยิงไปเท่าไรใน Job นี้ ----------
-   คิดจาก scanLog ตรง ๆ ไม่ต้องเก็บตัวนับแยกให้ไม่ตรงกัน */
-function scannerStats() {
+/* ---------- ใครยิงไปเท่าไร ----------
+   คิดจาก scanLog ตรง ๆ ไม่ต้องเก็บตัวนับแยกให้ไม่ตรงกัน
+   entries = รายการ scan ที่จะนับ [{ rec }] — ไม่ส่งมา = ของ Job ที่เปิดอยู่ เหมือนเดิม
+   ส่ง cycleScannerEntries() มา = ผู้นับทั้งรอบทุกใบ (ใช้ในหัวเอกสารโหมดรวม) */
+function scannerStats(entries) {
   var byUser = {};
-  state.scanLog.forEach(function (s) {
+  (entries || state.scanLog).forEach(function (s) {
     var u = s.rec.user || 'ไม่ระบุ';
     var key = safeKey(s.rec.code);
     var d = Number(s.rec.delta) || 0;
@@ -10176,6 +10196,20 @@ function scannerStats() {
     var e = byUser[u];
     return { user: u, pieces: e.pieces, skus: Object.keys(e.skus).length, last: e.last, zones: e.zones };
   }).sort(function (a, b) { return b.pieces - a.pieces; });
+}
+
+/* scan ดิบของทุก Job ในรอบ — ของถูกโหลดมาแล้วตอน ensureCycleData ไม่อ่านเน็ตซ้ำ
+   ก้อนเดียวกับที่ชีท "ประวัติการนับ" ใน Excel ใช้ ตัวเลขสองที่จึงตรงกันเสมอ
+   คนเดียวกันยิงข้ามใบจะถูกยุบเป็นคนเดียวเอง เพราะ scannerStats จัดกลุ่มด้วยชื่อ */
+function cycleScannerEntries() {
+  var jobs = (state.cycleData && state.cycleData.raw && state.cycleData.raw.jobs) || [];
+  var out = [];
+  jobs.forEach(function (j) {
+    Object.keys(j.scans || {}).forEach(function (sid) {
+      if (j.scans[sid]) out.push({ id: sid, rec: j.scans[sid] });
+    });
+  });
+  return out;
 }
 
 var MEDALS = ['🥇', '🥈', '🥉'];

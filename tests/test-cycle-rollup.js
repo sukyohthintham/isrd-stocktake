@@ -40,6 +40,7 @@ function check(name, ok, got) {
     window.enqueueWrite = function (path, patch) { window.__writes.push({ path: path, patch: patch }); };
     window.db.update = function () { return Promise.resolve(); };
     window.db.newKey = (function () { let n = 0; return function () { return 'gen' + (++n); }; })();
+    window.__realRenderDoc = window.renderDoc;      // เก็บตัวจริงไว้ให้ข้อที่เทสหัวเอกสาร
     window.renderDoc = function () {};
     hideLogin();
 
@@ -67,9 +68,11 @@ function check(name, ok, got) {
                                user: 'คนนับ ' + m[1], ts: 1000 + i };
         });
         /* ใบ SHOW ใส่รายการกรอกมือปนไว้ 1 แถว — ใช้เช็คว่าคอลัมน์ "กรอกมือ" ไม่หายตอนรวม */
+        /* คนของใบ STOCK-01 ไปช่วยกรอกมือที่ใบ SHOW ด้วย — ใช้เช็คว่าคนเดียวกันยิงข้ามใบ
+           ต้องถูกยุบเป็นคนเดียวในหัวเอกสาร ไม่ใช่นับเป็นสองคน */
         if (m[1] === 'R-SHOW-01') {
           out.sm = { code: 'P3', delta: 5, mode: 'manual', reason: 'นับมือ',
-                     user: 'คนนับ SHOW', ts: 1500 };
+                     user: 'คนนับ R-STOCK-01', ts: 1500 };
         }
         return Promise.resolve(out);
       }
@@ -410,6 +413,116 @@ function check(name, ok, got) {
   check('ทุกคนได้ก้อนเดียวกัน', r7.same === true, r7.same);
   check('มีแคชแล้วไม่อ่านซ้ำเลย', r7.cachedReads === 0, r7.cachedReads);
   check('ยอดยังถูกต้อง 1,601', r7.act === 1601, r7.act);
+
+  /* ---------- 8. หัวเอกสาร "ผู้นับในรอบนี้" ---------- */
+  console.log('\n[8] หัวเอกสาร — ผู้นับต้องรวมทุก Job และกระทบยอดได้');
+  const r8 = await page.evaluate(async () => {
+    function readDoc() {
+      return { scanners: $('docScanners').textContent, basis: $('docBasis').textContent };
+    }
+
+    /* --- รอบ 3 Job โหมดรวม --- */
+    window.__seed(['R-STOCK-01', 'R-STOCK-02', 'R-SHOW-01'], 'R-STOCK-01');
+    state.page = 'doc';
+    state.company = { name: 'บริษัททดสอบ', address: 'ที่อยู่ทดสอบ' };
+    /* scanLog = ของใบที่เปิดอยู่ใบเดียว ตรงตามที่แอปจริงเก็บ (ต้นเหตุของบั๊ก) */
+    state.scanLog = [
+      { id: 's1', rec: { code: 'P1', delta: 1000, mode: 'scan', user: 'คนนับ R-STOCK-01', ts: 1001 } },
+      { id: 's2', rec: { code: 'P2', delta: 199, mode: 'scan', user: 'คนนับ R-STOCK-01', ts: 1002 } }
+    ];
+    const jobOnlyWho = scannerStats();               // แบบเดิม = ใบเดียว
+
+    await ensureCycleData();
+    state.docScopeTouched = false;                   // ให้ default อัจฉริยะเลือก cycle เอง
+    window.__realRenderDoc();
+    const cyc = readDoc();
+    const cycScope = state.docScope;
+    const cycWho = scannerStats(cycleScannerEntries());
+    const cycAct = state.cycleData.data.groups.total.actQty;
+
+    /* --- รอบ Job เดียว --- */
+    window.__seed(['R-STOCK-01'], 'R-STOCK-01');
+    state.page = 'doc';
+    state.company = { name: 'บริษัททดสอบ', address: 'ที่อยู่ทดสอบ' };
+    state.scanLog = [
+      { id: 's1', rec: { code: 'P1', delta: 1000, mode: 'scan', user: 'คนนับ R-STOCK-01', ts: 1001 } },
+      { id: 's2', rec: { code: 'P2', delta: 199, mode: 'scan', user: 'คนนับ R-STOCK-01', ts: 1002 } }
+    ];
+    state.docScopeTouched = false;
+    window.__realRenderDoc();
+    const solo = readDoc();
+
+    return {
+      jobOnlyWho: jobOnlyWho.map(function (w) { return { u: w.user, p: w.pieces }; }),
+      cyc: cyc, cycScope: cycScope,
+      cycWho: cycWho.map(function (w) { return { u: w.user, p: w.pieces }; }),
+      cycWhoSum: cycWho.reduce(function (s, w) { return s + w.pieces; }, 0),
+      cycAct: cycAct,
+      solo: solo, soloScope: state.docScope
+    };
+  });
+
+  check('ก่อนแก้: หัวเอกสารเห็นผู้นับแค่คนเดียว 1,199 ชิ้น (ต้นเหตุของบั๊ก)',
+        r8.jobOnlyWho.length === 1 && r8.jobOnlyWho[0].p === 1199, r8.jobOnlyWho);
+  check('เอกสารเลือกโหมดรวมเอง', r8.cycScope === 'cycle', r8.cycScope);
+  check('หัวเอกสารนับผู้นับครบ 3 คน (ไม่ใช่ 1)',
+        /ผู้นับในรอบนี้ 3 คน/.test(r8.cyc.scanners), r8.cyc.scanners);
+  check('คนเดียวกันที่ยิงข้าม 2 ใบ ถูกยุบเป็นคนเดียว ยอดรวมกัน 1,204',
+        r8.cycWho.length === 3 &&
+        r8.cycWho.filter(function (w) { return w.u === 'คนนับ R-STOCK-01'; })[0].p === 1204,
+        r8.cycWho);
+  check('ยอดของแต่ละคนขึ้นครบในบรรทัดเดียวกัน',
+        /คนนับ R-STOCK-01 \(1,204 ชิ้น\)/.test(r8.cyc.scanners) &&
+        /คนนับ R-SHOW-01 \(381 ชิ้น\)/.test(r8.cyc.scanners) &&
+        /คนนับ R-STOCK-02 \(16 ชิ้น\)/.test(r8.cyc.scanners), r8.cyc.scanners);
+  check('บรรทัดบอกยอดรวมของผู้นับทุกคน = 1,601',
+        /รวม 1,601 ชิ้น/.test(r8.cyc.scanners), r8.cyc.scanners);
+  check('ยอดรวมผู้นับ reconcile กับ "จำนวนจริง" ทั้งรอบในตาราง',
+        r8.cycWhoSum === 1601 && r8.cycAct === 1601 && r8.cycWhoSum === r8.cycAct, r8);
+  check('ตรงกันแล้วไม่ต้องขึ้นวงเล็บอธิบายส่วนต่าง',
+        r8.cyc.scanners.indexOf('ต่างกัน') < 0, r8.cyc.scanners);
+  check('ป้ายขอบเขตไม่พูดว่า "รวมทั้งสาขา" อีกแล้ว (เอกสารเป็นของสาขาเดียว)',
+        r8.cyc.basis.indexOf('รวมทั้งสาขา') < 0, r8.cyc.basis);
+  check('ป้ายขอบเขตบอกตรงว่ารวมทุก Job ในรอบ กี่ใบ',
+        /ขอบเขต: รวมทุก Job ในรอบนี้ \(3 ใบ\)/.test(r8.cyc.basis), r8.cyc.basis);
+
+  check('รอบ Job เดียว: ยังเป็นโหมดเฉพาะ Job นี้', r8.soloScope === 'job', r8.soloScope);
+  check('รอบ Job เดียว: ผู้นับ 1 คน 1,199 ชิ้น เท่าเดิม',
+        /ผู้นับในรอบนี้ 1 คน/.test(r8.solo.scanners) &&
+        /คนนับ R-STOCK-01 \(1,199 ชิ้น\)/.test(r8.solo.scanners), r8.solo.scanners);
+  check('รอบ Job เดียว: ยอดรวมผู้นับ = จำนวนจริงของใบนั้น ไม่มีส่วนต่าง',
+        /รวม 1,199 ชิ้น/.test(r8.solo.scanners) &&
+        r8.solo.scanners.indexOf('ต่างกัน') < 0, r8.solo.scanners);
+  check('รอบ Job เดียว: ป้ายขอบเขตยังเป็น "เฉพาะ Job นี้"',
+        /ขอบเขต: เฉพาะ Job นี้/.test(r8.solo.basis), r8.solo.basis);
+
+  /* ---------- 9. ส่วนต่างจากบาร์โค้ดผี ต้องบอก ไม่ใช่กลบ ---------- */
+  console.log('\n[9] มีบาร์โค้ดผี — ต้องบอกส่วนต่าง ไม่ใช่บังคับให้เท่ากัน');
+  const r9 = await page.evaluate(async () => {
+    window.__seed(['R-STOCK-01'], 'R-STOCK-01');
+    state.page = 'doc';
+    state.company = { name: 'บริษัททดสอบ', address: 'ที่อยู่ทดสอบ' };
+    /* ผีถูกหักเบิ้ลจนติดลบ 2 — v2.6.9 ตัดออกจากผลต่าง แต่แถวยังอยู่ในประวัติ */
+    state.counts.GHOST = -2;
+    state.unknownKeys = { GHOST: { key: 'GHOST', value: '8859999', qty: -2, firstTs: 1,
+                                   zone: 'A', user: 'คนนับ R-STOCK-01', note: '' } };
+    state.scanLog = [
+      { id: 's1', rec: { code: 'P1', delta: 1000, mode: 'scan', user: 'คนนับ R-STOCK-01', ts: 1001 } },
+      { id: 's2', rec: { code: 'P2', delta: 199, mode: 'scan', user: 'คนนับ R-STOCK-01', ts: 1002 } },
+      { id: 's3', rec: { code: 'GHOST', delta: -2, mode: 'scan', unknown: true,
+                         user: 'คนนับ R-STOCK-01', ts: 1003 } }
+    ];
+    state.docScopeTouched = false;
+    window.__realRenderDoc();
+    return { line: $('docScanners').textContent,
+             act: summaryData().groups.total.actQty };
+  });
+  check('ยอดจริงในตารางไม่นับผี (ยัง 1,199)', r9.act === 1199, r9.act);
+  check('ยอดผู้นับรวมผีด้วย จึงเป็น 1,197', /รวม 1,197 ชิ้น/.test(r9.line), r9.line);
+  check('บอกส่วนต่างตรง ๆ ว่าต่างกัน 2 ชิ้น เพราะบาร์โค้ดที่ไม่นับเป็นสินค้าจริง',
+        /ยอดจริงในตาราง 1,199 ชิ้น/.test(r9.line) &&
+        /ต่างกัน 2 ชิ้น/.test(r9.line) &&
+        /บาร์โค้ดที่ไม่นับเป็นสินค้าจริง/.test(r9.line), r9.line);
 
   console.log('\n--- console/page errors ---');
   console.log(errors.slice(0, 10).join('\n') || '(none)');
