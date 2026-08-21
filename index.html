@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.7.2">
+<meta name="version" content="2.7.3">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.7.2</title>
+<title>ISRD Stocktake v2.7.3</title>
 
 <style>
 :root{
@@ -943,9 +943,15 @@ body.no-doc-images .doc .imgbox{display:none}
     <div class="picklist" id="manualResults"></div>
     <div id="manualForm" style="display:none">
       <div class="banner info" id="manualPicked"></div>
+      <!-- v2.7.3 — ช่องจำนวนเป็นของ staff เท่านั้น เด็กหน้าร้านล็อกไว้ที่ 1
+           คนที่แก้ยอดทีละสิบชิ้นได้โดยไม่ต้องยิงจริง คือจุดที่ทุจริตได้ง่ายที่สุด
+           (เหตุผลเดียวกับปุ่มเอาออกในหน้าสรุป) — ดู applyManualQtyPermission -->
       <label class="fld">
-        <span>จำนวนที่นับได้</span>
-        <input class="qty" type="text" id="manualQty" inputmode="numeric" pattern="[0-9]*" placeholder="0" autocomplete="off">
+        <span id="manualQtyLabel">จำนวนที่นับได้</span>
+        <input class="qty" type="text" id="manualQty" inputmode="numeric" pattern="[0-9]*" placeholder="1" autocomplete="off">
+        <div class="hint" id="manualQtyHint" style="color:var(--muted);font-weight:400;display:none">
+          บัญชีนี้กรอกได้ครั้งละ 1 ชิ้น — ต้องการมากกว่านี้ให้บันทึกซ้ำ หรือให้ผู้นับสต๊อกเป็นคนกรอก
+        </div>
       </label>
       <label class="fld">
         <span>เหตุผลที่ต้องกรอกมือ</span>
@@ -1524,7 +1530,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.7.2';
+var APP_VERSION = '2.7.3';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -5673,14 +5679,32 @@ function renderManualResults() {
   });
 }
 
+/* ช่องจำนวนเปิดให้เฉพาะ staff — scanner ล็อกไว้ที่ 1 แก้ไม่ได้ (v2.7.3)
+   ไม่ซ่อนช่องทิ้ง เพราะคนกรอกต้องเห็นว่ากำลังจะบันทึกกี่ชิ้น แค่แก้ไม่ได้เท่านั้น
+   ตัวบังคับจริงอยู่ใน saveManual() อีกชั้น ซ่อน/ล็อกบนจออย่างเดียวไม่พอ */
+function applyManualQtyPermission() {
+  var staff = isStaff();
+  var qty = $('manualQty');
+  qty.readOnly = !staff;
+  qty.title = staff ? '' : roleBlockMessage('กรอกจำนวนเองไม่ได้');
+  $('manualQtyHint').style.display = staff ? 'none' : 'block';
+  $('manualQtyLabel').textContent = staff ? 'จำนวนที่นับได้' : 'จำนวนที่นับได้ (ล็อกไว้ที่ 1)';
+  return staff;
+}
+
 function pickManual(key) {
   state.manualPicked = key;
   var p = state.products[key];
   $('manualPicked').textContent = p.code + ' · ' + p.name;
   $('manualForm').style.display = 'block';
-  $('manualQty').value = '';
+  /* ค่าเริ่มต้น 1 — เคสที่เจอบ่อยสุดคือกรอกทีละชิ้น กดบันทึกได้เลยไม่ต้องพิมพ์
+     ก่อน v2.7.3 ช่องนี้ว่างเปล่า ทุกคนต้องพิมพ์ 1 เองทุกครั้ง */
+  $('manualQty').value = '1';
   $('manualReason').value = '';
-  $('manualQty').focus();
+  var staff = applyManualQtyPermission();
+  /* staff โฟกัสที่จำนวน (แก้เลขก่อน) · scanner ข้ามไปที่เหตุผลเลย เพราะจำนวนแก้ไม่ได้ */
+  if (staff) { $('manualQty').focus(); $('manualQty').select(); }
+  else $('manualReason').focus();
 }
 
 function openManual() {
@@ -5705,6 +5729,12 @@ function saveManual() {
   var raw = String($('manualQty').value).trim().replace(/,/g, '');
   var qty = Number(raw);
   if (raw === '' || !isFinite(qty) || qty <= 0) { toast('ใส่จำนวนเป็นตัวเลขมากกว่า 0', true); return; }
+  /* defense-in-depth — readOnly บนจอกันมือได้ แต่กันคนแก้ DOM หรือเรียกฟังก์ชันตรง ๆ ไม่ได้
+     บัญชียิงอย่างเดียวบันทึกได้ครั้งละ 1 ชิ้นเสมอ ไม่ว่าช่องจะมีเลขอะไรอยู่ */
+  if (!isStaff() && qty !== 1) {
+    qty = 1;
+    toast('บัญชีนี้กรอกได้ครั้งละ 1 ชิ้น — บันทึกให้ 1 ชิ้น', true);
+  }
   var reason = $('manualReason').value.trim();
   if (!reason) { toast('ใส่เหตุผลที่ต้องกรอกมือด้วย', true); $('manualReason').focus(); return; }
 
