@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.7.1">
+<meta name="version" content="2.7.2">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.7.1</title>
+<title>ISRD Stocktake v2.7.2</title>
 
 <style>
 :root{
@@ -899,6 +899,15 @@ body.no-doc-images .doc .imgbox{display:none}
     <button class="btn ghost sm block" id="btnScanExport"
             style="display:none;margin-bottom:12px">⬇ Export Excel</button>
 
+    <!-- นำเข้ายอดจากไฟล์แทนการยิงทีละชิ้น — ของที่นับใส่กระดาษมาก่อนแล้วค่อยคีย์เข้าระบบ
+         staff เท่านั้น ซ่อนไว้ตั้งแต่ HTML เหมือนการ์ดผลต่าง (กัน FOUC)
+         ยอดที่นำเข้า "บวกเพิ่ม" จากที่ยิงไว้เสมอ ไม่ได้เขียนทับ — ดู handleScanImport -->
+    <button class="btn ghost sm block" id="btnScanImport"
+            style="display:none;margin-bottom:8px">📥 นำเข้า Excel (แทนยิงสด)</button>
+    <button class="btn ghost sm block" id="btnScanImportTpl"
+            style="display:none;margin-bottom:12px">⬇ ดาวน์โหลด Template (รหัส + จำนวน)</button>
+    <input type="file" id="scanImportFile" accept=".xlsx,.csv" style="display:none">
+
     <label class="fld" style="margin-bottom:12px">
       <span>เก็บทีละโซน — แสดงเฉพาะ Location ที่ขึ้นต้นด้วย</span>
       <input type="text" id="locFilter" placeholder="เช่น A หรือ B4" autocomplete="off"
@@ -1515,7 +1524,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.7.1';
+var APP_VERSION = '2.7.2';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -5477,11 +5486,13 @@ function pushRecent(name, delta, ts) {
 /* ผลต่างสดบนหน้ายิง — staff เท่านั้น (ลิสต์เดียวกับหน้าสรุป คนละชุด id)
    ถ้าไม่ใช่ staff จะไม่คำนวณเลย: summaryData() วนทุก SKU ในรอบ และตัวนี้ถูกเรียก
    ทุกครั้งที่ยิง scanner ที่ใช้มือถือรุ่นเล็กจึงไม่ต้องจ่ายค่านี้ */
-var SCAN_STAFF_ONLY = ['scanDiffCards', 'btnScanExport'];
+var SCAN_STAFF_ONLY = ['scanDiffCards', 'btnScanExport', 'btnScanImport', 'btnScanImportTpl'];
 
 function renderScanDiffCards() {
   var staff = applyStaffOnly(SCAN_STAFF_ONLY);
   $('btnScanExport').disabled = !staff;      // ซ่อนแล้วยังล็อกซ้ำ กันเรียกผ่านทางอื่น
+  $('btnScanImport').disabled = !staff;
+  $('btnScanImportTpl').disabled = !staff;
   if (!staff) return;
   /* ใช้ sumCardRows ตัวเดียวกับหน้าสรุป ตัวเลขสองหน้าจะได้ตรงกันเสมอ
      ไม่ใช่ต่างคนต่างนับแล้ววันหนึ่งเพี้ยนกันโดยไม่มีใครรู้ */
@@ -5703,6 +5714,209 @@ function saveManual() {
   renderScanTotals();
   toast('บันทึกยอดกรอกมือ ' + state.products[key].code + ' = ' + fmtNum(qty));
   closeManual();
+}
+
+/* ============================================================
+   11a-2. นำเข้ายอดนับจากไฟล์ Excel — "แทนการยิงสด" (v2.7.2)
+   ============================================================
+   ใช้กับของที่นับใส่กระดาษมาก่อนแล้วค่อยคีย์เข้าระบบทีเดียว
+   หรือคลังที่ยิงไม่ได้เพราะป้ายหลุด/สัญญาณไม่ถึง
+
+   หลักที่ห้ามพลาด: ทุกแถวเขียนด้วย writeScan = "บวกเพิ่ม" จากยอดเดิมเสมอ
+   ไม่ใช่ set ทับ — SKU ที่ยิงไว้ 2 แล้วนำเข้า 10 ต้องได้ 12 ไม่ใช่ 10
+   ผลข้างเคียงที่ต้องเตือนคนใช้ให้ชัด: อัปไฟล์เดิมซ้ำสองรอบ = ยอดเบิ้ล
+   ============================================================ */
+
+/* ตั้งใจไม่รับ alias ฝั่ง "ยอดระบบ" (systemqty / ยอดในระบบ) — ไฟล์ยอดระบบจาก Zort
+   มีหัวตาราง "รหัสสินค้า" กับ "จำนวน" เหมือนกันเป๊ะ ถ้ารับหมดแล้วคนหยิบไฟล์ผิด
+   ยอดทั้งสาขาจะถูกนับเป็นของที่นับเจอจริงเงียบ ๆ — พรีวิวเป็นด่านสุดท้ายอีกชั้น */
+var SCAN_IMPORT_COLUMNS = {
+  code: COLUMN_ALIASES.code,
+  qty: ['จำนวน', 'จำนวนที่นับได้', 'จำนวนนับ', 'ยอดนับ', 'นับได้',
+        'qty', 'quantity', 'count', 'counted']
+};
+
+/* คืนผลการอ่านล้วน ๆ ไม่เขียนอะไรทั้งสิ้น — คนเรียกเอาไปโชว์พรีวิวก่อนตัดสินใจ
+   รหัสซ้ำในไฟล์ถูกยุบเป็นแถวเดียวแล้วบวกจำนวนกัน (คนละล็อตของตัวเดียวกัน)
+   เขียนเป็น scan แถวเดียวต่อ SKU ไฟล์ห้าพันแถวจึงไม่กลายเป็นห้าพันเรคอร์ด */
+function parseScanImportFile(parsed) {
+  var rows = (parsed && parsed.rows) || [];
+  if (!rows.length) throw new Error('EMPTY_FILE');
+
+  var headerRow = findHeaderRow(rows);
+  if (headerRow < 0) throw missingColumnsError(['รหัสสินค้า', 'จำนวน']);
+
+  var header = rows[headerRow];
+  var idx = {};
+  Object.keys(SCAN_IMPORT_COLUMNS).forEach(function (field) {
+    var aliases = SCAN_IMPORT_COLUMNS[field].map(normText);
+    for (var c = 0; c < header.length; c++) {
+      if (headerMatches(header[c], aliases)) { idx[field] = c; return; }
+    }
+  });
+  var missing = [];
+  if (idx.code === undefined) missing.push('รหัสสินค้า');
+  if (idx.qty === undefined) missing.push('จำนวน');
+  if (missing.length) throw missingColumnsError(missing);
+
+  /* Excel ทิ้งแถวว่างท้ายชีตไว้เยอะ ตัดก่อนวน ไม่งั้นรายงานจะบอกว่าข้ามหลายหมื่นแถว */
+  var lastReal = rows.length - 1;
+  while (lastReal > headerRow && !rowHasContent(rows[lastReal])) lastReal--;
+
+  if (!state.scanIndex) buildScanIndex();
+
+  var byKey = {}, order = [];
+  var stat = { rows: 0, pieces: 0, noCode: [], badQty: [], dupCodes: 0 };
+
+  for (var r = headerRow + 1; r <= lastReal; r++) {
+    var row = rows[r] || [];
+    if (!rowHasContent(row)) continue;
+    var num = r + 1;                                  // เลขแถวอย่างที่คนเห็นใน Excel
+
+    var code = cellText(row[idx.code]);
+    if (!code) { stat.noCode.push(num); continue; }
+
+    /* จำนวนต้องเป็นตัวเลขมากกว่า 0 — ว่าง/ตัวหนังสือ/0/ติดลบ = ข้ามทั้งแถว
+       ติดลบตั้งใจไม่รับ: ไฟล์นี้คือ "ของที่นับเจอ" การหักยอดต้องทำผ่านหน้าสรุป
+       ซึ่งมีกล่องยืนยันและบันทึกเหตุผลของมันเอง */
+    var cell = parseNumberCell(row[idx.qty]);
+    if (cell.bad || cell.blank || !(cell.value > 0)) {
+      stat.badQty.push(num);
+      continue;
+    }
+
+    var known = state.scanIndex.get(code.toUpperCase());
+    var key = known || safeKey(code);
+    if (!byKey[key]) {
+      byKey[key] = { key: key, code: code, qty: 0, known: !!known, rows: [] };
+      order.push(key);
+    } else {
+      stat.dupCodes++;
+    }
+    byKey[key].qty += cell.value;
+    byKey[key].rows.push(num);
+    stat.rows++;
+    stat.pieces += cell.value;
+  }
+
+  var items = order.map(function (k) { return byKey[k]; });
+  stat.skus = items.length;
+  stat.skipped = stat.noCode.length + stat.badQty.length;
+  stat.unknownItems = items.filter(function (it) { return !it.known; });
+  return { items: items, stat: stat };
+}
+
+/* Template หัวคอลัมน์เปล่า — ตั้งใจไม่เติมรายการสินค้าลงไป
+   ไฟล์นี้คือ "ของที่นับเจอ" ถ้าใส่รายชื่อทั้งคลังไปให้ คนจะเผลอกรอกยอดลงแถวที่ไม่ได้ไปนับ */
+function downloadScanImportTemplate() {
+  if (!isStaff()) { toast(roleBlockMessage('ดาวน์โหลด Template ไม่ได้'), true); return; }
+  var rows = [['รหัสสินค้า', 'จำนวน']];
+  var blob = buildXlsx([{ name: 'นำเข้ายอดนับ', rows: rows, widths: [24, 14] }]);
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'ISRD-Scan-Import-Template.xlsx';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+  toast('ดาวน์โหลด Template แล้ว — กรอกแค่รหัสสินค้ากับจำนวน');
+}
+
+/* รายการตัวอย่างในพรีวิว — ยาวเกินก็ตัด ไม่งั้นกล่องยืนยันยาวจนกดปุ่มไม่เจอ */
+function scanImportSample(items, max) {
+  var head = items.slice(0, max).map(function (it) {
+    return '· ' + it.code + ' × ' + fmtNum(it.qty);
+  }).join('\n');
+  return head + (items.length > max ? '\n· ... อีก ' + fmtNum(items.length - max) + ' รายการ' : '');
+}
+
+function handleScanImport(file) {
+  /* defense-in-depth — ซ่อนปุ่มอย่างเดียวไม่พอ เรียกฟังก์ชันตรง ๆ ก็ต้องไม่ผ่าน
+     (แบบเดียวกับ removeOverScan) ตัวจริงบังคับที่ Database Rules อีกชั้น */
+  if (!isStaff()) { toast(roleBlockMessage('นำเข้ายอดนับจากไฟล์ไม่ได้'), true); return Promise.resolve(false); }
+  if (!canScan()) { toast(blockedMessage() + ' — นำเข้าไฟล์ไม่ได้', true); return Promise.resolve(false); }
+  if (!file) return Promise.resolve(false);
+
+  var isXlsx = /\.xlsx$/i.test(file.name);
+  $('btnScanImport').disabled = true;
+
+  return file.arrayBuffer().then(function (buf) {
+    return isXlsx ? parseXlsx(buf) : Promise.resolve(parseCsv(decodeTextFile(buf)));
+  }).then(function (parsed) {
+    var res = parseScanImportFile(parsed);
+    var stat = res.stat;
+
+    if (!res.items.length) {
+      return ask('ไม่มีแถวไหนนำเข้าได้',
+        'อ่านไฟล์ได้ แต่ไม่มีแถวที่ใช้ได้เลย\n\n' +
+        'ไม่มีรหัสสินค้า ' + fmtNum(stat.noCode.length) + ' แถว\n' +
+        'จำนวนไม่ใช่ตัวเลขมากกว่า 0 ' + fmtNum(stat.badQty.length) + ' แถว\n\n' +
+        'ตรวจว่าไฟล์มีหัวตาราง "รหัสสินค้า" และ "จำนวน" แล้วลองใหม่',
+        'ปิด', { hideCancel: true }).then(function () { return false; });
+    }
+
+    var unknown = stat.unknownItems;
+    var msg =
+      'ไฟล์: ' + file.name + '\n\n' +
+      'แถวที่นำเข้าได้ ' + fmtNum(stat.rows) + ' แถว\n' +
+      'รวม ' + fmtNum(stat.pieces) + ' ชิ้น · ' + fmtNum(stat.skus) + ' SKU (ไม่ซ้ำ)\n' +
+      (stat.dupCodes ? 'รหัสซ้ำในไฟล์ ' + fmtNum(stat.dupCodes) + ' แถว — รวมยอดให้แล้ว\n' : '') +
+      (stat.skipped
+        ? 'ข้าม ' + fmtNum(stat.skipped) + ' แถว (ไม่มีรหัส ' + fmtNum(stat.noCode.length) +
+          ' · จำนวนไม่ถูกต้อง ' + fmtNum(stat.badQty.length) + ')\n'
+        : '') +
+      (unknown.length
+        ? '\n⚠ ไม่มีใน Master ' + fmtNum(unknown.length) + ' รายการ — จะถูกนับเข้าไปเป็น ' +
+          '"บาร์โค้ดที่ไม่มีในระบบ" ให้ไปจัดการทีหลังที่หน้าสรุป\n' +
+          scanImportSample(unknown, 10) + '\n'
+        : '') +
+      '\n⚠ ยอดนี้จะ "บวกเพิ่ม" จากที่ยิงไว้แล้ว ไม่ได้เขียนทับ\n' +
+      'อัปไฟล์เดิมซ้ำอีกรอบ = ยอดเบิ้ล ตรวจให้แน่ใจก่อนกดยืนยัน\n\n' +
+      'ตัวอย่างรายการ:\n' + scanImportSample(res.items, 10);
+
+    return ask('ยืนยันนำเข้ายอดนับ ' + fmtNum(stat.pieces) + ' ชิ้น?', msg,
+               'นำเข้า ' + fmtNum(stat.pieces) + ' ชิ้น', { danger: true })
+      .then(function (ok) {
+        if (!ok) { toast('ยกเลิกการนำเข้าแล้ว ยังไม่ได้บันทึกอะไร'); return false; }
+
+        /* ชื่อไฟล์ + เวลาติดไปกับทุกแถว — ตรวจย้อนหลังได้ว่ายอดก้อนนี้มาจากไฟล์ไหน
+           และแยกออกจากยอดที่ยิงจริงได้ตอนไล่ดูประวัติ */
+        var stamp = fmtTime(Date.now());
+        var reason = 'นำเข้า Excel: ' + file.name + ' ' + stamp;
+        res.items.forEach(function (it) {
+          if (it.known) writeScan(it.key, it.qty, 'scan', reason);
+          else writeScan(it.key, it.qty, 'scan', reason, { unknown: true, raw: it.code });
+        });
+
+        renderScanTotals();
+        renderLivePanel();
+        renderSyncBar();
+        if (state.page === 'summary') renderSummary();
+        toast('นำเข้าแล้ว ' + fmtNum(stat.pieces) + ' ชิ้น · ' + fmtNum(stat.skus) + ' SKU' +
+              (unknown.length ? ' · มีของไม่มีใน Master ' + fmtNum(unknown.length) + ' รายการ' : ''));
+        return true;
+      });
+  }).catch(function (err) {
+    var code = err && err.message;
+    if (code === 'MISSING_COLUMNS') {
+      ask('ไฟล์นี้ยังขาดคอลัมน์',
+          'ไฟล์ต้องมีหัวตาราง: ' + (err.missing || []).join(' และ ') + '\n\n' +
+          'ต้องการแค่ 2 คอลัมน์: รหัสสินค้า กับ จำนวน\n' +
+          'กดปุ่ม "ดาวน์โหลด Template" เพื่อเอาไฟล์ตัวอย่างไปกรอก',
+          'ปิด', { hideCancel: true });
+      return false;
+    }
+    var messages = {
+      EMPTY_FILE: 'ไฟล์นี้ว่างเปล่า กรุณาตรวจไฟล์แล้วอัปโหลดใหม่',
+      NO_SHEET: 'อ่านไฟล์ Excel นี้ไม่ได้ กรุณาบันทึกเป็น .xlsx หรือ CSV แล้วอัปโหลดใหม่',
+      BAD_ZIP: 'ไฟล์ Excel นี้เสียหรือไม่ใช่ไฟล์ .xlsx กรุณาบันทึกเป็น CSV แล้วอัปโหลดใหม่',
+      NO_INFLATE: 'เครื่องนี้อ่านไฟล์ .xlsx ไม่ได้ กรุณาบันทึกเป็น CSV แล้วอัปโหลดใหม่'
+    };
+    toast(messages[code] || 'นำเข้าไฟล์ไม่สำเร็จ กรุณาตรวจไฟล์แล้วลองใหม่', true);
+    return false;
+  }).then(function (done) {
+    $('btnScanImport').disabled = false;
+    return done;
+  });
 }
 
 /* ============================================================
@@ -12108,6 +12322,16 @@ function init() {
   });
   $('btnExport').onclick = exportExcel;
   $('btnScanExport').onclick = exportExcel;      // ปุ่มเดียวกันกับหน้าสรุป คนละที่วาง
+
+  /* นำเข้ายอดนับจากไฟล์ (v2.7.2) — เคลียร์ค่า input ทุกครั้งหลังอ่าน
+     ไม่งั้นเลือกไฟล์ชื่อเดิมซ้ำจะไม่เกิด change event และดูเหมือนปุ่มเสีย */
+  $('btnScanImport').onclick = function () { $('scanImportFile').click(); };
+  $('btnScanImportTpl').onclick = downloadScanImportTemplate;
+  $('scanImportFile').onchange = function () {
+    var f = this.files && this.files[0];
+    this.value = '';
+    if (f) handleScanImport(f);
+  };
   /* ครอบทั้งการ์ดหน้าสรุปและการ์ดผลต่างสดบนหน้ายิง — openSumCard เช็คสิทธิ์ในตัวเองอยู่แล้ว */
   document.querySelectorAll('[data-sumcard]').forEach(function (b) {
     b.onclick = function () { openSumCard(b.getAttribute('data-sumcard')); };
