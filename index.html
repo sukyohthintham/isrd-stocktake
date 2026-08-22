@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.7.5">
+<meta name="version" content="2.7.6">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.7.5</title>
+<title>ISRD Stocktake v2.7.6</title>
 
 <style>
 :root{
@@ -1545,7 +1545,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.7.5';
+var APP_VERSION = '2.7.6';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -7681,6 +7681,18 @@ function docCell(row, text, cls) {
   return td;
 }
 
+/* ---------- ประวัติการแก้หมายเหตุจากหน้าเอกสาร (v2.7.6) ----------
+   หน้ายิงเขียนแถวประวัติคู่ไปกับ reasons อยู่แล้วตั้งแต่ v2.7.4 (ดู saveRemark)
+   หน้าเอกสารเขียนทับ reasons ตรง ๆ ใครแก้ทับใครจึงหายไปเลย — v2.7.6 ปิดช่องนี้
+
+   แต่เขียนได้เฉพาะตอนรอบยัง 'counting' เท่านั้น ไม่ใช่เพราะเลือกเอง:
+     rounds/{id}/reasons  Rules ยอมเมื่อ status != 'closed'  (counting และ reviewing)
+     rounds/{id}/scans    Rules ยอมเมื่อ status == 'counting' เท่านั้น
+   ถ้าฝืนเขียน scan ตอน reviewing ฐานจะปฏิเสธถาวร และ flushQueue() ไม่ shift
+   แถวที่ส่งไม่ผ่าน — คิวจะค้างหัวแถวตลอดกาล แล้วบล็อกทุก write ที่ตามมาทั้งแอป
+   ยอมให้ประวัติขาดช่วง reviewing ดีกว่าทำให้ทั้งแอปเขียนข้อมูลไม่ได้        */
+function remarkHistoryWritable() { return jobStatus() === 'counting'; }
+
 function saveReason(key, value) {
   if (!canEdit()) { toast(blockedMessage(), true); return Promise.resolve(); }
   /* defense-in-depth (v2.7.5) — readOnly บนช่องกันมือได้ แต่กันคนแก้ DOM ไม่ได้
@@ -7690,10 +7702,21 @@ function saveReason(key, value) {
     toast('หมายเหตุนี้เขียนไว้ที่ Job อื่นในรอบเดียวกัน — เปิด Job นั้นแล้วค่อยแก้', true);
     return Promise.resolve();
   }
-  if (value) state.reasons[key] = value; else delete state.reasons[key];   // เห็นผลทันที ไม่รอ subscription
-  syncCycleRemark(key, value);
+
+  var t = String(value == null ? '' : value).trim();
+  /* ค่าเท่าเดิม = ไม่ต้องเขียนอะไร กันประวัติซ้ำจากการกดออกจากช่องเฉย ๆ (เหมือน saveRemark) */
+  if (t === String(state.reasons[key] || '')) return Promise.resolve();
+
+  if (remarkHistoryWritable()) writeScan(key, 0, 'remark', t);
+
+  if (t) state.reasons[key] = t; else delete state.reasons[key];   // เห็นผลทันที ไม่รอ subscription
+  syncCycleRemark(key, t);
+  /* ปักเวลาไว้เสมอ แม้รอบนี้จะไม่ได้เขียนแถวประวัติ (ขั้นตรวจสอบ) — ไม่งั้น remarkTs
+     ค้างอยู่ที่ค่าเก่า แล้วแถว remark เก่าที่วิ่งเข้ามาทีหลังจะชนะ applyScanRecord
+     แล้วเขียนทับข้อความที่เพิ่งพิมพ์ไปด้วยของเก่า */
+  state.remarkTs[key] = Date.now();
   var patch = {};
-  patch['reasons/' + key] = value || null;
+  patch['reasons/' + key] = t || null;
   return db.update('rounds/' + state.roundId, patch);
 }
 
@@ -8109,6 +8132,10 @@ function buildDocItemTable(title, rows, opts) {
     if (!remarkEditableHere(r.key)) {
       input.readOnly = true;
       input.title = 'หมายเหตุนี้เขียนไว้ที่ Job อื่นในรอบเดียวกัน — เปิด Job นั้นเพื่อแก้';
+    } else if (!remarkHistoryWritable()) {
+      /* บอกตรง ๆ ว่าช่วงนี้แก้ได้แต่ไม่มีประวัติเก็บ — ดีกว่าให้คนเข้าใจว่าประวัติครบ (v2.7.6) */
+      input.title = 'รอบอยู่ขั้นตรวจสอบแล้ว — แก้ได้ แต่ระบบเก็บประวัติการแก้ไม่ได้ ' +
+                    'ถ้าต้องการให้มีประวัติ ให้กลับไปขั้นนับก่อน';
     }
     var printed = document.createElement('span');
     printed.className = 'reason-print';
