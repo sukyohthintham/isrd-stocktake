@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.7.6">
+<meta name="version" content="2.7.7">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.7.6</title>
+<title>ISRD Stocktake v2.7.7</title>
 
 <style>
 :root{
@@ -982,6 +982,14 @@ body.no-doc-images .doc .imgbox{display:none}
       <span><span class="dot"></span><span id="syncText">ข้อมูลถูกบันทึกครบแล้ว</span></span>
       <span id="unknownCount"></span>
     </div>
+    <!-- แถวที่ฐานปฏิเสธถาวร (v2.7.7) — ต้องเห็นชัด ห้ามเงียบ
+         เดิมของแบบนี้ค้างหัวคิวแล้วหยุดการเขียนทั้งแอปโดยไม่มีใครรู้ -->
+    <div class="banner warn" id="failedBar" style="display:none;margin-bottom:10px">
+      <div id="failedText"></div>
+      <button class="btn grey sm block" id="btnRetryFailed" style="margin-top:8px">
+        ↻ ลองส่งรายการที่ค้างใหม่
+      </button>
+    </div>
     <h3>5 ครั้งล่าสุด</h3>
     <div class="recent" id="recentList"></div>
   </div>
@@ -1545,7 +1553,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.7.6';
+var APP_VERSION = '2.7.7';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -3692,6 +3700,66 @@ function queueSave(q) {
 }
 function pendingCount() { return queueLoad().length; }
 
+/* ---------- แถวที่ส่งไม่ผ่านถาวร (v2.7.7) ----------
+   เดิม flushQueue() shift คิวเฉพาะตอนสำเร็จ แถวที่ฐานปฏิเสธ "ถาวร" จึงค้างหัวคิว
+   แล้วบล็อกทุก write ที่ตามมาทั้งแอปแบบเงียบ ๆ — ยิงนับต่อได้บนจอ แต่ไม่มีอะไรขึ้นฐานอีกเลย
+   เกิดได้จริงหลายทาง: สิทธิ์ถูกเปลี่ยนกลางคัน · รอบถูกปิดตอนคิวยังไม่ว่าง · Rules ถูกปรับ
+
+   แก้โดยแยก "ผิดเพราะข้อมูล/สิทธิ์" ออกจาก "ผิดเพราะเน็ต":
+     HTTP 4xx  = ส่งกี่ครั้งก็ไม่ผ่าน  -> พักไว้ที่ dead-letter แล้วเดินคิวต่อ
+     HTTP 5xx / เน็ตหลุด = ลองใหม่ได้ -> คาไว้ที่หัวคิวเหมือนเดิม
+   ของที่พักไว้ไม่เคยถูกลบทิ้งเอง ผู้ใช้กดส่งใหม่ได้ตลอด (กฎบ้าน: ห้ามทำยอดหาย)   */
+var FAILED_KEY = 'isrd_write_failed';
+var DEAD_LETTER_TRIES = 3;      // เผื่อ 401 ชั่วคราวตอน token หมุน ก่อนตัดสินว่าถาวร
+var FAILED_MAX = 300;           // กัน localStorage บวม — เกินนี้เก็บของใหม่สุดไว้
+
+function failedLoad() {
+  try { return JSON.parse(localStorage.getItem(FAILED_KEY) || '[]') || []; }
+  catch (e) { return []; }
+}
+function failedSave(list) {
+  try { localStorage.setItem(FAILED_KEY, JSON.stringify(list.slice(-FAILED_MAX))); }
+  catch (e) { /* เต็มก็ปล่อย */ }
+}
+function failedCount() { return failedLoad().length; }
+
+/* 4xx = คำขอเราเองไม่ถูกต้อง (สิทธิ์/ข้อมูล/รอบปิด) ส่งซ้ำอีกกี่รอบก็ได้ผลเดิม
+   remoteUpdate โยน Error('HTTP <code>') ออกมา ส่วนเน็ตหลุดจะเป็น TypeError ของ fetch */
+function isPermanentWriteError(err) {
+  var m = /^HTTP (\d{3})$/.exec(String((err && err.message) || err || ''));
+  if (!m) return false;                       // ไม่ใช่ HTTP = เน็ต/อื่น ๆ ลองใหม่ได้
+  var code = Number(m[1]);
+  if (code === 408 || code === 429) return false;   // timeout / โดนจำกัดอัตรา = รอแล้วส่งใหม่ผ่านได้
+  return code >= 400 && code < 500;
+}
+
+/* ย้ายแถวหัวคิวไปพักไว้ แล้วคืนคิวที่เหลือให้เดินต่อ */
+function parkFailed(item, err) {
+  var list = failedLoad();
+  list.push({
+    path: item.path, patch: item.patch, remote: item.remote,
+    err: String((err && err.message) || err || 'ไม่ทราบสาเหตุ'),
+    at: Date.now()
+  });
+  failedSave(list);
+}
+
+/* ผู้ใช้กดส่งใหม่ — เอาของที่พักไว้กลับเข้าคิวทั้งหมด แล้วเริ่มส่ง
+   ต่อท้ายคิว ไม่ใช่แทรกหัว เพื่อไม่ให้ของที่เพิ่งยิงสด ๆ ต้องรอของเก่าที่เคยพังก่อน */
+function retryFailedWrites() {
+  var list = failedLoad();
+  if (!list.length) { toast('ไม่มีรายการค้างให้ส่งใหม่'); return 0; }
+  var q = queueLoad();
+  list.forEach(function (e) { q.push({ path: e.path, patch: e.patch, remote: e.remote }); });
+  queueSave(q);
+  failedSave([]);
+  toast('ส่งรายการที่ค้างใหม่อีกครั้ง ' + fmtNum(list.length) + ' รายการ');
+  renderSyncBar();
+  renderConnection();
+  flushQueue();
+  return list.length;
+}
+
 function enqueueWrite(path, patch) {
   var q = queueLoad();
   q.push({ path: path, patch: patch, remote: !!db.remote });
@@ -3725,8 +3793,26 @@ function flushQueue() {
     renderSyncBar();
     renderConnection();
     if (cur.length) flushQueue();
-  }).catch(function () {
-    /* ส่งไม่ผ่าน = เก็บไว้ในคิวเหมือนเดิม pushId คงที่อยู่แล้ว ส่งซ้ำไม่นับซ้ำ */
+  }).catch(function (err) {
+    /* เน็ตหลุด/ฐานล่ม = คาไว้ที่หัวคิวเหมือนเดิม pushId คงที่อยู่แล้ว ส่งซ้ำไม่นับซ้ำ
+       แต่ถ้าฐานปฏิเสธเพราะสิทธิ์/ข้อมูล (4xx) ส่งอีกกี่รอบก็ได้ผลเดิม
+       ต้องยกออกไปพักไว้ ไม่งั้นมันบล็อกทุกแถวที่ต่อคิวอยู่ข้างหลังตลอดกาล (v2.7.7) */
+    var cur = queueLoad();
+    if (isPermanentWriteError(err) && cur.length && cur[0].path === item.path) {
+      cur[0].tries = (cur[0].tries || 0) + 1;
+      cur[0].lastErr = String((err && err.message) || err || '');
+      if (cur[0].tries >= DEAD_LETTER_TRIES) {
+        parkFailed(cur[0], err);
+        cur.shift();
+        queueSave(cur);
+        flushing = false;
+        renderSyncBar();
+        renderConnection();
+        if (cur.length) flushQueue();          // เดินคิวต่อ ไม่ให้ของที่เหลือติดค้าง
+        return;
+      }
+      queueSave(cur);
+    }
     flushing = false;
     renderSyncBar();
     renderConnection();
@@ -5691,8 +5777,17 @@ function renderConnection() {
     text.textContent = 'ออฟไลน์ — เก็บคิวในเครื่อง ' + fmtNum(pending) + ' รายการ';
     return;
   }
-  bar.className = 't-conn';
-  bar.setAttribute('data-conn', 'online');
+  /* แถวที่ฐานปฏิเสธถาวรต้องเห็นได้จากทุกหน้า ไม่ใช่เฉพาะหน้ายิง (v2.7.7)
+     แถบเตือนตัวเต็ม (พร้อมปุ่มส่งใหม่) อยู่ในการ์ดของหน้ายิง แอดมินที่นั่งดูหน้าสรุป
+     จะไม่มีวันเห็นเลย ถ้าไม่ยกตัวเลขมาไว้บนแถบเชื่อมต่อซึ่งติดอยู่ทุกหน้า */
+  var failed = failedCount();
+  bar.className = 't-conn' + (failed ? ' off' : '');
+  bar.setAttribute('data-conn', failed ? 'failed' : 'online');
+  if (failed) {
+    text.textContent = 'ส่งไม่สำเร็จค้างอยู่ ' + fmtNum(failed) + ' รายการ — ไปที่หน้ายิงเพื่อส่งใหม่' +
+      (pending ? ' · รอส่งอีก ' + fmtNum(pending) + ' รายการ' : '');
+    return;
+  }
   text.textContent = pending
     ? 'ต่อฐานกลางแล้ว — กำลังส่ง ' + fmtNum(pending) + ' รายการ'
     : 'ต่อฐานกลางแล้ว';
@@ -5707,6 +5802,35 @@ function renderSyncBar() {
     : 'ข้อมูลถูกบันทึกครบแล้ว';
   var unknownN = unknownPending();
   $('unknownCount').textContent = unknownN ? 'ไม่มีในระบบ ' + fmtNum(unknownN) + ' บาร์โค้ด' : '';
+  renderFailedBar();
+}
+
+/* ของที่ฐานปฏิเสธถาวรต้องโผล่ให้เห็น พร้อมบอกเหตุผลเป็นภาษาคน (v2.7.7)
+   ยอดไม่ได้หาย แค่ยังไม่ขึ้นฐาน — กดส่งใหม่ได้เมื่อแก้ต้นเหตุแล้ว */
+function renderFailedBar() {
+  var box = $('failedBar');
+  if (!box) return;
+  var list = failedLoad();
+  box.style.display = list.length ? 'block' : 'none';
+  if (!list.length) return;
+  var last = list[list.length - 1] || {};
+  $('failedText').textContent =
+    '⚠ ส่งขึ้นระบบไม่สำเร็จ ' + fmtNum(list.length) + ' รายการ — ยอดยังอยู่ในเครื่อง ไม่ได้หาย\n' +
+    'สาเหตุล่าสุด: ' + writeErrorReason(last.err) + '\n' +
+    'แก้ต้นเหตุแล้วกดปุ่มข้างล่างเพื่อส่งใหม่';
+}
+
+/* แปลรหัส HTTP เป็นสิ่งที่คนคลังอ่านแล้วรู้ว่าต้องทำอะไรต่อ */
+function writeErrorReason(err) {
+  var m = /^HTTP (\d{3})$/.exec(String(err || ''));
+  var code = m ? Number(m[1]) : 0;
+  if (code === 401 || code === 403) {
+    return 'ฐานข้อมูลปฏิเสธ — อาจเป็นเพราะรอบถูกปิดไปแล้ว หรือสิทธิ์ของบัญชีถูกเปลี่ยน ' +
+           'ให้ผู้ดูแลระบบเช็คให้';
+  }
+  if (code === 400) return 'ข้อมูลที่ส่งไม่ถูกรูปแบบ — แจ้งผู้ดูแลระบบพร้อมบอกว่าทำอะไรอยู่ตอนนั้น';
+  if (code) return 'ฐานข้อมูลตอบกลับ HTTP ' + code;
+  return String(err || 'ไม่ทราบสาเหตุ');
 }
 
 function undoLastScan() {
@@ -12591,6 +12715,9 @@ function init() {
     saveRemark(key, this.value).then(function () { focusScan(); });
   };
   $('scanRemarkInput').onchange = function () { saveRemark(state.activeKey, this.value); };
+
+  /* ส่งรายการที่ฐานปฏิเสธถาวรใหม่อีกครั้ง (v2.7.7) */
+  $('btnRetryFailed').onclick = retryFailedWrites;
 
   /* นำเข้ายอดนับจากไฟล์ (v2.7.2) — เคลียร์ค่า input ทุกครั้งหลังอ่าน
      ไม่งั้นเลือกไฟล์ชื่อเดิมซ้ำจะไม่เกิด change event และดูเหมือนปุ่มเสีย */
