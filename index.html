@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.7.3">
+<meta name="version" content="2.7.4">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.7.3</title>
+<title>ISRD Stocktake v2.7.4</title>
 
 <style>
 :root{
@@ -857,6 +857,21 @@ body.no-doc-images .doc .imgbox{display:none}
         </div>
       </div>
 
+      <!-- หมายเหตุของ "รอบนี้" ผูกกับ SKU ที่ยิงล่าสุด — staff เท่านั้น (v2.7.4)
+           คนละช่องกับ "หมายเหตุจาก Master" ข้างบน ซึ่งติดตัวสินค้าถาวรข้ามทุกรอบ
+           ช่องนี้เป็นของรอบนับนี้รอบเดียว และไปโผล่ในเอกสารกับ Excel ของรอบนี้ -->
+      <div id="scanRemark" style="display:none;margin-top:10px">
+        <label class="fld" style="margin:0">
+          <span id="scanRemarkLabel">📝 หมายเหตุของรอบนี้</span>
+          <input type="text" id="scanRemarkInput" autocomplete="off"
+                 placeholder="เช่น ของชำรุด 2 ชิ้น · เจอที่หลังชั้น">
+        </label>
+        <div class="hint" id="scanRemarkHint" style="color:var(--muted);font-weight:400">
+          กด Enter เพื่อบันทึก · ลบข้อความออกแล้ว Enter เพื่อเอาหมายเหตุออก ·
+          หมายเหตุนี้จะไปโผล่ในเอกสารและไฟล์ Excel ของรอบนี้
+        </div>
+      </div>
+
       <!-- ช่องคำอธิบายบาร์โค้ดที่ไม่มีในระบบ — ไม่บังคับ ข้ามได้ทันที ห้ามขวางจังหวะยิง -->
       <div id="unknownNote" style="display:none;margin-top:10px">
         <input type="text" id="unknownNoteInput" autocomplete="off"
@@ -1530,7 +1545,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.7.3';
+var APP_VERSION = '2.7.4';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -3292,6 +3307,11 @@ var state = {
   zoneTotals: {},        // zoneId -> จำนวนชิ้นในโซนนั้น
   manualLog: [],
   scanLog: [],           // ทุกแถว สำหรับ export
+  /* v2.7.4 — หมายเหตุของรอบ เขียนคู่: scan record (ประวัติ) + reasons/{key} (ช่องอ่านเร็ว)
+     activeKey = SKU ที่การ์ดบนหน้ายิงกำลังโชว์อยู่ · remarkTs = เวลาของหมายเหตุล่าสุดต่อ SKU
+     (ใช้ตัดสินว่าแถวไหนชนะ เวลาสองคนแก้พร้อมกัน — ไม่ผูกกับลำดับที่ข้อมูลวิ่งมาถึง) */
+  activeKey: null,
+  remarkTs: {},
   locations: { offline: {}, online: {} },   // ชุด -> safeKey(sku) -> {sku,name,pick,refill}
   locationSet: 'offline',                   // ชุดที่รอบนับนี้ใช้
   locationFilter: '',                       // กรองเฉพาะ Location ที่ขึ้นต้นด้วย...
@@ -3550,6 +3570,19 @@ function applyScanRecord(id, rec) {
     if (rec.discard) u.discarded = true;
   }
 
+  /* หมายเหตุของรอบ (v2.7.4) — delta 0 จึงไม่กระทบยอดใด ๆ ข้างบน
+     แถวที่เวลาใหม่กว่าชนะ ไม่ใช่แถวที่มาถึงทีหลัง — สองคนแก้พร้อมกันแล้วผลต้องเหมือนกันทุกเครื่อง
+     ไม่มี reason = สั่งลบหมายเหตุ (แถวเดิมยังอยู่ในประวัติ ไม่ได้ลบทิ้ง)
+     saveRemark เขียน reasons/{key} คู่กันอยู่แล้ว ตรงนี้ทำให้เห็นของที่คนอื่นแก้แบบสด ๆ ด้วย */
+  if (rec.mode === 'remark') {
+    var rts = rec.ts || 0;
+    if (rts >= (state.remarkTs[key] || 0)) {
+      state.remarkTs[key] = rts;
+      var txt = String(rec.reason || '').trim();
+      if (txt) state.reasons[key] = txt; else delete state.reasons[key];
+    }
+  }
+
   state.scanLog.push({ id: id, rec: rec });
   dropJobStats(state.roundId);            // ความคืบหน้าที่แคชไว้เก่าแล้ว
   return true;
@@ -3611,6 +3644,10 @@ function resetRoundAggregates() {
   state.unknownKeys = {};
   state.appliedScanIds = Object.create(null);
   state.undoStack = [];
+  /* หมายเหตุเป็นของรอบนับ เปลี่ยน Job แล้วต้องไม่ติดค้างมาจากใบเดิม (v2.7.4)
+     ตัว reasons โหลดใหม่ที่ refreshDocMeta อยู่แล้ว ตรงนี้เคลียร์เฉพาะของที่คู่กัน */
+  state.activeKey = null;
+  state.remarkTs = {};
 }
 
 function altBarcodes(p) {
@@ -5230,6 +5267,10 @@ function handleScanValue(raw) {
     var newRec = writeUnknownScan(value);
     var newKey = safeKey(value);
     state.undoStack.push({ key: newKey, id: newRec.id });
+    /* ของที่ไม่มีในระบบใช้ช่องคำอธิบายของตัวเอง (unknownNote) — เก็บช่องหมายเหตุของรอบไปก่อน
+       ไม่งั้นจะมีสองช่องซ้อนกันแล้วคนกรอกผิดช่อง */
+    state.activeKey = null;
+    renderScanRemark();
     flashStage('newcode');
     beepNewCode();
     vibrate([40, 50, 40]);
@@ -5326,6 +5367,72 @@ function setScanNote(text) {
   box.style.display = t ? 'block' : 'none';
 }
 
+/* ---------- หมายเหตุของรอบนี้ ต่อ SKU (v2.7.4) ----------
+   คนละเรื่องกับ products/{key}/note ซึ่งเป็นหมายเหตุถาวรติดตัวสินค้าข้ามทุกรอบ
+   ช่องนี้เล่าว่า "รอบนี้เจออะไร" เช่น ของชำรุด 2 ชิ้น · เจอที่หลังชั้น
+
+   เก็บสองที่โดยตั้งใจ:
+     scans (mode 'remark', delta 0) = ประวัติ append-only ตาม Rules แก้/ลบของเดิมไม่ได้
+     reasons/{key}                  = ช่องอ่านเร็วที่เอกสารกับ Excel ใช้อยู่แล้ว
+   ทั้งสอง path มีใน Database Rules อยู่แล้ว ไม่ได้เพิ่มโครงสร้างใหม่                   */
+function renderScanRemark() {
+  var box = $('scanRemark');
+  if (!box) return;
+  var key = state.activeKey;
+  /* เปิดให้เฉพาะ staff และเฉพาะตอนมีสินค้าอยู่บนการ์ด
+     บาร์โค้ดที่ไม่มีในระบบมีช่องคำอธิบายของตัวเองอยู่แล้ว (unknownNote) ไม่ต้องซ้อนกันสองช่อง */
+  var show = !!key && !!state.products[key] && isStaff();
+  box.style.display = show ? 'block' : 'none';
+  if (!show) return;
+
+  var input = $('scanRemarkInput');
+  /* กำลังพิมพ์อยู่ห้ามเขียนทับ — ไม่งั้นข้อความหายกลางคันตอนมีคนอื่นยิงเข้ามา */
+  if (document.activeElement !== input) input.value = state.reasons[key] || '';
+  var p = state.products[key] || {};
+  $('scanRemarkLabel').textContent = '📝 หมายเหตุของรอบนี้ — ' + (p.code || key);
+  input.disabled = !canScan();
+  input.title = input.disabled ? blockedMessage() : '';
+}
+
+/* ป้าย "วิธีนับ" ในชีทประวัติ — แถวหมายเหตุกับแถวจัดการบาร์โค้ดไม่ใช่การยิง
+   ก่อน v2.7.4 ทุกอย่างที่ไม่ใช่ 'manual' ถูกป้ายว่า "ยิงบาร์โค้ด" หมด อ่านแล้วเข้าใจผิด */
+function scanModeLabel(rec) {
+  var m = (rec || {}).mode;
+  if (m === 'manual') return 'กรอกมือ';
+  if (m === 'remark') return String((rec || {}).reason || '').trim() ? 'ใส่หมายเหตุ' : 'ลบหมายเหตุ';
+  if (m === 'note') return 'คำอธิบายบาร์โค้ด';
+  if (m === 'resolve') return 'จัดการบาร์โค้ด';
+  return 'ยิงบาร์โค้ด';
+}
+
+function saveRemark(key, text) {
+  /* defense-in-depth แบบเดียวกับ removeOverScan — ซ่อนช่องอย่างเดียวไม่พอ */
+  if (!isStaff()) { toast(roleBlockMessage('ใส่หมายเหตุไม่ได้'), true); return Promise.resolve(false); }
+  if (!canScan()) { toast(blockedMessage() + ' — ใส่หมายเหตุไม่ได้', true); return Promise.resolve(false); }
+  if (!key) return Promise.resolve(false);
+
+  var t = String(text == null ? '' : text).trim();
+  /* ค่าเท่าเดิม = ไม่ต้องเขียนอะไรเลย กัน Enter รัว ๆ แล้วได้ประวัติซ้ำเป็นสิบแถว */
+  if (t === String(state.reasons[key] || '')) return Promise.resolve(false);
+
+  writeScan(key, 0, 'remark', t);          // ไม่มีข้อความ = สั่งลบ (ดู applyScanRecord)
+  if (t) state.reasons[key] = t; else delete state.reasons[key];
+  state.remarkTs[key] = Date.now();
+
+  var patch = {};
+  patch['reasons/' + key] = t || null;
+  return db.update('rounds/' + state.roundId, patch).then(function () {
+    var code = (state.products[key] || {}).code || key;
+    toast(t ? 'บันทึกหมายเหตุ ' + code + ' แล้ว' : 'เอาหมายเหตุ ' + code + ' ออกแล้ว');
+    renderScanRemark();
+    if (state.page === 'doc') renderDoc();
+    return true;
+  }).catch(function () {
+    toast('บันทึกหมายเหตุไม่สำเร็จ ฐานข้อมูลปฏิเสธการเขียน หรือเน็ตหลุด', true);
+    return false;
+  });
+}
+
 function showScanHit(key) {
   var p = state.products[key];
   swapScanImage(p.imageUrl);
@@ -5348,6 +5455,9 @@ function showScanHit(key) {
   if (isInactiveProduct(p)) badges.appendChild(makeBadge('⚠ ของเลิกขายเจอบนชั้น', 'red'));
 
   setScanNote(p.note);
+  /* การ์ดโชว์ตัวไหน ช่องหมายเหตุของรอบก็ผูกกับตัวนั้น (v2.7.4) */
+  state.activeKey = key;
+  renderScanRemark();
   /* โซนบนจอต้องตรงกับโซนที่แถวนี้ถูกบันทึกจริง จึงคิดจากตัวช่วยตัวเดียวกับ writeScan */
   state.lastZoneName = zoneNameForKey(key);
   renderZoneLock();
@@ -5515,6 +5625,8 @@ function renderScanTotals() {
   var nm = String(state.lastZoneName || '').trim();
   $('scanTotal').textContent = fmtNum(nm ? (state.zoneTotals[nm] || 0) : 0);
   renderScanDiffCards();
+  /* วาดซ้ำทุกครั้งที่ยอดขยับ — ช่องหมายเหตุต้องล็อกตามทันทีถ้ารอบถูกปิดระหว่างเปิดหน้าค้างไว้ */
+  renderScanRemark();
 
   /* ยอดรวมทุกโซน — บวกจาก state.zoneTotals ตรง ๆ เพราะเป็น net delta อยู่แล้ว
      (ยกเลิกการยิงหักออกให้เอง) ไม่คิดจาก state.counts หรือ scanQty แยก
@@ -7357,14 +7469,18 @@ function buildSummaryExcel(data) {
     ? ('รวมทุก Job ในรอบ ' + xScope.cid + ' (' + jobsInCycle(xScope.cid).length + ' ใบ)')
     : ('เฉพาะ Job ' + (round.jobCode || state.roundId || '-'))]);
 
+  /* คอลัมน์หมายเหตุ (v2.7.4) — ไฟล์ของหน้าเอกสารมีมาตั้งแต่เดิม ไฟล์นี้เพิ่งได้
+     ทั้งสองไฟล์อ่านจาก reasons/{key} ก้อนเดียวกัน ตัวเลขกับข้อความจึงตรงกันเสมอ */
   var s2 = [['รหัสสินค้า', 'ชื่อสินค้า', 'Location', 'Status', 'หน่วย', 'ประเภท',
              'จำนวนระบบ', 'จำนวนจริง', 'ผลต่าง',
-             'จากการยิง', 'จากการกรอกมือ', priceLabel, 'มูลค่าระบบ', 'มูลค่าจริง']];
+             'จากการยิง', 'จากการกรอกมือ', priceLabel, 'มูลค่าระบบ', 'มูลค่าจริง',
+             'หมายเหตุ']];
   data.rows.forEach(function (r) {
     s2.push([r.code, r.name, r.location || '', r.status || DEFAULT_STATUS, r.unit,
              r.type === 'notProduct' ? 'Not Product' : 'Product',
              r.sys, r.act, r.diff, r.scanQty, r.manualQty, r.price,
-             Math.round(r.sys * r.price * 100) / 100, Math.round(r.act * r.price * 100) / 100]);
+             Math.round(r.sys * r.price * 100) / 100, Math.round(r.act * r.price * 100) / 100,
+             state.reasons[r.key] || '']);
   });
 
   /* ---------- ประวัติการนับ ต้องครอบคลุมเท่ากับตัวเลขในชีทสรุป ----------
@@ -7398,7 +7514,7 @@ function buildSummaryExcel(data) {
   hist.forEach(function (h) {
     var p = state.products[safeKey(h.rec.code)] || { name: h.rec.code };
     var line = [fmtTime(h.rec.ts), h.rec.code, p.name, h.rec.zoneName || zoneName(h.rec.zone),
-                h.rec.user, h.rec.delta, h.rec.mode === 'manual' ? 'กรอกมือ' : 'ยิงบาร์โค้ด',
+                h.rec.user, h.rec.delta, scanModeLabel(h.rec),
                 h.rec.reason || '', h.id];
     if (histAll) line.splice(1, 0, h.job);
     s3.push(line);
@@ -7409,7 +7525,7 @@ function buildSummaryExcel(data) {
 
   var blob = buildXlsx([
     { name: 'สรุป', rows: s1, widths: [16, 12, 12, 13, 10, 10, 10, 14, 14, 14, 14, 14] },
-    { name: 'รายสินค้า', rows: s2, widths: [18, 34, 16, 18, 10, 12, 12, 12, 10, 11, 14, 12, 14, 14] },
+    { name: 'รายสินค้า', rows: s2, widths: [18, 34, 16, 18, 10, 12, 12, 12, 10, 11, 14, 12, 14, 14, 30] },
     { name: 'ประวัติการนับ', rows: s3,
       widths: histAll ? [22, 16, 18, 36, 16, 14, 10, 13, 22, 24]
                       : [22, 18, 36, 16, 14, 10, 13, 22, 24] },
@@ -7785,9 +7901,11 @@ function unknownExcelRow(u, i) {
 /* ไม่มี Location และ Type แล้วตั้งแต่ v2.1.5 — Type ซ้ำกับหัวข้อกลุ่ม Product/Not Product
    ส่วน Location ยังอยู่ครบในไฟล์ Excel และในตาราง "ไม่ใช่ของสาขานี้"
    ที่ว่างยกไปให้รหัสสินค้าแสดงเต็มโดยไม่ตัดบรรทัด */
+/* คอลัมน์สุดท้ายเคยชื่อ "Reason" — เปลี่ยนเป็น "หมายเหตุ" ใน v2.7.4 ให้ตรงกับช่องบนหน้ายิง
+   เป็นช่องเดียวกัน (reasons/{key}) เอกสารเก่าที่พิมพ์ไปแล้วจึงยังเทียบกันได้ แค่หัวคอลัมน์เปลี่ยน */
 var DOC_ITEM_HEAD = ['#', 'รูป', 'รหัสสินค้า', 'ชื่อสินค้า', 'หมวดหมู่',
   'ยอดระบบ', 'ยิงจริง', 'ผลต่าง', 'ราคา/ตัว', 'มูลค่าระบบ', 'มูลค่าจริง',
-  'ผลต่างมูลค่า', 'Reason'];
+  'ผลต่างมูลค่า', 'หมายเหตุ'];
 
 /* กลุ่มใหญ่ของรายการสินค้าในเอกสาร — r.type มาจาก summaryData เป็น
    'product' หรือ 'notProduct' อยู่แล้ว (bucket เดียวกับที่ Dashboard ใช้แบ่ง) */
@@ -12352,6 +12470,17 @@ function init() {
   });
   $('btnExport').onclick = exportExcel;
   $('btnScanExport').onclick = exportExcel;      // ปุ่มเดียวกันกับหน้าสรุป คนละที่วาง
+
+  /* หมายเหตุของรอบ (v2.7.4) — Enter บันทึกแล้วคืนโฟกัสให้ช่องยิงทันที
+     คนนับถือเครื่องยิงอยู่ ต้องยิงตัวถัดไปต่อได้เลยโดยไม่ต้องแตะจออีก
+     blur ก็บันทึกด้วย เผื่อกดออกไปที่อื่นโดยไม่ได้กด Enter — saveRemark กันเขียนซ้ำเองอยู่แล้ว */
+  $('scanRemarkInput').onkeydown = function (e) {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    var key = state.activeKey;
+    saveRemark(key, this.value).then(function () { focusScan(); });
+  };
+  $('scanRemarkInput').onchange = function () { saveRemark(state.activeKey, this.value); };
 
   /* นำเข้ายอดนับจากไฟล์ (v2.7.2) — เคลียร์ค่า input ทุกครั้งหลังอ่าน
      ไม่งั้นเลือกไฟล์ชื่อเดิมซ้ำจะไม่เกิด change event และดูเหมือนปุ่มเสีย */
