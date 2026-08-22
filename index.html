@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.7.4">
+<meta name="version" content="2.7.5">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.7.4</title>
+<title>ISRD Stocktake v2.7.5</title>
 
 <style>
 :root{
@@ -1545,7 +1545,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.7.4';
+var APP_VERSION = '2.7.5';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -5417,6 +5417,7 @@ function saveRemark(key, text) {
 
   writeScan(key, 0, 'remark', t);          // ไม่มีข้อความ = สั่งลบ (ดู applyScanRecord)
   if (t) state.reasons[key] = t; else delete state.reasons[key];
+  syncCycleRemark(key, t);                 // ก้อนรวมของเอกสารต้องเห็นตามทันที (v2.7.5)
   state.remarkTs[key] = Date.now();
 
   var patch = {};
@@ -6805,8 +6806,14 @@ function loadCycleRaw(cid) {
   return Promise.all([
     loadCycleSystemQty(cid),
     Promise.all(ids.map(function (id) {
-      return db.get('rounds/' + id + '/scans')
-        .then(function (scans) { return { id: id, scans: scans || {} }; });
+      /* v2.7.5 — อ่านหมายเหตุของทุกใบมาด้วย (ก้อนเล็ก แค่ map ข้อความ)
+         ก่อนหน้านี้เอกสารโหมดรวมเห็นหมายเหตุแค่ของใบที่เปิดอยู่ ของใบอื่นหายเงียบ ๆ */
+      return Promise.all([
+        db.get('rounds/' + id + '/scans'),
+        db.get('rounds/' + id + '/reasons')
+      ]).then(function (r) {
+        return { id: id, scans: r[0] || {}, reasons: r[1] || {} };
+      });
     }))
   ]).then(function (res) { return { sys: res[0], jobs: res[1] }; });
 }
@@ -6850,11 +6857,53 @@ function buildCycleData(raw) {
     });
   });
 
+  /* ---------- หมายเหตุรวมทุกใบ (v2.7.5) ----------
+     SKU เดียวถูกนับได้หลายใบ และแต่ละใบใส่หมายเหตุของตัวเองได้
+     ห้ามเลือกใบใดใบหนึ่งมาโชว์แล้วทิ้งที่เหลือ — เอกสารตรวจนับต้องไม่กลืนข้อมูล
+     มีใบเดียวที่เขียนไว้ = โชว์ข้อความเปล่า ๆ เหมือนเดิมทุกประการ
+     มีหลายใบ = ติดรหัส Job นำหน้าให้รู้ว่าใครเขียนอันไหน                        */
+  var remarkParts = {};
+  raw.jobs.forEach(function (p) {
+    var jobCode = (state.roundIndex[p.id] || {}).jobCode || p.id;
+    Object.keys(p.reasons || {}).forEach(function (k) {
+      var txt = String(p.reasons[k] == null ? '' : p.reasons[k]).trim();
+      if (!txt) return;
+      (remarkParts[k] = remarkParts[k] || []).push({ job: p.id, jobCode: jobCode, text: txt });
+    });
+  });
+
   /* เก็บ scan ดิบของทุกใบไว้ด้วย — ชีท "ประวัติการนับ" ใน Excel ต้องใช้
      โหลดมาแล้วตั้งแต่ loadCycleRaw ถ้าทิ้งไปจะต้องอ่านเน็ตซ้ำทั้งรอบเพื่อเอาของเดิม
      แลกกับหน่วยความจำที่โตขึ้นตามจำนวนใบ — ยอมรับได้ เพราะรอบหนึ่งมีไม่กี่ใบ */
   return { sys: sysAll, counts: countAll, manual: manualAll, jobs: raw.jobs,
-           jobsPerSku: jobsPerSku, perJob: perJob };
+           remarkParts: remarkParts, jobsPerSku: jobsPerSku, perJob: perJob };
+}
+
+/* ข้อความหมายเหตุที่จะเอาไปโชว์/พิมพ์ — รวมทุกใบเมื่ออยู่โหมดรวม
+   นอกโหมดรวม (หรือยังไม่มีข้อมูลรวม) ใช้ของ Job ที่เปิดอยู่เหมือนเดิมเป๊ะ */
+function remarkTextOf(key) {
+  var parts = cycleRemarkParts(key);
+  if (!parts) return state.reasons[key] || '';
+  if (!parts.length) return '';
+  if (parts.length === 1) return parts[0].text;
+  return parts.map(function (p) { return p.jobCode + ': ' + p.text; }).join(' · ');
+}
+
+/* คืน null ถ้าไม่ได้อยู่โหมดรวม — คนเรียกจะได้รู้ว่าต้องถอยไปใช้ state.reasons */
+function cycleRemarkParts(key) {
+  if (state.docScope !== 'cycle' || !cycleCacheFresh()) return null;
+  var all = (state.cycleData.raw || {}).remarkParts || {};
+  return all[key] || [];
+}
+
+/* หมายเหตุก้อนนี้เป็นของ Job ที่เปิดอยู่หรือเปล่า — ใช้ตัดสินว่าจะให้แก้ในเอกสารได้ไหม
+   แก้ได้เฉพาะของใบตัวเอง ไม่งั้นการพิมพ์ทับจะเอาข้อความรวมไปยัดลงใบเดียว
+   แล้วหมายเหตุของใบอื่นจะถูกก๊อปมาซ้ำอยู่ในใบเรา (ดู saveReason) */
+function remarkEditableHere(key) {
+  var parts = cycleRemarkParts(key);
+  if (!parts) return true;                       // ไม่ใช่โหมดรวม = ของใบนี้ล้วน
+  if (!parts.length) return true;                // ยังไม่มีใครเขียน = เขียนใหม่ได้
+  return parts.length === 1 && parts[0].job === state.roundId;
 }
 
 /* ทำให้หน้าตาเหมือน summaryData() เป๊ะ เพื่อให้ตาราง/กราฟ/Excel ใช้โค้ดชุดเดิมได้หมด
@@ -7480,7 +7529,7 @@ function buildSummaryExcel(data) {
              r.type === 'notProduct' ? 'Not Product' : 'Product',
              r.sys, r.act, r.diff, r.scanQty, r.manualQty, r.price,
              Math.round(r.sys * r.price * 100) / 100, Math.round(r.act * r.price * 100) / 100,
-             state.reasons[r.key] || '']);
+             remarkTextOf(r.key)]);
   });
 
   /* ---------- ประวัติการนับ ต้องครอบคลุมเท่ากับตัวเลขในชีทสรุป ----------
@@ -7634,10 +7683,33 @@ function docCell(row, text, cls) {
 
 function saveReason(key, value) {
   if (!canEdit()) { toast(blockedMessage(), true); return Promise.resolve(); }
+  /* defense-in-depth (v2.7.5) — readOnly บนช่องกันมือได้ แต่กันคนแก้ DOM ไม่ได้
+     ในโหมดรวม ช่องโชว์ข้อความของทุกใบต่อกัน ถ้าปล่อยให้เขียนทับ
+     หมายเหตุของใบอื่นจะถูกก๊อปมาซ้ำอยู่ในใบที่เปิดอยู่ */
+  if (!remarkEditableHere(key)) {
+    toast('หมายเหตุนี้เขียนไว้ที่ Job อื่นในรอบเดียวกัน — เปิด Job นั้นแล้วค่อยแก้', true);
+    return Promise.resolve();
+  }
   if (value) state.reasons[key] = value; else delete state.reasons[key];   // เห็นผลทันที ไม่รอ subscription
+  syncCycleRemark(key, value);
   var patch = {};
   patch['reasons/' + key] = value || null;
   return db.update('rounds/' + state.roundId, patch);
+}
+
+/* อัปเดตหมายเหตุที่แคชไว้ในก้อนรวม ให้ตรงกับที่เพิ่งเขียนลง Job ที่เปิดอยู่
+   ไม่ทำแบบนี้ต้องโหลดทั้งรอบใหม่ทุกครั้งที่พิมพ์หมายเหตุหนึ่งช่อง ซึ่งช้าเกินไป */
+function syncCycleRemark(key, value) {
+  if (!cycleCacheFresh()) return;
+  var raw = state.cycleData.raw || {};
+  var all = raw.remarkParts || (raw.remarkParts = {});
+  var kept = (all[key] || []).filter(function (p) { return p.job !== state.roundId; });
+  var txt = String(value == null ? '' : value).trim();
+  if (txt) {
+    var jobCode = (state.roundIndex[state.roundId] || {}).jobCode || state.roundId;
+    kept.push({ job: state.roundId, jobCode: jobCode, text: txt });
+  }
+  if (kept.length) all[key] = kept; else delete all[key];
 }
 
 /* ---------- ประเภทเอกสาร ----------
@@ -8029,13 +8101,24 @@ function buildDocItemTable(title, rows, opts) {
     input.type = 'text';
     input.className = 'reason-in';
     input.setAttribute('data-reason', r.key);
-    input.value = state.reasons[r.key] || '';
+    /* v2.7.5 — โหมดรวมโชว์หมายเหตุของทุกใบ ไม่ใช่แค่ใบที่เปิดอยู่ */
+    input.value = remarkTextOf(r.key);
+    /* แต่แก้ได้เฉพาะหมายเหตุของใบตัวเอง — ถ้าปล่อยให้พิมพ์ทับข้อความรวม
+       saveReason จะเอาทั้งก้อน (รวมของใบอื่น) ยัดลง reasons ของใบที่เปิดอยู่
+       หมายเหตุของใบอื่นก็จะถูกก๊อปมาซ้ำอยู่ในใบเรา แล้วเอกสารรอบหน้าจะเห็นซ้ำสองที่ */
+    if (!remarkEditableHere(r.key)) {
+      input.readOnly = true;
+      input.title = 'หมายเหตุนี้เขียนไว้ที่ Job อื่นในรอบเดียวกัน — เปิด Job นั้นเพื่อแก้';
+    }
     var printed = document.createElement('span');
     printed.className = 'reason-print';
     printed.setAttribute('data-reason-print', r.key);
     printed.textContent = input.value;
     input.oninput = function () { printed.textContent = input.value; };
-    input.onchange = function () { saveReason(r.key, input.value.trim()); };
+    input.onchange = function () {
+      if (input.readOnly) return;
+      saveReason(r.key, input.value.trim());
+    };
     rtd.appendChild(input);
     rtd.appendChild(printed);
     tr.appendChild(rtd);
@@ -8584,7 +8667,7 @@ function exportDocExcel() {
              Math.round((r.act - r.sys) * r.price * 100) / 100,
              r.scanQty, r.manualQty,
              r.diff === 0 ? 'ตรง' : (r.diff < 0 ? 'ขาด' : 'เกิน'),
-             state.reasons[r.key] || '']);
+             remarkTextOf(r.key)]);
   });
 
   var s3 = [UNKNOWN_HEAD.slice()];
