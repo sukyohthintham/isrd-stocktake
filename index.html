@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.7.7">
+<meta name="version" content="2.7.8">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.7.7</title>
+<title>ISRD Stocktake v2.7.8</title>
 
 <style>
 :root{
@@ -1553,7 +1553,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.7.7';
+var APP_VERSION = '2.7.8';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -9956,6 +9956,9 @@ function renderJobs() {
   var branches = {};
   ids.forEach(function (id) {
     var j = state.roundIndex[id];
+    /* ⭐ v2.7.8 — โชว์เฉพาะสาขาที่มี Job ตรงกับแท็บสถานะที่เลือกอยู่
+       (กำลังนับ/รอตรวจสอบ/ปิดแล้ว) ไม่ใช่ทุกสาขาแบบเดิม */
+    if (state.jobFilter !== 'all' && (j.status || 'counting') !== state.jobFilter) return;
     var name = jobBranchName(j);
     if (name && name !== '-') branches[name] = jobBranchLabel(j);
   });
