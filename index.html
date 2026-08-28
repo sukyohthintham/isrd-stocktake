@@ -243,6 +243,10 @@ body.locked .topbar,body.locked .wrap,body.locked .nav{display:none}
 .pc-cat{font-size:13px;color:var(--muted);margin-top:2px;overflow-wrap:break-word}
 /* ราคาขายบนการ์ดสินค้าที่ยิง — เข้มกว่าหมวดหมู่เพราะเป็นตัวเลขที่ต้องอ่านออกทันที */
 .pc-price{font-size:14px;font-weight:800;margin-top:3px;font-variant-numeric:tabular-nums}
+/* v2.x — การ์ดสินค้าตัวใหญ่ อ่านง่ายตอนนับ (ชื่อ/รหัส/หมายเหตุ 22px) — ID ชนะ specificity ของ class เดิม */
+#slCode{font-size:22px}
+#slName{font-size:22px;line-height:1.2}
+#slNoteText{font-size:22px}
 .pc-price.none{font-weight:600;color:var(--muted)}
 .pc-badges{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .pc-badges:empty{display:none}
@@ -5535,7 +5539,7 @@ function showScanHit(key) {
   badges.innerHTML = '';
   var loc = locationOf(key);
   if (loc && loc.pick) badges.appendChild(makeBadge('📍 หยิบ ' + loc.pick, 'loc locbig'));
-  if (loc && loc.refill) badges.appendChild(makeBadge('📦 เติม ' + loc.refill, 'loc'));
+  if (loc && loc.refill) badges.appendChild(makeBadge('📦 เติม ' + loc.refill, 'loc locbig'));
   if (!loc) badges.appendChild(makeBadge('📍 ไม่มี Location', 'grey'));
 
   /* ของเลิกขายไม่ควรเหลืออยู่บนชั้นแล้ว เจอเมื่อไหร่ต้องสะดุดตาทันที
