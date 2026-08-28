@@ -5837,9 +5837,10 @@ function undoLastScan() {
   if (!canScan()) { toast(blockedMessage(), true); return; }
   var last = state.undoStack.pop();
   if (!last) { $('btnUndo').disabled = true; return; }
-  var written = writeScan(last.key, -1, 'scan', 'ยกเลิกการยิงล่าสุด');
+  var undoDelta = -(last.delta || 1);   // ⭐ manual qty>1 ย้อนเต็มจำนวน · scan เดิมไม่มี delta = ถือเป็น 1 (พฤติกรรมเดิม)
+  var written = writeScan(last.key, undoDelta, 'scan', 'ยกเลิกการยิงล่าสุด');
   var p = state.products[last.key] || { name: last.key };
-  pushRecent(p.name, -1, written.rec.ts);
+  pushRecent(p.name, undoDelta, written.rec.ts);
   renderScanTotals();
   showScanHit(last.key);
   flashStage('miss');
@@ -5977,8 +5978,12 @@ function saveManual() {
 
   var key = state.manualPicked;
   var written = writeScan(key, qty, 'manual', reason);
+  state.undoStack.push({ key: key, id: written.id, delta: qty });   // ⭐ ให้กด "ยกเลิกล่าสุด" ได้ · เก็บ delta ไว้ย้อนเต็มจำนวน (qty อาจ >1)
   pushRecent(state.products[key].name + ' (กรอกมือ)', qty, written.rec.ts);
   renderScanTotals();
+  showScanHit(key);          // ⭐ โชว์การ์ดสินค้า + Location badge (📍หยิบ/📦เติม) + โซน เหมือนตอนยิงสแกน
+  renderLivePanel();         // ⭐ รีเฟรชตาราง "ยิงไปแล้วในรอบนี้" ให้แถวกรอกมือ + Location ขึ้นทันที
+  $('btnUndo').disabled = false;   // ⭐ เปิดปุ่มยกเลิกล่าสุด
   toast('บันทึกยอดกรอกมือ ' + state.products[key].code + ' = ' + fmtNum(qty));
   closeManual();
 }
