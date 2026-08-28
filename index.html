@@ -258,6 +258,7 @@ body.locked .topbar,body.locked .wrap,body.locked .nav{display:none}
   font-size:13px;font-weight:700;border:2px solid;line-height:1.2;
 }
 .badge.loc{background:#f1f5f9;color:#334155;border-color:#cbd5e1;font-family:ui-monospace,Consolas,monospace}
+.badge.locbig{font-size:22px;font-weight:800;padding:8px 15px;border-radius:12px;gap:7px;letter-spacing:.3px}  /* Location หยิบ ตัวใหญ่ อ่านชัดตอนถือมือถือห่าง */
 .badge.ok{background:var(--over-bg);color:var(--over);border-color:var(--over)}
 .badge.warn{background:var(--warn-bg);color:#92400e;border-color:var(--warn)}
 .badge.red{background:var(--short-bg);color:var(--short);border-color:var(--short)}
@@ -5533,7 +5534,7 @@ function showScanHit(key) {
   var badges = $('slBadges');
   badges.innerHTML = '';
   var loc = locationOf(key);
-  if (loc && loc.pick) badges.appendChild(makeBadge('📍 หยิบ ' + loc.pick, 'loc'));
+  if (loc && loc.pick) badges.appendChild(makeBadge('📍 หยิบ ' + loc.pick, 'loc locbig'));
   if (loc && loc.refill) badges.appendChild(makeBadge('📦 เติม ' + loc.refill, 'loc'));
   if (!loc) badges.appendChild(makeBadge('📍 ไม่มี Location', 'grey'));
 
