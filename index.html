@@ -5427,6 +5427,9 @@ function swapScanImage(url) {
   /* imageBox() คืนกล่องคลาส imgbox ล้วน ต้องใส่ pc-img กลับ ไม่งั้นรูปจะเล็กจิ๋ว
      เพราะขนาด 112/140px อยู่ในกฎ .prodcard .pc-img เท่านั้น */
   next.classList.add('pc-img');
+  /* ⭐ การ์ดสแกนโชว์รูปใหญ่ (150/220px) — โหลดรูปเต็มความละเอียด ไม่ใช้ thumb 120px
+     (thumb ไว้สำหรับเอกสาร/ลิสต์รูปเยอะเท่านั้น) รูปเดียว + cache → ไม่กระทบ perf */
+  next.setAttribute('data-nothumb', '1');
   old.parentNode.replaceChild(next, old);
 }
 
