@@ -9691,7 +9691,7 @@ function overviewCycles() {
     if (state.overviewStatus !== 'all' && cycleStatus(cid) !== state.overviewStatus) return;
     out.push(cid);
   });
-  return out.sort(function (a, b) { return String(a).localeCompare(String(b), 'th'); });
+  return out.sort(function (a, b) { return (cycleBranch(b).createdAt || 0) - (cycleBranch(a).createdAt || 0); });  // ⭐ เรียงใหม่→เก่า (รอบล่าสุดบนสุด)
 }
 function cycleBranch(cid) {
   var ids = jobsInCycle(cid);
@@ -9762,6 +9762,7 @@ function renderOverview() {
         tds[4].className = s.diffValue > 0 ? 'pos' : (s.diffValue < 0 ? 'neg' : '');
         tds[4].style.textAlign = 'right';
         tds[5].textContent = s.lastTs ? fmtTime(s.lastTs) : '-';
+        tr._lastTs = s.lastTs || 0;
         if (cycleStatus(cid) === 'counting') {
           agg.skuScanned += s.skuScanned;
           agg.skuTotal += s.skuTotal;
@@ -9776,6 +9777,9 @@ function renderOverview() {
         t[2].textContent = '–';
         t[3].textContent = agg.skuTotal ? fmtPercent(agg.skuScanned / agg.skuTotal * 100) : '–';
         t[4].textContent = fmtMoney(agg.diffValue);
+        /* ⭐ เรียงแถวตาม "อัปเดตล่าสุด" ใหม่→เก่า หลังโหลดสถิติครบ */
+        ids.slice().sort(function (a, b) { return (cells[b]._lastTs || 0) - (cells[a]._lastTs || 0); })
+           .forEach(function (cid) { if (cells[cid]) body.insertBefore(cells[cid], totalRow); });
       }
     });
   });
