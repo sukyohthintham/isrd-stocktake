@@ -5565,9 +5565,13 @@ function showScanHit(key) {
   var badges = $('slBadges');
   badges.innerHTML = '';
   var loc = locationOf(key);
-  if (loc && loc.pick) badges.appendChild(makeBadge('📍 หยิบ ' + loc.pick, 'loc locbig'));
-  if (loc && loc.refill) badges.appendChild(makeBadge('📦 เติม ' + loc.refill, 'loc locbig'));
-  if (!loc) badges.appendChild(makeBadge('📍 ไม่มี Location', 'grey'));
+  /* โชว์ หยิบ + เติม เป็นคู่เสมอ (ตัวที่ไม่มีขึ้น "—") — คนนับเห็นครบทั้งจุดหยิบและจุดเติม */
+  if (loc && (loc.pick || loc.refill)) {
+    badges.appendChild(makeBadge('📍 หยิบ ' + (loc.pick || '—'), 'loc locbig'));
+    badges.appendChild(makeBadge('📦 เติม ' + (loc.refill || '—'), 'loc locbig'));
+  } else {
+    badges.appendChild(makeBadge('📍 ไม่มี Location', 'grey'));
+  }
 
   /* ของเลิกขายไม่ควรเหลืออยู่บนชั้นแล้ว เจอเมื่อไหร่ต้องสะดุดตาทันที
      ยังนับให้ตามปกติ — เตือนให้รู้ ไม่ใช่ปฏิเสธการนับ */
