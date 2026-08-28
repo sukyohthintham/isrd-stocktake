@@ -1905,6 +1905,28 @@ var db = (function () {
 
   /* 401/403 = token หมดอายุหรือถูกเพิกถอน ต่ออายุแล้วลองใหม่ครั้งเดียว
      ถ้ายังไม่ผ่านค่อยโยน error ออกไปให้คิวออฟไลน์เก็บไว้ */
+  /* ⭐ fetch + timeout 10 วิ — กัน promise ค้างตลอดเมื่อเน็ตต่อ Firebase ไม่ถึง (ต้นเหตุขึ้น "...") */
+  function fetchT(u, opts) {
+    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var timer = ctrl ? setTimeout(function () { try { ctrl.abort(); } catch (e) {} }, 10000) : null;
+    var o = opts ? Object.assign({}, opts) : {};
+    if (ctrl) o.signal = ctrl.signal;
+    return fetch(u, o).then(
+      function (r) { if (timer) clearTimeout(timer); return r; },
+      function (e) { if (timer) clearTimeout(timer); throw e; }
+    );
+  }
+
+  /* ⭐ ลองใหม่อัตโนมัติเมื่อเน็ตสะดุด/timeout (เฉพาะ network error — ถ้าได้ response แล้ว 4xx จะไม่ retry) */
+  function retryNet(run, tries) {
+    tries = (tries == null) ? 3 : tries;
+    return run().catch(function (err) {
+      if (tries <= 1) throw err;
+      return new Promise(function (res) { setTimeout(res, 800); })
+        .then(function () { return retryNet(run, tries - 1); });
+    });
+  }
+
   function withAuthRetry(run) {
     return run().then(function (r) {
       if (r.status !== 401 && r.status !== 403) return r;
@@ -1913,7 +1935,9 @@ var db = (function () {
   }
 
   function remoteGet(path) {
-    return withAuthRetry(function () { return fetch(url(path)); }).then(function (r) {
+    return retryNet(function () {
+      return withAuthRetry(function () { return fetchT(url(path)); });
+    }).then(function (r) {
       if (!r.ok) throw new Error('HTTP ' + r.status);
       setStatus(true);
       return r.json();
@@ -1922,7 +1946,7 @@ var db = (function () {
 
   function remoteUpdate(path, patch) {
     return withAuthRetry(function () {
-      return fetch(url(path), {
+      return fetchT(url(path), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(patch)
