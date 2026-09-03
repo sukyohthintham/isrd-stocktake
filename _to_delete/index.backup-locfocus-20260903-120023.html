@@ -12657,13 +12657,7 @@ function init() {
     scanInput.value = '';                      // ล้างทันที พร้อมรับตัวถัดไป
     handleScanValue(value);
   });
-  scanInput.addEventListener('blur', function (e) {
-    /* ถ้าผู้ใช้ตั้งใจคลิกไปช่อง/ปุ่มอื่น (เช่น "เก็บทีละโซน") อย่าดึง focus กลับ
-       ดึงกลับเฉพาะตอน focus หลุดไปที่ว่าง (หลังยิงเสร็จ / คลิกพื้นที่ว่าง) */
-    var to = e && e.relatedTarget;
-    if (to && to !== scanInput && /^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(to.tagName || '')) return;
-    setTimeout(focusScan, 30);
-  });
+  scanInput.addEventListener('blur', function () { setTimeout(focusScan, 30); });
   document.addEventListener('visibilitychange', function () { if (!document.hidden) focusScan(); });
 
   /* ช่องคำอธิบายบาร์โค้ดใหม่ — โฟกัสมาที่นี่ได้โดยไม่ถูกช่องยิงดึงกลับ */
