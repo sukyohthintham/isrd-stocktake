@@ -667,15 +667,6 @@ body.no-doc-images .doc .imgbox{display:none}
   .doc .reason-print{display:block !important}
   .doc table th{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 }
-/* ---------- กรอกมือ = popup กลางจอ (แก้ปัญหาจอเด้งลงล่าง/ล้นจอ) ----------
-   เดิม #manualPanel เป็น card ท้ายหน้า พอกดกรอกมือจะ focus ช่องล่างสุด จอเลยเด้งลง
-   แก้เป็น modal ลอยกลางจอ + backdrop, เลื่อนอ่านในกล่องได้ ไม่ดันทั้งหน้าอีก */
-#manualBackdrop{position:fixed;inset:0;z-index:50;background:rgba(15,23,42,.55)}
-#manualPanel{
-  position:fixed;z-index:51;left:50%;top:50%;transform:translate(-50%,-50%);
-  width:min(480px,94vw);max-height:88vh;overflow-y:auto;margin:0;
-  box-shadow:0 18px 50px rgba(2,44,34,.35);
-}
 </style>
 
 <div id="loginScreen">
@@ -963,7 +954,6 @@ body.no-doc-images .doc .imgbox{display:none}
    </div>
   </div>
 
-  <div id="manualBackdrop" style="display:none"></div>
   <div class="card" id="manualPanel" style="display:none">
     <h3>กรอกมือ — สำหรับของที่ป้ายขาดหรือไม่มีบาร์โค้ด</h3>
     <label class="fld" style="margin-bottom:8px">
@@ -5995,7 +5985,6 @@ function openManual() {
   state.manualOpen = true;
   state.manualPicked = null;
   $('manualPanel').style.display = 'block';
-  $('manualBackdrop').style.display = 'block';
   $('manualForm').style.display = 'none';
   $('manualSearch').value = '';
   $('manualResults').innerHTML = '';
@@ -6005,7 +5994,6 @@ function openManual() {
 function closeManual() {
   state.manualOpen = false;
   $('manualPanel').style.display = 'none';
-  $('manualBackdrop').style.display = 'none';
   focusScan();
 }
 
@@ -12692,7 +12680,6 @@ function init() {
   $('btnUndo').onclick = undoLastScan;
   $('btnManual').onclick = openManual;
   $('btnManualClose').onclick = closeManual;
-  $('manualBackdrop').onclick = closeManual;
   $('btnManualSave').onclick = saveManual;
   $('manualSearch').addEventListener('input', renderManualResults);
   $('btnKeyboard').onclick = function () {
