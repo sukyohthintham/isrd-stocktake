@@ -54,9 +54,14 @@ function check(name, ok, got) {
     };
     window.__SYS = { P1: 1300, P2: 215, P3: 80, TF1: 6 };   // = 1,601 พอดี ผลต่างต้องเป็น 0
 
-    /* db.get ปลอม — คืน scans ของแต่ละ Job ให้ loadCycleRaw ตามของจริง
-       นับจำนวนครั้งที่อ่านไว้ด้วย ใช้พิสูจน์ว่ารอบ Job เดียวไม่แตะเน็ตเลย */
-    window.db.get = function (path) {
+    /* db.get / db.getQuiet ปลอม — คืน scans ของแต่ละ Job ให้ loadCycleRaw ตามของจริง
+       นับจำนวนครั้งที่อ่านไว้ด้วย ใช้พิสูจน์ว่ารอบ Job เดียวไม่แตะเน็ตเลย
+
+       ต้องปลอมทั้งสองตัว: loadCycleSystemQty กับ legacyRoundParts อ่านผ่าน getQuiet
+       ถ้าปลอมแต่ db.get ยอดระบบจะไม่มาถึงตัวรวมยอด ทุกแถวจะได้ sys = 0
+       ของที่ควร "ตรง" จะไหลไปกองใน "เกิน" หมด ป๊อปอัป match จะว่าง แล้วข้อ 6 พังทั้งไฟล์
+       (getQuiet ถูกแยกออกมาตอน v2.7.x เทสก็เงียบ ๆ ไปยิงเน็ตจริงตั้งแต่นั้น) */
+    window.__fakeRead = function (path) {
       window.__reads.push(path);
       const m = /^rounds\/([^/]+)\/scans$/.exec(path);
       if (m) {
@@ -79,6 +84,8 @@ function check(name, ok, got) {
       if (/systemQty$/.test(path)) return Promise.resolve(window.__SYS);
       return Promise.resolve(null);
     };
+    window.db.get = window.__fakeRead;
+    window.db.getQuiet = window.__fakeRead;
 
     /* ---------- ตั้งรอบ ---------- */
     window.__seed = function (jobIds, openId) {

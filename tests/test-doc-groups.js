@@ -182,28 +182,64 @@ function check(name, ok, got) {
         { after: r3.afterTotal, expect: r3.beforeItemRows - r3.beforeUnknownDup });
   check('ไม่มีรหัสไหนหายจากเอกสาร', r3.lost.length === 0, r3.lost);
 
-  /* ---------- 4. เคสมุม: ของไม่ใช่สาขานี้ที่ยอดถูกปรับกลับเป็น 0 ---------- */
-  console.log('\n[4] เคสมุม: ยิงของสาขาอื่นแล้วแก้ยอดกลับเป็น 0');
+  /* ---------- 4. แถวผี 0/0 ต้องหายทั้งจากตารางและจากยอดรวม (v2.8.0) ----------
+     ระบบ 0 + นับ 0 = ไม่มีของจริงและไม่ได้นับ ไม่ใช่แถวที่ต้องรายงาน
+     ก่อน v2.8.0 กฎเขียนไว้คนละแบบระหว่างเอกสารกับยอดรวม แถวแบบนี้จึงหายจากตาราง
+     แต่ยังถูกนับเป็น "SKU ที่ตรง" ในยอดรวม ทำให้ %Success เฟ้อ — ต้องไม่เกิดขึ้นอีก */
+  console.log('\n[4] แถวผี 0/0 — ต้องไม่โผล่ทั้งในตารางและในยอดรวม');
   const r4 = await page.evaluate(() => {
     window.__setup([
       { key: 'P1', type: 'product', sys: 10, act: 8 },
-      { key: 'F0', type: 'product', act: 0 }      // known · ไม่ inRound · act 0
+      { key: 'F0', type: 'product', act: 0 }      // known · ไม่ inRound · act 0 = แถวผี
     ]);
     const data = summaryData();
-    const layout = window.__layout();
     const shown = [];
-    layout.forEach(function (b) { if (b.codes) shown.push.apply(shown, b.codes); });
+    window.__layout().forEach(function (b) { if (b.codes) shown.push.apply(shown, b.codes); });
+    const g = data.groups.product;
     return {
       hasRow: data.rows.some(function (r) { return r.code === 'F0'; }),
       inForeign: foreignRows(data).some(function (r) { return r.code === 'F0'; }),
       inUnknown: !!state.unknownKeys.F0,
-      shown: shown
+      shown: shown,
+      skuTotal: g.skuTotal, skuMatch: g.skuMatch, pctSku: pctSkuOf(g)
     };
   });
-  check('summaryData ยังมีแถว F0 อยู่', r4.hasRow === true, r4.hasRow);
+  check('summaryData ตัดแถวผีตั้งแต่ต้นทาง (ไม่มี F0 ใน rows)', r4.hasRow === false, r4.hasRow);
   check('F0 ไม่เข้าตาราง foreign (act = 0)', r4.inForeign === false, r4.inForeign);
   check('F0 ไม่เข้าตาราง unknown', r4.inUnknown === false, r4.inUnknown);
-  check('F0 ยังปรากฏในเอกสาร ไม่หายไปเฉย ๆ', r4.shown.indexOf('F0') >= 0, r4.shown);
+  check('F0 ไม่โผล่ในเอกสาร', r4.shown.indexOf('F0') < 0, r4.shown);
+  /* หัวใจของ v2.8.0 — ยอดรวมต้องเห็นแค่ P1 ใบเดียว ไม่นับ F0 เป็น SKU ที่ตรง
+     ถ้า skuTotal กลายเป็น 2 หรือ pctSku กลายเป็น 50 แปลว่ากฎกลับไปแยกกันอีกแล้ว */
+  check('ยอดรวมไม่นับแถวผี (skuTotal 1 · skuMatch 0 · %Success 0)',
+        r4.skuTotal === 1 && r4.skuMatch === 0 && r4.pctSku === 0,
+        { skuTotal: r4.skuTotal, skuMatch: r4.skuMatch, pctSku: r4.pctSku });
+
+  /* ---------- 4b. กันยอดหาย: ตัดได้เฉพาะ 0/0 สุทธิเท่านั้น ----------
+     กฎแถวผีตัดเฉพาะตอน "ระบบ 0 และนับ 0" พร้อมกัน ของสาขาอื่นที่ยังมียอดนับค้างอยู่
+     ต้องโผล่ครบทุกที่เหมือนเดิม ไม่งั้นกฎนี้จะกลายเป็นตัวทำยอดหายเสียเอง */
+  console.log('\n[4b] กันยอดหาย — ของสาขาอื่นที่ยังมียอดนับจริงต้องไม่ถูกตัด');
+  const r4b = await page.evaluate(() => {
+    window.__setup([
+      { key: 'P1', type: 'product', sys: 10, act: 8 },
+      { key: 'F5', type: 'product', act: 5 }      // known · ไม่ inRound · act 5 = ของจริง
+    ]);
+    const data = summaryData();
+    const shown = [];
+    window.__layout().forEach(function (b) { if (b.codes) shown.push.apply(shown, b.codes); });
+    const g = data.groups.product;
+    return {
+      hasRow: data.rows.some(function (r) { return r.code === 'F5'; }),
+      inForeign: foreignRows(data).some(function (r) { return r.code === 'F5'; }),
+      shown: shown,
+      skuTotal: g.skuTotal, actQty: g.actQty
+    };
+  });
+  check('F5 ยังอยู่ใน summaryData', r4b.hasRow === true, r4b.hasRow);
+  check('F5 เข้าตาราง foreign ตามเดิม', r4b.inForeign === true, r4b.inForeign);
+  check('F5 ยังปรากฏในเอกสาร', r4b.shown.indexOf('F5') >= 0, r4b.shown);
+  check('ยอดรวมยังนับ F5 ครบ (skuTotal 2 · ยอดจริงรวม 13 ชิ้น)',
+        r4b.skuTotal === 2 && r4b.actQty === 13,
+        { skuTotal: r4b.skuTotal, actQty: r4b.actQty });
 
   /* ---------- 5. กลุ่มใหญ่ที่ไม่มีของ = ไม่มีหัวข้อ ---------- */
   console.log('\n[5] กลุ่มใหญ่ที่ไม่มีของ');

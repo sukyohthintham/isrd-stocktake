@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.7.9">
+<meta name="version" content="2.8.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.7.9</title>
+<title>ISRD Stocktake v2.8.0</title>
 
 <style>
 :root{
@@ -1584,7 +1584,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.7.9';
+var APP_VERSION = '2.8.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -7068,6 +7068,27 @@ function blankGroup() {
   };
 }
 
+/* ⭐ กฎ "แถวผี" ของทั้งแอป (v2.8.0) — มีที่เดียวตรงนี้เท่านั้น
+
+   ระบบ 0 และนับได้ 0 = ไม่มีของจริง และไม่ได้นับเจออะไรเลย ไม่ใช่แถวที่ต้องรายงาน
+   ต่อให้มีในทะเบียน Master ก็ตาม เพราะ Master เป็นทะเบียนกลางของทุกสาขา
+   สินค้าที่สาขานี้ไม่ได้ขายจึงมีเป็นพันรายการที่เป็น 0/0 อยู่แล้วโดยธรรมชาติ
+
+   ก่อน v2.8.0 กฎนี้เขียนไว้ 3 ที่ด้วยเงื่อนไขไม่ตรงกัน:
+     - summaryData / summaryDataFrom ตัดเฉพาะตัวที่ "ไม่มีใน Master"
+     - renderDoc ตัด 0/0 ทั้งหมด
+   ผลคือแถว 0/0 ที่รู้จักใน Master หายจากตารางในเอกสาร แต่ยังถูกนับในยอดรวม
+   และเพราะ act === sys (0 = 0) มันถูกนับเป็น "SKU ที่ตรง" ด้วย
+   %Success (SKU) จึงเฟ้อขึ้นตามจำนวนสินค้าที่สาขานี้ไม่ได้ขาย — ยอดกับตารางไม่ตรงกัน
+   (เคสจริง: P1 อย่างเดียวได้ 0% · พอมี F0 ที่เป็น 0/0 มาด้วยกลายเป็น 50%)
+
+   ตั้งแต่ v2.8.0 ตัดที่ต้นทางที่เดียว ทั้งเอกสาร ยอดรวม และ %Success จึงตรงกันเสมอ
+   ระวัง: ตัดเฉพาะ 0/0 สุทธิเท่านั้น ยอดติดลบหรือของที่แอดมินสั่งลบทิ้ง
+   เป็นคนละเคสกัน มีเงื่อนไขของตัวเองอยู่ที่ผู้เรียก ห้ามเอามารวมกับกฎนี้ */
+function isGhostRow(sys, act) {
+  return (Number(sys) || 0) === 0 && (Number(act) || 0) === 0;
+}
+
 function summaryData() {
   var priceField = state.priceField;
   var groups = { product: blankGroup(), notProduct: blankGroup(), total: blankGroup() };
@@ -7089,17 +7110,19 @@ function summaryData() {
        ถ้าหักรายการโอนกลับซ้ำอีกจะกลายเป็นหักสองรอบ */
     var sys = Number(state.systemQty[key]) || 0;
     var act = Number(state.counts[key]) || 0;
+    /* ⭐ v2.8.0 — แถวผี 0/0 ตัดทิ้งเสมอ ไม่ว่าจะมีใน Master หรือไม่ (ดู isGhostRow)
+       เดิมเงื่อนไขข้างล่างตัดเฉพาะตัวที่ไม่มีใน Master ตัวที่มีใน Master จึงรอดเข้ายอดรวม
+       แล้วถูกนับเป็น "SKU ที่ตรง" ทำให้ %Success เฟ้อ ทั้งที่ไม่โผล่ในตารางเอกสารเลย */
+    if (isGhostRow(sys, act)) return;
     /* บาร์โค้ดที่ไม่มีในระบบ (unknown) ที่ยอดสุทธิเหลือ ≤ 0 — ถูกลบทิ้ง ผูกไปที่อื่น
        หรือหักเบิ้ลจนติดลบ — ไม่ใช่ของจริง ถ้าปล่อยไว้ act ติดลบจะกลายเป็น "ขาด"
        ทั้งที่ไม่เคยมีของ ลาก pcShort กับ %Success ให้เพี้ยนทั้งใบ
        ตัวที่แอดมินสั่งลบทิ้งก็ต้องหลุดทั้งใบเหมือนกัน แม้จะยิงซ้ำจนยอดกลับมาเป็นบวก
        เงื่อนไข !sys กันไว้อีกชั้น — มียอดระบบเมื่อไหร่แปลว่าเป็นแถวจริงเสมอ ห้ามตัด
-       และเช็ค state.products[key] ตรง ๆ ไม่ใช่ p เพราะ p มีค่าเสมอ (มี fallback ข้างบน) */
+       และเช็ค state.products[key] ตรง ๆ ไม่ใช่ p เพราะ p มีค่าเสมอ (มี fallback ข้างบน)
+       เคส act === 0 ถูก isGhostRow เก็บไปแล้ว ที่เหลือตรงนี้คือ "ติดลบ" กับ "สั่งลบทิ้ง" */
     if (!sys && !state.products[key] &&
         (act <= 0 || (unknownInfo && unknownInfo.discarded))) return;
-    /* ยอดถูกย้ายออกไปหมดแล้ว (ผูกกับสินค้าอื่น) และไม่มียอดระบบ = ไม่ใช่แถวจริง
-       ถ้าไม่ตัดออก SKU รวมจะถูกนับเกินและ %Success จะเพี้ยน */
-    if (!sys && !act && !state.products[key]) return;
     var price = Number(p[priceField]) || 0;      // ยังไม่กรอกต้นทุน = คิดเป็น 0
     var bucket = p.type === 'notProduct' ? 'notProduct' : 'product';
 
@@ -7264,11 +7287,13 @@ function summaryDataFrom(sysMap, countMap, jobsPerSku, manualMap) {
     var p = state.products[key];
     var sys = Number(sysMap[key]) || 0;
     var act = Number(countMap[key]) || 0;
+    /* ⭐ v2.8.0 — ใช้กฎแถวผีตัวเดียวกับ summaryData() ยอดรวมของโหมด "ทั้งรอบ"
+       จึงตัดแถว 0/0 เหมือนกันเป๊ะ ตัวเลข %Success ของ Job เดียวกับทั้งรอบจะได้เทียบกันได้ */
+    if (isGhostRow(sys, act)) return;
     /* เหมือน summaryData() — บาร์โค้ดที่ไม่มีในระบบและยอดสุทธิ ≤ 0 ไม่ใช่แถวจริง
        ตรงนี้ไม่มีธง discarded ให้ดู (unknownKeys เป็นของรอบเดียว ไม่ใช่ทั้ง cycle)
        แต่ตัวที่ถูกลบทิ้งจะถูกหักจนเหลือ 0 อยู่แล้ว เงื่อนไข act <= 0 จึงครอบคลุม */
     if (!sys && !p && act <= 0) return;
-    if (!sys && !act && !p) return;
     if (!p) p = { code: key, name: 'ไม่มีในระบบ — ' + key, type: 'product', unit: '' };
     var price = Number(p[priceField]) || 0;
     var bucket = p.type === 'notProduct' ? 'notProduct' : 'product';
@@ -8947,11 +8972,9 @@ function renderDoc() {
   var shownElsewhere = {};
   fRows.forEach(function (r) { shownElsewhere[r.key] = 1; });
   Object.keys(state.unknownKeys).forEach(function (k) { shownElsewhere[k] = 1; });
+  /* v2.8.0 — ไม่ต้องกรองแถวผี 0/0 ซ้ำตรงนี้แล้ว summaryData() ตัดให้ตั้งแต่ต้นทาง
+     ตารางในเอกสารกับยอดรวมหัวเอกสารจึงมาจากชุดแถวเดียวกันเสมอ ไม่มีทางไม่ตรงกันอีก */
   var mine = data.rows.filter(function (r) { return r.inRound || !shownElsewhere[r.key]; });
-  /* v2.7.x — ระบบ 0 และยิง 0 (ไม่มีในระบบ + ไม่ได้นับ) ไม่ใช่ของที่ต้องรายงาน
-     ก่อนหน้านี้ diff=0 ทำให้ถูกจัดเป็น "ตรง" ทั้งที่ไม่มีอะไรให้เทียบ — ตัดออกจากเอกสาร
-     (ตัดที่ mine เพื่อให้จำนวนหัวข้อกลุ่มใหญ่ตรงกับตารางย่อยด้วย) */
-  mine = mine.filter(function (r) { return (r.sys || 0) !== 0 || (r.act || 0) !== 0; });
 
   DOC_ITEM_GROUPS.forEach(function (g) {
     var rows = mine.filter(g.pick);
@@ -9924,9 +9947,10 @@ function loadCycleStats(cid) {
     var keys = {};
     Object.keys(sys).forEach(function (k) { keys[k] = 1; });
     Object.keys(counts).forEach(function (k) { keys[k] = 1; });
-    /* ตัดแถวผีออกเหมือน summaryData: ไม่มียอดระบบและยอดนับเหลือ 0 = ไม่ใช่แถวจริง */
+    /* ตัดแถวผีด้วยกฎเดียวกับ summaryData (isGhostRow) — %Success บนหัวรอบนับ
+       กับในเอกสาร/หน้าสรุปจึงเป็นตัวเลขเดียวกันเสมอ */
     var all = Object.keys(keys).filter(function (k) {
-      return (Number(sys[k]) || 0) !== 0 || (counts[k] || 0) !== 0;
+      return !isGhostRow(sys[k], counts[k]);
     });
     var match = all.filter(function (k) { return (Number(sys[k]) || 0) === (counts[k] || 0); }).length;
 
