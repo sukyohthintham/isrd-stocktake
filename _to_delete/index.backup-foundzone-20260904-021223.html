@@ -3351,7 +3351,6 @@ var state = {
   counts: {},            // key -> ยอดรวม (ผลรวม delta)
   scanQty: {},           // key -> ยอดที่มาจากการยิง
   manualQty: {},         // key -> ยอดที่มาจากการกรอกมือ
-  foundZones: {},        // key -> {โซนที่กรองตอนยิง:1} — โซนที่ไปเจอ/นับจริง (จากช่อง "เก็บทีละโซน")
   zoneTotals: {},        // zoneId -> จำนวนชิ้นในโซนนั้น
   manualLog: [],
   scanLog: [],           // ทุกแถว สำหรับ export
@@ -3581,7 +3580,6 @@ function applyScanRecord(id, rec) {
   var key = safeKey(rec.code);
   var delta = Number(rec.delta) || 0;
   state.counts[key] = (state.counts[key] || 0) + delta;
-  if (rec.foundZone) (state.foundZones[key] || (state.foundZones[key] = {}))[rec.foundZone] = 1;
   /* คีย์ด้วย "ชื่อโซน" ไม่ใช่ id — ตัวเลขบนจอหาจากตัวอักษรโซน
      และยอดเก่าที่ลงชื่อโซนเดียวกันไว้จะรวมเข้ากับยอดใหม่เอง */
   var zk = rec.zoneName || rec.zone;
@@ -3684,7 +3682,6 @@ function resetRoundAggregates() {
   state.counts = {};
   state.scanQty = {};
   state.manualQty = {};
-  state.foundZones = {};
   state.zoneTotals = {};
   state.manualLog = [];
   state.scanLog = [];
@@ -4185,9 +4182,6 @@ function writeScan(key, delta, mode, reason, extra) {
   };
   state.lastZoneName = zn;                        // ตัวเลขกับตัวอักษรบนจอต้องตามของชิ้นล่าสุด
   if (reason) rec.reason = reason;
-  /* v2.x — โซนที่ "เก็บทีละโซน" ถูกตั้งไว้ตอนยิง = ที่ที่ไปเจอ/นับจริง (ต่างจากโซนใน master) */
-  var _fz = String(state.locationFilter || '').trim();
-  if (_fz) rec.foundZone = _fz;
   if (extra) Object.keys(extra).forEach(function (f) { rec[f] = extra[f]; });
 
   applyScanRecord(id, rec);                       // นับในเครื่องทันที ไม่รอเน็ต
@@ -5159,12 +5153,6 @@ function zonePrefixOf(loc) {
    ทุกที่ที่ต้องรู้โซนของสินค้าต้องเรียกตัวนี้ ห้ามคำนวณเองซ้ำ ไม่งั้นจอกับฐานไม่ตรงกัน */
 function zoneNameForKey(key) {
   return zonePrefixOf((locationOf(key) || {}).pick) || NO_ZONE_NAME;
-}
-
-/* โซนที่ "เก็บ/นับจริง" ต่อ SKU = ค่าที่พิมพ์ในช่อง "เก็บทีละโซน" ตอนยิง (อาจมีหลายค่า) */
-function foundZoneText(key) {
-  var m = state.foundZones[key];
-  return m ? Object.keys(m).sort().join(', ') : '';
 }
 
 /* รายชื่อโซนที่มีของให้นับจริงในรอบนี้ — ไล่จาก SKU ในรอบนับ ไม่ใช่ทั้งบริษัทหมื่นหกพันตัว
@@ -7709,12 +7697,12 @@ function buildSummaryExcel(data) {
 
   /* คอลัมน์หมายเหตุ (v2.7.4) — ไฟล์ของหน้าเอกสารมีมาตั้งแต่เดิม ไฟล์นี้เพิ่งได้
      ทั้งสองไฟล์อ่านจาก reasons/{key} ก้อนเดียวกัน ตัวเลขกับข้อความจึงตรงกันเสมอ */
-  var s2 = [['รหัสสินค้า', 'ชื่อสินค้า', 'Location', 'โซนที่เก็บ', 'Status', 'หน่วย', 'ประเภท',
+  var s2 = [['รหัสสินค้า', 'ชื่อสินค้า', 'Location', 'โซน', 'Status', 'หน่วย', 'ประเภท',
              'จำนวนระบบ', 'จำนวนจริง', 'ผลต่าง',
              'จากการยิง', 'จากการกรอกมือ', priceLabel, 'มูลค่าระบบ', 'มูลค่าจริง',
              'หมายเหตุ']];
   data.rows.forEach(function (r) {
-    s2.push([r.code, r.name, r.location || '', foundZoneText(r.key), r.status || DEFAULT_STATUS, r.unit,
+    s2.push([r.code, r.name, r.location || '', zoneNameForKey(r.key), r.status || DEFAULT_STATUS, r.unit,
              r.type === 'notProduct' ? 'Not Product' : 'Product',
              r.sys, r.act, r.diff, r.scanQty, r.manualQty, r.price,
              Math.round(r.sys * r.price * 100) / 100, Math.round(r.act * r.price * 100) / 100,
@@ -10623,7 +10611,7 @@ function refreshNav() {
    ชีทสรุปรวมอยู่บนสุด แล้วตามด้วยชีทของแต่ละ Job
    ใช้ตัวเขียน xlsx ของโปรเจกต์เอง — ไม่มี SheetJS ในไฟล์นี้ ไม่เคยมี
    ============================================================ */
-var EXPORT_JOB_HEAD = ['รหัสสินค้า', 'ชื่อสินค้า', 'Location', 'โซนที่เก็บ', 'Status', 'ประเภท',
+var EXPORT_JOB_HEAD = ['รหัสสินค้า', 'ชื่อสินค้า', 'Location', 'โซน', 'Status', 'ประเภท',
                        'ยอดระบบ', 'ยิงจริง', 'ผลต่าง', 'ราคา', 'มูลค่าระบบ', 'มูลค่าจริง', 'สถานะการนับ'];
 
 function exportJobsExcel(ids, cycleLabel) {
@@ -10637,12 +10625,8 @@ function exportJobsExcel(ids, cycleLabel) {
     var byCycle = {};
     parts.forEach(function (p) {
       var cid = cycleOf(state.roundIndex[p.id]);
-      var c = byCycle[cid] || (byCycle[cid] = { cid: cid, sys: p.sys, counts: {}, foundZones: {}, jobs: [] });
+      var c = byCycle[cid] || (byCycle[cid] = { cid: cid, sys: p.sys, counts: {}, jobs: [] });
       Object.keys(p.counts).forEach(function (k) { c.counts[k] = (c.counts[k] || 0) + p.counts[k]; });
-      Object.keys(p.foundZones || {}).forEach(function (k) {
-        var _t = c.foundZones[k] || (c.foundZones[k] = {});
-        Object.keys(p.foundZones[k]).forEach(function (z) { _t[z] = 1; });
-      });
       c.jobs.push(p);
     });
     var cids = Object.keys(byCycle).sort();
@@ -10675,7 +10659,7 @@ function exportJobsExcel(ids, cycleLabel) {
 
       var rows = [EXPORT_JOB_HEAD.slice()];
       d.rows.forEach(function (r) {
-        rows.push([r.code, r.name, r.location || '', (c.foundZones[r.key] ? Object.keys(c.foundZones[r.key]).sort().join(', ') : ''), r.status || DEFAULT_STATUS,
+        rows.push([r.code, r.name, r.location || '', zoneNameForKey(r.key), r.status || DEFAULT_STATUS,
                    r.type === 'notProduct' ? 'Not Product' : 'Product',
                    r.sys, r.act, r.diff, r.price,
                    Math.round(r.sys * r.price * 100) / 100,
@@ -10756,16 +10740,14 @@ function loadJobsRaw(ids) {
       db.get('rounds/' + id + '/scans')
     ]).then(function (res) {
       var counts = {};
-      var foundZones = {};
       var scans = res[1] || {};
       Object.keys(scans).forEach(function (sid) {
         var rec = scans[sid];
         if (!rec) return;
         var k = safeKey(rec.code);
         counts[k] = (counts[k] || 0) + (Number(rec.delta) || 0);
-        if (rec.foundZone) (foundZones[k] || (foundZones[k] = {}))[rec.foundZone] = 1;
       });
-      return { id: id, sys: res[0] || {}, counts: counts, foundZones: foundZones };
+      return { id: id, sys: res[0] || {}, counts: counts };
     });
   }));
 }
