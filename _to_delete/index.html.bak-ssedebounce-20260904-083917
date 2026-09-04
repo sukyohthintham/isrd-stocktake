@@ -1929,20 +1929,6 @@ var db = (function () {
   var statusCb = null;
   function setStatus(ok, why) { if (statusCb) statusCb(!!ok, why || ''); }
 
-  /* สาย SSE reconnect เองเป็นระยะ (idle/เน็ตสะดุด) — es.onerror ยิงทุกครั้งแม้แค่กำลังต่อใหม่
-     ถ้า setStatus(false) ทันทีทุกครั้ง banner จะเด้ง "ออฟไลน์" พร่ำเพรื่อทั้งที่ต่อกลับได้ใน 2-3 วิ
-     หน่วงไว้: ปิดจริง (readyState CLOSED) = ออฟไลน์ทันที · แค่ reconnect = รอ 6 วิ ถ้ายังไม่กลับค่อยประกาศ */
-  var streamOffTimer = null;
-  function streamOk() {
-    if (streamOffTimer) { clearTimeout(streamOffTimer); streamOffTimer = null; }
-    setStatus(true);
-  }
-  function streamError(es) {
-    if (es && es.readyState === 2) { setStatus(false, 'stream'); return; }   // ปิดจริง
-    if (streamOffTimer) return;                                              // รอ reconnect อยู่แล้ว
-    streamOffTimer = setTimeout(function () { streamOffTimer = null; setStatus(false, 'stream'); }, 6000);
-  }
-
   /* 401/403 = token หมดอายุหรือถูกเพิกถอน ต่ออายุแล้วลองใหม่ครั้งเดียว
      ถ้ายังไม่ผ่านค่อยโยน error ออกไปให้คิวออฟไลน์เก็บไว้ */
   /* ⭐ fetch + timeout 10 วิ — กัน promise ค้างตลอดเมื่อเน็ตต่อ Firebase ไม่ถึง (ต้นเหตุขึ้น "...") */
@@ -2054,8 +2040,8 @@ var db = (function () {
       es.addEventListener('auth_revoked', function () {
         session.renew().then(open, function () { setStatus(false, 'auth'); });
       });
-      es.onopen = streamOk;
-      es.onerror = function () { streamError(es); };   // ยังไม่ประกาศ offline ถ้าแค่กำลัง reconnect
+      es.onopen = function () { setStatus(true); };
+      es.onerror = function () { setStatus(false, 'stream'); };   // EventSource ต่อใหม่ให้เอง
     }
     open();
     return trackStream({
@@ -2151,8 +2137,8 @@ var db = (function () {
           es.addEventListener('auth_revoked', function () {
             session.renew().then(openChild, function () { setStatus(false, 'auth'); });
           });
-          es.onopen = streamOk;
-          es.onerror = function () { streamError(es); };
+          es.onopen = function () { setStatus(true); };
+          es.onerror = function () { setStatus(false, 'stream'); };
         }
         openChild();
         /* seen[] คงไว้ตอนต่อสายใหม่ ไม่งั้นจะยิงซ้ำทุกแถวที่เคยเห็นแล้ว */
