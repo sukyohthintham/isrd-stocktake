@@ -8202,7 +8202,7 @@ var DOC_ITEM_GROUPS = [
 var DOC_ITEM_SPLITS = [
   { label: 'ขาด', pick: function (r) { return r.diff < 0; } },
   { label: 'เกิน', pick: function (r) { return r.diff > 0; } },
-  { label: 'ตรง', pick: function (r) { return r.diff === 0 && ((r.sys || 0) !== 0 || (r.act || 0) !== 0); } }
+  { label: 'ตรง', pick: function (r) { return r.diff === 0; } }
 ];
 
 /* หัวข้อกลุ่มใหญ่ ต้องเด่นกว่าหัวตารางย่อย (.tbl-title) ไม่งั้นอ่านไม่ออกว่าอันไหนคุมอันไหน
@@ -8793,10 +8793,6 @@ function renderDoc() {
   fRows.forEach(function (r) { shownElsewhere[r.key] = 1; });
   Object.keys(state.unknownKeys).forEach(function (k) { shownElsewhere[k] = 1; });
   var mine = data.rows.filter(function (r) { return r.inRound || !shownElsewhere[r.key]; });
-  /* v2.7.x — ระบบ 0 และยิง 0 (ไม่มีในระบบ + ไม่ได้นับ) ไม่ใช่ของที่ต้องรายงาน
-     ก่อนหน้านี้ diff=0 ทำให้ถูกจัดเป็น "ตรง" ทั้งที่ไม่มีอะไรให้เทียบ — ตัดออกจากเอกสาร
-     (ตัดที่ mine เพื่อให้จำนวนหัวข้อกลุ่มใหญ่ตรงกับตารางย่อยด้วย) */
-  mine = mine.filter(function (r) { return (r.sys || 0) !== 0 || (r.act || 0) !== 0; });
 
   DOC_ITEM_GROUPS.forEach(function (g) {
     var rows = mine.filter(g.pick);
@@ -8886,7 +8882,7 @@ function exportDocExcel() {
              Math.round(r.sys * r.price * 100) / 100, Math.round(r.act * r.price * 100) / 100,
              Math.round((r.act - r.sys) * r.price * 100) / 100,
              r.scanQty, r.manualQty,
-             r.diff === 0 ? (((r.sys || 0) === 0 && (r.act || 0) === 0) ? '-' : 'ตรง') : (r.diff < 0 ? 'ขาด' : 'เกิน'),
+             r.diff === 0 ? 'ตรง' : (r.diff < 0 ? 'ขาด' : 'เกิน'),
              remarkTextOf(r.key)]);
   });
 
