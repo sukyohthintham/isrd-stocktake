@@ -1933,10 +1933,9 @@ var db = (function () {
      ถ้ายังไม่ผ่านค่อยโยน error ออกไปให้คิวออฟไลน์เก็บไว้ */
   /* ⭐ fetch + timeout 10 วิ — กัน promise ค้างตลอดเมื่อเน็ตต่อ Firebase ไม่ถึง (ต้นเหตุขึ้น "...") */
   function fetchT(u, opts) {
-    var o = opts ? Object.assign({}, opts) : {};
-    var ms = o.timeoutMs || 10000; delete o.timeoutMs;   // ⭐ ปรับ timeout ต่อคำขอได้ (ก้อนใหญ่ใช้ยาวขึ้น)
     var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-    var timer = ctrl ? setTimeout(function () { try { ctrl.abort(); } catch (e) {} }, ms) : null;
+    var timer = ctrl ? setTimeout(function () { try { ctrl.abort(); } catch (e) {} }, 10000) : null;
+    var o = opts ? Object.assign({}, opts) : {};
     if (ctrl) o.signal = ctrl.signal;
     return fetch(u, o).then(
       function (r) { if (timer) clearTimeout(timer); return r; },
@@ -1961,16 +1960,14 @@ var db = (function () {
     });
   }
 
-  function remoteGet(path, opts) {
-    opts = opts || {};
-    var quiet = !!opts.quiet, tmo = opts.timeout || 10000;   // ⭐ quiet = ไม่ตัดสิน online/offline (โหลดเบื้องหลัง)
+  function remoteGet(path) {
     return retryNet(function () {
-      return withAuthRetry(function () { return fetchT(url(path), { timeoutMs: tmo }); });
+      return withAuthRetry(function () { return fetchT(url(path)); });
     }).then(function (r) {
       if (!r.ok) throw new Error('HTTP ' + r.status);
-      if (!quiet) setStatus(true);
+      setStatus(true);
       return r.json();
-    }).catch(function (err) { if (!quiet) setStatus(false, String(err && err.message || err)); throw err; });
+    }).catch(function (err) { setStatus(false, String(err && err.message || err)); throw err; });
   }
 
   function remoteUpdate(path, patch) {
@@ -2070,13 +2067,6 @@ var db = (function () {
 
     get: function (path) {
       if (REMOTE_MODE) return remoteGet(path);
-      return Promise.resolve(readLocal(path));
-    },
-
-    /* โหลดเบื้องหลังแบบเงียบ — timeout ยาวสำหรับก้อนใหญ่ (scans) และไม่ตัดสิน online/offline
-       ใช้กับการ์ด/สถิติ ที่ล้มเหลวได้โดยไม่ควรเด้ง banner ออฟไลน์ */
-    getQuiet: function (path) {
-      if (REMOTE_MODE) return remoteGet(path, { quiet: true, timeout: 25000 });
       return Promise.resolve(readLocal(path));
     },
 
@@ -2826,7 +2816,7 @@ function mergeSysMax(target, src) {
 
 function legacyRoundParts(cid, field) {
   return Promise.all(jobsInCycle(cid).map(function (id) {
-    return db.getQuiet('rounds/' + id + '/' + field)
+    return db.get('rounds/' + id + '/' + field)
       .then(function (d) { return { id: id, data: d || {} }; })
       .catch(function () { return { id: id, data: {} }; });
   }));
@@ -2834,7 +2824,7 @@ function legacyRoundParts(cid, field) {
 
 function loadCycleSystemQty(cid) {
   if (!cid) return Promise.resolve({});
-  return db.getQuiet('cycles/' + cid + '/systemQty').then(function (data) {
+  return db.get('cycles/' + cid + '/systemQty').then(function (data) {
     if (data && Object.keys(data).length) return data;
     if (cycleMigrated(cid)) return data || {};       // ย้ายแล้วและว่างจริง
     return legacyRoundParts(cid, 'systemQty').then(function (parts) {
@@ -9709,58 +9699,35 @@ function isStaleJob(job) {
 
 /* ความคืบหน้าของ Job อื่นต้องอ่านจากฐานเอง เพราะ subscription ผูกกับ Job ที่เปิดอยู่เท่านั้น
    อ่านครั้งเดียวแล้วเก็บไว้ ไม่งั้นเลื่อนรายการทีก็ยิงคำขอใหม่ทุกครั้ง */
-/* คำนวณสถิติใบนับจากก้อน scans — แยกออกมาใช้ร่วมทั้งโหลดสดและอ่านแคช */
-function computeJobStats(data) {
-  var scans = data || {};
-  var counts = {}, lastTs = 0;
-  Object.keys(scans).forEach(function (sid) {
-    var rec = scans[sid];
-    if (!rec) return;
-    var k = safeKey(rec.code);
-    counts[k] = (counts[k] || 0) + (Number(rec.delta) || 0);
-    if ((rec.ts || 0) > lastTs) lastTs = rec.ts || 0;
-  });
-  /* การ์ด Job บอกได้แค่ "ใบนี้ทำอะไรไปเท่าไหร่" — ยอดระบบเป็นของทั้งรอบนับ
-     ความแม่น (%Success) จึงย้ายไปอยู่ที่หัวรอบนับแทน (ข้อ F5) */
-  return {
-    counts: counts,
-    skuScanned: Object.keys(counts).filter(function (k) { return counts[k] !== 0; }).length,
-    pieces: Object.keys(counts).reduce(function (s, k) { return s + counts[k]; }, 0),
-    lastTs: lastTs
-  };
-}
-
-/* อ่านแคชสถิติใบนับแบบทันที (หน่วยความจำ → localStorage) — การ์ดขึ้นเลขได้เลย ไม่ค้าง "..." */
-function cachedJobStats(id) {
-  if (state.jobStats[id]) return state.jobStats[id];
-  try {
-    var raw = localStorage.getItem('jobStats:' + id);
-    if (raw) { var s = JSON.parse(raw); if (s && s.counts) { state.jobStats[id] = s; return s; } }
-  } catch (e) {}
-  return null;
-}
-
-/* โหลดสถิติสดจากฐาน (เงียบ ไม่กระทบ online/offline) แล้วเก็บลงแคชทั้งสองชั้น */
-function refreshJobStats(id) {
-  return db.getQuiet('rounds/' + id + '/scans').then(function (data) {
-    var stat = computeJobStats(data);
+function loadJobStats(id) {
+  if (state.jobStats[id]) return Promise.resolve(state.jobStats[id]);
+  return db.get('rounds/' + id + '/scans').then(function (data) {
+    var scans = data || {};
+    var counts = {}, lastTs = 0;
+    Object.keys(scans).forEach(function (sid) {
+      var rec = scans[sid];
+      if (!rec) return;
+      var k = safeKey(rec.code);
+      counts[k] = (counts[k] || 0) + (Number(rec.delta) || 0);
+      if ((rec.ts || 0) > lastTs) lastTs = rec.ts || 0;
+    });
+    /* การ์ด Job บอกได้แค่ "ใบนี้ทำอะไรไปเท่าไหร่" — ยอดระบบเป็นของทั้งรอบนับ
+       ความแม่น (%Success) จึงย้ายไปอยู่ที่หัวรอบนับแทน (ข้อ F5) */
+    var stat = {
+      counts: counts,
+      skuScanned: Object.keys(counts).filter(function (k) { return counts[k] !== 0; }).length,
+      pieces: Object.keys(counts).reduce(function (s, k) { return s + counts[k]; }, 0),
+      lastTs: lastTs
+    };
     state.jobStats[id] = stat;
-    try { localStorage.setItem('jobStats:' + id, JSON.stringify(stat)); } catch (e) {}
     return stat;
   }).catch(function () { return null; });
-}
-
-function loadJobStats(id) {
-  var c = cachedJobStats(id);
-  if (c) return Promise.resolve(c);
-  return refreshJobStats(id);
 }
 
 /* ยิงเพิ่ม/ลบ Job แล้วสถิติเก่าใช้ไม่ได้ ต้องทิ้งของรอบที่ Job นั้นสังกัดด้วย */
 function dropJobStats(id) {
   if (!id) return;
   delete state.jobStats[id];
-  try { localStorage.removeItem('jobStats:' + id); } catch (e) {}
   delete state.cycleStats[cycleOf(state.roundIndex[id])];
 }
 
@@ -10364,9 +10331,8 @@ function renderJobCard(id, list) {
 
     /* แถบความคืบหน้าคือ "ใบนี้ยิงไปกี่ % ของชิ้นที่ยิงได้ทั้งรอบ"
        ไม่ใช่เทียบกับยอดระบบ เพราะยอดระบบเป็นของทั้งรอบนับ ไม่ใช่ของใบนี้ */
-    /* v2.7.x — การ์ดต้องไม่ค้าง "..." บนเน็ตช้า: โชว์ค่าจากแคชทันที แล้วรีเฟรชเบื้องหลัง
-       รีเฟรชใช้ getQuiet (ไม่เด้ง banner ออฟไลน์) ถ้าโหลดไม่สำเร็จก็ยังเห็นค่าเดิม */
-    function applyStat(stat, cyc) {
+    Promise.all([loadJobStats(id), loadCycleStats(cycleOf(j))]).then(function (res) {
+      var stat = res[0], cyc = res[1];
       if (!stat) return;
       card.querySelector('[data-prog=sku]').textContent = fmtNum(stat.skuScanned);
       card.querySelector('[data-prog=pieces]').textContent = fmtNum(stat.pieces);
@@ -10374,21 +10340,7 @@ function renderJobCard(id, list) {
         stat.lastTs ? fmtTime(stat.lastTs) : 'ยังไม่ได้ยิง';
       var share = (cyc && cyc.pieces) ? Math.round(stat.pieces / cyc.pieces * 100) : 0;
       fill.style.width = Math.min(100, share) + '%';
-    }
-    var cachedStat = cachedJobStats(id);
-    if (cachedStat) applyStat(cachedStat, state.cycleStats[cycleOf(j)]);
-    Promise.all([refreshJobStats(id), loadCycleStats(cycleOf(j))]).then(function (res) {
-      var stat = res[0], cyc = res[1];
-      if (stat) applyStat(stat, cyc);
-      else if (!cachedStat) {
-        ['sku', 'pieces', 'success'].forEach(function (pk) {
-          var el = card.querySelector('[data-prog=' + pk + ']');
-          if (el) el.textContent = '⟳';
-        });
-        card.title = 'โหลดสถิติไม่สำเร็จ — เปิดใบนี้แล้วกลับมา หรือรีเฟรชหน้าอีกครั้ง';
-      }
-    }).catch(function () {});
-
+    });
   });
 }
 
