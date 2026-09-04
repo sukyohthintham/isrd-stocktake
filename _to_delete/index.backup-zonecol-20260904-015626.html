@@ -7697,12 +7697,12 @@ function buildSummaryExcel(data) {
 
   /* คอลัมน์หมายเหตุ (v2.7.4) — ไฟล์ของหน้าเอกสารมีมาตั้งแต่เดิม ไฟล์นี้เพิ่งได้
      ทั้งสองไฟล์อ่านจาก reasons/{key} ก้อนเดียวกัน ตัวเลขกับข้อความจึงตรงกันเสมอ */
-  var s2 = [['รหัสสินค้า', 'ชื่อสินค้า', 'Location', 'โซน', 'Status', 'หน่วย', 'ประเภท',
+  var s2 = [['รหัสสินค้า', 'ชื่อสินค้า', 'Location', 'Status', 'หน่วย', 'ประเภท',
              'จำนวนระบบ', 'จำนวนจริง', 'ผลต่าง',
              'จากการยิง', 'จากการกรอกมือ', priceLabel, 'มูลค่าระบบ', 'มูลค่าจริง',
              'หมายเหตุ']];
   data.rows.forEach(function (r) {
-    s2.push([r.code, r.name, r.location || '', zoneNameForKey(r.key), r.status || DEFAULT_STATUS, r.unit,
+    s2.push([r.code, r.name, r.location || '', r.status || DEFAULT_STATUS, r.unit,
              r.type === 'notProduct' ? 'Not Product' : 'Product',
              r.sys, r.act, r.diff, r.scanQty, r.manualQty, r.price,
              Math.round(r.sys * r.price * 100) / 100, Math.round(r.act * r.price * 100) / 100,
@@ -7751,7 +7751,7 @@ function buildSummaryExcel(data) {
 
   var blob = buildXlsx([
     { name: 'สรุป', rows: s1, widths: [16, 12, 12, 13, 10, 10, 10, 14, 14, 14, 14, 14] },
-    { name: 'รายสินค้า', rows: s2, widths: [18, 34, 16, 8, 18, 10, 12, 12, 12, 10, 11, 14, 12, 14, 14, 30] },
+    { name: 'รายสินค้า', rows: s2, widths: [18, 34, 16, 18, 10, 12, 12, 12, 10, 11, 14, 12, 14, 14, 30] },
     { name: 'ประวัติการนับ', rows: s3,
       widths: histAll ? [22, 16, 18, 36, 16, 14, 10, 13, 22, 24]
                       : [22, 18, 36, 16, 14, 10, 13, 22, 24] },
@@ -10611,7 +10611,7 @@ function refreshNav() {
    ชีทสรุปรวมอยู่บนสุด แล้วตามด้วยชีทของแต่ละ Job
    ใช้ตัวเขียน xlsx ของโปรเจกต์เอง — ไม่มี SheetJS ในไฟล์นี้ ไม่เคยมี
    ============================================================ */
-var EXPORT_JOB_HEAD = ['รหัสสินค้า', 'ชื่อสินค้า', 'Location', 'โซน', 'Status', 'ประเภท',
+var EXPORT_JOB_HEAD = ['รหัสสินค้า', 'ชื่อสินค้า', 'Location', 'Status', 'ประเภท',
                        'ยอดระบบ', 'ยิงจริง', 'ผลต่าง', 'ราคา', 'มูลค่าระบบ', 'มูลค่าจริง', 'สถานะการนับ'];
 
 function exportJobsExcel(ids, cycleLabel) {
@@ -10659,7 +10659,7 @@ function exportJobsExcel(ids, cycleLabel) {
 
       var rows = [EXPORT_JOB_HEAD.slice()];
       d.rows.forEach(function (r) {
-        rows.push([r.code, r.name, r.location || '', zoneNameForKey(r.key), r.status || DEFAULT_STATUS,
+        rows.push([r.code, r.name, r.location || '', r.status || DEFAULT_STATUS,
                    r.type === 'notProduct' ? 'Not Product' : 'Product',
                    r.sys, r.act, r.diff, r.price,
                    Math.round(r.sys * r.price * 100) / 100,
@@ -10669,7 +10669,7 @@ function exportJobsExcel(ids, cycleLabel) {
                                           : (r.diff === 0 ? 'ตรง' : (r.diff < 0 ? 'ขาด' : 'เกิน')))]);
       });
       sheets.push({ name: sheetNameFor(cid, sheets.length),
-                    rows: rows, widths: [18, 34, 16, 8, 18, 12, 11, 10, 10, 11, 14, 14, 16] });
+                    rows: rows, widths: [18, 34, 16, 18, 12, 11, 10, 10, 11, 14, 14, 16] });
     });
 
     summary.push([]);
