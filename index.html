@@ -676,6 +676,20 @@ body.no-doc-images .doc .imgbox{display:none}
   width:min(480px,94vw);max-height:88vh;overflow-y:auto;margin:0;
   box-shadow:0 18px 50px rgba(2,44,34,.35);
 }
+
+/* ค้นหาใน Master (สินค้า) และ Location — เด้งผลเป็นป็อปอัปกลางจอ
+   สไตล์เดียวกับโมดัล "กรอกมือ" ไม่ต้องสกรอลลงไปท้าย card ยาว ๆ อีก */
+#searchBackdrop{position:fixed;inset:0;z-index:50;background:rgba(15,23,42,.55)}
+#searchPopClose{
+  position:fixed;z-index:53;top:14px;right:16px;width:42px;height:42px;
+  border:none;border-radius:50%;background:#0f766e;color:#fff;
+  font-size:18px;font-weight:800;cursor:pointer;
+  align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(2,44,34,.4)}
+.clist.search-pop{
+  position:fixed;z-index:51;left:50%;top:50%;transform:translate(-50%,-50%);
+  width:min(600px,94vw);max-height:82vh;overflow-y:auto;margin:0;
+  background:#fff;border-radius:14px;padding:14px;
+  box-shadow:0 18px 50px rgba(2,44,34,.35)}
 </style>
 
 <div id="loginScreen">
@@ -963,6 +977,8 @@ body.no-doc-images .doc .imgbox{display:none}
    </div>
   </div>
 
+  <div id="searchBackdrop" style="display:none"></div>
+  <button id="searchPopClose" type="button" style="display:none" aria-label="ปิด">✕</button>
   <div id="manualBackdrop" style="display:none"></div>
   <div class="card" id="manualPanel" style="display:none">
     <h3>กรอกมือ — สำหรับของที่ป้ายขาดหรือไม่มีบาร์โค้ด</h3>
@@ -6003,6 +6019,29 @@ function pickManual(key) {
   else $('manualReason').focus();
 }
 
+/* ป็อปอัปผลค้นหา Master/Location — ติด/ถอด class ให้ลิสต์เดิม ไม่ย้าย DOM
+   จึงไม่กระทบ renderMaster / renderLocationMaster ที่เขียนทับ innerHTML ตลอด */
+function setSearchPop(el, on) {
+  if (!el) return;
+  el.classList.toggle('search-pop', !!on);
+  refreshSearchBackdrop();
+}
+function refreshSearchBackdrop() {
+  var any = document.querySelector('.clist.search-pop');
+  if ($('searchBackdrop')) $('searchBackdrop').style.display = any ? 'block' : 'none';
+  if ($('searchPopClose')) $('searchPopClose').style.display = any ? 'flex' : 'none';
+}
+function closeSearchPop() {
+  if ($('masterSearch')) $('masterSearch').value = '';
+  if ($('locSearch')) $('locSearch').value = '';
+  document.querySelectorAll('.clist.search-pop').forEach(function (e) { e.classList.remove('search-pop'); });
+  if (state.page === 'master') {
+    if (state.masterTab === 'locations') renderLocationMaster();
+    else renderMaster();
+  }
+  refreshSearchBackdrop();
+}
+
 function openManual() {
   state.manualOpen = true;
   state.manualPicked = null;
@@ -6668,6 +6707,9 @@ function renderMaster() {
   $('masterLocations').style.display = tab === 'locations' ? 'block' : 'none';
   $('masterNewcodes').style.display = tab === 'newcodes' ? 'block' : 'none';
   $('masterUsers').style.display = tab === 'users' ? 'block' : 'none';
+  /* ออกจากแท็บไหน ให้ปิดป็อปอัปของแท็บนั้นก่อน กัน panel แบบ fixed ค้างลอยอยู่ */
+  if (tab !== 'products') setSearchPop($('masterList'), false);
+  if (tab !== 'locations') setSearchPop($('locList'), false);
   if (tab === 'branches') { renderBranchMaster(); return; }
   if (tab === 'locations') { renderLocationMaster(); return; }
   if (tab === 'newcodes') { renderNewCodes(); return; }
@@ -6687,6 +6729,8 @@ function renderMaster() {
   var total = Object.keys(state.products).length;
   var list = $('masterList');
   list.innerHTML = '';
+  /* มีคำค้น = เด้งกลางจอ · ไม่มีคำค้น (แค่กดตัวกรอง) = แสดงแบบเดิมในหน้า */
+  setSearchPop(list, String($('masterSearch').value || '').trim() !== '');
 
   /* ปุ่มดาวน์โหลด Template ยึดตามตัวกรองอย่างเดียว บอกจำนวนจริงไว้ข้างปุ่มเลย
      ไม่งั้นพอลิสต์ถูกซ่อนตอนยังไม่ค้นหา คนจะเดาไม่ออกว่าไฟล์จะได้กี่แถว */
@@ -11531,6 +11575,7 @@ function renderLocationMaster() {
   var term = String($('locSearch').value || '').trim().toUpperCase();
   var host = $('locList');
   host.innerHTML = '';
+  setSearchPop(host, term !== '');
 
   /* search-to-reveal เหมือนหน้าสินค้า — สินค้ามีหมื่นห้าพันตัว ถล่มลิสต์ตั้งแต่เปิดหน้าไม่ช่วยใคร
      คนเข้ามาหน้านี้เพื่อ "ตั้ง Location ให้ตัวใดตัวหนึ่ง" ไม่ใช่มาไล่อ่านทั้งบริษัท */
@@ -12733,6 +12778,11 @@ function init() {
 
   /* ---- Master ---- */
   $('masterSearch').addEventListener('input', renderMaster);
+  $('searchBackdrop').onclick = closeSearchPop;
+  $('searchPopClose').onclick = closeSearchPop;
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && document.querySelector('.clist.search-pop')) closeSearchPop();
+  });
   document.querySelectorAll('[data-mfilter]').forEach(function (b) {
     b.onclick = function () { state.masterFilter = b.getAttribute('data-mfilter'); renderMaster(); };
   });
