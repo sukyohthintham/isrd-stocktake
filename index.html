@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.7.8">
+<meta name="version" content="2.7.9">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.7.8</title>
+<title>ISRD Stocktake v2.7.9</title>
 
 <style>
 :root{
@@ -1584,7 +1584,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.7.8';
+var APP_VERSION = '2.7.9';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -1685,9 +1685,24 @@ var session = (function () {
     timer = setTimeout(function () { refresh().catch(function () {}); }, ms);
   }
 
+  /* ⭐ ต่ออายุ "สายเดียว" — กันพายุ refresh token
+     เดิม ทุกคำขอที่โดน 401 เรียก renew() ของตัวเอง พอมี 20 คำขอค้างพร้อมกัน
+     (เช่นตอนวาดหน้า Job) ก็ยิง securetoken 20 ครั้งด้วย refreshToken ใบเดียวกัน
+     Firebase หมุน refreshToken ทุกครั้งที่ต่ออายุ ใบที่ยิงตามหลังจึงกลายเป็นใบเก่า
+     → ต่ออายุไม่ผ่าน / โดนจำกัดอัตรา → 401 ทั้งแอปแบบกู้เองไม่ได้ ต้องล็อกอินใหม่
+     แก้ให้ผู้เรียกทุกคนใช้คำขอเดียวกัน ยิงจริงครั้งเดียวเสมอ */
+  var refreshing = null;
   function refresh() {
     if (!REMOTE_MODE) return Promise.resolve(idToken);
     if (!refreshToken) return Promise.reject(new Error('NO_SESSION'));
+    if (refreshing) return refreshing;
+    refreshing = refreshOnce();
+    var clear = function () { refreshing = null; };
+    refreshing.then(clear, clear);
+    return refreshing;
+  }
+
+  function refreshOnce() {
     return fetch(IDENTITY_REFRESH + FIREBASE_CONFIG.apiKey, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -1975,30 +1990,88 @@ var db = (function () {
     });
   }
 
+  /* ⭐ สมุดบันทึกคำขอล่าสุด (v2.7.9) — ไว้ฟันธงหน้างานว่า "auth หรือ เน็ต"
+     เปิด DevTools แล้วพิมพ์  db.netLog()  จะได้ตารางคำขอ 60 รายการหลังสุด
+       status 401/403 = โทเคน/สิทธิ์      (auth — ต่ออายุไม่ผ่าน หรือ Rules ปฏิเสธ)
+       status 0 + note = เน็ต             (timeout / AbortError / TypeError ของ fetch)
+       status 200 แต่ ms สูง = เน็ตช้า หรือคำขอไปติดคิวหลังคำขออื่น */
+  var NET_LOG_MAX = 60;
+  var netLog = [];
+  function logNet(method, path, status, ms, note) {
+    netLog.push({
+      t: new Date().toTimeString().slice(0, 8), method: method, path: path,
+      status: status, ms: Math.round(ms), note: note || ''
+    });
+    if (netLog.length > NET_LOG_MAX) netLog.shift();
+  }
+
+  /* ⭐ ช่องทางเบื้องหลัง — อ่านแบบเงียบ (สถิติการ์ด/หัวรอบ) พร้อมกันได้ไม่เกิน 2 สาย
+     เบราว์เซอร์เปิดต่อ 1 โฮสต์ได้ราว 6 สายเท่านั้น ถ้าปล่อยให้การ์ดยิงรัวจนเต็ม
+     คำขอที่ผู้ใช้กดเอง (สร้าง Job / ส่งยอดที่ยิง) จะไปต่อท้ายแถวแล้วชน timeout
+     — คืออาการ "สร้าง Job ไม่สำเร็จ กรุณาตรวจสัญญาณอินเทอร์เน็ต" ทั้งที่เน็ตยังดี
+     กั้นไว้ 2 สาย เหลืออีก 4 ให้สาย SSE และคำขอที่ผู้ใช้รออยู่หน้าจอเสมอ */
+  var BG_MAX = 2;
+  var bgRunning = 0, bgQueue = [];
+  function bgSlot() {
+    if (bgRunning < BG_MAX) { bgRunning++; return Promise.resolve(); }
+    return new Promise(function (res) { bgQueue.push(res); });
+  }
+  function bgDone() {
+    bgRunning--;
+    var next = bgQueue.shift();
+    if (next) { bgRunning++; next(); }
+  }
+
+  /* ได้ HTTP status กลับมา = คุยกับ Firebase ติดแล้ว ต่อให้ status เป็น 401/403/500 ก็ตาม
+     "ออฟไลน์" ต้องแปลว่าไปไม่ถึงเท่านั้น ไม่ใช่ไปถึงแล้วโดนปฏิเสธ (v2.7.9)
+     เดิมเขียนรวมกันทำให้ Rules ปฏิเสธ 1 ครั้ง แล้ว banner ค้าง "ออฟไลน์ — เก็บคิว 0" ทั้งที่ต่อติด */
+  function remoteDone(method, path, t0, quiet, r) {
+    logNet(method, path, r.status, Date.now() - t0);
+    if (!quiet) setStatus(true);
+    if (r.ok) return r.json();
+    throw new Error('HTTP ' + r.status);
+  }
+  function remoteFailed(method, path, t0, quiet, err) {
+    var msg = String((err && err.message) || err);
+    logNet(method, path, 0, Date.now() - t0, msg);
+    if (!quiet) setStatus(false, msg);
+    throw err;
+  }
+
   function remoteGet(path, opts) {
     opts = opts || {};
     var quiet = !!opts.quiet, tmo = opts.timeout || 10000;   // ⭐ quiet = ไม่ตัดสิน online/offline (โหลดเบื้องหลัง)
-    return retryNet(function () {
-      return withAuthRetry(function () { return fetchT(url(path), { timeoutMs: tmo }); });
-    }).then(function (r) {
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      if (!quiet) setStatus(true);
-      return r.json();
-    }).catch(function (err) { if (!quiet) setStatus(false, String(err && err.message || err)); throw err; });
+    var t0 = Date.now();
+    var gate = quiet ? bgSlot() : Promise.resolve();         // ⭐ อ่านเงียบต้องรอช่องว่าง ห้ามแย่งสายกับคำขอที่ผู้ใช้รอ
+    return gate.then(function () {
+      return retryNet(function () {
+        return withAuthRetry(function () { return fetchT(url(path), { timeoutMs: tmo }); });
+      }, opts.tries);
+    }).then(
+      function (r) { if (quiet) bgDone(); return remoteDone('GET', path, t0, quiet, r); },
+      function (e) { if (quiet) bgDone(); return remoteFailed('GET', path, t0, quiet, e); }
+    );
   }
 
+  /* ⭐ เขียนก็ต้องลองใหม่ได้เหมือนอ่าน (v2.7.9)
+     PATCH ของแอปนี้ใช้คีย์ที่สร้างไว้ก่อนแล้ว (pushId คงที่) ส่งซ้ำจึงทับของเดิม
+     ไม่มีทางกลายเป็นยอดซ้ำ — retry ปลอดภัย และ retryNet จะลองใหม่เฉพาะตอนเน็ตสะดุด
+     ถ้าฐานตอบกลับมาเป็น 4xx จะไม่ลองซ้ำ ปล่อยให้ dead-letter จัดการตามเดิม
+     ลองแค่ 2 ครั้ง (ไม่ใช่ 3 เท่าฝั่งอ่าน) เพราะผู้ใช้กดปุ่มค้างรออยู่หน้าจอ */
   function remoteUpdate(path, patch) {
-    return withAuthRetry(function () {
-      return fetchT(url(path), {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(patch)
+    var t0 = Date.now();
+    return retryNet(function () {
+      return withAuthRetry(function () {
+        return fetchT(url(path), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(patch)
+        });
       });
-    }).then(function (r) {
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      setStatus(true);
-      return r.json();
-    }).catch(function (err) { setStatus(false, String(err && err.message || err)); throw err; });
+    }, 2).then(
+      function (r) { return remoteDone('PATCH', path, t0, false, r); },
+      function (e) { return remoteFailed('PATCH', path, t0, false, e); }
+    );
   }
 
   /* สาย EventSource ทุกสายผูกกับ token ที่ใช้ตอนเปิด พอ token หมุนต้องเปิดใหม่ทั้งหมด
@@ -2041,6 +2114,10 @@ var db = (function () {
         Object.keys(msg.data || {}).forEach(function (k) { deepSet(cur, k, msg.data[k]); });
         deepSet(remoteCache, target, cur);
       }
+      /* มีเฟรมข้อมูลวิ่งเข้ามา = สายยังดีอยู่จริง (v2.7.9)
+         es.onopen ยิงครั้งเดียวตอนเปิดสาย ถ้าระหว่างทางมีคำขออื่นล้มเหลวจนตั้ง "ออฟไลน์"
+         ไว้ banner จะค้างอยู่อย่างนั้นทั้งที่ข้อมูลยังไหลเข้ามาปกติ — ใช้เฟรมนี้ปลดให้ */
+      streamOk();
       if (alive) cb(deepGet(remoteCache, path));
     }
     function open() {
@@ -2073,6 +2150,12 @@ var db = (function () {
     /* หน้าจอสมัครรับสถานะการเชื่อมต่อได้ที่นี่ */
     onStatus: function (cb) { statusCb = cb; },
 
+    /* ⭐ เครื่องมือหาสาเหตุหน้างาน — เปิด DevTools → Console แล้วพิมพ์:
+         db.netLog()                     ดูคำขอ 60 รายการหลังสุด
+         console.table(db.netLog())      ดูเป็นตารางอ่านง่าย
+       ตีความ: status 401/403 = auth · status 0 = เน็ตไปไม่ถึง · ms สูง = ช้า/ติดคิว */
+    netLog: function () { return netLog.slice(); },
+
     /* token ใหม่มาแล้ว — เปิดสายที่ค้างอยู่ใหม่ทั้งหมดด้วย token ตัวใหม่ */
     reopenStreams: function () { if (REMOTE_MODE) reopenStreams(); },
 
@@ -2090,7 +2173,7 @@ var db = (function () {
     /* โหลดเบื้องหลังแบบเงียบ — timeout ยาวสำหรับก้อนใหญ่ (scans) และไม่ตัดสิน online/offline
        ใช้กับการ์ด/สถิติ ที่ล้มเหลวได้โดยไม่ควรเด้ง banner ออฟไลน์ */
     getQuiet: function (path) {
-      if (REMOTE_MODE) return remoteGet(path, { quiet: true, timeout: 25000 });
+      if (REMOTE_MODE) return remoteGet(path, { quiet: true, timeout: 12000 });
       return Promise.resolve(readLocal(path));
     },
 
@@ -2848,6 +2931,9 @@ function legacyRoundParts(cid, field) {
 
 function loadCycleSystemQty(cid) {
   if (!cid) return Promise.resolve({});
+  /* ⭐ ยอดระบบของรอบเป็นก้อนใหญ่และทุกการ์ดในรอบเรียกพร้อมกัน — ยิงจริงใบเดียวพอ
+     ยิ่งเมื่อรอบยังไม่ย้ายข้อมูล legacyRoundParts จะยิงต่ออีกใบละ 1 คำขอทุกใบในรอบ */
+  return onceInflight('sys:' + cid, function () {
   return db.getQuiet('cycles/' + cid + '/systemQty').then(function (data) {
     if (data && Object.keys(data).length) return data;
     if (cycleMigrated(cid)) return data || {};       // ย้ายแล้วและว่างจริง
@@ -2857,6 +2943,7 @@ function loadCycleSystemQty(cid) {
       return out;
     });
   }).catch(function () { return {}; });
+  });
 }
 
 /* ใบโอนเลขเดียวกัน = ใบเดียวกัน เอาใบที่มีรายการมากกว่าไว้ ไม่รวมรายการเข้าด้วยกัน */
@@ -9754,20 +9841,56 @@ function cachedJobStats(id) {
   return null;
 }
 
+/* ⭐ กันยิงซ้ำ (v2.7.9) — คำขอเดียวกันที่ยังไม่กลับ ให้ทุกคนใช้ใบเดียวกัน
+
+   ต้นเหตุจริงของอาการ "การ์ดค้าง ... · หัวรอบค้างกำลังรวมยอด · สร้าง Job ไม่สำเร็จ":
+   renderJobs() วาดการ์ดทีละใบ แต่ละใบยิง refreshJobStats(ใบตัวเอง) + loadCycleStats(รอบ)
+   ทั้งหมดเกิดใน tick เดียวกัน แคช state.cycleStats จึงยังว่างทุกใบ → ไม่มีใครกันใครได้เลย
+   loadCycleStats แต่ละใบยังไปเรียก loadJobStats ของ "ทุกใบในรอบ" ต่ออีกชั้น
+   จำนวนคำขอจึงโตแบบกำลังสอง:  N + 2N²   (วัดจริงด้วย tests/diag-request-storm.js)
+       8 Job  →  162 คำขอ · คำขอที่ยิงทีหลังรอคิว 4.1 วิ
+      15 Job  →  512 คำขอ · รอคิว 13.2 วิ  ← ทะลุ timeout 10 วิ = write พังทั้งที่เน็ตดี
+   เบราว์เซอร์เปิดต่อโฮสต์เดียวได้ราว 6 สาย ที่เหลือเข้าคิว ยิ่งวันยิ่งมี Job/scan เยอะ
+   ก็ยิ่งช้าลงเรื่อย ๆ ตรงกับที่หน้างานเจอ — ไม่ใช่เน็ตเสีย และไม่ใช่ Firebase ล่ม
+
+   แก้ที่ต้นทาง: คำขอเดียวกันที่กำลังบินอยู่ ให้คืน promise ใบเดิม ไม่ยิงซ้ำ
+   หลังแก้จำนวนคำขอเหลือ N + 1 ใบต่อการวาดหนึ่งครั้ง */
+var inflightStats = {};
+function onceInflight(key, run) {
+  if (inflightStats[key]) return inflightStats[key];
+  var p = run();
+  inflightStats[key] = p;
+  var clear = function () { delete inflightStats[key]; };
+  p.then(clear, clear);
+  return p;
+}
+
 /* โหลดสถิติสดจากฐาน (เงียบ ไม่กระทบ online/offline) แล้วเก็บลงแคชทั้งสองชั้น */
 function refreshJobStats(id) {
-  return db.getQuiet('rounds/' + id + '/scans').then(function (data) {
-    var stat = computeJobStats(data);
-    state.jobStats[id] = stat;
-    try { localStorage.setItem('jobStats:' + id, JSON.stringify(stat)); } catch (e) {}
-    return stat;
-  }).catch(function () { return null; });
+  return onceInflight('job:' + id, function () {
+    return db.getQuiet('rounds/' + id + '/scans').then(function (data) {
+      var stat = computeJobStats(data);
+      stat.at = Date.now();                    // ⭐ เวลาที่โหลดมา ใช้ตัดสินว่าแคชยังสดพอไหม
+      state.jobStats[id] = stat;
+      try { localStorage.setItem('jobStats:' + id, JSON.stringify(stat)); } catch (e) {}
+      return stat;
+    }).catch(function () { return null; });
+  });
 }
 
 function loadJobStats(id) {
   var c = cachedJobStats(id);
   if (c) return Promise.resolve(c);
   return refreshJobStats(id);
+}
+
+/* ⭐ แคชยังสดอยู่ไหม — การ์ดที่เพิ่งโหลดไปเมื่อกี้ไม่ต้องยิงซ้ำทุกครั้งที่วาดใหม่
+   renderJobs() ถูกเรียกบ่อยมาก (เปลี่ยนแท็บ/ตัวกรอง/มีข้อมูลเข้าจาก SSE)
+   ถ้ายิงใหม่ทุกครั้งจะกลับไปถล่มตัวเองเหมือนเดิม 30 วิกำลังดีสำหรับงานนับสต๊อก */
+var JOB_STATS_TTL = 30000;
+function jobStatsFresh(id) {
+  var c = cachedJobStats(id);
+  return !!(c && c.at && (Date.now() - c.at) < JOB_STATS_TTL);
 }
 
 /* ยิงเพิ่ม/ลบ Job แล้วสถิติเก่าใช้ไม่ได้ ต้องทิ้งของรอบที่ Job นั้นสังกัดด้วย */
@@ -9782,6 +9905,9 @@ function dropJobStats(id) {
    ใช้ loadJobStats ตัวเดิมเป็นฐาน ตัวเลขจึงตรงกับการ์ด Job เสมอและอ่านฐานซ้ำน้อยที่สุด */
 function loadCycleStats(cid) {
   if (state.cycleStats[cid]) return Promise.resolve(state.cycleStats[cid]);
+  /* ⭐ ทุกการ์ดในรอบเรียกตัวนี้พร้อมกันใน tick เดียว แคชด้านบนจึงยังว่างทุกใบ
+     ต้องกันซ้ำด้วย "ใบที่กำลังบิน" ไม่ใช่แค่แคชผลลัพธ์ ไม่งั้นงานโตเป็นกำลังสอง */
+  return onceInflight('cycle:' + cid, function () {
   var ids = jobsInCycle(cid);
   return Promise.all([
     loadCycleSystemQty(cid),
@@ -9831,6 +9957,7 @@ function loadCycleStats(cid) {
     state.cycleStats[cid] = stat;
     return stat;
   }).catch(function () { return null; });
+  });
 }
 
 /* ---------- A: ภาพรวมทุกสาขา ----------
@@ -10391,7 +10518,13 @@ function renderJobCard(id, list) {
     }
     var cachedStat = cachedJobStats(id);
     if (cachedStat) applyStat(cachedStat, state.cycleStats[cycleOf(j)]);
-    Promise.all([refreshJobStats(id), loadCycleStats(cycleOf(j))]).then(function (res) {
+    /* ⭐ แคชเพิ่งโหลดมาไม่ถึง 30 วิ = ไม่ต้องยิงใหม่ (v2.7.9)
+       เดิมบังคับ refresh ทุกครั้งที่วาดการ์ด ทั้งที่ renderJobs() ถูกเรียกรัวมาก */
+    var fresh = jobStatsFresh(id);
+    Promise.all([
+      fresh ? Promise.resolve(cachedStat) : refreshJobStats(id),
+      loadCycleStats(cycleOf(j))
+    ]).then(function (res) {
       var stat = res[0], cyc = res[1];
       if (stat) applyStat(stat, cyc);
       else if (!cachedStat) {
