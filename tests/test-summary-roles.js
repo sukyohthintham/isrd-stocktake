@@ -363,8 +363,10 @@ function check(name, ok, got) {
   check('scanner: canSeePage(doc) = false', c1.scanner.canSee === false, c1.scanner);
   check('scanner: เรียก showPage(doc) ตรง ๆ ก็เข้าไม่ได้',
         c1.scanner.landedOn !== 'doc', c1.scanner.landedOn);
+  /* v2.9.0 — viewer เข้าหน้าเอกสารได้แล้ว ข้อความจึงต้องบอกครบทั้งสามสิทธิ์ */
   check('scanner: มี toast บอกเหตุผล',
-        /เฉพาะผู้ดูแลระบบและผู้นับสต๊อก/.test(c1.scanner.toast || ''), c1.scanner.toast);
+        /เฉพาะผู้ดูแลระบบ ผู้นับสต๊อก และสิทธิ์ดูอย่างเดียว/.test(c1.scanner.toast || ''),
+        c1.scanner.toast);
 
   /* ================= SCANNER — ไม่เห็น variance อะไรเลย ================= */
   console.log('\n[D] role = scanner (เด็กหน้าร้าน)');

@@ -274,20 +274,30 @@ function check(name, ok, got) {
         r7.histModes.indexOf('ยิงบาร์โค้ด') < 0, r7.histModes);
 
   /* ---------- 8. สิทธิ์ ---------- */
-  console.log('\n[8] สิทธิ์ — scanner ไม่เห็นและใช้ไม่ได้');
+  /* v2.9.0 — scanner พิมพ์หมายเหตุ "ตอนยิง" ได้แล้ว (คนยืนหน้าชั้นคือคนที่เห็นของจริง)
+     ส่วน viewer ยังต้องพิมพ์ไม่ได้ทั้งที่จอและตอนเรียกฟังก์ชันตรง ๆ */
+  console.log('\n[8] สิทธิ์ — scanner พิมพ์ได้ · viewer ไม่ได้');
   const r8 = await page.evaluate(async () => {
     const out = {};
-    ['admin', 'counter', 'scanner'].forEach(function (role) {
+    ['admin', 'counter', 'scanner', 'viewer'].forEach(function (role) {
       window.__seed(role);
       out[role] = { shown: $('scanRemark').style.display !== 'none' };
     });
 
+    /* scanner ต้องเขียนผ่านจริง ไม่ใช่แค่เห็นช่อง */
     window.__seed('scanner');
-    const ok = await saveRemark('A1', 'เด็กหน้าร้านแอบใส่');
-    out.scannerCall = { ok: ok, writes: window.__writes.length,
+    const okScan = await saveRemark('A1', 'ของชำรุด 2 ชิ้น');
+    out.scannerCall = { ok: okScan, writes: window.__writes.length,
                         updates: window.__updates.length,
-                        reason: state.reasons.A1,
-                        toast: (window.__toasts[0] || {}).m };
+                        reason: state.reasons.A1 };
+
+    /* viewer เรียกฟังก์ชันตรง ๆ ต้องไม่ผ่าน และต้องไม่เขียนอะไรเลยสักที่ */
+    window.__seed('viewer');
+    const okView = await saveRemark('A1', 'คนดูอย่างเดียวแอบใส่');
+    out.viewerCall = { ok: okView, writes: window.__writes.length,
+                       updates: window.__updates.length,
+                       reason: state.reasons.A1,
+                       toast: (window.__toasts[0] || {}).m };
 
     /* Job ปิดแล้ว — staff ก็ใส่ไม่ได้ */
     window.__seed('admin');
@@ -302,11 +312,19 @@ function check(name, ok, got) {
   });
   check('admin เห็นช่อง', r8.admin.shown === true, r8.admin);
   check('counter เห็นช่อง', r8.counter.shown === true, r8.counter);
-  check('scanner ไม่เห็นช่องเลย', r8.scanner.shown === false, r8.scanner);
-  check('scanner เรียกฟังก์ชันตรง ๆ ก็ไม่ผ่าน ไม่เขียนอะไรทั้งสองที่',
-        r8.scannerCall.ok === false && r8.scannerCall.writes === 0 &&
-        r8.scannerCall.updates === 0 && r8.scannerCall.reason === undefined, r8.scannerCall);
-  check('บอกเหตุผลว่าสิทธิ์ไม่พอ', /สิทธิ์/.test(r8.scannerCall.toast || ''), r8.scannerCall.toast);
+  check('scanner เห็นช่องแล้ว (v2.9.0)', r8.scanner.shown === true, r8.scanner);
+  check('viewer ไม่เห็นช่องเลย', r8.viewer.shown === false, r8.viewer);
+  check('scanner เขียนหมายเหตุผ่านจริง เขียนครบทั้งสองที่',
+        r8.scannerCall.ok === true && r8.scannerCall.writes === 1 &&
+        r8.scannerCall.updates === 1 && r8.scannerCall.reason === 'ของชำรุด 2 ชิ้น',
+        r8.scannerCall);
+  /* __seed() ล้าง state.reasons ทุกครั้ง — viewer จึงต้องไม่มีค่าโผล่ขึ้นมาเลยสักตัว */
+  check('viewer เรียกฟังก์ชันตรง ๆ ก็ไม่ผ่าน ไม่เขียนอะไรทั้งสองที่',
+        r8.viewerCall.ok === false && r8.viewerCall.writes === 0 &&
+        r8.viewerCall.updates === 0 && r8.viewerCall.reason === undefined,
+        r8.viewerCall);
+  check('viewer ได้ข้อความบอกว่าสิทธิ์ไม่พอ',
+        /สิทธิ์/.test(r8.viewerCall.toast || ''), r8.viewerCall.toast);
   check('Job ปิดแล้ว ช่องถูกล็อกและเขียนไม่ได้',
         r8.closed.disabled === true && r8.closed.ok === false &&
         r8.closed.writes === 0 && /ปิดแล้ว/.test(r8.closed.toast || ''), r8.closed);

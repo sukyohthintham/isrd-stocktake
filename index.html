@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.8.0">
+<meta name="version" content="2.9.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.8.0</title>
+<title>ISRD Stocktake v2.9.0</title>
 
 <style>
 :root{
@@ -1584,7 +1584,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.8.0';
+var APP_VERSION = '2.9.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -4233,9 +4233,9 @@ var ROLE_LABEL = {
 };
 var ROLE_HELP = {
   admin:   'ทำได้ทุกอย่าง รวมถึงแก้ Master และจัดการผู้ใช้',
-  counter: 'ยิงบาร์โค้ด สร้างและปิด Job ออกเอกสาร',
-  scanner: 'เห็นแค่หน้ายิง ยิงได้ทุก Job ที่กำลังนับ',
-  viewer:  'ดูและพิมพ์เอกสารเท่านั้น'
+  counter: 'ยิงบาร์โค้ด สร้างและปิด Job ออกเอกสาร · ดู Master/Location ได้แต่แก้ไม่ได้',
+  scanner: 'เห็นแค่หน้ายิง ยิงและใส่หมายเหตุได้ทุก Job ที่กำลังนับ',
+  viewer:  'เห็นรายการ Job และดู/พิมพ์เอกสารเท่านั้น'
 };
 
 function myRole() { return (state.me && state.me.role) || null; }
@@ -4245,6 +4245,23 @@ function isStaff() { return myRole() === 'admin' || myRole() === 'counter'; }
 /* ยิงบาร์โค้ดได้ — scanner ทำได้อย่างเดียวเรื่องนี้ */
 function canScanRole() { return isStaff() || myRole() === 'scanner'; }
 function isScannerOnly() { return myRole() === 'scanner'; }
+/* ดูอย่างเดียว — เห็นได้แค่ "รายการ Job + เอกสาร" ยิงไม่ได้ แก้ไม่ได้ (v2.9.0) */
+function isViewer() { return myRole() === 'viewer'; }
+
+/* ออกเอกสารได้ = admin · counter (ตามหน้าที่) และ viewer (ดู + สั่งพิมพ์อย่างเดียว)
+   scanner ไม่ได้ เพราะเอกสารมีตัวเลขผลต่างรายตัวทั้งใบซึ่ง scanner ไม่ควรเห็น
+   viewer เปิดดูและพิมพ์ได้ แต่แก้หมายเหตุ/ยอดไม่ได้ — ตัวบล็อกอยู่ที่ canEdit() */
+function canSeeDoc() { return isStaff() || isViewer(); }
+
+/* หน้าแรกที่สิทธิ์นี้เข้าได้จริง — ใช้ตอนถูกเด้งออกจากหน้าที่ไม่มีสิทธิ์
+   ห้าม hardcode 'summary' เป็นตัวสำรองเหมือนก่อน v2.9.0 เพราะ viewer เข้า summary
+   ไม่ได้แล้ว การเด้งไปหน้าที่ไม่มีสิทธิ์ซ้ำอีกจะกลายเป็นวนไม่จบ */
+function firstAllowedPage() {
+  if (canScanRole()) return 'scan';
+  if (isStaff()) return 'summary';
+  if (isViewer() && state.roundId) return 'doc';
+  return 'jobs';                       // รายการ Job เปิดให้ทุกสิทธิ์อยู่แล้ว
+}
 
 /* ข้อความบอกว่าทำไมทำไม่ได้ — ต้องบอกสาเหตุจริง ไม่ใช่ "ไม่มีสิทธิ์" ลอย ๆ */
 function roleBlockMessage(what) {
@@ -5646,9 +5663,12 @@ function renderScanRemark() {
   var box = $('scanRemark');
   if (!box) return;
   var key = state.activeKey;
-  /* เปิดให้เฉพาะ staff และเฉพาะตอนมีสินค้าอยู่บนการ์ด
-     บาร์โค้ดที่ไม่มีในระบบมีช่องคำอธิบายของตัวเองอยู่แล้ว (unknownNote) ไม่ต้องซ้อนกันสองช่อง */
-  var show = !!key && !!state.products[key] && isStaff();
+  /* ⭐ v2.9.0 — เปิดให้ทุกคนที่ยิงได้ รวม scanner ด้วย (เดิมจำกัดแค่ staff)
+     คนที่ยืนยิงหน้าชั้นคือคนที่เห็นของจริง ถ้าเจอของชำรุด/ของอยู่ผิดที่แล้วพิมพ์ไม่ได้
+     ข้อมูลจะหายไปเลยหรือต้องฝากคนอื่นพิมพ์แทน ซึ่งเพี้ยนกว่าเดิม
+     viewer ยังพิมพ์ไม่ได้ เพราะ canScanRole() ไม่รวม viewer
+     เฉพาะตอนมีสินค้าอยู่บนการ์ด — บาร์โค้ดที่ไม่มีในระบบมีช่องคำอธิบายของตัวเองแล้ว */
+  var show = !!key && !!state.products[key] && canScanRole();
   box.style.display = show ? 'block' : 'none';
   if (!show) return;
 
@@ -5673,8 +5693,10 @@ function scanModeLabel(rec) {
 }
 
 function saveRemark(key, text) {
-  /* defense-in-depth แบบเดียวกับ removeOverScan — ซ่อนช่องอย่างเดียวไม่พอ */
-  if (!isStaff()) { toast(roleBlockMessage('ใส่หมายเหตุไม่ได้'), true); return Promise.resolve(false); }
+  /* defense-in-depth แบบเดียวกับ removeOverScan — ซ่อนช่องอย่างเดียวไม่พอ
+     v2.9.0 — ใช้ canScanRole() ให้ตรงกับ renderScanRemark: ใครยิงได้ก็พิมพ์หมายเหตุได้
+     (viewer ยังถูกบล็อกตรงนี้ เพราะ canScanRole() ไม่รวม viewer) */
+  if (!canScanRole()) { toast(roleBlockMessage('ใส่หมายเหตุไม่ได้'), true); return Promise.resolve(false); }
   if (!canScan()) { toast(blockedMessage() + ' — ใส่หมายเหตุไม่ได้', true); return Promise.resolve(false); }
   if (!key) return Promise.resolve(false);
 
@@ -8498,7 +8520,13 @@ function buildDocItemTable(title, rows, opts) {
     /* แต่แก้ได้เฉพาะหมายเหตุของใบตัวเอง — ถ้าปล่อยให้พิมพ์ทับข้อความรวม
        saveReason จะเอาทั้งก้อน (รวมของใบอื่น) ยัดลง reasons ของใบที่เปิดอยู่
        หมายเหตุของใบอื่นก็จะถูกก๊อปมาซ้ำอยู่ในใบเรา แล้วเอกสารรอบหน้าจะเห็นซ้ำสองที่ */
-    if (!remarkEditableHere(r.key)) {
+    /* ⭐ v2.9.0 — viewer เปิดหน้าเอกสารได้แล้ว แต่ต้องแก้หมายเหตุไม่ได้
+       saveReason() บล็อกอยู่แล้วชั้นหนึ่ง (canEdit = isStaff) แต่ถ้าปล่อยให้ช่องพิมพ์ได้
+       คนจะพิมพ์จนจบแล้วค่อยโดนเด้ง ซึ่งเสียเวลาเปล่า — ล็อกที่ช่องด้วยให้เห็นตั้งแต่แรก */
+    if (!isStaff()) {
+      input.readOnly = true;
+      input.title = roleBlockMessage('แก้หมายเหตุไม่ได้');
+    } else if (!remarkEditableHere(r.key)) {
       input.readOnly = true;
       input.title = 'หมายเหตุนี้เขียนไว้ที่ Job อื่นในรอบเดียวกัน — เปิด Job นั้นเพื่อแก้';
     } else if (!remarkHistoryWritable()) {
@@ -10160,7 +10188,7 @@ function jobActions() {
   /* ▶ เริ่มนับ — เข้าหน้านับของ Job นี้ได้ตรงจากเมนูจัดการ (ข้อ UX) */
   if (canScanRole() && st === 'counting') {
     acts.push({ id: 'start', label: '▶ เริ่มนับ', cls: 'ghost',
-      run: function () { showPage(isScannerOnly() ? 'scan' : 'start'); } });
+      run: function () { showPage(isStaff() ? 'start' : 'scan'); } });
   }
   if (isStaff() && st === 'counting') {
     acts.push({ id: 'review', label: '→ ส่งเข้าขั้นตรวจสอบ', cls: 'ghost', run: sendToReview });
@@ -10565,8 +10593,10 @@ function renderJobCard(id, list) {
 
 function openJob(id) {
   if (!selectRound(id)) return;      // สาขาไม่ตรง — selectRound แจ้งเหตุผลให้แล้ว
-  /* scanner ไม่มีหน้า "ตั้งค่า" ให้เข้า — เลือก Job แล้วพาไปหน้ายิงเลย */
-  showPage(isScannerOnly() ? 'scan' : 'start');
+  /* scanner ไม่มีหน้า "ตั้งค่า" ให้เข้า — เลือก Job แล้วพาไปหน้ายิงเลย
+     v2.9.0 — viewer ก็เข้า start ไม่ได้แล้ว firstAllowedPage() จะพาไปหน้าเอกสารให้แทน
+     (ตอนนี้ selectRound ตั้ง roundId ไว้แล้ว หน้าเอกสารจึงมีข้อมูลให้แสดงจริง) */
+  showPage(isStaff() ? 'start' : firstAllowedPage());
 }
 
 function renderStoreTypePicker() {
@@ -10781,13 +10811,17 @@ var PAGE_ROLES = {
   /* scanner เข้าหน้า Job ได้ด้วย — ต้องเลือกเองว่าจะยิงเข้างานไหน
      แต่เห็นแค่ลิสต์ ปุ่มจัดการรอบทั้งหมดถูกซ่อน (applyJobsPermissions) */
   jobs:    function () { return true; },
-  start:   function () { return !isScannerOnly(); },
+  /* ⭐ v2.9.0 — start / master / summary เป็นงานของคนที่จัดการรอบนับจริง (admin + counter)
+     เดิมใช้ !isScannerOnly() ซึ่งกัน scanner ออกได้อย่างเดียว viewer จึงหลุดเข้ามาหมด
+     ทั้งที่ viewer ควรเห็นแค่ "รายการ Job + เอกสาร" เท่านั้น */
+  start:   function () { return isStaff(); },
   scan:    function () { return canScanRole(); },
-  master:  function () { return !isScannerOnly(); },
-  summary: function () { return !isScannerOnly(); },
+  master:  function () { return isStaff(); },
+  summary: function () { return isStaff(); },
   /* เอกสารมีตัวเลขผลต่างรายตัวทั้งใบ — admin กับ counter ออกเอกสารได้ตามหน้าที่
+     viewer เข้าได้ด้วย (v2.9.0) เพราะหน้าที่ของสิทธิ์นี้คือดูและพิมพ์เอกสารโดยเฉพาะ
      scanner ไม่ได้ เพราะเห็นผลต่างไม่ได้อยู่แล้ว */
-  doc:     function () { return isStaff(); }
+  doc:     function () { return canSeeDoc(); }
 };
 
 function canSeePage(name) {
@@ -10818,12 +10852,14 @@ function setJobView(v) {
 
 function showPage(name) {
   /* หน้าเอกสารต้องบอกเหตุผลตรง ๆ ไม่ใช่เด้งไปหน้าอื่นเงียบ ๆ แล้วคนงงว่าปุ่มเสีย */
-  if (name === 'doc' && !isStaff()) {
-    toast('หน้าเอกสารเปิดให้เฉพาะผู้ดูแลระบบและผู้นับสต๊อก', true);
-    name = canSeePage('summary') ? 'summary' : (canScanRole() ? 'scan' : 'jobs');
+  if (name === 'doc' && !canSeeDoc()) {
+    toast('หน้าเอกสารเปิดให้เฉพาะผู้ดูแลระบบ ผู้นับสต๊อก และสิทธิ์ดูอย่างเดียว', true);
+    name = firstAllowedPage();
   }
-  /* กันเข้าหน้าที่ไม่มีสิทธิ์ผ่านทางอื่น เช่น เรียกฟังก์ชันตรง ๆ หรือกลับมาจากหน้าเก่า */
-  if (!canSeePage(name)) name = canScanRole() ? 'scan' : 'summary';
+  /* กันเข้าหน้าที่ไม่มีสิทธิ์ผ่านทางอื่น เช่น เรียกฟังก์ชันตรง ๆ หรือกลับมาจากหน้าเก่า
+     ต้องใช้ firstAllowedPage() ไม่ใช่ 'summary' ลอย ๆ — ตั้งแต่ v2.9.0 viewer เข้า
+     summary ไม่ได้แล้ว ถ้ายังเด้งไปที่นั่นจะกลายเป็นเด้งเข้าหน้าที่ไม่มีสิทธิ์ซ้ำอีกรอบ */
+  if (!canSeePage(name)) name = firstAllowedPage();
   state.page = name;
   ['Jobs', 'Start', 'Scan', 'Master', 'Summary', 'Doc'].forEach(function (p) {
     var key = p.charAt(0).toLowerCase() + p.slice(1);
@@ -10847,7 +10883,7 @@ function refreshNav() {
   $('navStart').disabled = !state.roundId;
   $('navScan').disabled = !ready;
   $('navSummary').disabled = !state.roundId;
-  $('navDoc').disabled = !state.roundId || !isStaff();   // เอกสารเป็นของ admin กับ counter
+  $('navDoc').disabled = !state.roundId || !canSeeDoc();  // admin · counter · viewer (v2.9.0)
   renderJobBar();
 
   /* ล็อกหน้ายิงตามสถานะ Job — ปุ่มต้องกดไม่ได้ ไม่ใช่แค่แจ้งเตือนทีหลัง */
