@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.9.0">
+<meta name="version" content="2.9.1">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.9.0</title>
+<title>ISRD Stocktake v2.9.1</title>
 
 <style>
 :root{
@@ -1584,7 +1584,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.9.0';
+var APP_VERSION = '2.9.1';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -8425,7 +8425,11 @@ function buildDocItemTable(title, rows, opts) {
   var box = document.createElement('div');
   var h = document.createElement('div');
   h.className = 'tbl-title';
-  h.textContent = title + ' — ' + fmtNum(rows.length) + ' รายการ';
+  /* opts.titleSuffix — ข้อความต่อท้ายหลังจำนวนรายการ ใช้เฉพาะตารางที่ขอมาเท่านั้น
+     ฟังก์ชันนี้วาดตารางให้ทุกกลุ่ม (ขาด/เกิน/ตรง/ของสาขาอื่น/ใบโอน) ถ้าเติมข้อความ
+     ตรงนี้แบบตายตัว หัวข้อของทุกตารางจะเปลี่ยนตามไปหมด จึงต้องส่งผ่าน opts รายตาราง */
+  h.textContent = title + ' — ' + fmtNum(rows.length) + ' รายการ' +
+                  (opts.titleSuffix ? ' ' + opts.titleSuffix : '');
   box.appendChild(h);
 
   if (opts.note) {
@@ -9018,6 +9022,9 @@ function renderDoc() {
   /* ไม่มีของมาผิดสาขา = ไม่ต้องมีตารางนี้ในเอกสารเลย */
   if (fRows.length) {
     host.appendChild(buildDocItemTable('รายการที่พบแต่ไม่ใช่ของสาขานี้', fRows, {
+      /* ของกลุ่มนี้ยอดระบบเป็น 0 เสมอ ยิงเจอเท่าไหร่จึงกลายเป็น "เกิน" ทั้งหมด
+         บอกไว้ที่หัวตารางเลย คนอ่านจะได้ไม่ต้องไล่ดูคอลัมน์ผลต่างทีละแถวเพื่อสรุปเอง */
+      titleSuffix: '(สินค้าเกินจากระบบ)',
       note: 'สินค้าเหล่านี้มีอยู่ใน Master ของบริษัท แต่ไม่อยู่ในไฟล์ยอดของสาขานี้ ' +
             'ยอดระบบจึงเป็น 0 — ต้องตรวจว่าของมาผิดสาขา หรือไฟล์ยอดตกหล่น'
     }));
