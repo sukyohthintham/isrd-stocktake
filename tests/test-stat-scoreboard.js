@@ -14,10 +14,11 @@
    [1] นิยามตรงกับ computeJobStats() ที่จอใช้อยู่ (pieces/skus/lastAt)
    [2] ยอดในเครื่อง (bumpLocalStat ทีละแถว) == คำนวณใหม่จากศูนย์ (statFromScans)
        ครบทุกเคส: ยิงซ้ำ · ติดลบ · หักจนเหลือ 0 · แถวหมายเหตุ delta 0 · ghost 0/0
-   [3] ทุก write path ของแอปอัปเดตยอดสรุป (ยิงสด · กรอกมือ · นำเข้าไฟล์ · ยกเลิกยิง ·
-       หมายเหตุ · ย้าย/ลบบาร์โค้ดที่ไม่มีในระบบ) — hook ที่ writeScan() ที่เดียวต้องครบ
-   [4] เขียนขึ้นฐานเป็น "ค่าสัมบูรณ์" ไม่ใช่สั่งบวกเพิ่ม (สองคนยิงพร้อมกันแล้วลู่เข้าหาค่าที่ถูก)
-   [5] แถว scan กับแถว stat แยกคิวกัน — Rules ยังไม่วางก็ต้องยิงได้ตามปกติ
+   [3] ⭐ v2.10.9 — ทุก write path ต้อง "ไม่" เขียนยอดสรุปตามหลังการยิงอีกแล้ว
+       (ของเดิมเขียนตาม ทำให้ยิง 1 ครั้งกลายเป็น 2 PATCH — ดู test-scan-single-write.js)
+       แต่ตัวเลขสามทางต้องยังตรงกันเป๊ะเหมือนเดิมทุกเคส
+   [4] currentStat() ต้องรวมแถวของคนอื่นที่วิ่งเข้ามาทางสาย SSE ด้วย
+   [5] ยิง 1 ครั้ง = เข้าคิวใบเดียว (แถว scan เท่านั้น)
    [6] rebuildStat / validateStat ให้ผลตรงกับการนับสดเดิม
    [7] เปลี่ยนรอบแล้วยอดสรุปต้องไม่ติดค้างมาจากใบเดิม
    [8] Phase 1 ห้ามเปลี่ยนสิ่งที่จออ่าน — ทุกหน้ายังนับสดเหมือนเดิม
@@ -287,34 +288,36 @@ const HARNESS = `
   });
   Object.keys(paths).forEach(k => {
     const p = paths[k];
-    check(k + ' → เขียน stat ครบทุกแถว scan', p.statWrites === p.scanWrites && p.statWrites > 0, { k, p });
+    /* ⭐ v2.10.9 — กลับด้านจากเดิมโดยตั้งใจ: การยิงต้องไม่พ่วงการเขียนยอดสรุปอีกแล้ว
+       เดิมเขียนตามทุกแถว ทำให้ path เดียวกันโดน PATCH สองรอบต่อการยิงหนึ่งครั้ง */
+    check(k + ' → ไม่มีคำขอเขียนยอดสรุปพ่วงมา', p.statWrites === 0, { k, p });
+    check(k + ' → ยังเข้าคิวเฉพาะแถว scan', p.scanWrites > 0, { k, p });
     check(k + ' → ยอดยังตรงกันสามทาง', p.same === true, { k, p });
   });
 
-  /* ---------- [4] เขียนเป็นค่าสัมบูรณ์ ---------- */
-  console.log('\n[4] ต้องเขียนค่าสัมบูรณ์ ไม่ใช่สั่งบวกเพิ่ม (กันสองคนยิงพร้อมกันแล้วทบผิด)');
+  /* ---------- [4] ยอดสรุปในเครื่องต้องเห็นภาพรวมของทุกคน ---------- */
+  console.log('\n[4] currentStat() ต้องรวมแถวของคนอื่นที่วิ่งมาทางสาย SSE ด้วย');
   const abs = await page.evaluate(() => {
     window.__seed('admin');
     writeScan('A1', 4, 'scan');
-    const first = window.__lastStat();
+    const first = currentStat().pieces;
     writeScan('A1', 3, 'scan');
-    const second = window.__lastStat();
+    const second = currentStat().pieces;
     /* จำลองแถวของ "คนอื่น" ที่วิ่งเข้ามาทางสาย SSE แล้วยิงต่อ */
     applyScanRecord('remote1', { code: 'A2', delta: 10, ts: Date.now() + 1000, user: 'สมศรี', mode: 'scan' });
+    const withRemote = currentStat().pieces;
     writeScan('A1', 1, 'scan');
-    const third = window.__lastStat();
-    return { first: first, second: second, third: third,
-             localPieces: currentStat().pieces, keys: Object.keys(window.__writes[1].patch) };
+    const third = currentStat();
+    return { first: first, second: second, withRemote: withRemote,
+             third: third.pieces, ver: third.ver, lastBy: third.lastBy };
   });
-  check('ค่าที่เขียนเป็นยอดรวมสะสม ไม่ใช่ delta', abs.first.pieces === 4 && abs.second.pieces === 7, abs);
-  check('ยอดรวมแถวของคนอื่นที่วิ่งเข้ามาด้วย (7+10+1 = 18)', abs.third.pieces === 18, abs);
-  check('ตรงกับยอดในเครื่อง', abs.third.pieces === abs.localPieces, abs);
-  check('เขียน skuQty ของ SKU ที่เพิ่งขยับมาด้วย',
-        abs.keys.some(k => /^skuQty\//.test(k)), abs.keys);
-  check('ติดธงเวอร์ชันไปกับทุกก้อน', abs.third.ver === 2, abs.third);
+  check('ยอดสะสมเดินตามการยิงของตัวเอง (4 → 7)', abs.first === 4 && abs.second === 7, abs);
+  check('⭐ แถวของคนอื่นเข้ามาแล้วยอดรวมทันที (7+10 = 17)', abs.withRemote === 17, abs);
+  check('ยิงต่อแล้วยังรวมครบ (18)', abs.third === 18, abs);
+  check('ติดธงเวอร์ชันไว้', abs.ver === 2, abs);
 
-  /* ---------- [5] แยกคิวจากแถว scan ---------- */
-  console.log('\n[5] แถว scan กับแถว stat ต้องแยกคิว (Rules ยังไม่วางก็ต้องยิงได้)');
+  /* ---------- [5] ยิง 1 ครั้ง = เข้าคิวใบเดียว ---------- */
+  console.log('\n[5] ⭐ ยิง 1 ครั้ง = เข้าคิวใบเดียว (ไม่มีใบยอดสรุปพ่วง)');
   const split = await page.evaluate(() => {
     window.__seed('admin');
     writeScan('A1', 1, 'scan');
@@ -322,15 +325,13 @@ const HARNESS = `
     return {
       count: w.length,
       firstKeys: Object.keys(w[0].patch),
-      secondKeys: Object.keys(w[1].patch),
-      samePath: w[0].path === w[1].path
+      path: w[0].path
     };
   });
-  check('ยิงหนึ่งครั้ง = สองคิวแยกกัน', split.count === 2, split);
-  check('คิวแรกมีแต่แถว scan', split.firstKeys.every(k => /^scans\//.test(k)), split.firstKeys);
-  check('คิวสองมีแต่ยอดสรุป ไม่ปนแถว scan',
-        split.secondKeys.every(k => /^(stat|skuQty)\//.test(k)), split.secondKeys);
-  check('เขียนลงรอบเดียวกัน', split.samePath === true, split);
+  check('⭐ เข้าคิวใบเดียว (เดิมเป็นสองใบ)', split.count === 1, split);
+  check('มีแต่แถว scan ไม่ปนยอดสรุป',
+        split.firstKeys.every(k => /^scans\//.test(k)), split.firstKeys);
+  check('เขียนลงรอบที่เปิดอยู่', split.path === 'rounds/R1', split);
 
   /* ---------- [6] rebuildStat / validateStat ---------- */
   console.log('\n[6] คำนวณใหม่จากศูนย์ + ตัวตรวจ');
@@ -422,8 +423,8 @@ const HARNESS = `
        แต่ละเครื่องเขียนยอดสรุปจาก "ภาพที่ตัวเองเห็น" ณ ตอนนั้น
        ช่วงที่แถวของอีกฝ่ายยังวิ่งมาไม่ถึง ภาพของทั้งคู่จึงยังไม่ครบ */
     window.__seed('admin');
-    writeScan('A1', 1, 'scan');                       // สมชายยิง — เขียน stat = 1
-    const mine = window.__lastStat().pieces;
+    writeScan('A1', 1, 'scan');                       // สมชายยิง — ยอดในเครื่อง = 1
+    const mine = currentStat().pieces;
 
     /* สมศรียิงพร้อมกันอีกเครื่อง ตอนนั้นเครื่องเธอเห็นแค่แถวของตัวเอง จึงเขียน stat = 1 เหมือนกัน */
     const hers = 1;
@@ -435,9 +436,9 @@ const HARNESS = `
     const afterFrame = currentStat().pieces;             // ภาพในเครื่องครบแล้ว
     const dbStillStale = onDb;                        // แต่ยังไม่มีใครเขียนทับให้ถูก
 
-    /* พอมีการยิงครั้งถัดไป ค่าที่เขียนจะเป็นยอดรวมที่ถูกต้อง = ลู่เข้าหาค่าจริง */
+    /* พอมีการยิงครั้งถัดไป ยอดในเครื่องเป็นยอดรวมที่ถูกต้อง = ลู่เข้าหาค่าจริง */
     writeScan('A1', 1, 'scan');
-    const afterNextWrite = window.__lastStat().pieces;
+    const afterNextWrite = currentStat().pieces;
 
     return { mine: mine, onDb: onDb, truth: truth, afterFrame: afterFrame,
              dbStillStale: dbStillStale, afterNextWrite: afterNextWrite };
@@ -643,7 +644,8 @@ const HARNESS = `
       window.__seed('admin');
       state.roundIndex.R1.status = st;
       window.__writes = [];
-      /* ทางที่ 1: ยิงบาร์โค้ด */
+      /* ⭐ v2.10.9 — การยิงไม่เขียนยอดสรุปอีกแล้วทุกสถานะ (ดู test-scan-single-write.js)
+         ตรวจไว้ตรงนี้ด้วยว่าไม่มีทางไหนแอบกลับมาเขียนตอนยิง */
       writeScan('A1', 5, 'scan');
       const afterScan = statWrites();
       /* ทางที่ 2: สั่ง rebuild เขียนตรง ๆ */
@@ -658,11 +660,11 @@ const HARNESS = `
     }
     return out;
   });
-  check('ขั้นนับ: ยิงแล้วยังเขียน stat ตามปกติ', gate.counting.scanStatWrites === 1, gate.counting);
-  check('ขั้นนับ: rebuild เขียนลงฐานได้', gate.counting.rebuildWrites === 1, gate.counting);
-  check('⭐ ขั้นตรวจสอบ: ยิงแล้วไม่มีคำขอเขียน stat', gate.reviewing.scanStatWrites === 0, gate.reviewing);
+  check('⭐ ขั้นนับ: ยิงแล้วก็ไม่เขียน stat แล้ว (v2.10.9)', gate.counting.scanStatWrites === 0, gate.counting);
+  check('ขั้นนับ: rebuild ยังเขียนลงฐานได้', gate.counting.rebuildWrites === 1, gate.counting);
+  check('ขั้นตรวจสอบ: ยิงแล้วไม่มีคำขอเขียน stat', gate.reviewing.scanStatWrites === 0, gate.reviewing);
   check('⭐ ขั้นตรวจสอบ: rebuild ไม่เขียนลงฐาน', gate.reviewing.rebuildWrites === 0, gate.reviewing);
-  check('⭐ ปิดแล้ว: ยิงแล้วไม่มีคำขอเขียน stat', gate.closed.scanStatWrites === 0, gate.closed);
+  check('ปิดแล้ว: ยิงแล้วไม่มีคำขอเขียน stat', gate.closed.scanStatWrites === 0, gate.closed);
   check('⭐ ปิดแล้ว: rebuild ไม่เขียนลงฐาน', gate.closed.rebuildWrites === 0, gate.closed);
   check('แต่ rebuild ยังคำนวณเลขให้ดูได้ทุกสถานะ (validate ต้องใช้)',
         gate.counting.builtPieces === 5 && gate.reviewing.builtPieces === 5 &&
@@ -672,8 +674,8 @@ const HARNESS = `
   const src12 = require('fs').readFileSync(require('./_env').APP_FILE, 'utf8');
   check('ประกาศ canWriteStat ครั้งเดียว',
         (src12.match(/function canWriteStat/g) || []).length === 1, 'canWriteStat');
-  check('มีผู้เรียกใช้อย่างน้อย 2 ทาง (bumpStat + rebuildStat)',
-        (src12.match(/canWriteStat\(/g) || []).length >= 3, 'callers');
+  check('ยังมีผู้เรียกใช้ (rebuildStat)',
+        (src12.match(/canWriteStat\(/g) || []).length >= 2, 'callers');
 
   check('ไม่มี error ในคอนโซล', errors.length === 0, errors.slice(0, 3));
 

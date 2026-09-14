@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.10.8">
+<meta name="version" content="2.10.9">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.10.8</title>
+<title>ISRD Stocktake v2.10.9</title>
 
 <style>
 :root{
@@ -1725,7 +1725,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.10.8';
+var APP_VERSION = '2.10.9';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -4275,6 +4275,17 @@ function dropForeignQueue() {
   return q.length - mine.length;
 }
 
+/* ⭐ v2.10.9 (BUG A) — คิวเปลี่ยนแล้วต้องวาดทุกที่ที่โชว์จำนวนคิว ไม่ใช่แค่แถบ syncBar
+   KPI "ค้างส่ง" อยู่ในแผงสรุปสด (renderLivePanel) ซึ่ง flushQueue ไม่เคยเรียก
+   ตัวเลขจึงค้างที่ค่าเดิมทั้งที่คิวเคลียร์ไปแล้ว — หน้างานเห็น "ค้างส่ง 2" ทั้งที่คิวว่าง
+   pendingCount() อ่าน localStorage สดทุกครั้งอยู่แล้ว แค่สั่งให้วาดใหม่ก็พอ
+   วาดแผงสดเฉพาะตอนอยู่หน้ายิง — หน้าอื่นแผงถูกซ่อน วาดไปก็เปล่าประโยชน์ */
+function syncQueueUi() {
+  renderSyncBar();
+  renderConnection();
+  if (state.page === 'scan') renderLivePanel();
+}
+
 function flushQueue() {
   if (flushing) return;
   var q = queueLoad();
@@ -4286,8 +4297,7 @@ function flushQueue() {
     cur.shift();
     queueSave(cur);
     flushing = false;
-    renderSyncBar();
-    renderConnection();
+    syncQueueUi();                 // คิวสั้นลงแล้ว — "ค้างส่ง" ต้องลดตาม
     if (cur.length) flushQueue();
   }).catch(function (err) {
     /* เน็ตหลุด/ฐานล่ม = คาไว้ที่หัวคิวเหมือนเดิม pushId คงที่อยู่แล้ว ส่งซ้ำไม่นับซ้ำ
@@ -4302,8 +4312,7 @@ function flushQueue() {
         cur.shift();
         queueSave(cur);
         flushing = false;
-        renderSyncBar();
-        renderConnection();
+        syncQueueUi();                         // ยกออกไปพักแล้ว คิวก็สั้นลงเหมือนกัน
         if (cur.length) flushQueue();          // เดินคิวต่อ ไม่ให้ของที่เหลือติดค้าง
         return;
       }
@@ -4665,10 +4674,17 @@ function writeScan(key, delta, mode, reason, extra) {
   var patch = {};
   patch['scans/' + id] = rec;
   enqueueWrite('rounds/' + state.roundId, patch);
-  /* ⭐ v2.10.0 — ยอดสรุปของรอบ เขียนตามหลังแถว scan เสมอ
-     writeScan() เป็นทางเข้าเดียวของทุกการเขียน scan (ยิงสด · กรอกมือ · นำเข้าไฟล์ ·
-     ยกเลิกการยิง · หมายเหตุ · ย้าย/ลบบาร์โค้ดที่ไม่มีในระบบ) hook ที่นี่ที่เดียวจึงครบทุกทาง */
-  bumpStat(state.roundId, safeKey(rec.code));
+  /* ⭐ v2.10.9 (BUG B) — เลิกเขียนยอดสรุปตามหลังทุกการยิงแล้ว
+     ของเดิม (v2.10.0) ยิง 1 ครั้ง = เข้าคิว 2 ใบ (แถว scan + ยอดสรุป) ทั้งคู่ path เดียวกัน
+     จึงกลายเป็น PATCH ขึ้น Firebase 2 รอบต่อการยิงหนึ่งครั้ง
+     (netLog หน้างานเห็น PATCH มาเป็นคู่ทุก timestamp ไป rounds/<id> เหมือนกัน status 200 ทั้งคู่)
+
+     ตัดทิ้งได้เพราะตัดสินใจไม่ทำ Phase 2 แล้ว — ไม่มีหน้าไหนอ่าน stat เลยสักหน้า
+     ทุกหน้าคำนวณสดผ่าน countsAsRealRow() อยู่แล้ว การเขียนทุกครั้งที่ยิงจึงเป็นภาระเปล่า ๆ
+     (กินโควตาเขียนของ Spark เป็นสองเท่า + กินแบตเครื่องคนนับ + ทำคิวยาวขึ้นเท่าตัว)
+
+     ยอดสรุปฉบับทางการยังถูกเขียนอยู่ ที่ freezeStatOnLeaveCounting() ตอนออกจากขั้นนับ
+     ซึ่งคำนวณใหม่จากศูนย์ (rebuildStat) จึงแม่นกว่าการไล่บวกทีละแถวด้วยซ้ำ */
   return { id: id, rec: rec };
 }
 
@@ -10711,21 +10727,12 @@ function canWriteStat(roundId) {
   return (job.status || 'counting') === 'counting';
 }
 
-function bumpStat(roundId, key) {
-  if (!canWriteStat(roundId)) return null;
-  var st = currentStat();
-  var patch = {
-    'stat/pieces': st.pieces,
-    'stat/skus': st.skus,
-    'stat/lastAt': st.lastAt,
-    'stat/lastBy': st.lastBy,
-    'stat/builtAt': Date.now(),
-    'stat/ver': STAT_VER
-  };
-  if (key) patch['skuQty/' + key] = state.counts[key] || 0;
-  enqueueWrite('rounds/' + roundId, patch);
-  return patch;
-}
+/* หมายเหตุ v2.10.9 — เคยมี bumpStat() เขียนยอดสรุปตามหลังทุกการยิงอยู่ตรงนี้
+   ถอดออกแล้วเพราะทำให้การยิง 1 ครั้งกลายเป็น 2 PATCH (ดูเหตุผลเต็มที่ writeScan)
+   เหลือทางเขียน stat ทางเดียวคือ freezeStatOnLeaveCounting() → rebuildStat()
+   ถ้าวันหนึ่งอยากได้ยอดสรุปสดระหว่างนับจริง ๆ อย่าเอา bumpStat กลับมาแบบเดิม
+   ให้รวม patch ยอดสรุปเข้าไปใน enqueueWrite ก้อนเดียวกับแถว scan แทน จะได้ยัง 1 PATCH
+   (แลกกับความเสี่ยง: ถ้า Rules ปฏิเสธ stat เมื่อไหร่ แถว scan จะถูกปฏิเสธไปด้วยทั้งก้อน) */
 
 /* คำนวณยอดสรุปใหม่จากศูนย์ — ใช้ทั้งตอนตรวจสอบและตอนซ่อม
    write=false (ค่าเริ่มต้น) = คำนวณให้ดูเฉย ๆ ไม่แตะฐาน ใช้ตรวจได้แม้รอบปิดไปแล้ว */
