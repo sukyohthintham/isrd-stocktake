@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.10.7">
+<meta name="version" content="2.10.8">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.10.7</title>
+<title>ISRD Stocktake v2.10.8</title>
 
 <style>
 :root{
@@ -976,7 +976,7 @@ body.no-doc-images .doc .imgbox{display:none}
           <div class="pc-badges" id="slBadges"></div>
           <div class="sl-note" id="slNote" style="display:none"><b>📋 หมายเหตุจาก Master</b><span id="slNoteText"></span></div>
           <div class="pc-nums">
-            <div class="pc-num"><span>ยอดระบบ</span><b id="slSys">–</b></div>
+            <div class="pc-num" id="slSysBox"><span>ยอดระบบ</span><b id="slSys">–</b></div>
             <div class="pc-num hi"><span>ยิงสะสม</span><b id="slQty">–</b></div>
           </div>
           <div class="sl-meta" id="slMeta">ยิง 1 ครั้ง = นับเพิ่ม 1 ชิ้น</div>
@@ -1725,7 +1725,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.10.7';
+var APP_VERSION = '2.10.8';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -6098,6 +6098,11 @@ function showScanHit(key) {
   if (foreign) badges.appendChild(makeBadge('📦 ไม่ใช่ของสาขานี้', 'blue'));
 
   $('slSys').textContent = foreign ? '0' : fmtNum(state.systemQty[key] || 0);
+  /* ⭐ v2.10.8 — นับแบบไม่เห็นเฉลย (blind count) สำหรับเด็กหน้าร้าน
+     ถ้าเห็นยอดระบบตอนยิง จะเกิดแรงจูงใจให้ "ยิงให้ครบตามที่ระบบบอก" แทนที่จะนับของจริง
+     ซึ่งทำให้ผลต่างหายไปทั้งที่ของขาดจริง — ปิดเฉพาะ scanner เท่านั้น
+     counter/admin/viewer ยังเห็นครบเหมือนเดิม เพราะเป็นคนที่ต้องกระทบยอดหน้างาน */
+  $('slSysBox').style.display = isScannerOnly() ? 'none' : '';
   $('slQty').textContent = fmtNum(state.counts[key] || 0);
   $('slMeta').textContent = foreign
     ? 'สินค้านี้มีใน Master แต่ไม่อยู่ในยอดของสาขานี้ — บันทึกแล้ว ต้องตรวจว่ามาจากไหน'
@@ -6122,6 +6127,8 @@ function showScanNewCode(value, key) {
   state.lastZoneName = zoneNameForKey(key);   // ไม่มีสินค้าก็ไม่มี Location → "(ไม่ระบุโซน)"
   renderZoneLock();
   $('slSys').textContent = '0';
+  /* ต้องปิดที่นี่ด้วย — การ์ดถูกวาดสองทาง ถ้าใส่ที่เดียวจะรั่วตอนยิงบาร์โค้ดที่ไม่มีในระบบ */
+  $('slSysBox').style.display = isScannerOnly() ? 'none' : '';
   $('slQty').textContent = fmtNum(state.counts[key] || 0);
   $('slMeta').textContent = 'ยิงตัวถัดไปต่อได้เลย';
   showUnknownNote(value);
@@ -6166,15 +6173,32 @@ function renderLivePanel() {
   });
   var host = $('liveStats');
   host.innerHTML = '';
+  /* ⭐ v2.10.8 — scanner เห็นแค่ "ยิงไปกี่ SKU แล้ว" ไม่เห็นตัวหาร (ยอดรวมทั้งรอบ)
+     ตัวหารคือเฉลยว่ารอบนี้มีของกี่ตัว ซึ่งเดาต่อได้ว่าเหลืออีกเท่าไหร่ต้องยิง */
+  var skuCell = isScannerOnly()
+    ? fmtNum(skus)
+    : (fmtNum(skus) + ' / ' + fmtNum(Object.keys(state.systemQty).length));
   [['ชิ้นที่ยิงได้', fmtNum(pieces)],
-   ['SKU ที่ยิงแล้ว', fmtNum(skus) + ' / ' + fmtNum(Object.keys(state.systemQty).length)],
+   ['SKU ที่ยิงแล้ว', skuCell],
    ['ไม่มีในระบบ', fmtNum(unknownPending())],
    ['ค้างส่ง', fmtNum(pendingCount())]
   ].forEach(function (c) {
     var d = document.createElement('div');
     d.className = 'live-cell';
-    var s = document.createElement('span'); s.textContent = c[0];
+    var s = document.createElement('span');
     var b = document.createElement('b'); b.textContent = c[1];
+    /* ⭐ v2.10.8 — "ค้างส่ง" เป็นศัพท์ที่คนนับไม่รู้ว่าหมายถึงอะไร เห็นเลขไม่ใช่ 0 แล้วตกใจ
+       ว่ายอดหาย ทั้งที่แปลว่า "ยังส่งไม่ถึงเซิร์ฟเวอร์" เฉย ๆ — อธิบายไว้ตรงนี้เลย
+       title ไว้ให้เครื่องที่เอาเมาส์ชี้ได้ · แตะทั้งช่องแล้วเด้ง toast ไว้ให้มือถือซึ่ง hover ไม่ได้ */
+    if (c[0] === 'ค้างส่ง') {
+      s.textContent = c[0] + ' ⓘ';
+      d.title = 'จำนวนการยิงที่ยังไม่ถูกบันทึกขึ้นเซิร์ฟเวอร์ (ยังคาในคิวของเครื่องนี้) — ' +
+                'ปกติควรเป็น 0 ถ้าค้างนานแปลว่าส่งไม่ผ่าน ให้เช็กเน็ตแล้วลองใหม่';
+      d.style.cursor = 'pointer';
+      d.onclick = function () { toast(d.title); };
+    } else {
+      s.textContent = c[0];
+    }
     d.appendChild(s); d.appendChild(b);
     host.appendChild(d);
   });
