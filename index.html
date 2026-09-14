@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.9.2">
+<meta name="version" content="2.9.3">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.9.2</title>
+<title>ISRD Stocktake v2.9.3</title>
 
 <style>
 :root{
@@ -738,16 +738,33 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ค้นหาใน Master (สินค้า) และ Location — เด้งผลเป็นป็อปอัปกลางจอ
    สไตล์เดียวกับโมดัล "กรอกมือ" ไม่ต้องสกรอลลงไปท้าย card ยาว ๆ อีก */
 #searchBackdrop{position:fixed;inset:0;z-index:50;background:rgba(15,23,42,.55)}
-#searchPopClose{
-  position:fixed;z-index:53;top:14px;right:16px;width:42px;height:42px;
-  border:none;border-radius:50%;background:#0f766e;color:#fff;
-  font-size:18px;font-weight:800;cursor:pointer;
-  align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(2,44,34,.4)}
 .clist.search-pop{
   position:fixed;z-index:51;left:50%;top:50%;transform:translate(-50%,-50%);
   width:min(600px,94vw);max-height:82vh;overflow-y:auto;margin:0;
-  background:#fff;border-radius:14px;padding:14px;
+  background:#fff;border-radius:14px;padding:0 14px 14px;
   box-shadow:0 18px 50px rgba(2,44,34,.35)}
+/* แถบหัวป็อปอัป — ปุ่มปิดต้องอยู่ "บนการ์ด" ไม่ใช่ลอยอยู่มุมจอ
+   ของเดิมเป็นปุ่ม fixed มุมขวาบนของจอ คนหาไม่เจอจนนึกว่าป็อปอัปนี้ปิดไม่ได้
+   บนมือถือมันยังไปทับแถบหัวเว็บกับแถบบัญชีอีก
+   sticky เพราะการ์ดสกรอลได้ — เลื่อนดูผลค้นลงไปลึกแค่ไหนปุ่มปิดก็ยังอยู่ในมือ
+   (การ์ดจึงตัด padding บนออก ให้แถบหัวแปะขอบบนพอดีตอน top:0) */
+.search-pop > .pop-head{
+  position:sticky; top:0; z-index:1; flex:0 0 auto;
+  display:flex; align-items:center; gap:10px;
+  margin:0 -14px; padding:9px 9px 9px 14px;
+  background:#fff; border-bottom:1px solid var(--line-soft);
+  border-radius:14px 14px 0 0;
+}
+.search-pop .pop-title{font-weight:700;font-size:15px;color:var(--text)}
+.search-pop .pop-x{
+  margin-left:auto; flex:0 0 auto;
+  width:42px; height:42px; padding:0;
+  display:inline-flex; align-items:center; justify-content:center;
+  border:none; border-radius:50%; background:var(--brand); color:#fff;
+  font-family:inherit; font-size:18px; font-weight:800; cursor:pointer;
+}
+.search-pop .pop-x:active{background:var(--brand-dark)}
+.search-pop .pop-x:focus-visible{outline:3px solid var(--brand-light);outline-offset:2px}
 </style>
 
 <div id="loginScreen">
@@ -1036,7 +1053,6 @@ body.no-doc-images .doc .imgbox{display:none}
   </div>
 
   <div id="searchBackdrop" style="display:none"></div>
-  <button id="searchPopClose" type="button" style="display:none" aria-label="ปิด">✕</button>
   <div id="manualBackdrop" style="display:none"></div>
   <div class="card" id="manualPanel" style="display:none">
     <h3>กรอกมือ — สำหรับของที่ป้ายขาดหรือไม่มีบาร์โค้ด</h3>
@@ -1686,7 +1702,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.9.2';
+var APP_VERSION = '2.9.3';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -6256,20 +6272,51 @@ function pickManual(key) {
 
 /* ป็อปอัปผลค้นหา Master/Location — ติด/ถอด class ให้ลิสต์เดิม ไม่ย้าย DOM
    จึงไม่กระทบ renderMaster / renderLocationMaster ที่เขียนทับ innerHTML ตลอด */
+
+/* ชื่อบนหัวป็อปอัป — บอกให้รู้ว่ากำลังดูผลค้นของอะไรอยู่ ไม่ใช่กล่องขาวลอยมาเฉย ๆ */
+var SEARCH_POP_TITLE = { masterList: 'ผลการค้นหาสินค้า', locList: 'ผลการค้นหา Location' };
+
+/* แถบหัวพร้อมปุ่มปิด — ต้องสร้างใหม่ทุกครั้งที่เปิด
+   เพราะ renderMaster/renderLocationMaster ล้าง innerHTML ของลิสต์ทิ้งก่อนเรียก setSearchPop()
+   ปุ่มจึงต้องถูกใส่กลับ "หลัง" การล้าง ไม่ใช่วางไว้ใน HTML แล้วหวังว่ามันจะรอด
+   ปุ่มเรียก closeSearchPop ตัวเดียวกับ backdrop และ Esc — ทางปิดทั้งสามทางจึงทำงานเหมือนกันเป๊ะ */
+function syncSearchPopHead(el, on) {
+  var old = el.querySelector('.pop-head');
+  if (!on) { if (old) el.removeChild(old); return; }
+  if (old) return;
+  var head = document.createElement('div');
+  head.className = 'pop-head';
+  var title = document.createElement('span');
+  title.className = 'pop-title';
+  title.textContent = SEARCH_POP_TITLE[el.id] || 'ผลการค้นหา';
+  var x = document.createElement('button');
+  x.type = 'button';
+  x.className = 'pop-x';
+  x.setAttribute('data-popclose', el.id);
+  x.setAttribute('aria-label', 'ปิด');
+  x.textContent = '✕';
+  x.onclick = closeSearchPop;
+  head.appendChild(title);
+  head.appendChild(x);
+  el.insertBefore(head, el.firstChild);
+}
+
 function setSearchPop(el, on) {
   if (!el) return;
   el.classList.toggle('search-pop', !!on);
+  syncSearchPopHead(el, !!on);
   refreshSearchBackdrop();
 }
 function refreshSearchBackdrop() {
   var any = document.querySelector('.clist.search-pop');
   if ($('searchBackdrop')) $('searchBackdrop').style.display = any ? 'block' : 'none';
-  if ($('searchPopClose')) $('searchPopClose').style.display = any ? 'flex' : 'none';
 }
 function closeSearchPop() {
   if ($('masterSearch')) $('masterSearch').value = '';
   if ($('locSearch')) $('locSearch').value = '';
-  document.querySelectorAll('.clist.search-pop').forEach(function (e) { e.classList.remove('search-pop'); });
+  /* ปิดผ่าน setSearchPop() เสมอ — มันเป็นคนถอดทั้ง class และแถบหัวออกพร้อมกัน
+     ถ้าถอดแค่ class เองตรงนี้ แถบหัวจะค้างอยู่ในลิสต์ตอนกลับไปแสดงแบบปกติในหน้า */
+  document.querySelectorAll('.clist.search-pop').forEach(function (e) { setSearchPop(e, false); });
   if (state.page === 'master') {
     if (state.masterTab === 'locations') renderLocationMaster();
     else renderMaster();
@@ -13285,7 +13332,7 @@ function init() {
   /* ---- Master ---- */
   $('masterSearch').addEventListener('input', renderMaster);
   $('searchBackdrop').onclick = closeSearchPop;
-  $('searchPopClose').onclick = closeSearchPop;
+  /* ปุ่ม ✕ ไม่ต้องผูกตรงนี้ — syncSearchPopHead() ผูก closeSearchPop ให้ตอนสร้างแถบหัว */
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && document.querySelector('.clist.search-pop')) closeSearchPop();
   });
