@@ -21,6 +21,8 @@
    [10] ⭐ ตรึงยอดก่อนพ้นขั้นนับ (ทางแก้ (ข) rebuild-on-close) — ข้อที่ห้ามพลาดที่สุด
         ลำดับต้องเป็น "เขียน stat ให้เสร็จ → ค่อยพลิกสถานะ" เท่านั้น
         สลับลำดับเมื่อไหร่ = Rules ปฏิเสธ = เลขปิดที่ถูกไม่ถูกบันทึก
+   [11] validateAllStats ต้องอ่านทีละรอบ ห้ามยิงพร้อมกันจนคิว bgSlot ตัน
+        รอบไหนไม่จบใน 35 วิ ตัดทิ้งไปรอบถัดไป ห้ามแขวนทั้งชุด · คืนผลครบทุกรอบเสมอ
    ============================================================ */
 
 const { puppeteer, CHROME, APP_URL } = require('./_env');
@@ -524,6 +526,75 @@ const HARNESS = `
   check('ยังปิดรอบได้ตามปกติ',
         failFreeze.statusNow === 'closed' &&
         failFreeze.order.some(o => o.status === 'closed'), failFreeze);
+
+  /* ---------- [11] validateAllStats ต้องไม่ถล่มตัวเอง ---------- */
+  console.log('\n[11] ไล่ตรวจทุกรอบ — ทีละใบ ไม่แขวน คืนผลครบ');
+  const seq = await page.evaluate(async () => {
+    window.__seed('admin');
+    /* 6 รอบ · แต่ละรอบอ่านช้า 60ms เพื่อให้จับ "ทับเวลากัน" ได้ถ้ามันยิงพร้อมกัน */
+    state.roundIndex = {};
+    for (var i = 1; i <= 6; i++) {
+      state.roundIndex['R' + i] = { id: 'R' + i, name: 'รอบ ' + i, cycleId: 'C1',
+                                    status: 'counting', createdAt: i };
+    }
+    var inFlight = 0, peak = 0, order = [];
+    window.__writes = [];
+    window.db.getQuiet = function (p) {
+      inFlight++; peak = Math.max(peak, inFlight);
+      order.push(p);
+      return new Promise(function (res) {
+        setTimeout(function () { inFlight--; res({ s1: { code: 'A1', delta: 2, ts: 10, user: 'ก' } }); }, 60);
+      });
+    };
+    var rows = await validateAllStats({ log: false });
+    return { rows: rows, peak: peak, reads: order.length, writes: window.__writes.length };
+  });
+  check('⭐ อ่านทีละรอบจริง — ไม่มีจังหวะไหนที่มีสองคำขอบินพร้อมกัน', seq.peak === 1, seq.peak);
+  check('ครบทุกรอบ 6 ใบ', seq.rows.length === 6, seq.rows.length);
+  check('ทุกใบผ่านและติดเหตุผลว่า ok', seq.rows.every(r => r.ok === true && r.reason === 'ok'), seq.rows);
+  check('อ่านฐานใบละครั้งเดียว (validateStat อ่าน scan ก้อนเดียวจบ)', seq.reads === 6, seq.reads);
+  check('อ่านอย่างเดียว ไม่เขียนอะไรลงฐานเลย', seq.writes === 0, seq.writes);
+
+  console.log('\n[11b] รอบที่อ่านไม่จบต้องถูกตัด แล้วไปรอบถัดไป ไม่แขวนทั้งชุด');
+  const hang = await page.evaluate(async () => {
+    window.__seed('admin');
+    state.roundIndex = {};
+    for (var i = 1; i <= 4; i++) {
+      state.roundIndex['R' + i] = { id: 'R' + i, name: 'รอบ ' + i, cycleId: 'C1',
+                                    status: 'counting', createdAt: i };
+    }
+    window.__writes = [];
+    window.db.getQuiet = function (p) {
+      /* R2 ค้างตลอดกาล (จำลองช่อง bgSlot รั่ว) · R3 อ่านพัง · ที่เหลือปกติ */
+      if (/\/R2\//.test(p)) return new Promise(function () {});
+      if (/\/R3\//.test(p)) return Promise.reject(new TypeError('Failed to fetch'));
+      return Promise.resolve({ s1: { code: 'A1', delta: 5, ts: 10, user: 'ก' } });
+    };
+    var t0 = Date.now();
+    var rows = await validateAllStats({ timeoutMs: 300, log: false });
+    return { rows: rows, ms: Date.now() - t0, writes: window.__writes.length };
+  });
+  check('ไม่แขวน — ชุดเดินจนจบ', Array.isArray(hang.rows) && hang.rows.length === 4, hang.rows);
+  check('รอบที่ค้างถูกตัดด้วยเหตุผล read-timeout',
+        hang.rows[1].roundId === 'R2' && hang.rows[1].ok === false &&
+        hang.rows[1].reason === 'read-timeout', hang.rows[1]);
+  check('รอบที่อ่านพังแยกเหตุผลเป็น read-failed',
+        hang.rows[2].roundId === 'R3' && hang.rows[2].reason === 'read-failed', hang.rows[2]);
+  check('รอบที่ดีก่อนและหลังยังผ่านปกติ',
+        hang.rows[0].ok === true && hang.rows[3].ok === true, [hang.rows[0], hang.rows[3]]);
+  check('เลขของรอบที่ดียังถูก (5 ชิ้น · 1 SKU)',
+        hang.rows[0].pieces === 5 && hang.rows[0].skus === 1, hang.rows[0]);
+  check('ตัดตามเวลาที่ตั้งไว้จริง ไม่รอจนครบ 35 วิ', hang.ms < 5000, hang.ms);
+  check('ยังไม่เขียนอะไรลงฐาน', hang.writes === 0, hang.writes);
+
+  console.log('\n[11c] ไม่มีรอบเลยก็ต้องไม่พัง');
+  const empty = await page.evaluate(async () => {
+    window.__seed('admin');
+    state.roundIndex = {};
+    window.db.getQuiet = function () { return Promise.resolve({}); };
+    return await validateAllStats({ log: false });
+  });
+  check('คืนลิสต์ว่าง ไม่โยน error', Array.isArray(empty) && empty.length === 0, empty);
 
   check('ไม่มี error ในคอนโซล', errors.length === 0, errors.slice(0, 3));
 

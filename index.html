@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.10.0">
+<meta name="version" content="2.10.1">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.10.0</title>
+<title>ISRD Stocktake v2.10.1</title>
 
 <style>
 :root{
@@ -1715,7 +1715,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.10.0';
+var APP_VERSION = '2.10.1';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -10540,19 +10540,69 @@ function validateStat(roundId, remoteStat) {
   });
 }
 
+/* ตัวจับเวลาครอบ promise — ไม่ได้ยกเลิกคำขอที่กำลังบินอยู่ (fetch ตัวจริงมี timeout ของมันเอง)
+   หน้าที่เดียวคือ "ไม่ปล่อยให้สายการตรวจค้างรอตลอดกาล" ถ้ารอบไหนไม่ยอมจบ
+   เคสที่กลัวคือช่อง bgSlot รั่วจนคำขอถัดไปไม่มีวันได้คิว — ตัวนี้ตัดให้เดินต่อได้ */
+function withStatTimeout(p, ms) {
+  return new Promise(function (resolve, reject) {
+    var settled = false;
+    var t = setTimeout(function () {
+      if (settled) return;
+      settled = true;
+      var e = new Error('read-timeout');
+      e.statTimeout = true;
+      reject(e);
+    }, ms);
+    p.then(
+      function (v) { if (settled) return; settled = true; clearTimeout(t); resolve(v); },
+      function (e) { if (settled) return; settled = true; clearTimeout(t); reject(e); }
+    );
+  });
+}
+
+var VALIDATE_TIMEOUT = 35000;   // ยาวกว่า timeout ของ quiet read (30 วิ) เล็กน้อย ให้มันจบเองก่อน
+
 /* ไล่ตรวจทุกรอบที่มีในระบบ — ใช้ตอนจะตัดสินใจว่าพร้อมสลับจอหรือยัง (Phase 2)
    เรียกจาก Console: validateAllStats().then(console.table)
-   อ่านทีละรอบตามคิว bgSlot อยู่แล้ว จึงไม่ถล่มฐานตัวเอง */
-function validateAllStats() {
+
+   อ่าน "ทีละรอบ" เท่านั้น ห้ามยิงพร้อมกันเด็ดขาด
+   ช่องอ่านเบื้องหลัง (bgSlot) มีแค่ 2 ช่อง ยิง 18 รอบพร้อมกันคือจองคิวยาวจนตัน
+   และรอบคลัง WHS ก้อนใหญ่มากอยู่แล้ว การยิงพร้อมกันมีแต่ทำให้ทุกใบช้าลงพร้อมกัน
+
+   รอบไหนอ่านไม่จบใน 35 วิ ตัดทิ้งแล้วไปรอบถัดไป ไม่แขวนทั้งชุด
+   คืนผลครบทุกรอบเสมอแม้บางรอบพัง (partial ได้) — คนตรวจจะได้เห็นภาพรวมรอบเดียวจบ
+
+   อ่านอย่างเดียวตลอดทั้งฟังก์ชัน ไม่เขียนอะไรลงฐานสักตัว จึงเรียกกับข้อมูลจริงได้ปลอดภัย
+   และเป็น quiet read ทั้งหมด สถานะ online/offline จึงไม่ถูกแตะ (กติกา v2.9.6) */
+function validateAllStats(opts) {
+  opts = opts || {};
+  var ms = opts.timeoutMs || VALIDATE_TIMEOUT;
+  var log = opts.log !== false;
   var ids = Object.keys(state.roundIndex || {});
   var out = [];
-  return ids.reduce(function (chain, id) {
+  return ids.reduce(function (chain, id, i) {
     return chain.then(function () {
-      return validateStat(id).then(function (r) {
-        out.push({ roundId: id, ok: r.ok, records: r.records,
-                   pieces: r.built.pieces, skus: r.built.skus, diff: r.diff.join(' · ') });
+      /* ทำทีละใบจริง ๆ — ใบถัดไปเริ่มต่อเมื่อใบนี้จบแล้วเท่านั้น */
+      return withStatTimeout(validateStat(id), ms).then(function (r) {
+        out.push({
+          roundId: id, ok: r.ok, reason: r.ok ? 'ok' : 'mismatch', records: r.records,
+          pieces: r.built.pieces, skus: r.built.skus, diff: r.diff.join(' · ')
+        });
       }, function (e) {
-        out.push({ roundId: id, ok: false, records: -1, diff: 'อ่านไม่สำเร็จ: ' + (e && e.message) });
+        var timedOut = !!(e && e.statTimeout);
+        out.push({
+          roundId: id, ok: false,
+          reason: timedOut ? 'read-timeout' : 'read-failed',
+          records: -1, pieces: null, skus: null,
+          diff: timedOut ? ('อ่านไม่จบใน ' + Math.round(ms / 1000) + ' วิ')
+                         : ('อ่านไม่สำเร็จ: ' + ((e && e.message) || e))
+        });
+      }).then(function () {
+        /* ชุดนี้ใช้เวลาเป็นนาทีเมื่อมีรอบคลังใหญ่ ต้องเห็นว่ามันเดินอยู่ ไม่ใช่ค้าง */
+        if (log && typeof console !== 'undefined' && console.log) {
+          var last = out[out.length - 1];
+          console.log('[validateStat] ' + (i + 1) + '/' + ids.length + ' ' + id + ' → ' + last.reason);
+        }
       });
     });
   }, Promise.resolve()).then(function () { return out; });
