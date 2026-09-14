@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.9.5">
+<meta name="version" content="2.9.6">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.9.5</title>
+<title>ISRD Stocktake v2.9.6</title>
 
 <style>
 :root{
@@ -1715,7 +1715,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.9.5';
+var APP_VERSION = '2.9.6';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -2183,13 +2183,22 @@ var db = (function () {
 
   function remoteGet(path, opts) {
     opts = opts || {};
-    var quiet = !!opts.quiet, tmo = opts.timeout || 10000;   // ⭐ quiet = ไม่ตัดสิน online/offline (โหลดเบื้องหลัง)
+    var quiet = !!opts.quiet;                                // ⭐ quiet = ไม่ตัดสิน online/offline (โหลดเบื้องหลัง)
+    /* ⭐ v2.9.6 — quiet = อ่านสถิติเบื้องหลัง (ก้อนใหญ่ เช่น รอบคลัง WHS 30,000+ ชิ้น)
+       เดิม 12 วิ + retry 3 รอบ → ก้อนใหญ่อ่านไม่ทันก็ abort แล้วลองใหม่ ครบสามรอบกิน ~36 วิ
+       ตลอดเวลานั้นมันยังจองช่อง bgSlot ค้างไว้ และ BG_MAX มีแค่ 2 ช่อง
+       คำขออื่นจึงต่อคิวยาวเป็นนาที — netLog หน้างานเห็น ms พุ่งถึง 747,000 (12 นาที)
+       ผลคือสถิติค้าง "..." ทั้งจอ ทั้งที่เน็ต/ฐาน/สิทธิ์ปกติดีหมด
+       แก้: ให้เวลายาวพอที่ก้อนใหญ่จะอ่านจบในทีเดียว + ไม่ retry เลย (กัน slot ตัน)
+       ล้มก็ปล่อยล้ม — เป็นสถิติที่โหลดใหม่รอบหน้าได้ ไม่ใช่ยอดนับที่หายไม่ได้ */
+    var tmo = opts.timeout || (quiet ? 30000 : 10000);
+    var tries = (opts.tries != null) ? opts.tries : (quiet ? 1 : 3);
     var t0 = Date.now();
     var gate = quiet ? bgSlot() : Promise.resolve();         // ⭐ อ่านเงียบต้องรอช่องว่าง ห้ามแย่งสายกับคำขอที่ผู้ใช้รอ
     return gate.then(function () {
       return retryNet(function () {
         return withAuthRetry(function () { return fetchT(url(path), { timeoutMs: tmo }); });
-      }, opts.tries);
+      }, tries);
     }).then(
       function (r) { if (quiet) bgDone(); return remoteDone('GET', path, t0, quiet, r); },
       function (e) { if (quiet) bgDone(); return remoteFailed('GET', path, t0, quiet, e); }
@@ -2382,9 +2391,11 @@ var db = (function () {
     },
 
     /* โหลดเบื้องหลังแบบเงียบ — timeout ยาวสำหรับก้อนใหญ่ (scans) และไม่ตัดสิน online/offline
-       ใช้กับการ์ด/สถิติ ที่ล้มเหลวได้โดยไม่ควรเด้ง banner ออฟไลน์ */
+       ใช้กับการ์ด/สถิติ ที่ล้มเหลวได้โดยไม่ควรเด้ง banner ออฟไลน์
+       ⭐ v2.9.6 — ไม่ส่ง timeout มาทับแล้ว ปล่อยให้ remoteGet ใช้ค่าของ quiet (30 วิ)
+       ของเดิมตั้ง 12 วิไว้ตรงนี้ ซึ่งกลายเป็นตัวทับค่าเริ่มต้นจนก้อนใหญ่ abort ทุกครั้ง */
     getQuiet: function (path) {
-      if (REMOTE_MODE) return remoteGet(path, { quiet: true, timeout: 12000 });
+      if (REMOTE_MODE) return remoteGet(path, { quiet: true });
       return Promise.resolve(readLocal(path));
     },
 
