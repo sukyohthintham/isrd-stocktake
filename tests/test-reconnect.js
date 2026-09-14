@@ -1,12 +1,21 @@
 /* ============================================================
-   กู้การเชื่อมต่อเองเมื่อเน็ตเครื่องเปลี่ยน (v2.9.4)
+   กู้การเชื่อมต่อเองเมื่อเน็ตเครื่องเปลี่ยน (v2.9.4 · ปรับกติกาออฟไลน์ v2.9.5)
    ============================================================
 
    อาการหน้างานที่กันไว้: net::ERR_NETWORK_CHANGED ซ้ำ ๆ แล้วแอปค้าง "ออฟไลน์"
    + ตัวเลขค้าง "..." ทั้งที่เน็ตกลับมาแล้ว รีเฟรชหน้าอย่างเดียวถึงจะหาย
 
+   ⚠️ กติกาตัดสิน "ออฟไลน์" เปลี่ยนที่ v2.9.5 — เทสไฟล์นี้ล็อกของใหม่
+      v2.9.4: สาย CLOSED = ประกาศออฟไลน์ทันที
+              → พอสายใดสายหนึ่งสะดุด (มือถือสลับ 4G/ล็อกจอ) banner เด้งทั้งที่ข้อมูล
+                ยังไหลจากสายอื่นอยู่ = อาการ "ไม่ถึง 10 วิ ก็ออฟไลน์"
+      v2.9.5: สายสะดุดหรือปิด → "นัดเปิดสายใหม่ทันที" เสมอ
+              แต่ประกาศออฟไลน์ต่อเมื่อครบ grace 6 วิแล้วยังไม่มีสายไหนกลับมาเลย
+              (สายไหนเปิดได้/มีเฟรมเข้ามาใน 6 วิ streamOk() ยกเลิกนัดตัดสินให้เอง)
+
    กันอะไร:
-   [1] สาย SSE ที่ปิดจริง (readyState CLOSED) ต้องถูกนัดเปิดใหม่ ไม่ใช่ประกาศออฟไลน์แล้วจบ
+   [1] สาย SSE ที่ปิดจริง (readyState CLOSED) ต้องถูกนัดเปิดใหม่ทันที
+       แต่ยังไม่ประกาศออฟไลน์ — รอ grace ก่อน (กติกา v2.9.5)
    [2] เวลาถอยเพิ่มจริง 2→4→8→16→30 วิ และตัน 30 · ต่อได้แล้วต้องรีเซ็ตกลับ 0
    [3] นัดรอบเดียวต่อหนึ่งครั้ง แม้ทุกสายจะร้อง error พร้อมกัน (ไม่ยิงถี่)
    [4] นัดครบเวลาแล้วต้องสร้าง EventSource ใบใหม่จริง
@@ -14,8 +23,10 @@
    [6] ปุ่ม "เชื่อมต่อใหม่" โผล่ตอนออฟไลน์ · กดแล้วเปิดสายใหม่ + โหลดข้อมูลหน้าที่เปิดอยู่
    [7] event 'online' ต้อง re-fetch ข้อมูลหน้าปัจจุบัน ไม่ใช่ flushQueue อย่างเดียว
    [8] คิวที่ยังไม่ได้ส่งต้องไม่ถูกล้างตอน re-fetch (กฎบ้าน "ห้ามทำยอดหาย")
-   [9] grace 6 วิเดิมยังอยู่ — สายที่แค่กำลัง reconnect ต้องไม่เด้ง "ออฟไลน์" ทันที
+   [9] grace 6 วิเดิมยังอยู่ · สายสะดุดต้องนัดเปิดใหม่ทันทีแต่ยังไม่เด้ง "ออฟไลน์"
+   [9c] ⭐ ต้นเหตุที่ v2.9.5 แก้ — สายหนึ่งตายแต่อีกสายยังส่งเฟรมอยู่ ห้ามเด้งออฟไลน์
    [10] ออกจากระบบแล้วต้องไม่มีนัดค้างไว้เปิดสายคืนทีหลัง
+   [12] กลับมาเห็นหน้าจอ (ปลุกจากล็อกจอ / กลับจาก bfcache) ต้องเปิดสายใหม่ + อ่านข้อมูลกลับ
    ============================================================ */
 
 const { puppeteer, CHROME, APP_URL } = require('./_env');
@@ -70,14 +81,23 @@ const HARNESS = `
   window.__hookTimers = function () {
     if (window.__realTimeout) return;
     window.__realTimeout = window.setTimeout;
+    window.__realClear = window.clearTimeout;
     window.setTimeout = function (fn, ms) {
-      window.__timers.push({ fn: fn, ms: ms });
-      return ++window.__timerId;           /* ไม่ยิงจริง — รอให้เทสสั่งเอง */
+      var id = ++window.__timerId;
+      window.__timers.push({ id: id, fn: fn, ms: ms });
+      return id;                           /* ไม่ยิงจริง — รอให้เทสสั่งเอง */
+    };
+    /* ต้อง stub คู่กันเสมอ — โค้ดจริงยกเลิกนัด grace ด้วย clearTimeout()
+       ถ้าไม่เอาออกจากลิสต์ เทสจะไปสั่งยิงนัดที่ถูกยกเลิกไปแล้ว แล้วฟ้องผิด */
+    window.clearTimeout = function (id) {
+      window.__timers = window.__timers.filter(function (t) { return t.id !== id; });
+      return window.__realClear.call(window, id);
     };
   };
   window.__unhookTimers = function () {
     if (!window.__realTimeout) return;
     window.setTimeout = window.__realTimeout;
+    window.clearTimeout = window.__realClear;
     window.__realTimeout = null;
   };
   /* สั่งนัดที่หน่วงนานที่สุด (= นัดเปิดสายใหม่) ให้ครบกำหนดเดี๋ยวนี้ */
@@ -88,6 +108,9 @@ const HARNESS = `
     return hit.length;
   };
   window.__timerDelays = function () { return window.__timers.map(function (t) { return t.ms; }); };
+  /* ล้างนัดที่ค้างจากบล็อกก่อน — ไม่งั้น __runTimer(6000) จะไปยิงนัด grace ของบล็อกอื่นด้วย
+     แล้วนับจำนวนครั้งที่ประกาศออฟไลน์เพี้ยน */
+  window.__resetTimers = function () { window.__timers = []; };
 
   /* ข้อมูลขั้นต่ำให้หน้า Job วาดได้จริง */
   window.__seedApp = function () {
@@ -143,9 +166,12 @@ const HARNESS = `
   });
   check('เปิดสายแล้วสถานะเป็นออนไลน์', r1.status.some(s => s.ok === true), r1.status);
   check('ต่อติดแล้วไม่มีนัดค้าง', r1.afterOpen.retryPending === false && r1.afterOpen.retryDelay === 0, r1.afterOpen);
-  check('สายตายแล้วประกาศออฟไลน์ทันที', r1.status[r1.status.length - 1].ok === false, r1.status);
+  /* ⭐ v2.9.5 — สายตายแล้วยังไม่เด้ง banner ทันที รอ grace ก่อน
+     (v2.9.4 เด้งทันที = ต้นเหตุ banner กะพริบตอนสายใดสายหนึ่งสะดุด) */
+  check('สายตายแล้วยังไม่ประกาศออฟไลน์ทันที', r1.status.every(s => s.ok === true), r1.status);
+  check('ตั้งนัดตัดสินออฟไลน์ไว้ที่ grace 6 วิ', r1.delays.indexOf(6000) >= 0, r1.delays);
   check('นับได้ว่ามีสายตายค้างอยู่ 1 สาย', r1.info.dead === 1, r1.info);
-  check('มีนัดเปิดสายใหม่รออยู่', r1.info.retryPending === true, r1.info);
+  check('นัดเปิดสายใหม่ทันที ไม่รอ grace', r1.info.retryPending === true, r1.info);
   check('รอบแรกถอยเวลา 2 วิ', r1.info.retryDelay === 2000 && r1.delays.indexOf(2000) >= 0, r1);
 
   /* ---------- [2]+[4] นัดครบเวลา → สร้างสายใหม่จริง + ถอยเวลาเพิ่ม ---------- */
@@ -237,6 +263,7 @@ const HARNESS = `
     window.__status.length = 0;
 
     window.__hookTimers();
+    window.__resetTimers();                         /* เริ่มนับนัดของบล็อกนี้ใหม่ */
     window.__esBlip(window.__esLive()[0]);          /* CONNECTING — เบราว์เซอร์ต่อใหม่ให้เอง */
     const delays = window.__timerDelays();
     const info = db.connInfo();
@@ -246,7 +273,10 @@ const HARNESS = `
   });
   check('ยังไม่ประกาศออฟไลน์ทันที', r9.statusNow.length === 0, r9.statusNow);
   check('ตั้ง grace 6 วิไว้เหมือนเดิม', r9.delays.indexOf(6000) >= 0, r9.delays);
-  check('ยังไม่นัดเปิดสายใหม่ระหว่าง grace', r9.info.retryPending === false, r9.info);
+  /* ⭐ v2.9.5 — ลองเปิดสายใหม่ตั้งแต่ยังอยู่ใน grace ไม่ต้องรอให้ครบ 6 วิก่อน
+     ยิ่งเปิดใหม่ได้เร็ว โอกาสที่ banner จะไม่ต้องเด้งเลยยิ่งสูง */
+  check('นัดเปิดสายใหม่ทันทีแม้ยังอยู่ใน grace',
+        r9.info.retryPending === true && r9.info.retryDelay === 2000, r9.info);
 
   console.log('\n[9b] เลย grace แล้วยังไม่กลับ → ประกาศออฟไลน์ + นัดเปิดใหม่');
   const r9b = await page.evaluate(() => {
@@ -257,8 +287,38 @@ const HARNESS = `
     window.__unhookTimers();
     return { info: info, st: st };
   });
-  check('ประกาศออฟไลน์หลัง grace', r9b.st.length === 1 && r9b.st[0].ok === false, r9b.st);
-  check('และนัดเปิดสายใหม่ด้วย ไม่ใช่ตั้งออฟไลน์แล้วจบ', r9b.info.retryPending === true, r9b.info);
+  check('ประกาศออฟไลน์หลัง grace',
+        r9b.st.length >= 1 && r9b.st.every(s => s.ok === false && s.why === 'stream'), r9b.st);
+  check('และยังมีนัดเปิดสายใหม่ค้างอยู่ ไม่ใช่ตั้งออฟไลน์แล้วจบ', r9b.info.retryPending === true, r9b.info);
+
+  /* ---------- [9c] ต้นเหตุที่ v2.9.5 แก้ ---------- */
+  console.log('\n[9c] สายหนึ่งตายแต่อีกสายยังส่งเฟรม — ห้ามเด้ง "ออฟไลน์"');
+  const r9c = await page.evaluate(() => {
+    /* พาทุกสายกลับมาดีก่อน — เปิดสายที่มีอยู่ตรง ๆ ไม่เรียก db.reconnect()
+       เพราะมันจะกินพื้นเวลา 1.5 วิไปจนบล็อกการกดปุ่มในข้อถัดไป */
+    window.__esLive().forEach(function (es) { window.__esOpen(es); });
+    window.__status.length = 0;
+
+    window.__hookTimers();
+    window.__resetTimers();
+    var live = window.__esLive();
+    window.__esKill(live[0]);                       /* สายหนึ่งตาย */
+    var right = window.__status.slice();            /* ต้องยังเงียบ */
+    /* สายที่เหลือมีเฟรมข้อมูลวิ่งเข้ามาเรื่อย ๆ ภายใน grace */
+    window.__esLive().forEach(function (es) { if (es.onopen) es.onopen(); });
+    var afterFrames = window.__status.slice();
+    var ran = window.__runTimer(6000);              /* grace ครบ */
+    var afterGrace = window.__status.slice();
+    window.__unhookTimers();
+    return { right: right, afterFrames: afterFrames, afterGrace: afterGrace, ran: ran,
+             info: db.connInfo() };
+  });
+  check('สายเดียวตายแล้วยังเงียบอยู่ ไม่เด้ง banner', r9c.right.length === 0, r9c.right);
+  check('สายที่เหลือส่งเฟรมเข้ามา = ยังออนไลน์อยู่',
+        r9c.afterFrames.every(s => s.ok === true), r9c.afterFrames);
+  check('grace ครบแล้วก็ยังไม่เด้งออฟไลน์ เพราะมีสายกลับมาแล้ว',
+        r9c.afterGrace.every(s => s.ok === true), r9c.afterGrace);
+  check('แต่ยังนัดเปิดสายที่ตายใหม่อยู่', r9c.info.retryPending === true && r9c.info.dead === 1, r9c.info);
 
   /* ---------- [10] ออกจากระบบ ---------- */
   console.log('\n[10] ออกจากระบบแล้วต้องไม่มีนัดค้าง');
@@ -421,6 +481,44 @@ const HARNESS = `
     return { quiet: quiet };
   });
   check('ยังไม่ล็อกอินก็ไม่ยิงคำขอ', r11.quiet === 0, r11);
+
+  /* ---------- [12] กลับมาเห็นหน้าจอ (v2.9.5) ---------- */
+  console.log('\n[12] ปลุกจากล็อกจอ / กลับจาก bfcache ต้องเปิดสายใหม่ + อ่านข้อมูลกลับ');
+  const r12 = await page.evaluate(async () => {
+    /* headless บางโหมดรายงานว่าหน้าถูกซ่อนอยู่ — บังคับให้ "เห็นอยู่" เพื่อเทสเส้นทางจริง */
+    Object.defineProperty(document, 'hidden', { get: function () { return false; }, configurable: true });
+    window.__seedApp();
+    window.__es.length = 0;
+    db.subscribe('cycles', function () {});
+    db.subscribe('roundIndex', function () {});
+    const esBefore = window.__es.length;
+    const tracked = db.connInfo().streams;     /* reopenStreams() เปิดใหม่ "ทุกสายในทะเบียน" */
+    window.__fetched.length = 0;
+    /* พื้นเวลา 1.5 วิของ db.reconnect() — รอให้พ้นก่อน ไม่งั้นวัดไม่ได้ว่ามันทำงานไหม */
+    await new Promise(function (r) { setTimeout(r, 1600); });
+
+    document.dispatchEvent(new Event('visibilitychange'));
+    await new Promise(function (r) { setTimeout(r, 1100); });   /* รอ debounce 700ms */
+    const afterVis = { streams: window.__es.length - esBefore, tracked: tracked,
+                       paths: window.__fetchedPaths() };
+
+    const esMid = window.__es.length;
+    window.__fetched.length = 0;
+    await new Promise(function (r) { setTimeout(r, 1600); });
+    window.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: true }));
+    await new Promise(function (r) { setTimeout(r, 1100); });
+    const afterShow = { streams: window.__es.length - esMid, tracked: db.connInfo().streams,
+                        paths: window.__fetchedPaths() };
+    return { afterVis: afterVis, afterShow: afterShow };
+  });
+  check('กลับมาเห็นหน้าจอแล้วเปิดสายใหม่ครบทุกสาย',
+        r12.afterVis.tracked > 0 && r12.afterVis.streams === r12.afterVis.tracked, r12.afterVis);
+  check('และอ่านข้อมูลหน้าที่เปิดอยู่กลับมาด้วย',
+        r12.afterVis.paths.some(p => /systemQty\.json$/.test(p)), r12.afterVis.paths.slice(0, 6));
+  check('กลับจาก bfcache ก็เปิดสายใหม่ครบทุกสาย',
+        r12.afterShow.tracked > 0 && r12.afterShow.streams === r12.afterShow.tracked, r12.afterShow);
+  check('bfcache แล้วอ่านข้อมูลกลับมาด้วย',
+        r12.afterShow.paths.some(p => /systemQty\.json$/.test(p)), r12.afterShow.paths.slice(0, 6));
 
   check('ไม่มี error ในคอนโซล', errors.length === 0, errors.slice(0, 3));
 

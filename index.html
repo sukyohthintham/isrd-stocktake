@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.9.4">
+<meta name="version" content="2.9.5">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.9.4</title>
+<title>ISRD Stocktake v2.9.5</title>
 
 <style>
 :root{
@@ -1715,7 +1715,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.9.4';
+var APP_VERSION = '2.9.5';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -2084,17 +2084,20 @@ var db = (function () {
     cancelReopen();                 // ต่อได้แล้ว เลิกนัดเปิดสายใหม่ และรีเซ็ตเวลาถอย
     setStatus(true);
   }
-  function streamError(es) {
-    /* ⭐ v2.9.4 — ปิดจริง (CLOSED) ต้องนัดเปิดสายใหม่ด้วย ไม่ใช่ประกาศออฟไลน์แล้วจบ
-       EventSource ต่อใหม่ให้เองเฉพาะตอนที่ยังอยู่สถานะ CONNECTING เท่านั้น
-       พอโดน net::ERR_NETWORK_CHANGED (สลับ Wi-Fi / เด้งไป 4G) สายจะเด้งไป CLOSED แล้วตายถาวร
-       ก่อนหน้านี้ไม่มีใครเปิดใหม่ แอปจึงค้าง "ออฟไลน์" จนกว่าคนจะรีเฟรชหน้าเอง */
-    if (es && es.readyState === 2) { setStatus(false, 'stream'); scheduleReopen(); return; }
-    if (streamOffTimer) return;                                              // รอ reconnect อยู่แล้ว
+  function streamError() {
+    /* ⭐ v2.9.5 — เลิกประกาศ "ออฟไลน์" ทันทีตอนสาย CLOSED (ต้นเหตุ flapping ของ v2.9.4)
+       เดิม v2.9.4 พอ readyState=CLOSED ก็ setStatus(false) ทันที → ทุกครั้งที่สาย
+       "สายใดสายหนึ่ง" สะดุด (มือถือสลับ 4G/Wi-Fi, ล็อกจอ, 1 ใน N สายตาย) banner เด้ง
+       "ออฟไลน์" ทั้งที่ข้อมูลยังไหลจากสายอื่นอยู่ = อาการที่เจอ "ไม่ถึง 10 วิ ก็ออฟไลน์"
+       คืนหลักการ v2.7.9: "ออฟไลน์" = ไปไม่ถึงจริงเท่านั้น →
+         · สายสะดุด/ปิด ให้ "นัดเปิดใหม่ทันที" เสมอ (คง auto-reopen ของ v2.9.4 ไว้)
+         · แต่ประกาศออฟไลน์ต่อเมื่อครบ grace 6 วิ แล้ว "ยังไม่มีสายไหนกลับมาเลย"
+         · ถ้ามีเฟรม/สายเปิดได้ใน 6 วิ streamOk() จะยกเลิกนัดนี้เอง = ไม่เด้งพร่ำเพรื่อ */
+    scheduleReopen();                          // ตายจริงหรือแค่สะดุด ก็ลองเปิดใหม่ทันทีเสมอ
+    if (streamOffTimer) return;                // มีนัดตัดสินออฟไลน์ค้างอยู่แล้ว
     streamOffTimer = setTimeout(function () {
       streamOffTimer = null;
-      setStatus(false, 'stream');
-      scheduleReopen();             // เลย grace 6 วิแล้วยังไม่กลับ — ลองเปิดสายใหม่เป็นระยะ
+      setStatus(false, 'stream');              // ครบ grace แล้วยังไม่มีสายไหนกลับมา = ไปไม่ถึงจริง
     }, 6000);
   }
 
@@ -13779,6 +13782,16 @@ function init() {
     scheduleRecover();
   });
   window.addEventListener('offline', function () { state.connection = 'offline'; renderConnection(); });
+  /* ⭐ v2.9.5 — มือถือ/แท็บกลับมา visible (ปลุกจากล็อกจอ, สลับแอปกลับมา) สาย SSE มักถูก
+     ระบบฆ่าทิ้งเงียบ ๆ · event 'online' ไม่ยิงถ้าเน็ตไม่ได้เปลี่ยนจริง → ถ้ารอ error ธรรมชาติ
+     อาจค้างนาน · พอหน้าเพจกลับมามองเห็น สั่งเปิดสายใหม่ + อ่านข้อมูลกลับลงมาเลย
+     (db.reconnect มีพื้นเวลา 1.5 วิของตัวเอง กดสลับถี่ ๆ จึงไม่รื้อสายรัว) */
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden && db.reconnect()) scheduleRecover();
+  });
+  window.addEventListener('pageshow', function (e) {
+    if (e && e.persisted && db.reconnect()) scheduleRecover();   // กลับจาก bfcache = สายเดิมตายหมด
+  });
   $('btnReconnect').onclick = manualReconnect;
 
   renderConnection();
