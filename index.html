@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.9.3">
+<meta name="version" content="2.9.4">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.9.3</title>
+<title>ISRD Stocktake v2.9.4</title>
 
 <style>
 :root{
@@ -42,7 +42,20 @@ h3{font-size:17px}
 .topbar .t-conn{
   display:inline-flex;align-items:center;gap:7px;margin-top:7px;font-size:12px;font-weight:600;
   background:rgba(255,255,255,.18);border-radius:999px;padding:4px 11px;
+  /* ข้อความออฟไลน์ยาวกว่าปกติ พอมีปุ่มต่อท้ายด้วยต้องยอมตกบรรทัดบนจอแคบ
+     ไม่งั้นแถบจะดันทะลุขอบจอแล้วปุ่มไปโผล่นอกจอ = กลับไปเป็นปุ่มที่กดไม่ได้เหมือนเดิม */
+  flex-wrap:wrap;max-width:100%;
 }
+/* ⭐ ปุ่มกู้การเชื่อมต่อ (v2.9.4) — โผล่เฉพาะตอนออฟไลน์/ส่งไม่สำเร็จ
+   วางบนแถบสถานะเพราะเป็นที่เดียวที่คนมองเมื่อสงสัยว่าเน็ตมีปัญหา */
+.topbar .t-conn .t-fix{
+  flex:0 0 auto;min-height:36px;padding:6px 14px;
+  border:1px solid rgba(255,255,255,.5);border-radius:999px;
+  background:rgba(255,255,255,.22);color:#fff;
+  font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap;
+}
+.topbar .t-conn .t-fix:active{background:rgba(255,255,255,.34)}
+.topbar .t-conn .t-fix:disabled{opacity:.6;cursor:progress}
 .topbar .t-conn .dot{width:9px;height:9px;border-radius:50%;background:#4ade80;flex:0 0 auto}
 .topbar .t-conn.off{background:rgba(251,191,36,.32)}
 .topbar .t-conn.off .dot{background:#fbbf24}
@@ -793,7 +806,7 @@ body.no-doc-images .doc .imgbox{display:none}
 <div class="topbar">
   <div class="t-title" id="topTitle">ISRD ระบบนับสต๊อก</div>
   <div class="t-sub" id="topSub">ยังไม่ได้เลือกรอบนับ</div>
-  <div class="t-conn" id="connBar"><span class="dot"></span><span id="connText">กำลังตรวจการเชื่อมต่อ...</span></div>
+  <div class="t-conn" id="connBar"><span class="dot"></span><span id="connText">กำลังตรวจการเชื่อมต่อ...</span><button type="button" class="t-fix" id="btnReconnect" style="display:none">🔄 เชื่อมต่อใหม่</button></div>
 </div>
 
 <div class="wrap">
@@ -1702,7 +1715,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.9.3';
+var APP_VERSION = '2.9.4';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -2068,12 +2081,21 @@ var db = (function () {
   var streamOffTimer = null;
   function streamOk() {
     if (streamOffTimer) { clearTimeout(streamOffTimer); streamOffTimer = null; }
+    cancelReopen();                 // ต่อได้แล้ว เลิกนัดเปิดสายใหม่ และรีเซ็ตเวลาถอย
     setStatus(true);
   }
   function streamError(es) {
-    if (es && es.readyState === 2) { setStatus(false, 'stream'); return; }   // ปิดจริง
+    /* ⭐ v2.9.4 — ปิดจริง (CLOSED) ต้องนัดเปิดสายใหม่ด้วย ไม่ใช่ประกาศออฟไลน์แล้วจบ
+       EventSource ต่อใหม่ให้เองเฉพาะตอนที่ยังอยู่สถานะ CONNECTING เท่านั้น
+       พอโดน net::ERR_NETWORK_CHANGED (สลับ Wi-Fi / เด้งไป 4G) สายจะเด้งไป CLOSED แล้วตายถาวร
+       ก่อนหน้านี้ไม่มีใครเปิดใหม่ แอปจึงค้าง "ออฟไลน์" จนกว่าคนจะรีเฟรชหน้าเอง */
+    if (es && es.readyState === 2) { setStatus(false, 'stream'); scheduleReopen(); return; }
     if (streamOffTimer) return;                                              // รอ reconnect อยู่แล้ว
-    streamOffTimer = setTimeout(function () { streamOffTimer = null; setStatus(false, 'stream'); }, 6000);
+    streamOffTimer = setTimeout(function () {
+      streamOffTimer = null;
+      setStatus(false, 'stream');
+      scheduleReopen();             // เลย grace 6 วิแล้วยังไม่กลับ — ลองเปิดสายใหม่เป็นระยะ
+    }, 6000);
   }
 
   /* 401/403 = token หมดอายุหรือถูกเพิกถอน ต่ออายุแล้วลองใหม่ครั้งเดียว
@@ -2207,9 +2229,49 @@ var db = (function () {
     liveStreams.slice().forEach(function (entry) { entry.reopen(); });
   }
   function closeStreams() {
+    clearReopenTimer();             // ออกจากระบบแล้ว ห้ามมีนัดค้างไว้เปิดสายคืนทีหลัง
+    retryDelay = 0;
     liveStreams.slice().forEach(function (entry) { entry.stop(); });
     liveStreams.length = 0;
     remoteCache = {};
+  }
+
+  /* ⭐ กู้สายเองเมื่อเน็ตเครื่องเปลี่ยน (v2.9.4)
+     ถอยเวลาเพิ่มทีละเท่า 2 → 4 → 8 → 16 → 30 วิ (เพดาน 30) แล้วหยุดทันทีที่ต่อได้
+     ต้องถอยเวลา ไม่ใช่ยิงรัวทุกวินาที เพราะตอนเน็ตยังไม่กลับการยิงรัวมีแต่กินแบตเครื่องคนนับ
+     และเสี่ยงโดน Firebase กันด้วย rate limit ซึ่งจะยิ่งทำให้กลับมาช้ากว่าเดิม */
+  var RETRY_MIN = 2000, RETRY_MAX = 30000;
+  var retryTimer = null, retryDelay = 0, lastReconnect = 0;
+
+  function anyDeadStream() {
+    return liveStreams.some(function (e) { return e.dead && e.dead(); });
+  }
+  /* เทียบกับ null ตรง ๆ ไม่ใช่จริง/เท็จ — id ของ timer เป็น 0 ได้
+     ถ้าเช็คแบบจริง/เท็จ id 0 จะถูกอ่านว่า "ยังไม่ได้นัด" แล้วนัดซ้อนกันรัวทุกครั้งที่สายร้อง */
+  function clearReopenTimer() {
+    if (retryTimer !== null) { clearTimeout(retryTimer); retryTimer = null; }
+  }
+  /* เปิดใหม่เฉพาะสายที่ตายจริง (CLOSED) — สายที่ยังดีอยู่ไม่ต้องไปรื้อ
+     ถ้าไม่มีสายไหน CLOSED เลยแต่ยังต่อไม่ติด แปลว่าค้างอยู่ที่ CONNECTING ไม่ยอมกลับ
+     กรณีนั้นบังคับสร้างใบใหม่ทั้งหมด — รอของเก่าต่อไปก็ไม่มีอะไรดีขึ้น */
+  function reopenStale() {
+    var dead = liveStreams.filter(function (e) { return e.dead && e.dead(); });
+    if (dead.length) { dead.forEach(function (e) { e.reopen(); }); return; }
+    reopenStreams();
+  }
+  function scheduleReopen() {
+    if (retryTimer !== null) return;     // นัดไว้แล้ว รอบเดียวพอ แม้ทุกสายจะร้องพร้อมกัน
+    if (!liveStreams.length) return;     // ยังไม่มีสายให้เปิด (ยังไม่ได้ล็อกอิน) ไม่ต้องนัด
+    retryDelay = retryDelay ? Math.min(retryDelay * 2, RETRY_MAX) : RETRY_MIN;
+    retryTimer = setTimeout(function () { retryTimer = null; reopenStale(); }, retryDelay);
+  }
+  /* เลิกนัดเฉพาะตอนที่ไม่มีสายไหนตายค้างอยู่จริง ๆ
+     ถ้าสายหนึ่งตายแต่อีกสายยังส่งข้อมูลอยู่ streamOk ของสายที่ดีจะมายกเลิกนัดของสายที่ตาย
+     แล้วสายนั้นจะไม่มีวันถูกเปิดใหม่เลย เพราะ EventSource ที่ CLOSED ไม่ยิง error ซ้ำ */
+  function cancelReopen() {
+    if (anyDeadStream()) return;
+    clearReopenTimer();
+    retryDelay = 0;
   }
 
   function remoteSubscribe(path, cb) {
@@ -2255,6 +2317,8 @@ var db = (function () {
     open();
     return trackStream({
       reopen: function () { if (alive) open(); },
+      /* CLOSED (readyState 2) = เบราว์เซอร์เลิกต่อให้แล้ว ต้องสร้างใบใหม่เองเท่านั้น */
+      dead: function () { return alive && (!es || es.readyState === 2); },
       stop: function () { alive = false; if (es) es.close(); }
     });
   }
@@ -2276,6 +2340,32 @@ var db = (function () {
 
     /* token ใหม่มาแล้ว — เปิดสายที่ค้างอยู่ใหม่ทั้งหมดด้วย token ตัวใหม่ */
     reopenStreams: function () { if (REMOTE_MODE) reopenStreams(); },
+
+    /* ⭐ กู้การเชื่อมต่อเดี๋ยวนี้ (v2.9.4) — ใช้ตอนคนกดปุ่ม "เชื่อมต่อใหม่"
+       หรือตอนเบราว์เซอร์บอกว่าเน็ตเครื่องกลับมาแล้ว (event 'online')
+       ปิดสายเก่าทิ้งแล้วสร้างใบใหม่ทั้งหมด ไม่ต้องรอรอบถอยเวลา
+       มีพื้นเวลา 1.5 วิกันเน็ตกะพริบถี่ ๆ หรือคนกดปุ่มรัว จนรื้อสายทิ้งไม่หยุด */
+    reconnect: function () {
+      if (!REMOTE_MODE) return false;
+      var now = Date.now();
+      if (now - lastReconnect < 1500) return false;
+      lastReconnect = now;
+      clearReopenTimer();
+      retryDelay = 0;
+      reopenStreams();
+      return true;
+    },
+
+    /* ⭐ สภาพการต่อสายตอนนี้ — ดูหน้างานได้ด้วย db.connInfo() ใน Console
+       streams = จำนวนสายที่เปิดอยู่ · dead = สายที่ตายค้าง · retryDelay = เวลาถอยรอบถัดไป */
+    connInfo: function () {
+      return {
+        streams: liveStreams.length,
+        dead: liveStreams.filter(function (e) { return e.dead && e.dead(); }).length,
+        retryDelay: retryDelay,
+        retryPending: retryTimer !== null
+      };
+    },
 
     /* ออกจากระบบ = ตัดทุกสายทิ้งและล้าง cache ไม่ให้ข้อมูลของคนก่อนค้างอยู่ */
     closeAll: function () { if (REMOTE_MODE) closeStreams(); listeners.length = 0; },
@@ -2359,6 +2449,7 @@ var db = (function () {
         /* seen[] คงไว้ตอนต่อสายใหม่ ไม่งั้นจะยิงซ้ำทุกแถวที่เคยเห็นแล้ว */
         return trackStream({
           reopen: function () { if (alive) openChild(); },
+          dead: function () { return alive && (!es || es.readyState === 2); },
           stop: function () { alive = false; if (es) es.close(); }
         });
       }
@@ -6089,17 +6180,22 @@ function renderConnection() {
   var text = $('connText');
   if (!bar || !text) return;
   var pending = pendingCount();
+  /* ปุ่มกู้การเชื่อมต่อโผล่เฉพาะตอนที่มีอะไรให้กู้จริง — ตอนปกติอย่าให้รกแถบ */
+  var fix = $('btnReconnect');
+  function showFix(on) { if (fix) fix.style.display = on ? 'inline-flex' : 'none'; }
 
   if (!db.remote) {
     bar.className = 't-conn off';
     bar.setAttribute('data-conn', 'local');
     text.textContent = 'โหมดทดสอบ — ยังไม่ได้ต่อฐานกลาง';
+    showFix(false);
     return;
   }
   if (state.connection === 'offline') {
     bar.className = 't-conn off';
     bar.setAttribute('data-conn', 'offline');
     text.textContent = 'ออฟไลน์ — เก็บคิวในเครื่อง ' + fmtNum(pending) + ' รายการ';
+    showFix(true);
     return;
   }
   /* แถวที่ฐานปฏิเสธถาวรต้องเห็นได้จากทุกหน้า ไม่ใช่เฉพาะหน้ายิง (v2.7.7)
@@ -6108,6 +6204,7 @@ function renderConnection() {
   var failed = failedCount();
   bar.className = 't-conn' + (failed ? ' off' : '');
   bar.setAttribute('data-conn', failed ? 'failed' : 'online');
+  showFix(!!failed);
   if (failed) {
     text.textContent = 'ส่งไม่สำเร็จค้างอยู่ ' + fmtNum(failed) + ' รายการ — ไปที่หน้ายิงเพื่อส่งใหม่' +
       (pending ? ' · รอส่งอีก ' + fmtNum(pending) + ' รายการ' : '');
@@ -6116,6 +6213,80 @@ function renderConnection() {
   text.textContent = pending
     ? 'ต่อฐานกลางแล้ว — กำลังส่ง ' + fmtNum(pending) + ' รายการ'
     : 'ต่อฐานกลางแล้ว';
+}
+
+/* ============================================================
+   กู้การเชื่อมต่อเองเมื่อเน็ตเครื่องเปลี่ยน (v2.9.4)
+   ============================================================
+   อาการหน้างาน: console ขึ้น net::ERR_NETWORK_CHANGED ซ้ำ ๆ (Wi-Fi สลับ AP / เด้งไป 4G)
+   แล้วแอปค้าง "ออฟไลน์ — เก็บคิว 0" กับตัวเลขบนการ์ดค้าง "..." ทั้งที่เน็ตกลับมาแล้ว
+   มีสองสาเหตุคนละชั้น:
+     1) สาย SSE ที่ตายไม่มีใครเปิดใหม่           — แก้ในชั้น db (scheduleReopen)
+     2) ไม่มีใครโหลดข้อมูลของหน้าที่เปิดอยู่กลับมาวาด — แก้ตรงนี้
+   ก่อนหน้านี้ event 'online' ทำแค่ flushQueue() ซึ่งส่งของที่ค้างขึ้นไป
+   แต่ไม่ได้ "อ่านกลับลงมา" จอจึงค้างอยู่อย่างนั้นจนกว่าคนจะรีเฟรชหน้าเอง */
+
+/* ⚠️ อ่านมาวาดจอเท่านั้น — ห้ามแตะคิวเขียนที่ยังไม่ได้ส่ง (queueLoad/queueSave)
+   และห้ามแตะยอดที่นับมาแล้ว ตรงนี้ล้างได้เฉพาะ "ผลอ่านที่แคชไว้"
+   ซึ่งอาจโหลดมาไม่ครบตอนเน็ตหลุด แล้วปล่อยให้ตัววาดไปโหลดใหม่เอง */
+function reloadCurrentPage() {
+  if (!db.remote || !state.me) return;
+  state.cycleStats = {};      // สถิติระดับรอบ — หัวรอบนับจะได้ไม่ค้าง "กำลังรวมยอด"
+  state.cycleData = null;     // ยอดรวมทุก Job ที่หน้าสรุปใช้
+
+  /* products เป็นก้อนใหญ่ (หมื่นห้าพันรายการ) ดึงซ้ำทุกครั้งที่เน็ตกะพริบ = ถล่มฐานตัวเอง
+     ดึงเฉพาะตอนที่มันว่าง ซึ่งแปลว่ารอบก่อนโหลดไม่สำเร็จเพราะเน็ตหลุดจริง */
+  if (!Object.keys(state.products).length) refreshProducts();
+
+  if (state.roundId) {
+    refreshSystemQty();
+    refreshZones();
+    refreshTransfers();
+  }
+
+  /* ก้อนที่มาทางสาย SSE (cycles / roundIndex / scans) ส่งกลับมาเองตอนเปิดสายใหม่
+     ที่ต้องสั่งเองคือหน้าที่วาดจากคำขอครั้งเดียว ซึ่งไม่มีใครไปยิงให้ */
+  if (state.page === 'jobs') renderJobs();
+  else if (state.page === 'summary') renderSummary();
+  else if (state.page === 'doc') renderDoc();
+  else if (state.page === 'master') renderMaster();
+  else if (state.page === 'scan') renderScanPage();
+  else renderStart();
+  renderConnection();
+}
+
+/* เน็ตกลับมาทีหนึ่งมีสัญญาณเข้ามาหลายทางพร้อมกัน — event 'online' ของเบราว์เซอร์
+   บวกกับสาย SSE ที่ทยอยเปิดสำเร็จทีละสาย ถ้าโหลดใหม่ทุกสัญญาณจะกลายเป็นถล่มฐาน
+   ตอนที่เน็ตเพิ่งกลับและยังไม่นิ่ง — รวบให้เหลือครั้งเดียวต่อการกลับมาหนึ่งครั้ง */
+var recoverTimer = null;
+function scheduleRecover() {
+  if (recoverTimer) return;
+  recoverTimer = setTimeout(function () {
+    recoverTimer = null;
+    reloadCurrentPage();
+  }, 700);
+}
+
+var RECONNECT_LABEL = '🔄 เชื่อมต่อใหม่';
+
+/* ปุ่ม "เชื่อมต่อใหม่" บนแถบสถานะ — ทางออกให้คนหน้างานกดเองโดยไม่ต้องรีโหลดทั้งหน้า
+   (รีโหลดหน้าแปลว่ารอโหลด Master หมื่นห้าพันรายการใหม่ทั้งก้อน ซึ่งช้ากว่ามาก)
+   กันกดรัวด้วยการปิดปุ่มไว้ 4 วิ ไม่ใช่ปล่อยให้รื้อสายทิ้งทุกครั้งที่นิ้วโดน */
+function manualReconnect() {
+  var btn = $('btnReconnect');
+  if (btn && btn.disabled) return false;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ กำลังเชื่อมต่อ...'; }
+  db.reconnect();          // ปิดสายที่ค้างแล้วเปิด EventSource ใบใหม่ทันที
+  flushQueue();            // ของที่ค้างคิวส่งต่อได้เลย ไม่ต้องรอรอบ 15 วิถัดไป
+  reloadCurrentPage();     // อ่านข้อมูลของหน้าที่เปิดอยู่กลับมาวาดใหม่
+  toast('กำลังเชื่อมต่อใหม่และโหลดข้อมูลหน้านี้ใหม่ — รอสักครู่');
+  setTimeout(function () {
+    var b = $('btnReconnect');
+    if (!b) return;
+    b.disabled = false;
+    b.textContent = RECONNECT_LABEL;
+  }, 4000);
+  return true;
 }
 
 function renderSyncBar() {
@@ -13594,10 +13765,21 @@ function init() {
     if (state.connection === next) return;
     state.connection = next;
     renderConnection();
-    if (ok) flushQueue();
+    /* ⭐ v2.9.4 — กลับมาออนไลน์ต้อง "อ่านกลับลงมา" ด้วย ไม่ใช่ส่งคิวขึ้นไปอย่างเดียว
+       ไม่งั้นตัวเลขบนจอค้างเป็น "..." ต่อไปทั้งที่สายกลับมาแล้ว */
+    if (ok) { flushQueue(); scheduleRecover(); }
   });
-  window.addEventListener('online', function () { state.connection = 'unknown'; flushQueue(); renderConnection(); });
+  window.addEventListener('online', function () {
+    state.connection = 'unknown';
+    flushQueue();
+    renderConnection();
+    /* เน็ตเครื่องกลับมา — สายที่ตายตอน ERR_NETWORK_CHANGED ต้องถูกเปิดใหม่ด้วย
+       db.reconnect() มีพื้นเวลา 1.5 วิของตัวเองอยู่แล้ว เน็ตกะพริบถี่ ๆ จึงไม่รื้อสายรัว */
+    db.reconnect();
+    scheduleRecover();
+  });
   window.addEventListener('offline', function () { state.connection = 'offline'; renderConnection(); });
+  $('btnReconnect').onclick = manualReconnect;
 
   renderConnection();
   boot();
