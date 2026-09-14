@@ -7,6 +7,10 @@
    ถ้าข้อไหนตกแปลว่า "ห้ามไป Phase 2" ยังไม่ใช่แค่บั๊กเล็ก ๆ
 
    กันอะไร:
+   ⭐ v2.10.4 — นิยาม pieces/skus เปลี่ยนจาก "ผลรวมดิบ" เป็น "เลขสะอาด"
+      ผ่าน countsAsRealRow() ตัวเดียวกับ summaryData/เอกสาร/Excel
+      รอบที่ไม่มีบาร์โค้ดผี ตัวเลขต้องไม่เปลี่ยนเลยแม้แต่ชิ้นเดียว
+
    [1] นิยามตรงกับ computeJobStats() ที่จอใช้อยู่ (pieces/skus/lastAt)
    [2] ยอดในเครื่อง (bumpLocalStat ทีละแถว) == คำนวณใหม่จากศูนย์ (statFromScans)
        ครบทุกเคส: ยิงซ้ำ · ติดลบ · หักจนเหลือ 0 · แถวหมายเหตุ delta 0 · ghost 0/0
@@ -112,8 +116,8 @@ const HARNESS = `
     var built = statFromScans(blob);
     var live = computeJobStats(blob);
     return {
-      local: { pieces: state.stat.pieces, skus: state.stat.skus,
-               lastAt: state.stat.lastAt, lastBy: state.stat.lastBy },
+      local: { pieces: currentStat().pieces, skus: currentStat().skus,
+               lastAt: currentStat().lastAt, lastBy: currentStat().lastBy },
       built: { pieces: built.pieces, skus: built.skus, lastAt: built.lastAt, lastBy: built.lastBy },
       live: { pieces: live.pieces, skus: live.skuScanned, lastAt: live.lastTs },
       records: Object.keys(blob).length
@@ -169,26 +173,46 @@ const HARNESS = `
   /* ---------- [1] นิยามต้องยืมของเดิมมา ไม่ใช่เขียนใหม่ ---------- */
   console.log('\n[1] statFromScans ต้องได้เลขเดียวกับ computeJobStats เสมอ');
   const defs = await page.evaluate(() => {
+    window.__seed('admin');                 /* A1·A2·A3 อยู่ใน Master · sys A1=5 */
     const blob = {
       s1: { code: 'A1', delta: 3, ts: 100, user: 'สมชาย' },
-      s2: { code: 'A1', delta: -3, ts: 200, user: 'สมศรี' },   /* หักจนเหลือ 0 */
+      s2: { code: 'A1', delta: -3, ts: 200, user: 'สมศรี' },   /* หักจนเหลือ 0 แต่มี sys=5 */
       s3: { code: 'A2', delta: 4, ts: 150, user: 'สมชาย' },
       s4: { code: 'A3', delta: 0, ts: 300, user: 'สมปอง' },    /* แถวหมายเหตุ */
-      s5: { code: 'A2', delta: -6, ts: 250, user: 'สมศรี' }    /* ติดลบสุทธิ */
+      s5: { code: 'A2', delta: -6, ts: 250, user: 'สมศรี' }    /* ติดลบสุทธิ แต่อยู่ใน Master */
     };
-    const built = statFromScans(blob);
-    const live = computeJobStats(blob);
+    const built = statFromScans(blob, state.systemQty);
+    const live = computeJobStats(blob, state.systemQty);
     return { built: built, live: live };
   });
   check('pieces ตรงกัน', defs.built.pieces === defs.live.pieces, defs);
-  check('pieces = ผลรวม delta จริง (3-3+4+0-6 = -2)', defs.built.pieces === -2, defs.built.pieces);
+  /* A1 สุทธิ 0 แต่มียอดระบบ 5 → เป็นแถวจริง นับ 0 ชิ้น · A2 สุทธิ -2 อยู่ใน Master → นับ
+     A3 สุทธิ 0 และยอดระบบ 0 → แถวผี ตัดทิ้ง */
+  check('pieces = เฉพาะแถวจริง (0 + -2 = -2)', defs.built.pieces === -2, defs.built.pieces);
   check('skus ตรงกัน', defs.built.skus === defs.live.skuScanned, defs);
-  check('SKU ที่หักจนเหลือ 0 ไม่ถูกนับ · ติดลบยังนับ (A2 เท่านั้น = 1)',
+  check('นับเฉพาะแถวจริงที่ยอดไม่เป็น 0 (A2 ตัวเดียว = 1)',
         defs.built.skus === 1, { skus: defs.built.skus, counts: defs.live.counts });
   check('lastAt ตรงกัน และนับแถวหมายเหตุ delta 0 ด้วย (= 300)',
         defs.built.lastAt === defs.live.lastTs && defs.built.lastAt === 300, defs.built.lastAt);
   check('lastBy = คนของแถวล่าสุด', defs.built.lastBy === 'สมปอง', defs.built.lastBy);
-  check('ติดธงเวอร์ชันไว้', defs.built.ver === 1, defs.built.ver);
+  check('ติดธงเวอร์ชันไว้ (ขึ้นเป็น 2 เพราะนิยามเปลี่ยน)', defs.built.ver === 2, defs.built.ver);
+
+  console.log('\n[1b] ⭐ บาร์โค้ดผีที่แอดมินสั่งลบทิ้ง ต้องหลุดออกจากยอดทุกทาง');
+  const ghostDrop = await page.evaluate(() => {
+    window.__seed('admin');
+    const blob = {
+      g1: { code: 'A1', delta: 3078, ts: 10, user: 'ก' },
+      /* ผี 13 ตัว ตัวละ -1 แบบเคสจริง WHS19 — ยิงเจอแล้วถูกสั่งลบทิ้ง */
+      g2: { code: 'BAD', delta: -13, ts: 20, user: 'ก', unknown: true, raw: 'BAD', discard: true }
+    };
+    const built = statFromScans(blob, state.systemQty);
+    const rawSum = Object.keys(blob).reduce(function (s, k) { return s + blob[k].delta; }, 0);
+    return { built: built, rawSum: rawSum };
+  });
+  check('ผลรวมดิบคือ 3,065 (แบบที่การ์ดเคยโชว์)', ghostDrop.rawSum === 3065, ghostDrop.rawSum);
+  check('⭐ เลขสะอาดคือ 3,078 (แบบที่เอกสาร/Excel โชว์)',
+        ghostDrop.built.pieces === 3078, ghostDrop.built);
+  check('ผีไม่ถูกนับเป็น SKU ด้วย', ghostDrop.built.skus === 1, ghostDrop.built);
 
   /* ---------- [2] ยอดในเครื่องต้องเท่ากับคำนวณใหม่ทุกจังหวะ ---------- */
   console.log('\n[2] ยิงทีละแถว — ยอดในเครื่องต้องไม่หลุดจากการนับสดเลยสักก้าว');
@@ -277,14 +301,14 @@ const HARNESS = `
     writeScan('A1', 1, 'scan');
     const third = window.__lastStat();
     return { first: first, second: second, third: third,
-             localPieces: state.stat.pieces, keys: Object.keys(window.__writes[1].patch) };
+             localPieces: currentStat().pieces, keys: Object.keys(window.__writes[1].patch) };
   });
   check('ค่าที่เขียนเป็นยอดรวมสะสม ไม่ใช่ delta', abs.first.pieces === 4 && abs.second.pieces === 7, abs);
   check('ยอดรวมแถวของคนอื่นที่วิ่งเข้ามาด้วย (7+10+1 = 18)', abs.third.pieces === 18, abs);
   check('ตรงกับยอดในเครื่อง', abs.third.pieces === abs.localPieces, abs);
   check('เขียน skuQty ของ SKU ที่เพิ่งขยับมาด้วย',
         abs.keys.some(k => /^skuQty\//.test(k)), abs.keys);
-  check('ติดธงเวอร์ชันไปกับทุกก้อน', abs.third.ver === 1, abs.third);
+  check('ติดธงเวอร์ชันไปกับทุกก้อน', abs.third.ver === 2, abs.third);
 
   /* ---------- [5] แยกคิวจากแถว scan ---------- */
   console.log('\n[5] แถว scan กับแถว stat ต้องแยกคิว (Rules ยังไม่วางก็ต้องยิงได้)');
@@ -324,7 +348,7 @@ const HARNESS = `
     const vBad = await validateStat('R1', { pieces: built.pieces + 5, skus: built.skus, lastAt: built.lastAt });
     const patch = window.__writes[window.__writes.length - 1].patch;
     return { built: built, written: written, wrote: wAfter - wBefore, v: v, vBad: vBad,
-             local: { pieces: state.stat.pieces, skus: state.stat.skus, lastAt: state.stat.lastAt },
+             local: { pieces: currentStat().pieces, skus: currentStat().skus, lastAt: currentStat().lastAt },
              patchKeys: Object.keys(patch).sort() };
   });
   check('คำนวณใหม่ได้เลขเดียวกับยอดในเครื่อง',
@@ -362,17 +386,17 @@ const HARNESS = `
   const swap = await page.evaluate(() => {
     window.__seed('admin');
     writeScan('A1', 12, 'scan');
-    const before = { pieces: state.stat.pieces, skus: state.stat.skus };
+    const before = { pieces: currentStat().pieces, skus: currentStat().skus };
     resetRoundAggregates();
-    const after = { pieces: state.stat.pieces, skus: state.stat.skus, lastAt: state.stat.lastAt,
-                    lastBy: state.stat.lastBy, ver: state.stat.ver };
+    const after = { pieces: currentStat().pieces, skus: currentStat().skus, lastAt: currentStat().lastAt,
+                    lastBy: currentStat().lastBy, ver: currentStat().ver };
     return { before: before, after: after };
   });
   check('ก่อนเปลี่ยนมียอดอยู่', swap.before.pieces === 12 && swap.before.skus === 1, swap.before);
   check('เปลี่ยนรอบแล้วล้างเป็นศูนย์หมด',
         swap.after.pieces === 0 && swap.after.skus === 0 && swap.after.lastAt === 0 &&
         swap.after.lastBy === '', swap.after);
-  check('ยังติดธงเวอร์ชันไว้', swap.after.ver === 1, swap.after);
+  check('ยังติดธงเวอร์ชันไว้ (v2.10.4 = 2)', swap.after.ver === 2, swap.after);
 
   /* ---------- [8] Phase 1 ห้ามเปลี่ยนสิ่งที่จออ่าน ---------- */
   console.log('\n[8] Phase 1 — จอยังต้องนับสดเหมือนเดิมทุกประการ');
@@ -405,7 +429,7 @@ const HARNESS = `
 
     /* แถวของสมศรีวิ่งเข้ามาทางสาย SSE */
     applyScanRecord('remote_ss', { code: 'A2', delta: 1, ts: Date.now() + 500, user: 'สมศรี', mode: 'scan' });
-    const afterFrame = state.stat.pieces;             // ภาพในเครื่องครบแล้ว
+    const afterFrame = currentStat().pieces;             // ภาพในเครื่องครบแล้ว
     const dbStillStale = onDb;                        // แต่ยังไม่มีใครเขียนทับให้ถูก
 
     /* พอมีการยิงครั้งถัดไป ค่าที่เขียนจะเป็นยอดรวมที่ถูกต้อง = ลู่เข้าหาค่าจริง */
@@ -442,7 +466,7 @@ const HARNESS = `
     const afterClose = window.__order.slice();
 
     return { afterReview: afterReview, afterClose: afterClose,
-             localPieces: state.stat.pieces, localSkus: state.stat.skus };
+             localPieces: currentStat().pieces, localSkus: currentStat().skus };
   });
   const rv = close.afterReview;
   check('ออกจากขั้นนับแล้วมีทั้งเขียน stat และพลิกสถานะ', rv.length >= 2, rv);
@@ -552,7 +576,9 @@ const HARNESS = `
   check('⭐ อ่านทีละรอบจริง — ไม่มีจังหวะไหนที่มีสองคำขอบินพร้อมกัน', seq.peak === 1, seq.peak);
   check('ครบทุกรอบ 6 ใบ', seq.rows.length === 6, seq.rows.length);
   check('ทุกใบผ่านและติดเหตุผลว่า ok', seq.rows.every(r => r.ok === true && r.reason === 'ok'), seq.rows);
-  check('อ่านฐานใบละครั้งเดียว (validateStat อ่าน scan ก้อนเดียวจบ)', seq.reads === 6, seq.reads);
+  /* 6 Job อยู่รอบเดียวกัน → ยอดระบบอ่านครั้งเดียว + scans อีกใบละครั้ง = 7
+     ถ้าเลขนี้กลายเป็น 12 แปลว่าแคชยอดระบบพัง กลับไปอ่านซ้ำทุกใบแล้ว */
+  check('อ่านฐานเท่าที่จำเป็น: ยอดระบบรอบละครั้ง + scans ใบละครั้ง', seq.reads === 7, seq.reads);
   check('อ่านอย่างเดียว ไม่เขียนอะไรลงฐานเลย', seq.writes === 0, seq.writes);
 
   console.log('\n[11b] รอบที่อ่านไม่จบต้องถูกตัด แล้วไปรอบถัดไป ไม่แขวนทั้งชุด');

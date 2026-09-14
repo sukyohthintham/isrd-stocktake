@@ -125,8 +125,10 @@ const HARNESS = `
         disc.droppedWithQty[0].code === '8850999999999' &&
         disc.droppedWithQty[0].act === 13 &&
         disc.droppedWithQty[0].discarded === true, disc.droppedWithQty);
-  check('scoreboard ตอนนี้ยังเป็นยอดดิบ (ยังไม่ได้เปลี่ยนนิยาม)',
-        disc.scoreboardPieces === 113, disc);
+  /* ⭐ v2.10.4 — scoreboard เปลี่ยนมาใช้เลขสะอาดแล้ว ต้องเท่ากับหน้าสรุปเป๊ะ
+     ก่อนหน้านี้เป็นยอดดิบ (113) ซึ่งคือต้นเหตุที่การ์ดกับเอกสารไม่ตรงกัน */
+  check('scoreboard = เลขสะอาด เท่ากับหน้าสรุป (100)',
+        disc.scoreboardPieces === 100 && disc.scoreboardPieces === disc.summaryActQty, disc);
 
   /* ---------- [4] ยอดสุทธิ <= 0 ---------- */
   console.log('\n[4] บาร์โค้ดที่ยอดสุทธิเหลือ <= 0 (ย้ายไปผูกที่อื่น/หักเบิ้ล)');

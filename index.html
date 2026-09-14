@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.10.3">
+<meta name="version" content="2.10.4">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.10.3</title>
+<title>ISRD Stocktake v2.10.4</title>
 
 <style>
 :root{
@@ -1715,7 +1715,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.10.3';
+var APP_VERSION = '2.10.4';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -4122,7 +4122,9 @@ function scanIndexHas(value) {
 
 function resetRoundAggregates() {
   state.counts = {};
-  state.stat = emptyStat();          // ยอดสรุปของรอบ — ต้องล้างพร้อมยอดนับ ไม่งั้นติดค้างมาจากใบเดิม
+  state.stat = null;                 // ยอดสรุปของรอบ — ต้องล้างพร้อมยอดนับ ไม่งั้นติดค้างมาจากใบเดิม
+  state.statLastAt = 0;
+  state.statLastBy = '';
   state.scanQty = {};
   state.manualQty = {};
   state.foundZones = {};
@@ -7540,6 +7542,29 @@ function isGhostRow(sys, act) {
   return (Number(sys) || 0) === 0 && (Number(act) || 0) === 0;
 }
 
+/* ⭐ v2.10.4 — กติกา "แถวนี้นับเข้ายอดจริงไหม" มีที่เดียวตรงนี้
+   ก่อนหน้านี้เงื่อนไขชุดนี้เขียนอยู่ใน summaryData() ที่เดียว
+   ส่วนการ์ด Job / ภาพรวมทุกสาขา / scoreboard บวก delta ดิบ ๆ เอง ไม่ผ่านกติกานี้
+   ตัวเลขสองฝั่งจึงต่างกันโดยไม่มีใครรู้ — เคสจริง WHS19-STOCK-20260903-01
+   มีบาร์โค้ดผีที่แอดมินสั่งลบทิ้ง 13 ตัว ยอดสุทธิตัวละ -1
+   เอกสาร/Excel (ผ่านกติกานี้) ได้ 3,078 · การ์ด/ภาพรวม (บวกดิบ) ได้ 3,065
+
+   ตั้งแต่นี้ทุกที่ต้องเรียกตัวนี้ ห้ามบวก delta ดิบเองอีก
+
+   sys       ยอดระบบของ SKU นั้น (0 ถ้าไม่มีในไฟล์ยอด)
+   act       ยอดนับสุทธิ
+   inMaster  มีใน Master ไหม (state.products)
+   discarded แอดมินสั่งลบทิ้งไหม (ยิงหลุด/บาร์โค้ดขยะ) */
+function countsAsRealRow(sys, act, inMaster, discarded) {
+  /* แถวผี 0/0 — ไม่มีของจริงและไม่ได้นับเจออะไร ไม่ใช่แถวที่ต้องรายงาน (กฎบ้าน v2.8.0) */
+  if (isGhostRow(sys, act)) return false;
+  /* บาร์โค้ดที่ไม่มีในระบบและยอดสุทธิ <= 0 (ถูกย้ายไปผูกที่อื่น/หักเบิ้ล)
+     หรือตัวที่แอดมินสั่งลบทิ้ง — ไม่ใช่ของจริง ต้องหลุดทั้งใบ (สาย v2.6.9)
+     เงื่อนไข !sys กันไว้อีกชั้น: มียอดระบบเมื่อไหร่แปลว่าเป็นแถวจริงเสมอ ห้ามตัด */
+  if (!sys && !inMaster && ((Number(act) || 0) <= 0 || discarded)) return false;
+  return true;
+}
+
 /* ---------- เครื่องมือหาสาเหตุ "ชิ้นที่ยิงได้ไม่เท่ากันระหว่างหน้า" (v2.10.3) ----------
    อ่านอย่างเดียว ไม่เขียนอะไรทั้งสิ้น ไม่เปลี่ยนตัวเลขบนจอสักตัว
    เรียกจาก Console ตอนเปิด Job ที่สงสัยอยู่:  diffPieces()
@@ -7588,7 +7613,7 @@ function diffPieces() {
     roundId: state.roundId,
     rawPieces: raw,                              // ยอดดิบของรอบที่เปิดอยู่
     summaryActQty: d.groups.total.actQty,        // ที่หน้าสรุป/เอกสารใช้ในตารางความแม่น
-    scoreboardPieces: (state.stat || {}).pieces, // ที่ scoreboard เก็บไว้ (Phase 1)
+    scoreboardPieces: currentStat().pieces,      // นิยามใหม่ v2.10.4 (เลขสะอาด)
     gap: raw - d.groups.total.actQty,            // ส่วนต่างที่ต้องอธิบายให้ได้
     byWhy: byWhy,                                // ส่วนต่างมาจากเหตุผลไหนบ้าง กี่ชิ้น
     droppedWithQty: withQty,                     // แถวที่ถูกตัดทั้งที่ยังมียอด — ตัวที่ต้องดู
@@ -7620,16 +7645,10 @@ function summaryData() {
     /* ⭐ v2.8.0 — แถวผี 0/0 ตัดทิ้งเสมอ ไม่ว่าจะมีใน Master หรือไม่ (ดู isGhostRow)
        เดิมเงื่อนไขข้างล่างตัดเฉพาะตัวที่ไม่มีใน Master ตัวที่มีใน Master จึงรอดเข้ายอดรวม
        แล้วถูกนับเป็น "SKU ที่ตรง" ทำให้ %Success เฟ้อ ทั้งที่ไม่โผล่ในตารางเอกสารเลย */
-    if (isGhostRow(sys, act)) return;
-    /* บาร์โค้ดที่ไม่มีในระบบ (unknown) ที่ยอดสุทธิเหลือ ≤ 0 — ถูกลบทิ้ง ผูกไปที่อื่น
-       หรือหักเบิ้ลจนติดลบ — ไม่ใช่ของจริง ถ้าปล่อยไว้ act ติดลบจะกลายเป็น "ขาด"
-       ทั้งที่ไม่เคยมีของ ลาก pcShort กับ %Success ให้เพี้ยนทั้งใบ
-       ตัวที่แอดมินสั่งลบทิ้งก็ต้องหลุดทั้งใบเหมือนกัน แม้จะยิงซ้ำจนยอดกลับมาเป็นบวก
-       เงื่อนไข !sys กันไว้อีกชั้น — มียอดระบบเมื่อไหร่แปลว่าเป็นแถวจริงเสมอ ห้ามตัด
-       และเช็ค state.products[key] ตรง ๆ ไม่ใช่ p เพราะ p มีค่าเสมอ (มี fallback ข้างบน)
-       เคส act === 0 ถูก isGhostRow เก็บไปแล้ว ที่เหลือตรงนี้คือ "ติดลบ" กับ "สั่งลบทิ้ง" */
-    if (!sys && !state.products[key] &&
-        (act <= 0 || (unknownInfo && unknownInfo.discarded))) return;
+    /* ⭐ v2.10.4 — กติกาตัดแถวย้ายไปอยู่ที่ countsAsRealRow() ที่เดียว
+       เช็ค state.products[key] ตรง ๆ ไม่ใช่ p เพราะ p มีค่าเสมอ (มี fallback ข้างบน) */
+    if (!countsAsRealRow(sys, act, !!state.products[key],
+                         !!(unknownInfo && unknownInfo.discarded))) return;
     var price = Number(p[priceField]) || 0;      // ยังไม่กรอกต้นทุน = คิดเป็น 0
     var bucket = p.type === 'notProduct' ? 'notProduct' : 'product';
 
@@ -10491,22 +10510,37 @@ function isStaleJob(job) {
 /* ความคืบหน้าของ Job อื่นต้องอ่านจากฐานเอง เพราะ subscription ผูกกับ Job ที่เปิดอยู่เท่านั้น
    อ่านครั้งเดียวแล้วเก็บไว้ ไม่งั้นเลื่อนรายการทีก็ยิงคำขอใหม่ทุกครั้ง */
 /* คำนวณสถิติใบนับจากก้อน scans — แยกออกมาใช้ร่วมทั้งโหลดสดและอ่านแคช */
-function computeJobStats(data) {
+/* ⭐ v2.10.4 — ขึ้นเลขทุกครั้งที่รูปร่างหรือกติกาของสถิติใบนับเปลี่ยน
+   แคชเก่าใน localStorage ที่คิดด้วยกติกาเดิมต้องถูกทิ้ง ไม่ใช่เอามาใช้ต่อจนเลขเพี้ยน */
+var JOB_STATS_V = 2;
+
+function computeJobStats(data, sysMap) {
   var scans = data || {};
-  var counts = {}, lastTs = 0;
+  var sys = sysMap || {};
+  var counts = {}, lastTs = 0, discarded = {};
   Object.keys(scans).forEach(function (sid) {
     var rec = scans[sid];
     if (!rec) return;
     var k = safeKey(rec.code);
     counts[k] = (counts[k] || 0) + (Number(rec.delta) || 0);
+    /* ธงลบทิ้งอ่านจากตัว scan ตรง ๆ ไม่ต้องพึ่ง state.unknownKeys
+       เพราะฟังก์ชันนี้ถูกเรียกกับรอบที่ไม่ได้เปิดอยู่ด้วย (การ์ด Job ใบอื่น) */
+    if (rec.discard) discarded[k] = 1;
     if ((rec.ts || 0) > lastTs) lastTs = rec.ts || 0;
+  });
+  /* กรองด้วยกติกากลางตัวเดียวกับ summaryData() — เลขบนการ์ดจึงตรงกับเอกสารเสมอ */
+  var real = Object.keys(counts).filter(function (k) {
+    return countsAsRealRow(Number(sys[k]) || 0, counts[k],
+                           !!(state.products && state.products[k]), !!discarded[k]);
   });
   /* การ์ด Job บอกได้แค่ "ใบนี้ทำอะไรไปเท่าไหร่" — ยอดระบบเป็นของทั้งรอบนับ
      ความแม่น (%Success) จึงย้ายไปอยู่ที่หัวรอบนับแทน (ข้อ F5) */
   return {
     counts: counts,
-    skuScanned: Object.keys(counts).filter(function (k) { return counts[k] !== 0; }).length,
-    pieces: Object.keys(counts).reduce(function (s, k) { return s + counts[k]; }, 0),
+    discarded: discarded,
+    v: JOB_STATS_V,
+    skuScanned: real.filter(function (k) { return counts[k] !== 0; }).length,
+    pieces: real.reduce(function (s, k) { return s + counts[k]; }, 0),
     lastTs: lastTs
   };
 }
@@ -10530,39 +10564,59 @@ function computeJobStats(data) {
    นิยามทุกตัวต้องตรงกับ computeJobStats() เป๊ะ ๆ ไม่ใช่ "เขียนให้เหมือน"
    statFromScans() จึงเรียก computeJobStats() ตรง ๆ เป็นฐาน — แก้ที่นั่นที่เดียว
    สองฝั่งจะได้ไม่มีวันหลุดจากกัน:
-     pieces = ผลรวม delta ของทุกแถว (ติดลบก็รวม)
-     skus   = จำนวน SKU ที่ยอดสุทธิ "ไม่เท่ากับ 0"  (0/0 ไม่นับ ตรงกับกฎแถวผี)
+     pieces = ผลรวม act ของ "แถวจริง" เท่านั้น (ผ่าน countsAsRealRow)
+     skus   = จำนวน SKU ของแถวจริงที่ยอดสุทธิไม่เท่ากับ 0
      lastAt = ts มากสุดของทุกแถว รวมแถว delta 0 (หมายเหตุ/โน้ต) ด้วย
+
+   ⭐ v2.10.4 — เปลี่ยนนิยาม pieces/skus จาก "ผลรวมดิบ" เป็น "เลขสะอาด"
+      ให้ตรงกับเอกสาร/Excel ซึ่งเป็นเลขทางการ (ดูเหตุผลที่ countsAsRealRow)
+      รอบที่ไม่มีบาร์โค้ดผี ตัวเลขไม่เปลี่ยนเลยแม้แต่ชิ้นเดียว
    ============================================================ */
 
-var STAT_VER = 1;
+var STAT_VER = 2;                 // ขึ้นเลขเพราะนิยามเปลี่ยน ก้อนเก่าบนฐานถือว่าใช้ไม่ได้
 
 function emptyStat() {
   return { pieces: 0, skus: 0, lastAt: 0, lastBy: '', ver: STAT_VER };
 }
 
-/* อัปเดตยอดสรุปในเครื่องทีละแถว — ต้องเรียก "ก่อน" บวก state.counts[key]
-   O(1) ต่อแถว ไม่ไล่ทั้งแมป รอบ 31,000 แถวจึงไม่หน่วงตอนยิง */
+/* ความเคลื่อนไหวล่าสุดยังตามทีละแถวแบบ O(1) ได้ (ไม่ขึ้นกับกติกาตัดแถว)
+   ส่วน pieces/skus ย้ายไปคิดรวมทีเดียวที่ currentStat() เพราะแถวหนึ่งอาจ
+   "เปลี่ยนสถานะ" จากของจริงเป็นของผีได้ทีหลัง (แอดมินสั่งลบทิ้ง / ยอดข้ามศูนย์)
+   ซึ่งบวก-ลบทีละก้าวตามไม่ทันแน่ ๆ */
 function bumpLocalStat(key, delta, rec) {
-  if (!state.stat) state.stat = emptyStat();
-  var st = state.stat;
-  var old = state.counts[key] || 0;
-  var nw = old + delta;
-  st.pieces += delta;
-  /* นับ SKU ตอน "ข้ามเส้นศูนย์" เท่านั้น — ยิงตัวเดิมซ้ำไม่เพิ่มจำนวน SKU
-     และยอดที่ถูกหักจนเหลือ 0 (ย้ายไปผูกที่อื่น/ลบทิ้ง) ต้องหลุดออกจากจำนวน SKU ด้วย */
-  if (old === 0 && nw !== 0) st.skus++;
-  else if (old !== 0 && nw === 0) st.skus--;
-  /* แถวหมายเหตุ delta 0 ก็นับเป็น "ความเคลื่อนไหวล่าสุด" เหมือน computeJobStats
-     เทียบด้วย >= เพื่อให้แถวที่มาทีหลังในเวลาเดียวกันชนะ ตรงกับการไล่ Object.keys ของ statFromScans */
   var ts = Number(rec && rec.ts) || 0;
-  if (ts >= st.lastAt) { st.lastAt = ts; st.lastBy = (rec && rec.user) || ''; }
+  if (ts >= (state.statLastAt || 0)) {
+    state.statLastAt = ts;
+    state.statLastBy = (rec && rec.user) || '';
+  }
+  state.stat = null;              // ยอดที่แคชไว้เก่าแล้ว ให้ currentStat() คิดใหม่
+}
+
+/* ยอดสรุปของรอบที่เปิดอยู่ — คิดจากยอดในเครื่อง ณ ตอนนี้ด้วยกติกากลาง
+   ยอดในเครื่องรวมแถวของคนอื่นที่วิ่งเข้ามาทางสาย SSE ไว้แล้ว จึงเป็นภาพรวมของทุกคน
+   ไล่ทั้งแมปก็จริง แต่เป็นระดับ "จำนวน SKU" (หลักพัน) ไม่ใช่จำนวนแถว scan (หลักหมื่น)
+   และเรียกแค่ตอนจะเขียนขึ้นฐาน ไม่ได้เรียกทุกครั้งที่มีแถววิ่งเข้ามา */
+function currentStat() {
+  var st = emptyStat();
+  Object.keys(state.counts).forEach(function (k) {
+    var act = Number(state.counts[k]) || 0;
+    var u = state.unknownKeys[k];
+    if (!countsAsRealRow(Number(state.systemQty[k]) || 0, act,
+                         !!state.products[k], !!(u && u.discarded))) return;
+    st.pieces += act;
+    if (act !== 0) st.skus++;
+  });
+  st.lastAt = state.statLastAt || 0;
+  st.lastBy = state.statLastBy || '';
+  state.stat = st;
+  return st;
 }
 
 /* คำนวณยอดสรุปจากก้อน scan ดิบ — ฐานเดียวกับที่การ์ด Job ใช้มาตลอด
-   ห้ามเขียนสูตรใหม่ตรงนี้เด็ดขาด ให้ยืม computeJobStats() มาเสมอ */
-function statFromScans(data) {
-  var s = computeJobStats(data);
+   ห้ามเขียนสูตรใหม่ตรงนี้เด็ดขาด ให้ยืม computeJobStats() มาเสมอ
+   sysMap = ยอดระบบของรอบ ต้องส่งมาด้วยเพื่อให้กติกาตัดแถวตัดสินได้ถูก */
+function statFromScans(data, sysMap) {
+  var s = computeJobStats(data, sysMap);
   var scans = data || {};
   var lastBy = '';
   Object.keys(scans).forEach(function (sid) {
@@ -10591,8 +10645,8 @@ function statFromScans(data) {
    ถ้า Rules ยังไม่ได้วางที่ Console ก้อนรวมจะถูกปฏิเสธทั้งแถว = ยิงไม่ได้ทั้งรอบ
    แยกไว้แล้วอย่างแย่ที่สุดคือยอดสรุปไม่ขึ้น แต่การนับยังเดินต่อได้ (บทเรียน v2.7.7) */
 function bumpStat(roundId, key) {
-  if (!roundId || !state.stat) return null;
-  var st = state.stat;
+  if (!roundId) return null;
+  var st = currentStat();
   var patch = {
     'stat/pieces': st.pieces,
     'stat/skus': st.skus,
@@ -10608,10 +10662,26 @@ function bumpStat(roundId, key) {
 
 /* คำนวณยอดสรุปใหม่จากศูนย์ — ใช้ทั้งตอนตรวจสอบและตอนซ่อม
    write=false (ค่าเริ่มต้น) = คำนวณให้ดูเฉย ๆ ไม่แตะฐาน ใช้ตรวจได้แม้รอบปิดไปแล้ว */
+/* ยอดระบบของรอบที่ scan ก้อนนี้สังกัด — กติกาตัดแถวต้องใช้ตัดสิน
+   อ่านไม่ได้ก็เดินต่อด้วยแมปว่าง (มีผลเฉพาะแถวที่ไม่อยู่ใน Master ซึ่งไม่มียอดระบบอยู่แล้ว) */
+function sysForRound(roundId) {
+  var cid = cycleOf(state.roundIndex[roundId]);
+  if (!cid) return Promise.resolve({});
+  return loadCycleSystemQty(cid).then(function (d) { return d || {}; },
+                                      function () { return {}; });
+}
+
 function rebuildStat(roundId, opts) {
   opts = opts || {};
-  return db.getQuiet('rounds/' + roundId + '/scans').then(function (data) {
-    var st = statFromScans(data);
+  /* อ่านทีละใบ ห้าม Promise.all — ช่องอ่านเบื้องหลังมีแค่ 2 ช่อง
+     ยิงพร้อมกันคือรอบเดียวกินคิวหมด แล้วรอบถัดไปค้าง (บทเรียน v2.10.1–2.10.2) */
+  return sysForRound(roundId).then(function (sys) {
+    return db.getQuiet('rounds/' + roundId + '/scans').then(function (data) {
+      return { sys: sys, data: data };
+    });
+  }).then(function (res) {
+    var data = res.data, sys = res.sys;
+    var st = statFromScans(data, sys);
     if (!opts.write) return st;
     var patch = {
       'stat/pieces': st.pieces, 'stat/skus': st.skus,
@@ -10655,10 +10725,18 @@ function freezeStatOnLeaveCounting(roundId, from, next) {
 /* ตรวจว่ายอดสรุปตรงกับการนับสดหรือยัง — หัวใจของ Phase 1
    อ่าน scan ก้อนเดียว แล้วเทียบสองทาง: statFromScans (ทางใหม่) กับ computeJobStats (ทางเดิมที่จอใช้อยู่)
    ok=false เมื่อไหร่แปลว่าห้ามสลับจอไปอ่าน stat เด็ดขาด */
-function validateStat(roundId, remoteStat) {
-  return db.getQuiet('rounds/' + roundId + '/scans').then(function (data) {
-    var live = computeJobStats(data);          // ทางเดิม — ตัวเลขที่จอแสดงอยู่ตอนนี้
-    var built = statFromScans(data);           // ทางใหม่
+function validateStat(roundId, remoteStat, preSys) {
+  /* อ่านทีละใบเหมือน rebuildStat ด้วยเหตุผลเดียวกัน
+     preSys = ยอดระบบที่ผู้เรียกโหลดมาให้แล้ว (ตอนไล่ทั้งชุด) จะได้ไม่อ่านซ้ำรอบละใบ */
+  var sysP = preSys ? Promise.resolve(preSys) : sysForRound(roundId);
+  return sysP.then(function (sys) {
+    return db.getQuiet('rounds/' + roundId + '/scans').then(function (data) {
+      return { sys: sys, data: data };
+    });
+  }).then(function (res) {
+    var data = res.data, sys = res.sys;
+    var live = computeJobStats(data, sys);     // ทางเดิม — ตัวเลขที่จอแสดงอยู่ตอนนี้
+    var built = statFromScans(data, sys);      // ทางใหม่
     var diff = [];
     if (built.pieces !== live.pieces) diff.push('pieces ' + built.pieces + ' != ' + live.pieces);
     if (built.skus !== live.skuScanned) diff.push('skus ' + built.skus + ' != ' + live.skuScanned);
@@ -10720,10 +10798,21 @@ function validateAllStats(opts) {
   var log = opts.log !== false;
   var ids = Object.keys(state.roundIndex || {});
   var out = [];
+  /* ยอดระบบเป็นของ "รอบนับ" ไม่ใช่ของ Job — หลายใบในรอบเดียวกันใช้ก้อนเดียวกัน
+     จำไว้ทั้งชุดจึงอ่านจริงแค่รอบละครั้ง ไม่ใช่ Job ละครั้ง (ลดคำขอลงครึ่งหนึ่ง) */
+  var sysCache = {};
+  function sysFor(id) {
+    var cid = cycleOf(state.roundIndex[id]);
+    if (!cid) return Promise.resolve({});
+    if (!sysCache[cid]) sysCache[cid] = sysForRound(id);
+    return sysCache[cid];
+  }
   return ids.reduce(function (chain, id, i) {
     return chain.then(function () {
       /* ทำทีละใบจริง ๆ — ใบถัดไปเริ่มต่อเมื่อใบนี้จบแล้วเท่านั้น */
-      return withStatTimeout(validateStat(id), ms).then(function (r) {
+      return withStatTimeout(
+        sysFor(id).then(function (sys) { return validateStat(id, null, sys); }), ms
+      ).then(function (r) {
         out.push({
           roundId: id, ok: r.ok, reason: r.ok ? 'ok' : 'mismatch', records: r.records,
           pieces: r.built.pieces, skus: r.built.skus, diff: r.diff.join(' · ')
@@ -10757,7 +10846,12 @@ function cachedJobStats(id) {
   if (state.jobStats[id]) return state.jobStats[id];
   try {
     var raw = localStorage.getItem('jobStats:' + id);
-    if (raw) { var s = JSON.parse(raw); if (s && s.counts) { state.jobStats[id] = s; return s; } }
+    /* แคชที่คิดด้วยกติกาเก่า (ไม่มี v หรือ v ไม่ตรง) ใช้ไม่ได้ ต้องโหลดใหม่ */
+    if (raw) {
+      var s = JSON.parse(raw);
+      if (s && s.counts && s.v === JOB_STATS_V) { state.jobStats[id] = s; return s; }
+      if (s) localStorage.removeItem('jobStats:' + id);
+    }
   } catch (e) {}
   return null;
 }
@@ -10835,20 +10929,23 @@ function loadCycleStats(cid) {
     Promise.all(ids.map(loadJobStats))
   ]).then(function (res) {
     var sys = res[0] || {}, parts = res[1] || [];
-    var counts = {}, lastTs = 0;
+    var counts = {}, lastTs = 0, discarded = {};
     parts.forEach(function (p) {
       if (!p) return;
       Object.keys(p.counts).forEach(function (k) { counts[k] = (counts[k] || 0) + p.counts[k]; });
+      /* ธงลบทิ้งของทุกใบในรอบต้องรวมกัน — ใบหนึ่งสั่งลบ อีกใบก็ต้องไม่นับตัวนั้น */
+      Object.keys(p.discarded || {}).forEach(function (k) { discarded[k] = 1; });
       if (p.lastTs > lastTs) lastTs = p.lastTs;
     });
 
     var keys = {};
     Object.keys(sys).forEach(function (k) { keys[k] = 1; });
     Object.keys(counts).forEach(function (k) { keys[k] = 1; });
-    /* ตัดแถวผีด้วยกฎเดียวกับ summaryData (isGhostRow) — %Success บนหัวรอบนับ
-       กับในเอกสาร/หน้าสรุปจึงเป็นตัวเลขเดียวกันเสมอ */
+    /* ⭐ v2.10.4 — กติกาเดียวกับ summaryData ทั้งชุด ไม่ใช่แค่แถวผี 0/0
+       %Success และ "ชิ้นที่ยิงได้" บนหัวรอบ/ภาพรวม จึงตรงกับเอกสารและ Excel เป๊ะ */
     var all = Object.keys(keys).filter(function (k) {
-      return !isGhostRow(sys[k], counts[k]);
+      return countsAsRealRow(Number(sys[k]) || 0, counts[k] || 0,
+                             !!state.products[k], !!discarded[k]);
     });
     var match = all.filter(function (k) { return (Number(sys[k]) || 0) === (counts[k] || 0); }).length;
 
@@ -10868,8 +10965,8 @@ function loadCycleStats(cid) {
       cid: cid,
       jobs: ids.length,
       skuTotal: Object.keys(sys).length,
-      skuScanned: Object.keys(counts).filter(function (k) { return counts[k] !== 0; }).length,
-      pieces: Object.keys(counts).reduce(function (s, k) { return s + counts[k]; }, 0),
+      skuScanned: all.filter(function (k) { return (counts[k] || 0) !== 0; }).length,
+      pieces: all.reduce(function (s, k) { return s + (counts[k] || 0); }, 0),
       sysQty: sysQty,
       success: all.length ? (match / all.length) * 100 : null,
       pctPieces: sysQty > 0 ? ((sysQty - Math.abs(actQty - sysQty)) / sysQty) * 100 : null,
