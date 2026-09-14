@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.9.1">
+<meta name="version" content="2.9.2">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.9.1</title>
+<title>ISRD Stocktake v2.9.2</title>
 
 <style>
 :root{
@@ -57,6 +57,64 @@ h3{font-size:17px}
 /* เวลาเบราว์เซอร์เลื่อนอะไรเข้ามาในจอ ต้องไม่ไปหยุดใต้แถบนำทางล่าง */
 .card,.btn,.pick,input,section{scroll-margin-bottom:110px;scroll-margin-top:84px}
 .card > h3{display:flex;align-items:center;gap:8px}
+
+/* ---------- การ์ดยุบ/กาง (หน้าสรุป) ----------
+   หน้าสรุปมีการ์ดลิสต์ SKU หลายใบ สาขาใหญ่ใบเดียวก็ยาวหลายร้อยแถว
+   หัวการ์ดจึงกินพื้นที่ padding ของการ์ดทั้งแถบ (margin ติดลบ) ให้ "ทั้งแถบ" กดได้
+   ไม่ใช่ปุ่มลูกศรเล็ก ๆ ที่คนใส่ถุงมือกดไม่โดน */
+.card.collapsible > h3.card-hd{
+  position:relative; flex-wrap:wrap;
+  margin:-16px -16px 0; padding:14px 34px 14px 16px; min-height:48px;
+  cursor:pointer; user-select:none; -webkit-user-select:none;
+  /* มุมโค้งตามการ์ด ไม่งั้นพื้นสีตอนกดค้างจะโผล่เป็นมุมเหลี่ยมล้นขอบการ์ดออกมา */
+  border-radius:13px 13px 0 0;
+}
+/* ยุบอยู่ = หัวการ์ดกินการ์ดทั้งใบ การ์ดจึงเหลือความสูงเท่าแถบเดียว */
+.card.collapsible:not(.open) > h3.card-hd{margin-bottom:-16px;border-radius:13px}
+.card.collapsible.open > h3.card-hd{border-bottom:1px solid var(--line-soft);margin-bottom:12px}
+.card.collapsible > h3.card-hd:active{background:var(--line-soft)}
+.card.collapsible > h3.card-hd:focus-visible{outline:3px solid var(--brand-light);outline-offset:-3px}
+/* การ์ดที่ไม่มีของ (จำนวน 0) ไม่ต้องเด่น — ตาจะได้ไปหยุดที่ใบที่มีเรื่องให้ทำ */
+.card.collapsible.faint > h3.card-hd{opacity:.55}
+/* กดชิปแล้วต้องเห็นหัวการ์ด ไม่ใช่ไปหยุดใต้แถบหัวเว็บ + แถบเครื่องมือที่ลอยทับอยู่ */
+.card.collapsible{scroll-margin-top:calc(var(--topbar-h,72px) + 76px)}
+.card-hd .hd-t{flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+/* สรุปหนึ่งบรรทัดตอนยุบ — ต้องรู้เรื่องโดยไม่ต้องกาง
+   min-width บังคับให้ "ตกลงไปบรรทัดล่างทั้งก้อน" เมื่อชื่อการ์ดยาวจนเบียด
+   ดีกว่าปล่อยให้หดจนเหลือ "รวม 5..." ซึ่งอ่านแล้วไม่ได้อะไรเลย */
+.card-hd .hd-sum{
+  flex:1 1 auto; min-width:96px; text-align:right;
+  font-size:13px; font-weight:400; color:var(--muted);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+/* ลูกศรลอยชิดขวาเสมอ (padding-right ของหัวการ์ดกันที่ไว้ให้แล้ว)
+   ไม่งั้นพอสรุปตกบรรทัด ลูกศรจะไหลตามลงไปด้วยแล้วหาไม่เจอว่าปุ่มยุบอยู่ตรงไหน */
+.card-hd .hd-ar{
+  position:absolute; right:14px; top:50%; transform:translateY(-50%);
+  width:16px; text-align:center; color:var(--muted); font-size:13px;
+}
+
+/* ---------- แถบเครื่องมือหน้าสรุป (sticky) ----------
+   top ผูกกับความสูงจริงของแถบหัวเว็บ ไม่ใช่ค่าคงที่ — แถบหัวสูงไม่เท่ากันทุกเครื่อง
+   (ชื่อสาขายาวแล้วตัดบรรทัด + safe-area คนละรุ่นไม่เท่ากัน) วัดด้วย syncTopbarHeight() */
+.sumbar{
+  position:sticky; top:var(--topbar-h,0px); z-index:20;
+  background:var(--bg); padding:10px 0 8px; margin-bottom:12px;
+  border-bottom:1px solid var(--line-soft);
+}
+.sumbar .btn{min-height:48px;font-size:16px}
+/* ชิปกระโดดไปการ์ด — บนมือถือเลื่อนหาการ์ดเองไกลกว่ากดชิปมาก */
+.sumchips{display:flex;gap:8px;overflow-x:auto;padding-bottom:8px;margin-bottom:10px}
+.sumchips:empty{display:none}
+.sumchips button{
+  flex:0 0 auto; display:inline-flex; align-items:center; gap:6px;
+  min-height:38px; padding:6px 13px; border-radius:999px; cursor:pointer;
+  font-family:inherit; font-size:13px; font-weight:600;
+  background:var(--card); border:1px solid var(--line); color:var(--text);
+}
+.sumchips button b{font-weight:800;color:var(--brand-dark)}
+.sumchips button.zero{opacity:.5}
+.sumchips button.zero b{color:var(--muted)}
 
 /* ---------- form controls ---------- */
 label.fld{display:block;margin-bottom:14px}
@@ -1305,6 +1363,15 @@ body.no-doc-images .doc .imgbox{display:none}
   </div>
 
  <div id="sumJob">
+  <!-- ปุ่มดาวน์โหลดต้องอยู่ในมือตลอด — เดิมอยู่ท้ายสุดใต้ลิสต์ SKU เป็นพันแถว
+       สาขาใหญ่ต้องเลื่อนจอสิบกว่าครั้งกว่าจะเจอสิ่งที่ตัวเองเปิดหน้านี้มาทำ
+       ซ่อนไว้ตั้งแต่ HTML เหมือนตัวอื่นในลิสต์ SUMMARY_ADMIN_ONLY (กันเห็นแวบก่อน render) -->
+  <div class="sumbar no-print" id="sumBar" style="display:none">
+    <button class="btn block" id="btnExportTop">⬇ ดาวน์โหลด Excel (ฉบับเต็ม)</button>
+  </div>
+  <!-- ชิปพาไปการ์ดที่ยุบอยู่ — กดแล้วกางให้พร้อมเลื่อนไปหา -->
+  <div class="sumchips no-print" id="sumChips"></div>
+
   <div class="banner info" id="sumHead"></div>
   <!-- รอบที่มีหลาย Job ต้องบอกให้ชัดว่าตัวเลขข้างล่างเป็นยอดรวมทุกใบ ไม่ใช่ของใบนี้ใบเดียว
        ก่อน v2.7.0 หน้านี้นับแค่ Job ที่เปิดอยู่ คนอ่านจึงเห็น "ขาด" ทั้งที่ของไปนับอยู่ใบอื่น -->
@@ -1333,10 +1400,17 @@ body.no-doc-images .doc .imgbox{display:none}
     <button class="btn sm" data-price="sellPrice">ราคาขาย</button>
     <button class="btn sm grey" data-price="costPrice">ราคาต้นทุน</button>
   </div>
-  <div class="card" id="tfCard">
-    <h3>รายการโอนกลับในรอบนี้ <span class="chip" id="tfChip">0</span></h3>
-    <div class="muted" id="tfSummaryHint" style="margin-bottom:10px"></div>
-    <div class="clist" id="tfList"></div>
+  <div class="card collapsible" id="tfCard">
+    <h3 class="card-hd" data-collapse="tfCard" role="button" tabindex="0" aria-expanded="false">
+      <span class="hd-t">รายการโอนกลับในรอบนี้</span>
+      <span class="chip" id="tfChip">0</span>
+      <span class="hd-sum" id="tfSum"></span>
+      <span class="hd-ar">▸</span>
+    </h3>
+    <div class="card-bd" style="display:none">
+      <div class="muted" id="tfSummaryHint" style="margin-bottom:10px"></div>
+      <div class="clist" id="tfList"></div>
+    </div>
   </div>
 
   <!-- กดการ์ดเพื่อไล่ดูรายตัวว่า SKU ไหนขาดไหนเกิน — เดิมต้องโหลด Excel ออกไปดูถึงจะรู้ -->
@@ -1374,16 +1448,30 @@ body.no-doc-images .doc .imgbox{display:none}
   </div>
   <div class="muted" id="costNote" style="margin-bottom:14px;display:none"></div>
 
-  <div class="card" id="foreignCard" style="display:none">
-    <h3>ไม่ใช่ของสาขานี้ <span class="chip" id="foreignChip">0</span></h3>
-    <div class="muted" id="foreignHint" style="margin-bottom:10px"></div>
-    <div class="clist" id="foreignList"></div>
+  <div class="card collapsible" id="foreignCard" style="display:none">
+    <h3 class="card-hd" data-collapse="foreignCard" role="button" tabindex="0" aria-expanded="false">
+      <span class="hd-t">ไม่ใช่ของสาขานี้</span>
+      <span class="chip" id="foreignChip">0</span>
+      <span class="hd-sum" id="foreignSum"></span>
+      <span class="hd-ar">▸</span>
+    </h3>
+    <div class="card-bd" style="display:none">
+      <div class="muted" id="foreignHint" style="margin-bottom:10px"></div>
+      <div class="clist" id="foreignList"></div>
+    </div>
   </div>
 
-  <div class="card" id="unknownCard" style="display:none">
-    <h3>บาร์โค้ดที่ไม่มีในระบบ <span class="chip" id="unknownChip">0</span></h3>
-    <div class="muted" id="unknownHint" style="margin-bottom:10px"></div>
-    <div class="clist" id="unknownList"></div>
+  <div class="card collapsible" id="unknownCard" style="display:none">
+    <h3 class="card-hd" data-collapse="unknownCard" role="button" tabindex="0" aria-expanded="false">
+      <span class="hd-t">บาร์โค้ดที่ไม่มีในระบบ</span>
+      <span class="chip" id="unknownChip">0</span>
+      <span class="hd-sum" id="unknownSum"></span>
+      <span class="hd-ar">▸</span>
+    </h3>
+    <div class="card-bd" style="display:none">
+      <div class="muted" id="unknownHint" style="margin-bottom:10px"></div>
+      <div class="clist" id="unknownList"></div>
+    </div>
   </div>
 
   <div class="card">
@@ -1392,15 +1480,29 @@ body.no-doc-images .doc .imgbox{display:none}
     <div class="clist" id="scannerList"></div>
   </div>
 
-  <div class="card" id="statusCard" style="display:none">
-    <h3>สินค้าสถานะพิเศษที่ยิงเจอ <span class="chip" id="statusChip">0</span></h3>
-    <div class="muted" id="statusHint" style="margin-bottom:10px"></div>
-    <div class="clist" id="statusList"></div>
+  <div class="card collapsible" id="statusCard" style="display:none">
+    <h3 class="card-hd" data-collapse="statusCard" role="button" tabindex="0" aria-expanded="false">
+      <span class="hd-t">สินค้าสถานะพิเศษที่ยิงเจอ</span>
+      <span class="chip" id="statusChip">0</span>
+      <span class="hd-sum" id="statusSum"></span>
+      <span class="hd-ar">▸</span>
+    </h3>
+    <div class="card-bd" style="display:none">
+      <div class="muted" id="statusHint" style="margin-bottom:10px"></div>
+      <div class="clist" id="statusList"></div>
+    </div>
   </div>
 
-  <div class="card" id="manualCard" style="display:none">
-    <h3>ยอดที่กรอกมือ <span class="chip" id="manualChip">0</span></h3>
-    <div class="clist" id="manualList"></div>
+  <div class="card collapsible" id="manualCard" style="display:none">
+    <h3 class="card-hd" data-collapse="manualCard" role="button" tabindex="0" aria-expanded="false">
+      <span class="hd-t">ยอดที่กรอกมือ</span>
+      <span class="chip" id="manualChip">0</span>
+      <span class="hd-sum" id="manualSum"></span>
+      <span class="hd-ar">▸</span>
+    </h3>
+    <div class="card-bd" style="display:none">
+      <div class="clist" id="manualList"></div>
+    </div>
   </div>
 
   <button class="btn big block" id="btnExport" style="display:none">⬇ ดาวน์โหลด Excel (ฉบับเต็ม)</button>
@@ -1584,7 +1686,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.9.1';
+var APP_VERSION = '2.9.2';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -7665,7 +7767,7 @@ function openSumCard(kind) {
    ถ้าปล่อยให้เริ่มด้วยการโชว์ ช่วงก่อน renderSummary ทำงานคนนับจะเห็นตัวเลขผลต่างแวบหนึ่ง */
 var SUMMARY_ADMIN_ONLY = ['sumCards', 'sumTableWrap', 'costNote', 'foreignCard',
                           'unknownCard', 'statusCard', 'manualCard', 'btnExport',
-                          'priceFilters'];
+                          'priceFilters', 'sumBar'];
 
 /* เปิดให้ staff (admin + counter) / คงซ่อนสำหรับคนอื่น — คืนค่าว่าเป็น staff ไหม
    ใช้ร่วมกันทั้งหน้าสรุปและหน้ายิง กติกาการซ่อนจะได้ไม่แตกเป็นสองชุด */
@@ -7680,7 +7782,10 @@ function applyStaffOnly(ids) {
 
 function applySummaryPermissions() {
   var staff = applyStaffOnly(SUMMARY_ADMIN_ONLY);
+  /* ปุ่มดาวน์โหลดมีสองที่ (บนแถบ sticky กับท้ายหน้า) ต้องล็อกพร้อมกันทั้งคู่
+     ไม่งั้นซ่อนที่หนึ่งแต่อีกที่ยังกดได้ = รูที่ไม่ตั้งใจเปิดไว้ */
   $('btnExport').disabled = !staff;
+  $('btnExportTop').disabled = !staff;
 
   var box = $('myProgress');
   box.style.display = staff ? 'none' : '';
@@ -7701,6 +7806,130 @@ function renderSummaryScopeInfo(scope, rolledUp) {
   el.textContent = rolledUp
     ? ('ตัวเลขข้างล่างรวมทุก Job ในรอบ ' + scope.cid + ' แล้ว (' + fmtNum(n) + ' ใบ)')
     : ('รอบนี้มี ' + fmtNum(n) + ' Job — กำลังรวมยอดทุกใบ ตัวเลขที่เห็นตอนนี้ยังเป็นของใบนี้ใบเดียว ...');
+}
+
+/* ---------- ยุบ/กางการ์ดลิสต์ยาวในหน้าสรุป (v2.9.2) ----------
+   สาขาใหญ่มี SKU เป็นพัน การ์ดลิสต์ใบเดียวก็ยาวหลายร้อยแถว
+   ยุบเป็นค่าเริ่มต้นทุกใบ แล้วจำที่ผู้ใช้กางไว้ "เป็นรายใบ" ใน localStorage
+   เก็บรายใบ ไม่ใช่ก้อนเดียว เพราะแต่ละคนตามคนละเรื่อง
+   (คนที่ไล่ของมาผิดสาขาไม่ได้สนใจยอดที่กรอกมือ) */
+var COLLAPSE_KEY = 'summaryCollapse.';
+
+/* ค่าเริ่มต้น = ยุบ · อ่าน localStorage ไม่ได้ (โหมดส่วนตัว/พื้นที่เต็ม) ก็ถือว่ายุบ ไม่ใช่พัง */
+function cardOpened(id) {
+  try { return localStorage.getItem(COLLAPSE_KEY + id) === 'open'; }
+  catch (e) { return false; }
+}
+function rememberCard(id, open) {
+  try { localStorage.setItem(COLLAPSE_KEY + id, open ? 'open' : 'closed'); }
+  catch (e) { /* เต็มก็ปล่อย — เป็นแค่ความชอบการแสดงผล ไม่ใช่ยอดนับ */ }
+}
+
+/* วาดสถานะยุบ/กางของการ์ดใบเดียวให้ตรงกับที่จำไว้ */
+function paintCard(id) {
+  var card = document.getElementById(id);
+  if (!card) return;
+  var open = cardOpened(id);
+  card.classList.toggle('open', open);
+  var bd = card.querySelector('.card-bd');
+  if (bd) bd.style.display = open ? '' : 'none';
+  var hd = card.querySelector('.card-hd');
+  if (hd) hd.setAttribute('aria-expanded', open ? 'true' : 'false');
+  var ar = card.querySelector('.hd-ar');
+  if (ar) ar.textContent = open ? '▾' : '▸';
+}
+
+function toggleCard(id) {
+  rememberCard(id, !cardOpened(id));
+  paintCard(id);
+}
+
+/* กางแล้วเลื่อนไปหา — ใช้ตอนกดชิปด้านบน
+   ถ้ากางเฉย ๆ โดยไม่เลื่อน คนกดจะไม่เห็นอะไรเปลี่ยนเลยเพราะการ์ดอยู่ไกลใต้จอ */
+function revealCard(id) {
+  rememberCard(id, true);
+  paintCard(id);
+  var card = document.getElementById(id);
+  if (card && card.scrollIntoView) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/* เติมสรุปหนึ่งบรรทัดบนหัวการ์ด — ต้องรู้เรื่องโดยไม่ต้องกางดู
+   empty = การ์ดไม่มีของ ทำให้จางลง ตาจะได้ไปหยุดที่ใบที่มีเรื่องให้ทำ */
+function setCardMeta(id, line, empty) {
+  var card = document.getElementById(id);
+  if (!card) return;
+  var s = card.querySelector('.hd-sum');
+  if (s) s.textContent = line || '';
+  card.classList.toggle('faint', !!empty);
+  paintCard(id);
+}
+
+/* ทุกใบที่ยุบได้ในหน้าสรุป — ใช้ทั้งตอนผูกปุ่มและตอนทำชิป จะได้ไม่หลุดกัน
+   การ์ด "ผู้ยิงในรอบนี้" กับ Dashboard KPI ไม่อยู่ในลิสต์นี้ตั้งใจ — สั้นอยู่แล้ว
+   และเป็นสิ่งที่คนเปิดหน้านี้มาดูเป็นอย่างแรก ยุบไว้จะกลายเป็นกดเพิ่มฟรี ๆ */
+var SUMMARY_CARDS = [
+  { id: 'tfCard',      chip: 'tfChip',      label: 'โอนกลับ' },
+  { id: 'foreignCard', chip: 'foreignChip', label: 'ไม่ใช่ของสาขานี้' },
+  { id: 'unknownCard', chip: 'unknownChip', label: 'ไม่มีในระบบ' },
+  { id: 'statusCard',  chip: 'statusChip',  label: 'สถานะพิเศษ' },
+  { id: 'manualCard',  chip: 'manualChip',  label: 'กรอกมือ' }
+];
+
+function initSummaryCollapse() {
+  SUMMARY_CARDS.forEach(function (c) {
+    var hd = document.querySelector('#' + c.id + ' > .card-hd');
+    if (!hd) return;
+    hd.onclick = function () { toggleCard(c.id); };
+    /* แอดมินที่นั่งตรวจยอดหน้าคอมใช้คีย์บอร์ดล้วน ต้องกดยุบ/กางได้เหมือนกัน */
+    hd.onkeydown = function (e) {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
+      toggleCard(c.id);
+    };
+    paintCard(c.id);
+  });
+}
+
+/* ชิปสรุปบนสุด — อ่านจำนวนจาก chip ของการ์ดโดยตรง ตัวเลขจะได้ไม่มีสองแหล่ง
+   โชว์เฉพาะใบที่คนนั้นเห็นจริง (การ์ดที่ถูกซ่อนตามสิทธิ์ไม่ต้องมีชิปพาไป) */
+function renderSumChips() {
+  var host = $('sumChips');
+  if (!host) return;
+  host.innerHTML = '';
+  if (!isStaff()) return;
+  SUMMARY_CARDS.forEach(function (c) {
+    var card = document.getElementById(c.id);
+    if (!card || card.style.display === 'none') return;
+    var n = (document.getElementById(c.chip) || {}).textContent || '0';
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('data-sumchip', c.id);
+    if (n === '0') b.className = 'zero';
+    b.appendChild(document.createTextNode(c.label + ' '));
+    var num = document.createElement('b');
+    num.textContent = n;
+    b.appendChild(num);
+    b.onclick = function () { revealCard(c.id); };
+    host.appendChild(b);
+  });
+}
+
+/* แถบเครื่องมือ sticky ต้องหยุดพอดีใต้แถบหัวเว็บ ซึ่งสูงไม่เท่ากันทุกเครื่อง
+   (ชื่อสาขายาวแล้วตัดบรรทัด + safe-area คนละรุ่นไม่เท่ากัน) จึงวัดของจริง ไม่ตั้งค่าคงที่ */
+function syncTopbarHeight() {
+  var bar = document.querySelector('.topbar');
+  if (!bar) return;
+  var h = Math.round(bar.getBoundingClientRect().height);
+  if (h > 0) document.documentElement.style.setProperty('--topbar-h', h + 'px');
+}
+function watchTopbarHeight() {
+  syncTopbarHeight();
+  var bar = document.querySelector('.topbar');
+  /* แถบหัวเปลี่ยนความสูงเองได้ตลอด (เปลี่ยน Job แล้วชื่อสาขายาวขึ้นจนตัดบรรทัด)
+     ResizeObserver จับได้ทุกกรณี ส่วน resize/orientationchange เป็นทางสำรองของเครื่องเก่า */
+  if (bar && window.ResizeObserver) { new ResizeObserver(syncTopbarHeight).observe(bar); return; }
+  window.addEventListener('resize', syncTopbarHeight);
+  window.addEventListener('orientationchange', syncTopbarHeight);
 }
 
 function renderSummary() {
@@ -7796,13 +8025,16 @@ function renderSummary() {
 
   /* บาร์โค้ดที่ไม่มีในระบบ — นับเข้าไปแล้ว แต่ยังต้องมีคนมาจัดการ */
   var pendingUnknown = unknownRows(false);
+  var unknownPieces = pendingUnknown.reduce(function (s, r) { return s + r.qty; }, 0);
   $('unknownChip').textContent = fmtNum(pendingUnknown.length);
   $('unknownChip').className = 'chip ' + (pendingUnknown.length ? 'warn' : 'ok');
   $('unknownHint').textContent = pendingUnknown.length
-    ? ('ยิงเจอแล้วนับเข้าไปแล้ว รวม ' +
-       fmtNum(pendingUnknown.reduce(function (s, r) { return s + r.qty; }, 0)) +
+    ? ('ยิงเจอแล้วนับเข้าไปแล้ว รวม ' + fmtNum(unknownPieces) +
        ' ชิ้น — ยังต้องผูกกับสินค้าหรือสร้างเป็นสินค้าใหม่ที่แท็บ Master')
     : 'ไม่มีบาร์โค้ดที่ต้องจัดการ';
+  setCardMeta('unknownCard', pendingUnknown.length
+    ? 'รวม ' + fmtNum(unknownPieces) + ' ชิ้น'
+    : 'ไม่มีค้าง', !pendingUnknown.length);
   var ul = $('unknownList');
   ul.innerHTML = '';
   if (!pendingUnknown.length) {
@@ -7844,6 +8076,11 @@ function renderSummary() {
   /* ยอดที่กรอกมือ */
   var manual = state.manualLog.slice().sort(function (a, b) { return (b.rec.ts || 0) - (a.rec.ts || 0); });
   $('manualChip').textContent = fmtNum(manual.length);
+  /* สรุปเป็นยอดสุทธิ เพราะการกรอกมือมีทั้งบวกและลบ — จำนวนครั้งอย่างเดียวไม่บอกว่ากระทบยอดแค่ไหน */
+  var manualNet = manual.reduce(function (a, m) { return a + (m.rec.delta || 0); }, 0);
+  setCardMeta('manualCard', manual.length
+    ? 'สุทธิ ' + (manualNet > 0 ? '+' : '') + fmtNum(manualNet) + ' ชิ้น'
+    : 'ไม่มี', !manual.length);
   var ml = $('manualList');
   ml.innerHTML = '';
   if (!manual.length) {
@@ -7866,6 +8103,8 @@ function renderSummary() {
   /* ปิดท้ายด้วยการซ่อนทุกส่วนที่โชว์ผลต่างถ้าไม่ใช่ admin — ต้องอยู่ท้ายสุด
      เพราะโค้ดข้างบนตั้ง display ของบางปุ่มเองระหว่างทาง */
   applySummaryPermissions();
+  /* ชิปต้องทำหลังเช็คสิทธิ์เสมอ — มันอ่านว่าการ์ดใบไหน "ถูกซ่อนอยู่" เพื่อไม่ทำชิปพาไป */
+  renderSumChips();
 }
 
 /* ============================================================
@@ -11104,13 +11343,14 @@ function foreignRows(data) {
 
 function renderForeign(data) {
   var rows = foreignRows(data);
+  var pieces = rows.reduce(function (s, r) { return s + r.act; }, 0);
   $('foreignChip').textContent = fmtNum(rows.length);
   $('foreignChip').className = 'chip ' + (rows.length ? 'warn' : 'ok');
   $('foreignHint').textContent = rows.length
-    ? ('ยิงเจอสินค้าที่มีใน Master แต่ไม่อยู่ในไฟล์ยอดของสาขานี้ รวม ' +
-       fmtNum(rows.reduce(function (s, r) { return s + r.act; }, 0)) +
+    ? ('ยิงเจอสินค้าที่มีใน Master แต่ไม่อยู่ในไฟล์ยอดของสาขานี้ รวม ' + fmtNum(pieces) +
        ' ชิ้น — ของมาผิดสาขาหรือไฟล์ยอดตกหล่น')
     : 'ไม่มีของที่มาผิดสาขา';
+  setCardMeta('foreignCard', rows.length ? 'รวม ' + fmtNum(pieces) + ' ชิ้น' : 'ไม่มี', !rows.length);
   var host = $('foreignList');
   host.innerHTML = '';
   if (!rows.length) { host.innerHTML = '<div class="empty">ไม่มี</div>'; return; }
@@ -11143,6 +11383,9 @@ function renderTransfers() {
        'ของชุดนี้ถูกส่งกลับคลังกลางแล้ว ยอดระบบจาก Zort หักให้เรียบร้อยแล้ว ' +
        'จึงไม่ถูกนำมาหักซ้ำในการคำนวณ')
     : 'ยังไม่ได้นำเข้ารายการโอนกลับ — นำเข้าที่หน้าตั้งค่า แท็บ TF Return';
+  setCardMeta('tfCard', list.length
+    ? fmtNum(skus) + ' SKU · ' + fmtNum(pieces) + ' ชิ้น'
+    : 'ยังไม่ได้นำเข้า', !list.length);
   var host = $('tfList');
   host.innerHTML = '';
   if (!list.length) { host.innerHTML = '<div class="empty">ไม่มีรายการโอน</div>'; return; }
@@ -11281,10 +11524,11 @@ function renderSpecialStatus() {
   var rows = specialStatusRows();
   $('statusChip').textContent = fmtNum(rows.length);
   $('statusChip').className = 'chip ' + (rows.length ? 'warn' : 'ok');
+  var pieces = rows.reduce(function (s, r) { return s + r.qty; }, 0);
   $('statusHint').textContent = rows.length
-    ? ('ยิงเจอสินค้าที่สถานะไม่ใช่ ' + DEFAULT_STATUS + ' รวม ' +
-       fmtNum(rows.reduce(function (s, r) { return s + r.qty; }, 0)) + ' ชิ้น')
+    ? ('ยิงเจอสินค้าที่สถานะไม่ใช่ ' + DEFAULT_STATUS + ' รวม ' + fmtNum(pieces) + ' ชิ้น')
     : 'ไม่เจอสินค้าสถานะพิเศษในรอบนี้';
+  setCardMeta('statusCard', rows.length ? 'รวม ' + fmtNum(pieces) + ' ชิ้น' : 'ไม่เจอ', !rows.length);
   var host = $('statusList');
   host.innerHTML = '';
   if (!rows.length) {
@@ -13104,7 +13348,12 @@ function init() {
     b.onclick = function () { setPriceField(b.getAttribute('data-docprice')); };
   });
   $('btnExport').onclick = exportExcel;
+  $('btnExportTop').onclick = exportExcel;       // ปุ่มบนแถบ sticky — ฟังก์ชันเดียวกัน คนละที่วาง
   $('btnScanExport').onclick = exportExcel;      // ปุ่มเดียวกันกับหน้าสรุป คนละที่วาง
+
+  /* หน้าสรุป: ผูกหัวการ์ดยุบ/กาง แล้ววัดความสูงแถบหัวเว็บให้แถบเครื่องมือ sticky */
+  initSummaryCollapse();
+  watchTopbarHeight();
 
   /* หมายเหตุของรอบ (v2.7.4) — Enter บันทึกแล้วคืนโฟกัสให้ช่องยิงทันที
      คนนับถือเครื่องยิงอยู่ ต้องยิงตัวถัดไปต่อได้เลยโดยไม่ต้องแตะจออีก
