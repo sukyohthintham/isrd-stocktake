@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.10.1">
+<meta name="version" content="2.10.2">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.10.1</title>
+<title>ISRD Stocktake v2.10.2</title>
 
 <style>
 :root{
@@ -1715,7 +1715,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.10.1';
+var APP_VERSION = '2.10.2';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -1833,12 +1833,30 @@ var session = (function () {
     return refreshing;
   }
 
+  /* ⭐ v2.10.2 — ต่ออายุโทเคนต้องมีเวลาตัดเหมือนคำขออื่นทุกใบ
+     ต้นตอของอาการ "ช่องอ่านเบื้องหลังหมดแล้วไม่คืน" ที่ไล่จาก validateAllStats:
+       อ่านเงียบจองช่อง bgSlot → เจอ 401 → withAuthRetry เรียก session.renew()
+       → refreshOnce() ใช้ fetch เปล่าไม่มี timeout → เน็ตค้างกลางทางแล้วค้างตลอดกาล
+       → promise ของ remoteGet ไม่มีวัน settle → bgDone() ไม่ถูกเรียก → ช่องหายถาวร
+     ซ้ำร้าย refreshing ถูกแคชไว้ ทุกคำขอที่โดน 401 หลังจากนั้นไปรอใบเดียวกันที่ไม่มีวันจบ
+     สองใบก็พอให้ BG_MAX=2 ตันสนิท — ตรงกับที่เห็น: รอบแรก ๆ ผ่าน แล้วที่เหลือค้างครบ 35 วิ */
+  function fetchAuthT(u, opts, ms) {
+    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var o = Object.assign({}, opts);
+    if (ctrl) o.signal = ctrl.signal;
+    var timer = ctrl ? setTimeout(function () { try { ctrl.abort(); } catch (e) {} }, ms || 15000) : null;
+    return fetch(u, o).then(
+      function (r) { if (timer) clearTimeout(timer); return r; },
+      function (e) { if (timer) clearTimeout(timer); throw e; }
+    );
+  }
+
   function refreshOnce() {
-    return fetch(IDENTITY_REFRESH + FIREBASE_CONFIG.apiKey, {
+    return fetchAuthT(IDENTITY_REFRESH + FIREBASE_CONFIG.apiKey, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: 'grant_type=refresh_token&refresh_token=' + encodeURIComponent(refreshToken)
-    }).catch(function () { throw netError(); }).then(function (r) {
+    }, 15000).catch(function () { throw netError(); }).then(function (r) {
       if (!r.ok) return fail(r);
       return r.json();
     }).then(function (d) {
@@ -2154,15 +2172,54 @@ var db = (function () {
      — คืออาการ "สร้าง Job ไม่สำเร็จ กรุณาตรวจสัญญาณอินเทอร์เน็ต" ทั้งที่เน็ตยังดี
      กั้นไว้ 2 สาย เหลืออีก 4 ให้สาย SSE และคำขอที่ผู้ใช้รออยู่หน้าจอเสมอ */
   var BG_MAX = 2;
-  var bgRunning = 0, bgQueue = [];
-  function bgSlot() {
-    if (bgRunning < BG_MAX) { bgRunning++; return Promise.resolve(); }
-    return new Promise(function (res) { bgQueue.push(res); });
+  var BG_STUCK_MS = 60000;        // ถือช่องนานกว่านี้ = ผิดปกติ (quiet read ตัดที่ 30 วิอยู่แล้ว)
+  var bgRunning = 0, bgQueue = [], bgSeq = 0;
+  var bgActive = Object.create(null);   // ใบจอง -> { at, path } ไว้ดูว่าใครถือช่องค้างอยู่
+
+  /* ⭐ v2.10.2 — จองช่องแล้วได้ "ใบจอง" กลับไป ต้องคืนด้วยใบนั้นเท่านั้น
+     ของเดิม bgDone() ไม่รับพารามิเตอร์ ใครเรียกก็ลดตัวนับได้ เรียกซ้ำ = ตัวนับติดลบ
+     ไม่เรียกเลย = ช่องหายถาวร ทั้งสองแบบทำให้คิวเพี้ยนแบบเงียบ ๆ */
+  function bgTake(path) {
+    var token = ++bgSeq;
+    bgRunning++;
+    bgActive[token] = { at: Date.now(), path: path || '' };
+    return token;
   }
-  function bgDone() {
+  function bgSlot(path) {
+    bgSweep();                    // กวาดใบที่ค้างก่อนเสมอ ไม่ต้องพึ่ง timer เดินตลอดเวลา
+    if (bgRunning < BG_MAX) return Promise.resolve(bgTake(path));
+    return new Promise(function (res) {
+      bgQueue.push(function () { res(bgTake(path)); });
+    });
+  }
+  /* คืนช่องได้ครั้งเดียวต่อหนึ่งใบจอง เรียกซ้ำหรือคืนใบที่ถูกกวาดไปแล้วก็ไม่ทำให้ตัวนับเพี้ยน */
+  function bgDone(token) {
+    if (!token || !bgActive[token]) return false;
+    delete bgActive[token];
     bgRunning--;
     var next = bgQueue.shift();
-    if (next) { bgRunning++; next(); }
+    if (next) next();
+    return true;
+  }
+  /* ยามเฝ้าช่อง — ใบที่ถือเกิน 60 วิถือว่าเจ้าของหายไปแล้ว ยึดคืนให้คิวเดินต่อได้
+     ถ้าเจ้าของกลับมาทีหลังแล้วเรียก bgDone() ด้วยใบเดิม จะถูกปฏิเสธเอง (ใบหายไปแล้ว)
+     จึงไม่มีทางลดตัวนับซ้ำ — บันทึกลง netLog ไว้ด้วยว่ายึดคืนของ path ไหน */
+  function bgSweep() {
+    var now = Date.now(), freed = 0;
+    Object.keys(bgActive).forEach(function (tk) {
+      var a = bgActive[tk];
+      if (!a || now - a.at < BG_STUCK_MS) return;
+      logNet('BG', a.path, 0, now - a.at, 'slot-stuck-reclaimed');
+      delete bgActive[tk];
+      bgRunning--;
+      freed++;
+    });
+    while (freed > 0 && bgRunning < BG_MAX && bgQueue.length) {
+      var next = bgQueue.shift();
+      next();
+      freed--;
+    }
+    return freed;
   }
 
   /* ได้ HTTP status กลับมา = คุยกับ Firebase ติดแล้ว ต่อให้ status เป็น 401/403/500 ก็ตาม
@@ -2194,14 +2251,23 @@ var db = (function () {
     var tmo = opts.timeout || (quiet ? 30000 : 10000);
     var tries = (opts.tries != null) ? opts.tries : (quiet ? 1 : 3);
     var t0 = Date.now();
-    var gate = quiet ? bgSlot() : Promise.resolve();         // ⭐ อ่านเงียบต้องรอช่องว่าง ห้ามแย่งสายกับคำขอที่ผู้ใช้รอ
+    /* ⭐ v2.10.2 — ถือ "ใบจอง" ไว้ แล้วคืนให้ครบทุกเส้นทางที่ออกจากฟังก์ชันนี้ได้
+       รวมถึงตอนที่ retryNet/withAuthRetry โยน error ออกมาก่อนถึงตัววาดผล
+       release() ปลอดภัยเมื่อถูกเรียกซ้ำ (bgDone เช็คใบจองให้เอง) */
+    var token = null;
+    function release() { if (quiet && token !== null) { bgDone(token); token = null; } }
+
+    var gate = quiet
+      ? bgSlot(path).then(function (tk) { token = tk; })
+      : Promise.resolve();
+
     return gate.then(function () {
       return retryNet(function () {
         return withAuthRetry(function () { return fetchT(url(path), { timeoutMs: tmo }); });
       }, tries);
     }).then(
-      function (r) { if (quiet) bgDone(); return remoteDone('GET', path, t0, quiet, r); },
-      function (e) { if (quiet) bgDone(); return remoteFailed('GET', path, t0, quiet, e); }
+      function (r) { release(); return remoteDone('GET', path, t0, quiet, r); },
+      function (e) { release(); return remoteFailed('GET', path, t0, quiet, e); }
     );
   }
 
@@ -2349,6 +2415,24 @@ var db = (function () {
          console.table(db.netLog())      ดูเป็นตารางอ่านง่าย
        ตีความ: status 401/403 = auth · status 0 = เน็ตไปไม่ถึง · ms สูง = ช้า/ติดคิว */
     netLog: function () { return netLog.slice(); },
+
+    /* ⭐ v2.10.2 — ส่องคิวอ่านเบื้องหลังหน้างาน: db.bgInfo()
+         running ค้างเท่า max แล้วไม่ลดเลย + queued ค่อย ๆ โต = ช่องรั่ว
+         running ขยับขึ้นลงปกติแต่ queued ยาว = แค่คิวแน่น ไม่ใช่รั่ว (คนละเรื่อง คนละวิธีแก้)
+       active บอกด้วยว่าใบไหนถืออยู่นานแค่ไหน จะได้รู้ว่า path ไหนเป็นตัวถ่วง */
+    bgInfo: function () {
+      var now = Date.now();
+      return {
+        running: bgRunning, queued: bgQueue.length, max: BG_MAX,
+        active: Object.keys(bgActive).map(function (tk) {
+          return { path: bgActive[tk].path, ageMs: now - bgActive[tk].at };
+        }).sort(function (a, b) { return b.ageMs - a.ageMs; })
+      };
+    },
+
+    /* ยึดช่องที่ค้างคืนเดี๋ยวนี้ — ปกติ bgSlot() กวาดให้เองอยู่แล้ว
+       ตัวนี้ไว้กดเองตอนหน้างานอยากปลดล็อกทันทีโดยไม่ต้องรอคำขอถัดไป */
+    bgSweep: function () { return bgSweep(); },
 
     /* token ใหม่มาแล้ว — เปิดสายที่ค้างอยู่ใหม่ทั้งหมดด้วย token ตัวใหม่ */
     reopenStreams: function () { if (REMOTE_MODE) reopenStreams(); },
@@ -10601,7 +10685,11 @@ function validateAllStats(opts) {
         /* ชุดนี้ใช้เวลาเป็นนาทีเมื่อมีรอบคลังใหญ่ ต้องเห็นว่ามันเดินอยู่ ไม่ใช่ค้าง */
         if (log && typeof console !== 'undefined' && console.log) {
           var last = out[out.length - 1];
-          console.log('[validateStat] ' + (i + 1) + '/' + ids.length + ' ' + id + ' → ' + last.reason);
+          /* แนบสภาพคิวไปด้วย — read-timeout ที่มาพร้อม queued ยาว คือ "คิวแน่น"
+             แต่ถ้ามาพร้อม running ค้างเต็มโดยไม่มีใครขยับ คือ "ช่องรั่ว" คนละสาเหตุกัน */
+          var bg = db.bgInfo ? db.bgInfo() : null;
+          console.log('[validateStat] ' + (i + 1) + '/' + ids.length + ' ' + id + ' → ' + last.reason +
+                      (bg ? ('  (bg ' + bg.running + '/' + bg.max + ' · คิว ' + bg.queued + ')') : ''));
         }
       });
     });
