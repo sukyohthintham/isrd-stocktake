@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.10.6">
+<meta name="version" content="2.10.7">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.10.6</title>
+<title>ISRD Stocktake v2.10.7</title>
 
 <style>
 :root{
@@ -921,12 +921,22 @@ body.no-doc-images .doc .imgbox{display:none}
     <div id="importStatus" class="muted" style="margin-bottom:12px">ยังไม่ได้นำเข้ายอดระบบของรอบนี้</div>
     <button class="btn ghost sm block" id="btnImportReport" style="display:none;margin-bottom:12px">ดูรายละเอียดการนำเข้าล่าสุด</button>
     <input type="file" id="fileInput" accept=".csv,.xlsx" style="display:none">
-    <button class="btn ghost block" id="btnImport">📄 นำเข้าไฟล์สินค้าจากระบบ (Excel / CSV)</button>
-    <p class="muted" style="margin:12px 0 0">
-      อ่านจากชีตชื่อ <b>สินค้า</b> · ข้ามแถวชื่อเรื่องให้อัตโนมัติ<br>
-      จำเป็น: <b>รหัสสินค้า</b>, <b>จำนวน</b><br>
-      ใส่หรือไม่ใส่ก็ได้: ชื่อสินค้า · หมวดหมู่ · หมวดหมู่ย่อย · Tag · ราคาขาย · หน่วยสินค้า · Barcode
-    </p>
+    <!-- ⭐ v2.10.7 — ยอดระบบที่นำเข้าแล้วต้องเผลอทับไม่ได้
+         นำเข้าครั้งแรกกดได้เลย (ผู้นับต้องอัปไฟล์ตั้งต้นเองได้) แต่พอมียอดแล้ว
+         ปุ่มจะถูกซ่อนไปทั้งอัน เหลือแค่กล่องล็อก ต้องกดปลดล็อกก่อนถึงจะเห็นปุ่มอีกครั้ง
+         กันด้วย "จำนวนจังหวะที่ต้องตั้งใจ" ไม่ใช่กันด้วย role — counter ยังทำเองได้ตลอด -->
+    <div id="importAction">
+      <button class="btn ghost block" id="btnImport">📄 นำเข้าไฟล์สินค้าจากระบบ (Excel / CSV)</button>
+      <p class="muted" style="margin:12px 0 0">
+        อ่านจากชีตชื่อ <b>สินค้า</b> · ข้ามแถวชื่อเรื่องให้อัตโนมัติ<br>
+        จำเป็น: <b>รหัสสินค้า</b>, <b>จำนวน</b><br>
+        ใส่หรือไม่ใส่ก็ได้: ชื่อสินค้า · หมวดหมู่ · หมวดหมู่ย่อย · Tag · ราคาขาย · หน่วยสินค้า · Barcode
+      </p>
+    </div>
+    <div id="importLocked" style="display:none">
+      <div class="muted" id="importLockedMsg" style="margin-bottom:12px"></div>
+      <button class="btn ghost sm block" id="btnUnlockImport">🔓 ต้องแก้ไข? ปลดล็อกเพื่อนำเข้าใหม่</button>
+    </div>
     </div>
   </div>
 
@@ -1715,7 +1725,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.10.6';
+var APP_VERSION = '2.10.7';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -3802,6 +3812,7 @@ var state = {
   docScope: 'job',                          // เอกสาร: 'job' = เฉพาะ Job นี้ · 'cycle' = รวมทั้งสาขา
   docScopeTouched: false,                   // ผู้ใช้กดสลับปุ่มขอบเขตเองหรือยัง
   stat: null,                               // ⭐ v2.10.0 ยอดสรุปของรอบที่เปิดอยู่ (pieces/skus/lastAt/lastBy)
+  importUnlocked: false,                    // ⭐ v2.10.7 กดปลดล็อกเพื่อเขียนทับยอดระบบแล้วหรือยัง (รายรอบ)
   cycleData: null,                          // แคชยอดรวมทั้ง cycle
   cycles: {},                               // cycleId -> { status, info } ระเบียนรอบนับ
   cycleId: null,                            // รอบนับของ Job ที่เปิดอยู่
@@ -10455,11 +10466,26 @@ function handleImport(file) {
   if (!canScan()) { toast(blockedMessage() + ' — นำเข้าไฟล์ไม่ได้', true); return; }
   if (!requireOpenCycle()) return;
 
+  /* ⭐ v2.10.7 — ด่านสุดท้ายก่อนเขียนทับ อยู่ที่ตัวฟังก์ชันไม่ใช่แค่ที่ปุ่ม
+     กันคนที่เข้ามาทางอื่น (ลาก-วางไฟล์ / เรียกจาก Console / DOM ถูกแก้)
+     บอกให้ชัดว่าอะไรหายอะไรไม่หาย — ยอดที่ยิงนับไว้ไม่หาย หายแค่ยอดระบบกับผลต่าง */
+  var existing = Object.keys(state.systemQty).length;
+  var guard = existing
+    ? ask('รอบนี้มียอดระบบอยู่แล้ว ' + fmtNum(existing) + ' รายการ',
+        'การนำเข้าใหม่จะ "เขียนทับ" ยอดระบบเดิมทั้งหมดของรอบนี้\n\n' +
+        '• ยอดที่ยิงนับไว้ (ยอดยิงจริง) ไม่หาย\n' +
+        '• แต่ยอดระบบ และส่วนต่าง (ขาด/เกิน) จะคำนวณใหม่ตามไฟล์ใหม่',
+        'ยืนยันเขียนทับยอดระบบ', { cancelLabel: 'ยกเลิก', danger: true })
+    : Promise.resolve(true);
+
+  return guard.then(function (okOverwrite) {
+  if (!okOverwrite) { toast('ยกเลิกการนำเข้า ข้อมูลเดิมไม่ถูกแตะ'); return; }
+
   var isXlsx = /\.xlsx$/i.test(file.name);
   $('btnImport').disabled = true;
   $('importStatus').textContent = 'กำลังอ่านไฟล์...';
 
-  file.arrayBuffer().then(function (buf) {
+  return file.arrayBuffer().then(function (buf) {
     return isXlsx ? parseXlsx(buf) : Promise.resolve(parseCsv(decodeTextFile(buf)));
   }).then(function (parsed) {
     var result = parseProductFile(parsed);
@@ -10473,6 +10499,8 @@ function handleImport(file) {
 
     function doImport(result) {
       return applyImport(state.cycleId, result).then(function (diff) {
+        /* ⭐ v2.10.7 — อัปเสร็จแล้วล็อกกลับทันที ครั้งต่อไปต้องตั้งใจปลดใหม่อีกรอบ */
+        state.importUnlocked = false;
         state.lastImport = { stat: result.stat, diff: diff };
         state.cycleData = null;      // ยอดรวมของ cycle เปลี่ยนแล้ว ต้องโหลดใหม่
         delete state.cycleStats[state.cycleId];
@@ -10494,6 +10522,7 @@ function handleImport(file) {
     };
     toast(messages[code] || 'นำเข้าไฟล์ไม่สำเร็จ กรุณาตรวจไฟล์แล้วลองใหม่อีกครั้ง', true);
   }).then(function () { renderStart(); });
+  });
 }
 
 /* ============================================================
@@ -12439,7 +12468,32 @@ function renderStart() {
   $('tfStatus').style.whiteSpace = 'pre-line';
   $('btnImportTf').disabled = !state.roundId;
   $('btnImportReport').style.display = (state.roundId && state.lastImport) ? 'flex' : 'none';
-  $('btnImport').disabled = !state.roundId;
+
+  /* ⭐ v2.10.7 — ปุ่มนำเข้ายอดระบบมีสามสถานะ ไม่ใช่แค่เปิด/ปิด
+       ยังไม่เลือก Job      ปุ่มอยู่แต่กดไม่ได้ (เหมือนเดิม)
+       ยอดระบบยังว่าง       กดได้เลย — นำเข้าครั้งแรกต้องไม่มีอะไรขวาง
+       มียอดแล้ว ยังไม่ปลด  ซ่อนปุ่มทิ้ง เหลือกล่องล็อก
+       มียอดแล้ว ปลดแล้ว    ปุ่มกลับมาพร้อมป้ายที่บอกตรง ๆ ว่ากำลังจะเขียนทับ
+     ปุ่มปลดล็อกโชว์เฉพาะ staff — scanner/viewer เห็นข้อความล็อกไว้ให้รู้ว่ามีของแล้ว
+     แต่ไม่มีปุ่มให้กด (สองคนนี้ไม่มีสิทธิ์นำเข้าอยู่แล้วตั้งแต่ต้น) */
+  var hasSys = Object.keys(state.systemQty).length > 0;
+  var defLabel = '📄 นำเข้าไฟล์สินค้าจากระบบ (Excel / CSV)';
+  if (!state.roundId) {
+    $('importAction').style.display = ''; $('importLocked').style.display = 'none';
+    $('btnImport').disabled = true; $('btnImport').textContent = defLabel;
+  } else if (!hasSys) {
+    $('importAction').style.display = ''; $('importLocked').style.display = 'none';
+    $('btnImport').disabled = false; $('btnImport').textContent = defLabel;
+  } else if (state.importUnlocked) {
+    $('importAction').style.display = ''; $('importLocked').style.display = 'none';
+    $('btnImport').disabled = false;
+    $('btnImport').textContent = '📄 เขียนทับยอดระบบเดิม (เลือกไฟล์ใหม่)';
+  } else {
+    $('importAction').style.display = 'none'; $('importLocked').style.display = '';
+    $('importLockedMsg').textContent = '🔒 ยอดระบบล็อกไว้แล้ว (' +
+      fmtNum(Object.keys(state.systemQty).length) + ' รายการ) กันเผลอนำเข้าทับ';
+    $('btnUnlockImport').style.display = isStaff() ? '' : 'none';
+  }
 
   refreshNav();
 }
@@ -12626,6 +12680,7 @@ function selectRound(id) {
   localStorage.setItem('isrd_round', id);
   state.zones = {};
   state.systemQty = {};
+  state.importUnlocked = false;    // ⭐ v2.10.7 ปลดล็อกเป็นของรายรอบ ห้ามติดค้างข้ามใบ
   state.lastImport = null;
   state.reasons = {};
   state.docType = DEFAULT_DOC_TYPE;
@@ -13970,6 +14025,8 @@ function init() {
   });
 
   $('btnImport').onclick = function () { $('fileInput').click(); };
+  /* ปลดล็อกแค่เปิดปุ่มให้เห็น ยังไม่ได้เขียนอะไร — ด่านยืนยันจริงอยู่ที่ handleImport อีกชั้น */
+  $('btnUnlockImport').onclick = function () { state.importUnlocked = true; renderStart(); };
   $('btnImportReport').onclick = showImportReport;
   $('fileInput').addEventListener('change', function () {
     if (this.files && this.files[0]) handleImport(this.files[0]);
