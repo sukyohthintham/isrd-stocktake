@@ -27,6 +27,9 @@
         สลับลำดับเมื่อไหร่ = Rules ปฏิเสธ = เลขปิดที่ถูกไม่ถูกบันทึก
    [11] validateAllStats ต้องอ่านทีละรอบ ห้ามยิงพร้อมกันจนคิว bgSlot ตัน
         รอบไหนไม่จบใน 35 วิ ตัดทิ้งไปรอบถัดไป ห้ามแขวนทั้งชุด · คืนผลครบทุกรอบเสมอ
+   [12] ⭐ v2.10.6 — ห้ามยิงคำขอเขียน stat ไปที่รอบที่พ้นขั้นนับแล้ว
+        Rules ปฏิเสธแน่นอน → PATCH 401 รกคอนโซล + เข้าคิว dead-letter
+        แล้วแถบบนขึ้น "ส่งไม่สำเร็จค้างอยู่" ให้คนหน้างานตกใจฟรี ๆ
    ============================================================ */
 
 const { puppeteer, CHROME, APP_URL } = require('./_env');
@@ -621,6 +624,56 @@ const HARNESS = `
     return await validateAllStats({ log: false });
   });
   check('คืนลิสต์ว่าง ไม่โยน error', Array.isArray(empty) && empty.length === 0, empty);
+
+  /* ---------- [12] ห้ามเขียน stat ลงรอบที่พ้นขั้นนับ ---------- */
+  console.log('\n[12] ⭐ รอบที่ไม่ได้อยู่ขั้นนับ ต้องไม่มีคำขอเขียน stat ออกไปเลย');
+  const gate = await page.evaluate(async () => {
+    /* บล็อกก่อนหน้าเปลี่ยน db.update ไปบันทึกที่อื่น — ตั้งกลับมาให้บันทึกลง __writes ก่อน */
+    window.db.update = function (path, patch) {
+      window.__writes.push({ path: path, patch: patch, direct: true });
+      return Promise.resolve();
+    };
+    const out = {};
+    const statWrites = function () {
+      return window.__writes.filter(function (w) {
+        return w.patch && Object.keys(w.patch).some(function (k) { return /^(stat|skuQty)\//.test(k); });
+      }).length;
+    };
+    for (const st of ['counting', 'reviewing', 'closed']) {
+      window.__seed('admin');
+      state.roundIndex.R1.status = st;
+      window.__writes = [];
+      /* ทางที่ 1: ยิงบาร์โค้ด */
+      writeScan('A1', 5, 'scan');
+      const afterScan = statWrites();
+      /* ทางที่ 2: สั่ง rebuild เขียนตรง ๆ */
+      window.db.getQuiet = function (p) {
+        if (/\/scans$/.test(p)) return Promise.resolve({ s1: { code: 'A1', delta: 5, ts: 1, user: 'ก' } });
+        return Promise.resolve({});
+      };
+      window.__writes = [];
+      const built = await rebuildStat('R1', { write: true });
+      out[st] = { scanStatWrites: afterScan, rebuildWrites: statWrites(),
+                  builtPieces: built && built.pieces };
+    }
+    return out;
+  });
+  check('ขั้นนับ: ยิงแล้วยังเขียน stat ตามปกติ', gate.counting.scanStatWrites === 1, gate.counting);
+  check('ขั้นนับ: rebuild เขียนลงฐานได้', gate.counting.rebuildWrites === 1, gate.counting);
+  check('⭐ ขั้นตรวจสอบ: ยิงแล้วไม่มีคำขอเขียน stat', gate.reviewing.scanStatWrites === 0, gate.reviewing);
+  check('⭐ ขั้นตรวจสอบ: rebuild ไม่เขียนลงฐาน', gate.reviewing.rebuildWrites === 0, gate.reviewing);
+  check('⭐ ปิดแล้ว: ยิงแล้วไม่มีคำขอเขียน stat', gate.closed.scanStatWrites === 0, gate.closed);
+  check('⭐ ปิดแล้ว: rebuild ไม่เขียนลงฐาน', gate.closed.rebuildWrites === 0, gate.closed);
+  check('แต่ rebuild ยังคำนวณเลขให้ดูได้ทุกสถานะ (validate ต้องใช้)',
+        gate.counting.builtPieces === 5 && gate.reviewing.builtPieces === 5 &&
+        gate.closed.builtPieces === 5, gate);
+
+  console.log('\n[12b] ยามกันต้องมีที่เดียว และทุกทางที่เขียน stat ต้องผ่านมัน');
+  const src12 = require('fs').readFileSync(require('./_env').APP_FILE, 'utf8');
+  check('ประกาศ canWriteStat ครั้งเดียว',
+        (src12.match(/function canWriteStat/g) || []).length === 1, 'canWriteStat');
+  check('มีผู้เรียกใช้อย่างน้อย 2 ทาง (bumpStat + rebuildStat)',
+        (src12.match(/canWriteStat\(/g) || []).length >= 3, 'callers');
 
   check('ไม่มี error ในคอนโซล', errors.length === 0, errors.slice(0, 3));
 

@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.10.5">
+<meta name="version" content="2.10.6">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.10.5</title>
+<title>ISRD Stocktake v2.10.6</title>
 
 <style>
 :root{
@@ -1715,7 +1715,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.10.5';
+var APP_VERSION = '2.10.6';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -10644,8 +10644,22 @@ function statFromScans(data, sysMap) {
    แยกคิวจากแถว scan โดยตั้งใจ ไม่รวมเป็น patch ก้อนเดียว
    ถ้า Rules ยังไม่ได้วางที่ Console ก้อนรวมจะถูกปฏิเสธทั้งแถว = ยิงไม่ได้ทั้งรอบ
    แยกไว้แล้วอย่างแย่ที่สุดคือยอดสรุปไม่ขึ้น แต่การนับยังเดินต่อได้ (บทเรียน v2.7.7) */
+/* ⭐ v2.10.6 — Rules ให้เขียน stat/skuQty ได้เฉพาะรอบที่ status = 'counting' เท่านั้น
+   ยิงคำขอไปตอนรอบพ้นขั้นนับแล้วมีแต่จะโดนปฏิเสธ ผลคือ:
+     · คอนโซลขึ้น PATCH 401 รัว ๆ จนกลบ log ตัวที่ต้องดูจริง
+     · แถวที่ถูกปฏิเสธถาวรเข้าคิว dead-letter แล้วแถบบนขึ้น "ส่งไม่สำเร็จค้างอยู่ N รายการ"
+       ทำให้คนหน้างานตกใจว่าข้อมูลหาย ทั้งที่ยอดนับเข้าฐานครบตั้งแต่แรก
+   รอบที่ปิด/ส่งตรวจแล้วไม่ต้องมี stat เพราะทุกหน้าคำนวณสดอยู่แล้ว (ตัดสินใจไม่ทำ Phase 2)
+   เช็คที่เดียวตรงนี้ ให้ทุกทางที่เขียน stat เรียกใช้ จะได้ไม่มีใครหลุดไปยิงเอง */
+function canWriteStat(roundId) {
+  if (!roundId) return false;
+  var job = state.roundIndex[roundId];
+  if (!job) return false;
+  return (job.status || 'counting') === 'counting';
+}
+
 function bumpStat(roundId, key) {
-  if (!roundId) return null;
+  if (!canWriteStat(roundId)) return null;
   var st = currentStat();
   var patch = {
     'stat/pieces': st.pieces,
@@ -10682,7 +10696,9 @@ function rebuildStat(roundId, opts) {
   }).then(function (res) {
     var data = res.data, sys = res.sys;
     var st = statFromScans(data, sys);
-    if (!opts.write) return st;
+    /* คำนวณให้ดูได้เสมอ (validateStat ใช้ทางนี้กับรอบที่ปิดแล้วด้วย)
+       แต่ "เขียน" เฉพาะรอบที่ Rules ยอมเท่านั้น ไม่งั้นได้ 401 ฟรี ๆ */
+    if (!opts.write || !canWriteStat(roundId)) return st;
     var patch = {
       'stat/pieces': st.pieces, 'stat/skus': st.skus,
       'stat/lastAt': st.lastAt, 'stat/lastBy': st.lastBy,
