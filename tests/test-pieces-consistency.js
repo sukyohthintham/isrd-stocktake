@@ -16,6 +16,9 @@
    [3] กติกาเดียวมีที่เดียว — ไม่มีใครเขียนเงื่อนไข 0/0 หรือ discarded ซ้ำที่อื่น
    [4] แคชสถิติของกติกาเก่าใน localStorage ต้องถูกทิ้ง ไม่เอามาใช้ต่อ
    [5] ผีที่ถูกสั่งลบใน Job หนึ่ง ต้องไม่ถูกนับในยอดรวมของทั้งรอบด้วย
+   [6] ผู้ยิงรายคน (scannerStats) ต้องใช้กติกาเดียวกัน — ผลรวมรายคน = ยอดรวมรอบ
+       ทั้งรอบมีผี/ไม่มีผี และทั้งยิงคนเดียว/หลายคน
+   [7] เอกสารต้องไม่มีประโยคอธิบายว่าตัดบาร์โค้ดผีไปกี่ชิ้น — โชว์แค่ยอดสะอาด
    ============================================================ */
 
 const { puppeteer, CHROME, APP_URL } = require('./_env');
@@ -205,6 +208,108 @@ const HARNESS = `
   check('แคชกติกาเก่าถูกปฏิเสธ', cache.oldRejected === true, cache);
   check('และถูกลบทิ้งไม่ให้ค้าง', cache.oldRemoved === true, cache);
   check('แคชกติกาใหม่ยังใช้ได้ปกติ', cache.newAccepted === true, cache);
+
+  /* ---------- [6] ผู้ยิงรายคน ---------- */
+  console.log('\n[6] ⭐ ผู้ยิงรายคน — ผลรวมรายคนต้องเท่ายอดรวมรอบเสมอ');
+
+  const one = await page.evaluate(() => {
+    window.__seedRound();
+    window.__scanReal();          /* สมชายยิงคนเดียว 3,078 ชิ้น */
+    window.__addGhosts(13);
+    const rows = scannerStats();
+    const sum = rows.reduce(function (s, r) { return s + r.pieces; }, 0);
+    const board = currentStat();
+    return { rows: rows, sum: sum, board: { pieces: board.pieces, skus: board.skus } };
+  });
+  check('มีผู้ยิงคนเดียว', one.rows.length === 1, one.rows.map(r => r.user));
+  check('⭐ ผู้ยิงรายคน = 3,078 ชิ้น (ไม่ใช่ 3,065)', one.rows[0].pieces === 3078, one.rows[0]);
+  check('⭐ ผลรวมรายคน = ยอดรวมรอบ', one.sum === one.board.pieces, one);
+  check('⭐ SKU รายคน = SKU ของรอบ (ผีไม่ถูกนับ)',
+        one.rows[0].skus === one.board.skus && one.rows[0].skus === 2, one);
+
+  console.log('\n[6b] รอบไม่มีผี — ตัวเลขรายคนต้องไม่ขยับ');
+  const oneClean = await page.evaluate(() => {
+    window.__seedRound();
+    window.__scanReal();
+    const rows = scannerStats();
+    return { pieces: rows[0].pieces, skus: rows[0].skus,
+             sum: rows.reduce(function (s, r) { return s + r.pieces; }, 0),
+             board: currentStat().pieces };
+  });
+  check('รายคน = 3,078 เหมือนเดิม', oneClean.pieces === 3078, oneClean);
+  check('SKU = 2 เหมือนเดิม', oneClean.skus === 2, oneClean);
+  check('ผลรวมรายคน = ยอดรวมรอบ', oneClean.sum === oneClean.board, oneClean);
+
+  console.log('\n[6c] หลายคนยิง — ผลรวมรายคนต้องยังเท่ายอดรวมรอบ');
+  const many = await page.evaluate(() => {
+    window.__seedRound();
+    /* สามคนยิงคนละส่วน + ผีของแต่ละคน */
+    writeScan('P1', 1000, 'scan');
+    state.counter = 'สมศรี';
+    writeScan('P1', 2000, 'scan');
+    state.counter = 'สมปอง';
+    writeScan('P2', 78, 'scan');
+    window.__addGhosts(5);        /* ผีของสมปอง */
+    state.counter = 'สมชาย';
+    window.__addGhosts(0);
+    const rows = scannerStats();
+    const sum = rows.reduce(function (s, r) { return s + r.pieces; }, 0);
+    return { rows: rows, sum: sum, board: currentStat().pieces,
+             summary: summaryData().groups.total.actQty };
+  });
+  check('มีผู้ยิง 3 คน', many.rows.length === 3, many.rows.map(r => r.user + ':' + r.pieces));
+  check('⭐ ผลรวมรายคน = ยอดรวมรอบ', many.sum === many.board, many);
+  check('⭐ ผลรวมรายคน = หน้าสรุป/เอกสาร', many.sum === many.summary, many);
+  check('ยอดรวมยังเป็น 3,078', many.sum === 3078, many);
+
+  console.log('\n[6d] ⭐ เคสยาก — คนหนึ่งยิง อีกคนหักคืนจนเป็นผี ต้องหลุดทั้งคู่');
+  const cross = await page.evaluate(() => {
+    window.__seedRound();
+    window.__scanReal();
+    /* สมชายยิงบาร์โค้ดที่ไม่มีในระบบ +5 · สมศรีหักคืน -5 → ยอดรวม 0 = ผี
+       ถ้าตัดสินรายคนจะกลายเป็นตัดของคนหนึ่งแต่ไม่ตัดของอีกคน แล้วผลรวมเพี้ยนทันที */
+    state.counter = 'สมชาย';
+    writeScan(safeKey('BARZERO'), 5, 'scan', null, { unknown: true, raw: 'BARZERO' });
+    state.counter = 'สมศรี';
+    writeScan(safeKey('BARZERO'), -5, 'scan', 'ยิงหลุด', { unknown: true, raw: 'BARZERO' });
+    const rows = scannerStats();
+    const sum = rows.reduce(function (s, r) { return s + r.pieces; }, 0);
+    const byUser = {};
+    rows.forEach(function (r) { byUser[r.user] = r.pieces; });
+    return { byUser: byUser, sum: sum, board: currentStat().pieces,
+             summary: summaryData().groups.total.actQty };
+  });
+  check('⭐ ผลรวมรายคน = ยอดรวมรอบ (ไม่เพี้ยนจากการหักข้ามคน)',
+        cross.sum === cross.board && cross.sum === cross.summary, cross);
+  /* สมศรียิงแต่แถวผีล้วน พอตัดผีออกเธอจึงไม่เหลือรายการอะไรเลย = ไม่ขึ้นชื่อ
+     ถูกต้องแล้ว — คนที่ไม่มียอดจริงไม่ควรไปโผล่ในรายชื่อผู้นับของเอกสาร
+     ที่สำคัญคือ +5 ของสมชายต้องถูกตัดด้วย ไม่ใช่ตัดแต่ -5 ของสมศรี */
+  check('สมชายไม่ได้ +5 ของผีติดมา (3,078 ไม่ใช่ 3,083)',
+        cross.byUser['สมชาย'] === 3078, cross.byUser);
+  check('สมศรีที่ยิงแต่ผีล้วน ไม่ขึ้นชื่อในรายชื่อผู้นับ',
+        cross.byUser['สมศรี'] === undefined, cross.byUser);
+
+  /* ---------- [7] เอกสารต้องไม่อธิบายเรื่องตัดผี ---------- */
+  console.log('\n[7] เอกสารโชว์แค่ยอดสะอาด ไม่มีประโยคอธิบายส่วนต่าง');
+  const docSrc = require('fs').readFileSync(require('./_env').APP_FILE, 'utf8');
+  check('ไม่มีตัวแปร whoGap เหลืออยู่', /whoGap/.test(docSrc) === false, 'whoGap');
+  check('ไม่มีข้อความ "ยอดจริงในตาราง"', /ยอดจริงในตาราง/.test(docSrc) === false, 'ยอดจริงในตาราง');
+  check('ไม่มีข้อความ "จากบาร์โค้ดที่ไม่นับเป็นสินค้าจริง"',
+        /จากบาร์โค้ดที่ไม่นับเป็นสินค้าจริง/.test(docSrc) === false, 'ไม่นับเป็นสินค้าจริง');
+
+  const docLine = await page.evaluate(() => {
+    window.__seedRound();
+    window.__scanReal();
+    window.__addGhosts(13);
+    const who = scannerStats();
+    const whoPieces = who.reduce(function (s, w) { return s + w.pieces; }, 0);
+    /* ประกอบข้อความแบบเดียวกับที่ renderDoc เขียนลง #docScanners */
+    return 'ผู้นับในรอบนี้ ' + fmtNum(who.length) + ' คน: ' +
+           who.map(function (w) { return w.user + ' (' + fmtNum(w.pieces) + ' ชิ้น)'; }).join(' · ') +
+           ' — รวม ' + fmtNum(whoPieces) + ' ชิ้น';
+  });
+  check('บรรทัดผู้นับจบที่ "รวม 3,078 ชิ้น"', /— รวม 3,078 ชิ้น$/.test(docLine), docLine);
+  check('ไม่มีวงเล็บอธิบายส่วนต่างต่อท้าย', /ต่างกัน/.test(docLine) === false, docLine);
 
   check('ไม่มี error ในคอนโซล', errors.length === 0, errors.slice(0, 3));
 

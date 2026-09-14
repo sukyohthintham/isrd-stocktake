@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.10.4">
+<meta name="version" content="2.10.5">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.10.4</title>
+<title>ISRD Stocktake v2.10.5</title>
 
 <style>
 :root{
@@ -1715,7 +1715,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.10.4';
+var APP_VERSION = '2.10.5';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -9547,16 +9547,16 @@ function renderDoc() {
      และยอดของคนนั้นก็เป็นแค่ส่วนที่ยิงในใบนั้น ไม่ตรงกับตารางข้างล่างในเอกสารฉบับเดียวกัน */
   var who = cycleMode ? scannerStats(cycleScannerEntries()) : scannerStats();
   var whoPieces = who.reduce(function (s, w) { return s + w.pieces; }, 0);
-  /* ยอดรวมของผู้นับทุกคน ควรเท่ากับ "จำนวนจริง" ในตาราง — เขียนไว้ให้กระทบยอดได้ในตัว
-     ไม่เท่าเมื่อไหร่แปลว่ามีบาร์โค้ดที่ไม่นับเป็นสินค้าจริงถูกตัดออกจากผลต่าง (ตั้งแต่ v2.6.9)
-     แต่แถวที่ยิงยังอยู่ในประวัติเป็นหลักฐาน — บอกส่วนต่างไปตรง ๆ ดีกว่าเงียบให้คนไปจับผิดเอง */
-  var whoGap = whoPieces - data.groups.total.actQty;
+  /* ⭐ v2.10.5 — ยอดรวมของผู้นับทุกคนเท่ากับ "จำนวนจริง" ในตารางเสมอแล้ว
+     เพราะ scannerStats ใช้กติกาตัดแถวตัวเดียวกับ summaryData
+
+     เอกสารเป็นของที่ส่งออกไปให้คนนอกอ่าน — โชว์แค่ยอดสุดท้ายที่สะอาดอย่างเดียว
+     ห้ามมีหมายเหตุอธิบายว่าตัดบาร์โค้ดผีไปกี่ตัว/กี่ชิ้น เพราะคนอ่านไม่ได้ต้องการรู้
+     และมีแต่ทำให้สงสัยว่าตกลงยอดไหนคือยอดจริง (ของเดิมพิมพ์ส่วนต่างไว้ในวงเล็บ) */
   $('docScanners').textContent = who.length
     ? ('ผู้นับในรอบนี้ ' + fmtNum(who.length) + ' คน: ' +
        who.map(function (w) { return w.user + ' (' + fmtNum(w.pieces) + ' ชิ้น)'; }).join(' · ') +
-       ' — รวม ' + fmtNum(whoPieces) + ' ชิ้น' +
-       (whoGap ? ' (ยอดจริงในตาราง ' + fmtNum(data.groups.total.actQty) + ' ชิ้น — ต่างกัน ' +
-                 fmtNum(Math.abs(whoGap)) + ' ชิ้น จากบาร์โค้ดที่ไม่นับเป็นสินค้าจริง)' : ''))
+       ' — รวม ' + fmtNum(whoPieces) + ' ชิ้น')
     : 'ยังไม่มีผู้นับในรอบนี้';
   /* ข้อ D4 — ระบุในเอกสารว่า %Success คิดจากฐานไหน */
   var tfPieces = transferList().reduce(function (s, t) { return s + (t.pieces || 0); }, 0);
@@ -12133,21 +12133,45 @@ function renderTransfers() {
    entries = รายการ scan ที่จะนับ [{ rec }] — ไม่ส่งมา = ของ Job ที่เปิดอยู่ เหมือนเดิม
    ส่ง cycleScannerEntries() มา = ผู้นับทั้งรอบทุกใบ (ใช้ในหัวเอกสารโหมดรวม) */
 function scannerStats(entries) {
+  var list = entries || state.scanLog;
+
+  /* ⭐ v2.10.5 — ต้องตัดแถวผีด้วยกติกากลางเหมือนทุกหน้า ไม่งั้นยอดรายคนไม่เท่ายอดรวมรอบ
+     สำคัญ: ตัดสินที่ "ยอดรวมของรอบ" ไม่ใช่ยอดของแต่ละคน
+     ถ้าไปตัดสินรายคน เคสคนหนึ่งยิง +5 อีกคนหักคืน -5 (ยอดรวม 0 = ผี)
+     จะกลายเป็นตัดของคนหนึ่งแต่ไม่ตัดของอีกคน แล้วผลรวมรายคนเพี้ยนทันที
+     ตัดสินที่ยอดรวมก่อนแล้วค่อยแบ่งตามคน ผลรวมรายคนจึงเท่ายอดรวมรอบเสมอทุกกรณี */
+  var net = {}, discarded = {};
+  list.forEach(function (s) {
+    var k = safeKey(s.rec.code);
+    net[k] = (net[k] || 0) + (Number(s.rec.delta) || 0);
+    if (s.rec.discard) discarded[k] = 1;
+  });
+  var real = {};
+  Object.keys(net).forEach(function (k) {
+    if (countsAsRealRow(Number(state.systemQty[k]) || 0, net[k],
+                        !!state.products[k], !!discarded[k])) real[k] = 1;
+  });
+
   var byUser = {};
-  (entries || state.scanLog).forEach(function (s) {
-    var u = s.rec.user || 'ไม่ระบุ';
+  list.forEach(function (s) {
     var key = safeKey(s.rec.code);
+    if (!real[key]) return;                 // แถวผี ไม่นับให้ใครทั้งนั้น
+    var u = s.rec.user || 'ไม่ระบุ';
     var d = Number(s.rec.delta) || 0;
-    var e = byUser[u] || (byUser[u] = { user: u, pieces: 0, skus: {}, last: 0, zones: {} });
+    var e = byUser[u] || (byUser[u] = { user: u, pieces: 0, net: {}, last: 0, zones: {} });
     e.pieces += d;
-    if (d > 0) e.skus[key] = 1;
+    /* นับ SKU จาก "ยอดสุทธิของคนนั้นต่อ SKU" ไม่ใช่ "เคยยิงบวกไหม"
+       ของเดิมนับทุกตัวที่เคยยิงบวก ตัวที่ยิงแล้วหักคืนจนเหลือ 0 จึงยังค้างอยู่ในจำนวน SKU
+       (เคสจริง WHS19: 660 แทนที่จะเป็น 594) */
+    e.net[key] = (e.net[key] || 0) + d;
     if ((s.rec.ts || 0) > e.last) e.last = s.rec.ts;
     var zn = s.rec.zoneName || zoneName(s.rec.zone) || '(ไม่ระบุโซน)';
     e.zones[zn] = (e.zones[zn] || 0) + d;
   });
   return Object.keys(byUser).map(function (u) {
     var e = byUser[u];
-    return { user: u, pieces: e.pieces, skus: Object.keys(e.skus).length, last: e.last, zones: e.zones };
+    var skus = Object.keys(e.net).filter(function (k) { return e.net[k] !== 0; }).length;
+    return { user: u, pieces: e.pieces, skus: skus, last: e.last, zones: e.zones };
   }).sort(function (a, b) { return b.pieces - a.pieces; });
 }
 
