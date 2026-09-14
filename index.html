@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.9.6">
+<meta name="version" content="2.10.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.9.6</title>
+<title>ISRD Stocktake v2.10.0</title>
 
 <style>
 :root{
@@ -1715,7 +1715,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.9.6';
+var APP_VERSION = '2.10.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -3717,6 +3717,7 @@ var state = {
   customStoreTypes: [],                     // ประเภทคลังย่อยที่แอดมินเพิ่มเอง
   docScope: 'job',                          // เอกสาร: 'job' = เฉพาะ Job นี้ · 'cycle' = รวมทั้งสาขา
   docScopeTouched: false,                   // ผู้ใช้กดสลับปุ่มขอบเขตเองหรือยัง
+  stat: null,                               // ⭐ v2.10.0 ยอดสรุปของรอบที่เปิดอยู่ (pieces/skus/lastAt/lastBy)
   cycleData: null,                          // แคชยอดรวมทั้ง cycle
   cycles: {},                               // cycleId -> { status, info } ระเบียนรอบนับ
   cycleId: null,                            // รอบนับของ Job ที่เปิดอยู่
@@ -3930,6 +3931,11 @@ function applyScanRecord(id, rec) {
 
   var key = safeKey(rec.code);
   var delta = Number(rec.delta) || 0;
+  /* ⭐ v2.10.0 — ยอดสรุปของรอบ อัปเดตทีละแถวแบบ O(1) ตรงนี้ที่เดียว
+     ต้องอยู่ "ก่อน" บวก state.counts เพราะต้องรู้ค่าเก่าเพื่อดูว่า SKU นี้เพิ่งเริ่มนับหรือเพิ่งกลับเป็นศูนย์
+     จุดนี้รับทั้งแถวที่เครื่องนี้เขียนเองและแถวที่คนอื่นยิงเข้ามาทางสาย SSE
+     ยอดในเครื่องจึงเป็นภาพรวมของทุกคนเสมอ ไม่ใช่แค่ของตัวเอง */
+  bumpLocalStat(key, delta, rec);
   state.counts[key] = (state.counts[key] || 0) + delta;
   if (rec.foundZone) (state.foundZones[key] || (state.foundZones[key] = {}))[rec.foundZone] = 1;
   /* คีย์ด้วย "ชื่อโซน" ไม่ใช่ id — ตัวเลขบนจอหาจากตัวอักษรโซน
@@ -4032,6 +4038,7 @@ function scanIndexHas(value) {
 
 function resetRoundAggregates() {
   state.counts = {};
+  state.stat = emptyStat();          // ยอดสรุปของรอบ — ต้องล้างพร้อมยอดนับ ไม่งั้นติดค้างมาจากใบเดิม
   state.scanQty = {};
   state.manualQty = {};
   state.foundZones = {};
@@ -4561,6 +4568,10 @@ function writeScan(key, delta, mode, reason, extra) {
   var patch = {};
   patch['scans/' + id] = rec;
   enqueueWrite('rounds/' + state.roundId, patch);
+  /* ⭐ v2.10.0 — ยอดสรุปของรอบ เขียนตามหลังแถว scan เสมอ
+     writeScan() เป็นทางเข้าเดียวของทุกการเขียน scan (ยิงสด · กรอกมือ · นำเข้าไฟล์ ·
+     ยกเลิกการยิง · หมายเหตุ · ย้าย/ลบบาร์โค้ดที่ไม่มีในระบบ) hook ที่นี่ที่เดียวจึงครบทุกทาง */
+  bumpStat(state.roundId, safeKey(rec.code));
   return { id: id, rec: rec };
 }
 
@@ -10360,6 +10371,193 @@ function computeJobStats(data) {
   };
 }
 
+/* ============================================================
+   15c. ยอดสรุปของรอบ (scoreboard) — v2.10.0 · Phase 1
+   ============================================================
+
+   ปัญหาที่แก้: หน้า Job/สรุป นับสถิติด้วยการอ่าน scan "ทุกแถว" ของรอบมานับสด
+   รอบคลัง WHS มี 3,000–31,000 แถว อ่านทีหนึ่งเกิน 30 วิ → การ์ดค้าง "..." ทั้งจอ
+   (v2.9.6 ขยายเวลาให้อ่านจบได้ แต่เป็นการซื้อเวลา ไม่ได้แก้ที่ราก)
+
+   ทางแก้: เก็บ "ยอดสรุป" ก้อนเล็กไว้ที่ rounds/{id}/stat แล้วอัปเดตตอนเขียน
+   อ่านทีเดียวจบ ไม่ว่ารอบจะโตแค่ไหน — Firebase Spark ไม่มี Cloud Functions
+   จึงต้อง maintain ฝั่ง client ตอนเขียนเท่านั้น
+
+   ⚠️ Phase 1 = เขียนคู่ไว้เฉย ๆ ยังไม่เปลี่ยนสิ่งที่จออ่าน
+      ทุกหน้ายังนับสดเหมือนเดิมทุกประการ ตัวเลขบนจอจึงยังเป็นของเดิม 100%
+
+   ── กติกา "ห้ามเพี้ยน" ──────────────────────────────────────
+   นิยามทุกตัวต้องตรงกับ computeJobStats() เป๊ะ ๆ ไม่ใช่ "เขียนให้เหมือน"
+   statFromScans() จึงเรียก computeJobStats() ตรง ๆ เป็นฐาน — แก้ที่นั่นที่เดียว
+   สองฝั่งจะได้ไม่มีวันหลุดจากกัน:
+     pieces = ผลรวม delta ของทุกแถว (ติดลบก็รวม)
+     skus   = จำนวน SKU ที่ยอดสุทธิ "ไม่เท่ากับ 0"  (0/0 ไม่นับ ตรงกับกฎแถวผี)
+     lastAt = ts มากสุดของทุกแถว รวมแถว delta 0 (หมายเหตุ/โน้ต) ด้วย
+   ============================================================ */
+
+var STAT_VER = 1;
+
+function emptyStat() {
+  return { pieces: 0, skus: 0, lastAt: 0, lastBy: '', ver: STAT_VER };
+}
+
+/* อัปเดตยอดสรุปในเครื่องทีละแถว — ต้องเรียก "ก่อน" บวก state.counts[key]
+   O(1) ต่อแถว ไม่ไล่ทั้งแมป รอบ 31,000 แถวจึงไม่หน่วงตอนยิง */
+function bumpLocalStat(key, delta, rec) {
+  if (!state.stat) state.stat = emptyStat();
+  var st = state.stat;
+  var old = state.counts[key] || 0;
+  var nw = old + delta;
+  st.pieces += delta;
+  /* นับ SKU ตอน "ข้ามเส้นศูนย์" เท่านั้น — ยิงตัวเดิมซ้ำไม่เพิ่มจำนวน SKU
+     และยอดที่ถูกหักจนเหลือ 0 (ย้ายไปผูกที่อื่น/ลบทิ้ง) ต้องหลุดออกจากจำนวน SKU ด้วย */
+  if (old === 0 && nw !== 0) st.skus++;
+  else if (old !== 0 && nw === 0) st.skus--;
+  /* แถวหมายเหตุ delta 0 ก็นับเป็น "ความเคลื่อนไหวล่าสุด" เหมือน computeJobStats
+     เทียบด้วย >= เพื่อให้แถวที่มาทีหลังในเวลาเดียวกันชนะ ตรงกับการไล่ Object.keys ของ statFromScans */
+  var ts = Number(rec && rec.ts) || 0;
+  if (ts >= st.lastAt) { st.lastAt = ts; st.lastBy = (rec && rec.user) || ''; }
+}
+
+/* คำนวณยอดสรุปจากก้อน scan ดิบ — ฐานเดียวกับที่การ์ด Job ใช้มาตลอด
+   ห้ามเขียนสูตรใหม่ตรงนี้เด็ดขาด ให้ยืม computeJobStats() มาเสมอ */
+function statFromScans(data) {
+  var s = computeJobStats(data);
+  var scans = data || {};
+  var lastBy = '';
+  Object.keys(scans).forEach(function (sid) {
+    var rec = scans[sid];
+    if (!rec) return;
+    if ((Number(rec.ts) || 0) === s.lastTs) lastBy = rec.user || '';
+  });
+  return {
+    pieces: s.pieces,
+    skus: s.skuScanned,
+    lastAt: s.lastTs,
+    lastBy: lastBy,
+    ver: STAT_VER,
+    skuQty: s.counts
+  };
+}
+
+/* เขียนยอดสรุปขึ้นฐานหลังยิงหนึ่งแถว
+
+   ⚠️ เขียนเป็น "ค่าสัมบูรณ์" ที่คำนวณจากยอดในเครื่อง ไม่ใช่สั่งบวกเพิ่มจากค่าบนฐาน
+   เพราะยอดในเครื่องรวมแถวของคนอื่นที่วิ่งเข้ามาทางสาย SSE ไว้แล้ว
+   สองคนยิงพร้อมกันจึงเขียนทับกันแล้ว "ลู่เข้าหาค่าที่ถูก" ไม่ใช่ทบกันผิด
+   (ยังไม่ใช่การรับประกัน — ดูหัวข้อข้อจำกัดที่รายงานไว้ตอนส่งงาน Phase 1)
+
+   แยกคิวจากแถว scan โดยตั้งใจ ไม่รวมเป็น patch ก้อนเดียว
+   ถ้า Rules ยังไม่ได้วางที่ Console ก้อนรวมจะถูกปฏิเสธทั้งแถว = ยิงไม่ได้ทั้งรอบ
+   แยกไว้แล้วอย่างแย่ที่สุดคือยอดสรุปไม่ขึ้น แต่การนับยังเดินต่อได้ (บทเรียน v2.7.7) */
+function bumpStat(roundId, key) {
+  if (!roundId || !state.stat) return null;
+  var st = state.stat;
+  var patch = {
+    'stat/pieces': st.pieces,
+    'stat/skus': st.skus,
+    'stat/lastAt': st.lastAt,
+    'stat/lastBy': st.lastBy,
+    'stat/builtAt': Date.now(),
+    'stat/ver': STAT_VER
+  };
+  if (key) patch['skuQty/' + key] = state.counts[key] || 0;
+  enqueueWrite('rounds/' + roundId, patch);
+  return patch;
+}
+
+/* คำนวณยอดสรุปใหม่จากศูนย์ — ใช้ทั้งตอนตรวจสอบและตอนซ่อม
+   write=false (ค่าเริ่มต้น) = คำนวณให้ดูเฉย ๆ ไม่แตะฐาน ใช้ตรวจได้แม้รอบปิดไปแล้ว */
+function rebuildStat(roundId, opts) {
+  opts = opts || {};
+  return db.getQuiet('rounds/' + roundId + '/scans').then(function (data) {
+    var st = statFromScans(data);
+    if (!opts.write) return st;
+    var patch = {
+      'stat/pieces': st.pieces, 'stat/skus': st.skus,
+      'stat/lastAt': st.lastAt, 'stat/lastBy': st.lastBy,
+      'stat/builtAt': Date.now(), 'stat/ver': STAT_VER
+    };
+    Object.keys(st.skuQty).forEach(function (k) { patch['skuQty/' + k] = st.skuQty[k]; });
+    return db.update('rounds/' + roundId, patch).then(function () { return st; });
+  });
+}
+
+/* ตรึงยอดสรุปให้ตรงเป๊ะ "ก่อน" พ้นขั้นนับ — ทางแก้ concurrency ที่เลือกไว้ (ข) rebuild-on-close
+
+   ทำไมต้องเป็นจังหวะ "ก่อนพ้นขั้นนับ" ไม่ใช่ "ตอนปิดรอบ":
+   Rules ให้เขียน stat/skuQty ได้เฉพาะรอบที่ status = 'counting' เท่านั้น
+   เส้นทางปิดรอบที่ใช้จริงคือ counting → reviewing → closed
+   ถ้าไปตรึงตอน reviewing → closed จะโดนฐานปฏิเสธ เพราะตอนนั้นพ้น counting ไปแล้ว
+   = เลขปิดที่ถูกไม่ถูกบันทึก เสียจุดประสงค์ของ (ข) ทั้งหมด
+
+   ตรึงตอน "ออกจาก counting" จึงครบทุกเส้นทางโดยไม่ต้องแตะ Rules:
+     counting → reviewing   ตรึงที่นี่ · หลังจากนี้ Rules ห้ามเขียน scans แล้ว ยอดจึงนิ่ง
+     counting → closed      ตรึงที่นี่ (ปิดรวดเดียวไม่ผ่านขั้นตรวจสอบ)
+     reviewing → closed     ไม่ต้องตรึงซ้ำ ยอดไม่ขยับมาตั้งแต่ออกจาก counting แล้ว
+     closed → counting      เปิดกลับมาแก้ ไม่ตรึง (ยังนับต่อไม่จบ) แล้วรอบปิดครั้งต่อไป
+                            จะวิ่งผ่าน counting → ... อีกครั้ง จึงตรึงใหม่ให้เองทุกครั้ง
+
+   ล้มเหลวแล้วไม่บล็อกการปิดรอบ — ทีมคลังปิดงานกลับบ้านต้องทำได้แม้เน็ตสะดุด
+   ตัวชี้ขาดว่าเชื่อ stat ของรอบที่ปิดแล้วได้ไหมคือ builtAt >= closedAt
+   (Phase 2 ต้องใช้เงื่อนไขนี้ตัดสิน ถ้าไม่ถึงให้ถอยไปนับสดของรอบนั้น) */
+function freezeStatOnLeaveCounting(roundId, from, next) {
+  if (!roundId || from !== 'counting' || next === 'counting') return Promise.resolve(null);
+  return rebuildStat(roundId, { write: true }).then(function (st) {
+    return st;
+  }, function () {
+    /* เงียบไว้ ไม่เด้งใส่หน้าคนกำลังปิดรอบ — builtAt จะต่ำกว่า closedAt เอง
+       แล้ว Phase 2 จะถอยไปนับสดของรอบนั้นให้ ไม่มีทางที่เลขผิดจะถูกเอาไปแสดง */
+    return null;
+  });
+}
+
+/* ตรวจว่ายอดสรุปตรงกับการนับสดหรือยัง — หัวใจของ Phase 1
+   อ่าน scan ก้อนเดียว แล้วเทียบสองทาง: statFromScans (ทางใหม่) กับ computeJobStats (ทางเดิมที่จอใช้อยู่)
+   ok=false เมื่อไหร่แปลว่าห้ามสลับจอไปอ่าน stat เด็ดขาด */
+function validateStat(roundId, remoteStat) {
+  return db.getQuiet('rounds/' + roundId + '/scans').then(function (data) {
+    var live = computeJobStats(data);          // ทางเดิม — ตัวเลขที่จอแสดงอยู่ตอนนี้
+    var built = statFromScans(data);           // ทางใหม่
+    var diff = [];
+    if (built.pieces !== live.pieces) diff.push('pieces ' + built.pieces + ' != ' + live.pieces);
+    if (built.skus !== live.skuScanned) diff.push('skus ' + built.skus + ' != ' + live.skuScanned);
+    if (built.lastAt !== live.lastTs) diff.push('lastAt ' + built.lastAt + ' != ' + live.lastTs);
+    /* เทียบกับก้อนที่อยู่บนฐานจริงด้วย ถ้าส่งมา — ตรงนี้คือตัวจับว่า bumpStat หลุดหรือเปล่า */
+    var drift = null;
+    if (remoteStat) {
+      drift = {
+        pieces: (Number(remoteStat.pieces) || 0) - built.pieces,
+        skus: (Number(remoteStat.skus) || 0) - built.skus,
+        lastAt: (Number(remoteStat.lastAt) || 0) - built.lastAt
+      };
+    }
+    return {
+      roundId: roundId, ok: diff.length === 0, diff: diff,
+      built: built, live: live, drift: drift,
+      records: Object.keys(data || {}).length
+    };
+  });
+}
+
+/* ไล่ตรวจทุกรอบที่มีในระบบ — ใช้ตอนจะตัดสินใจว่าพร้อมสลับจอหรือยัง (Phase 2)
+   เรียกจาก Console: validateAllStats().then(console.table)
+   อ่านทีละรอบตามคิว bgSlot อยู่แล้ว จึงไม่ถล่มฐานตัวเอง */
+function validateAllStats() {
+  var ids = Object.keys(state.roundIndex || {});
+  var out = [];
+  return ids.reduce(function (chain, id) {
+    return chain.then(function () {
+      return validateStat(id).then(function (r) {
+        out.push({ roundId: id, ok: r.ok, records: r.records,
+                   pieces: r.built.pieces, skus: r.built.skus, diff: r.diff.join(' · ') });
+      }, function (e) {
+        out.push({ roundId: id, ok: false, records: -1, diff: 'อ่านไม่สำเร็จ: ' + (e && e.message) });
+      });
+    });
+  }, Promise.resolve()).then(function () { return out; });
+}
+
 /* อ่านแคชสถิติใบนับแบบทันที (หน่วยความจำ → localStorage) — การ์ดขึ้นเลขได้เลย ไม่ค้าง "..." */
 function cachedJobStats(id) {
   if (state.jobStats[id]) return state.jobStats[id];
@@ -11125,7 +11323,12 @@ function changeJobStatus(next, extra) {
   var patch = { status: next, statusLog: log };
   if (extra) Object.keys(extra).forEach(function (f) { patch[f] = extra[f]; });
   var id = state.roundId;
-  return db.update('roundIndex/' + id, patch).then(function () {
+  /* ⭐ v2.10.0 — ต้องตรึงยอดสรุปให้เสร็จ "ก่อน" พลิกสถานะเสมอ ห้ามสลับลำดับ
+     พลิกก่อนแล้วค่อยเขียน = Rules ปฏิเสธ (stat เขียนได้เฉพาะตอน counting)
+     ดูเหตุผลเต็มที่หัว freezeStatOnLeaveCounting() */
+  return freezeStatOnLeaveCounting(id, from, next).then(function () {
+    return db.update('roundIndex/' + id, patch);
+  }).then(function () {
     /* สถานะรอบนับต้องตามสถานะ Job เสมอ — Database Rules ใช้ค่านี้ล็อกยอดระบบ (ข้อ F6)
        อัปเดตในเครื่องก่อน เพราะ deriveCycleStatus อ่านจาก state ไม่ได้รอสตรีมกลับมา */
     if (state.roundIndex[id]) state.roundIndex[id].status = next;

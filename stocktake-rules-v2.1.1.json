@@ -146,6 +146,19 @@
             ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() !== 'closed'",
             ".validate": "newData.isBoolean()"
           },
+          "stat": {
+            ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter|scanner)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting'",
+            "pieces": { ".validate": "newData.isNumber()" },
+            "skus":   { ".validate": "newData.isNumber()" },
+            "lastAt": { ".validate": "newData.isNumber()" },
+            "ver":    { ".validate": "newData.isNumber()" }
+          },
+          "skuQty": {
+            ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter|scanner)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting'",
+            "$sku": {
+              ".validate": "newData.isNumber()"
+            }
+          },
           "scans": {
             "$scanId": {
               ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter|scanner)$/) && !data.exists() && newData.exists() && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting'",

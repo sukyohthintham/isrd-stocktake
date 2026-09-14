@@ -109,6 +109,15 @@ const MATRIX = [
     want: function (st) { return st === 'counting' ? A_C_S : []; },
     extra: { existing: undefined,
              incoming: { code: 'A1', zone: 'no-zone', delta: 0, user: 'ผู้ใช้', ts: 1, mode: 'remark' } } },
+  /* ⭐ v2.10.0 — ยอดสรุปของรอบ (stat/skuQty) เงื่อนไขเดียวกับ scans เป๊ะ
+     ต่างจุดเดียวคือเขียนทับได้ (ไม่มี !data.exists()) เพราะเป็นยอดสะสมที่ต้องอัปเดตเรื่อย ๆ
+     ถ้าวันไหนสองอันนี้หลุดจากกัน = คนยิงได้แต่ยอดสรุปไม่ขึ้น (หรือกลับกัน) ต้องดังตรงนี้ */
+  { path: 'rounds/$id/stat', rule: R.stat['.write'],
+    want: function (st) { return st === 'counting' ? A_C_S : []; },
+    extra: { existing: { pieces: 1 }, incoming: { pieces: 2, skus: 1, lastAt: 5, ver: 1 } } },
+  { path: 'rounds/$id/skuQty', rule: R.skuQty['.write'],
+    want: function (st) { return st === 'counting' ? A_C_S : []; },
+    extra: { existing: { A1: 1 }, incoming: { A1: 2 } } },
   { path: 'rounds/$id/unknown/$id', rule: R.unknown.$id['.write'],
     want: function (st) { return st === 'counting' ? A_C_S : []; },
     extra: { existing: undefined, incoming: { value: 'X' } } },
@@ -187,9 +196,13 @@ const scannerOk = [];
 MATRIX.forEach(function (row) {
   if (canWrite(row.rule, 'scanner', 'counting', row.extra)) scannerOk.push(row.path);
 });
-check('ตอนนับ scanner เขียนได้แค่ scans · unknown · reasons',
+/* v2.10.0 — stat/skuQty เข้ามาอยู่ในลิสต์นี้ด้วยโดยตั้งใจ
+   scanner ยิงบาร์โค้ดได้ ก็ต้องอัปเดตยอดสรุปของรอบได้ ไม่งั้นเด็กหน้าร้านยิงไปทั้งวัน
+   แล้วยอดสรุปไม่ขยับเลย (ยอดนับถูก แต่ตัวเลขบนการ์ดค้าง) */
+check('ตอนนับ scanner เขียนได้แค่ scans · unknown · reasons · stat · skuQty',
       JSON.stringify(scannerOk.sort()) === JSON.stringify(
-        ['rounds/$id/reasons', 'rounds/$id/scans/$scanId', 'rounds/$id/unknown/$id']),
+        ['rounds/$id/reasons', 'rounds/$id/scans/$scanId', 'rounds/$id/skuQty',
+         'rounds/$id/stat', 'rounds/$id/unknown/$id']),
       scannerOk);
 check('รอบส่งตรวจแล้ว scanner เขียนหมายเหตุไม่ได้',
       canWrite(R.reasons['.write'], 'scanner', 'reviewing') === false, 'reviewing');

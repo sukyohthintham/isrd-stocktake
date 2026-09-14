@@ -39,7 +39,12 @@ function check(name, ok, got) {
   await page.evaluate(() => {
     window.__toasts = []; window.__writes = []; window.__updates = [];
     window.toast = function (m, bad) { window.__toasts.push({ m: m, bad: bad }); };
-    window.enqueueWrite = function (path, patch) { window.__writes.push({ path: path, patch: patch }); };
+    window.__statWrites = [];
+    window.enqueueWrite = function (path, patch) {
+      var keys = Object.keys(patch || {});
+      var onlyStat = keys.length > 0 && keys.every(function (k) { return /^(stat|skuQty)\//.test(k); });
+      (onlyStat ? window.__statWrites : window.__writes).push({ path: path, patch: patch });
+    };
     window.db.update = function (path, patch) {
       window.__updates.push({ path: path, patch: patch });
       return Promise.resolve();
