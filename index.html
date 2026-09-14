@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.10.2">
+<meta name="version" content="2.10.3">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.10.2</title>
+<title>ISRD Stocktake v2.10.3</title>
 
 <style>
 :root{
@@ -1715,7 +1715,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.10.2';
+var APP_VERSION = '2.10.3';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -7538,6 +7538,62 @@ function blankGroup() {
    เป็นคนละเคสกัน มีเงื่อนไขของตัวเองอยู่ที่ผู้เรียก ห้ามเอามารวมกับกฎนี้ */
 function isGhostRow(sys, act) {
   return (Number(sys) || 0) === 0 && (Number(act) || 0) === 0;
+}
+
+/* ---------- เครื่องมือหาสาเหตุ "ชิ้นที่ยิงได้ไม่เท่ากันระหว่างหน้า" (v2.10.3) ----------
+   อ่านอย่างเดียว ไม่เขียนอะไรทั้งสิ้น ไม่เปลี่ยนตัวเลขบนจอสักตัว
+   เรียกจาก Console ตอนเปิด Job ที่สงสัยอยู่:  diffPieces()
+
+   ตอบสองคำถามในครั้งเดียว:
+     1. แต่ละทางนับได้เท่าไหร่ (ยอดดิบ / หน้าสรุป / scoreboard)
+     2. ส่วนต่างมาจากแถวไหนบ้าง และถูกตัดด้วยเหตุผลอะไร
+
+   ไม่เขียนเงื่อนไขตัดแถวซ้ำเองเด็ดขาด — ถามจาก summaryData() ว่า "เก็บแถวไหนไว้บ้าง"
+   แล้วหาส่วนต่าง ตัวเลขจึงตรงกับที่หน้าสรุปใช้จริงเสมอ ไม่มีทางหลุดจากกัน */
+function diffPieces() {
+  var d = summaryData();
+  var kept = {};
+  d.rows.forEach(function (r) { kept[r.key] = 1; });
+
+  var raw = 0, dropped = [];
+  Object.keys(state.counts).forEach(function (k) {
+    var act = Number(state.counts[k]) || 0;
+    raw += act;                                  // ยอดดิบ = รวมทุก delta ไม่ตัดอะไรเลย
+    if (kept[k]) return;
+    var sys = Number(state.systemQty[k]) || 0;
+    var u = state.unknownKeys[k];
+    dropped.push({
+      key: k,
+      code: (state.products[k] || {}).code || (u && u.value) || k,
+      sys: sys, act: act,
+      inMaster: !!state.products[k],
+      discarded: !!(u && u.discarded),
+      /* เรียงตามลำดับที่ summaryData ตัดจริง — ตัวแรกที่เข้าเงื่อนไขคือเหตุผลของแถวนั้น */
+      why: isGhostRow(sys, act) ? 'ghost-0/0'
+         : (!sys && !state.products[k] && u && u.discarded) ? 'unknown-discarded'
+         : (!sys && !state.products[k] && act <= 0) ? 'unknown-net<=0'
+         : 'other'
+    });
+  });
+
+  var withQty = dropped.filter(function (r) { return r.act !== 0; });
+  var byWhy = {};
+  withQty.forEach(function (r) {
+    byWhy[r.why] = byWhy[r.why] || { rows: 0, pieces: 0 };
+    byWhy[r.why].rows++;
+    byWhy[r.why].pieces += r.act;
+  });
+
+  return {
+    roundId: state.roundId,
+    rawPieces: raw,                              // ยอดดิบของรอบที่เปิดอยู่
+    summaryActQty: d.groups.total.actQty,        // ที่หน้าสรุป/เอกสารใช้ในตารางความแม่น
+    scoreboardPieces: (state.stat || {}).pieces, // ที่ scoreboard เก็บไว้ (Phase 1)
+    gap: raw - d.groups.total.actQty,            // ส่วนต่างที่ต้องอธิบายให้ได้
+    byWhy: byWhy,                                // ส่วนต่างมาจากเหตุผลไหนบ้าง กี่ชิ้น
+    droppedWithQty: withQty,                     // แถวที่ถูกตัดทั้งที่ยังมียอด — ตัวที่ต้องดู
+    droppedZero: dropped.length - withQty.length // แถว 0/0 ที่ตัดไปโดยไม่กระทบยอด
+  };
 }
 
 function summaryData() {
