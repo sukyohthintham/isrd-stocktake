@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.11.0">
+<meta name="version" content="2.11.1">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.11.0</title>
+<title>ISRD Stocktake v2.11.1</title>
 
 <style>
 :root{
@@ -1725,7 +1725,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.11.0';
+var APP_VERSION = '2.11.1';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -3186,6 +3186,24 @@ function cycleStatus(cid) {
 }
 function cycleInfo(cid) { return (state.cycles[cid] || {}).info || {}; }
 function cycleMigrated(cid) { return Number(cycleInfo(cid).schema) >= 1; }
+
+/* ⭐ v2.11.1 — ย้ายข้อมูลขึ้นรอบนับได้เฉพาะรอบที่ยัง "นับอยู่" เท่านั้น
+   ตาม stocktake-rules-v2.1.1.json:
+     cycles/$cid/systemQty  เขียนได้เมื่อ status ยังไม่มี หรือเป็น counting
+     cycles/$cid/info       เขียนได้เมื่อ status ไม่ใช่ closed
+   รอบที่ปิดหรือกำลังตรวจจึงถูกปฏิเสธ แล้วมันจะไม่ถูกทำเครื่องหมายว่าย้ายแล้ว
+   → ยิงซ้ำทุกครั้งที่เปิดแอปไม่มีวันจบ (ยอดระบบทั้งบริษัทหมื่นกว่ารหัส
+   ส่งทีละ 400 คีย์ = หลายสิบใบต่อรอบ) เห็นเป็น PATCH 401 รก Console
+
+   ใช้ cycleStatus() ที่ถอยไปคิดจากสถานะ Job ให้เมื่อยังไม่มีระเบียน ไม่ใช่ค่าที่เขียนไว้ดิบ ๆ
+   เพราะสาย cycles กับ roundIndex เป็นคนละสาย ตอน migrate รันอาจยังไม่ได้ state.cycles มา
+   ถ้าเชื่อค่าที่เขียนไว้อย่างเดียวจะกลายเป็น "ไม่มีข้อมูล = ยิงได้" แล้วด่านนี้ไม่ทำงานเลย */
+function canMigrateCycle(cid) { return cycleStatus(cid) === 'counting'; }
+
+/* Job ที่ปิดแล้ว Rules เปิดให้เฉพาะ admin เขียน — counter ยิงไปก็ได้ 401 เปล่า ๆ */
+function canRenameRoundCycle(job) {
+  return ((job || {}).status || 'counting') !== 'closed' || isAdmin();
+}
 
 /* ข้อ F3 — รอบที่ยัง "กำลังนับ" ของสาขานี้ มีให้เข้าร่วมไหม
    reviewing / closed ไม่นับ ต้องเปิดรอบใหม่เท่านั้น */
@@ -4921,20 +4939,39 @@ function migrateCyclesIfNeeded() {
     (groups[cid] = groups[cid] || []).push(id);
   });
 
-  var todo = Object.keys(groups).filter(function (cid) { return !cycleMigrated(cid); });
+  var report = { cycles: 0, keys: 0, conflicts: [], renamed: 0, skipped: [], failed: [] };
+
+  /* ⭐ v2.11.1 — คัดรอบที่เขียนไม่ได้ออกตั้งแต่ต้น ไม่ใช่ยิงแล้วค่อย .catch
+     ข้ามแล้วไม่เสียข้อมูล การอ่านถอยไปหาของเดิมที่ rounds/{id} ให้เองอยู่แล้ว
+     เมื่อรอบยังไม่ย้าย (ดู loadCycleSystemQty / loadCycleTransfers) ยอดเท่ากันเป๊ะ
+     เพราะยุบด้วย "เอาค่าสูงสุดรายรหัส" สูตรเดียวกับที่ migrate ใช้ */
+  var todo = [];
+  Object.keys(groups).forEach(function (cid) {
+    if (cycleMigrated(cid)) return;
+    if (!canMigrateCycle(cid)) { report.skipped.push({ cid: cid, why: cycleStatus(cid) }); return; }
+    todo.push(cid);
+  });
   if (!todo.length) return Promise.resolve(null);
 
-  var report = { cycles: 0, keys: 0, conflicts: [], renamed: 0 };
-
   return todo.reduce(function (chain, cid) {
-    return chain.then(function () { return migrateOneCycle(cid, groups[cid], report); });
+    return chain.then(function () {
+      return migrateOneCycle(cid, groups[cid], report).catch(function () {
+        /* รอบเดียวพังต้องไม่ลากรอบอื่นตายไปด้วย — ของเดิมสายขาดแล้วหยุดทั้งชุด
+           รอบที่ยังนับอยู่และย้ายได้จริงเลยไม่ได้ย้าย แล้วมาลองใหม่ทุกครั้งที่เปิดแอป */
+        report.failed.push(cid);
+      });
+    });
   }, Promise.resolve()).then(function () {
     /* รหัสรอบนับรูปแบบเก่าบน Job — เขียนให้เป็นรูปแบบใหม่ทีเดียว */
     var renames = [];
     Object.keys(state.roundIndex).forEach(function (id) {
       var job = state.roundIndex[id] || {};
       var want = cycleOf(job);
-      if (want && job.cycleId !== want) renames.push({ id: id, cid: want });
+      if (!want || job.cycleId === want) return;
+      /* ⭐ v2.11.1 — ข้ามเป็นราย Job ที่ฐานไม่ยอมให้เขียน
+         ไม่เปลี่ยนชื่อก็ไม่กระทบการอ่าน normalizeCycleId แปลงรหัสรูปแบบเก่าให้เองอยู่แล้ว */
+      if (!canRenameRoundCycle(job)) return;
+      renames.push({ id: id, cid: want });
     });
     return renames.reduce(function (chain, r) {
       return chain.then(function () {
@@ -4967,12 +5004,15 @@ function migrateOneCycle(cid, ids, report) {
     });
     res[1].forEach(function (p) { mergeTransfers(transfers, p.data); });
 
-    /* รหัสที่ Job ต่างใบให้ค่าไม่ตรงกัน ต้องรายงาน ห้ามยุบเงียบ */
+    /* รหัสที่ Job ต่างใบให้ค่าไม่ตรงกัน ต้องรายงาน ห้ามยุบเงียบ
+       ⭐ v2.11.1 พักไว้ก่อน ค่อยใส่ลงรายงานตอนเขียนสำเร็จ — รอบที่เขียนไม่ผ่าน
+       ไม่ควรไปโผล่ในใบสรุปว่า "ย้ายแล้ว" ทั้งที่ข้อมูลยังอยู่ที่เดิม */
+    var mine = [];
     Object.keys(seenFrom).forEach(function (k) {
       var vals = seenFrom[k];
       if (vals.length < 2) return;
       var differ = vals.some(function (v) { return v.qty !== vals[0].qty; });
-      if (differ) report.conflicts.push({ cid: cid, key: k, vals: vals, took: sys[k] });
+      if (differ) mine.push({ cid: cid, key: k, vals: vals, took: sys[k] });
     });
 
     var seq = Number(String(cid).slice(String(cid).lastIndexOf('-') + 1)) || 1;
@@ -4987,13 +5027,17 @@ function migrateOneCycle(cid, ids, report) {
     };
     if (Object.keys(transfers).length) head.transfers = transfers;
 
-    report.cycles++;
-    report.keys += Object.keys(sys).length;
-
     /* เขียนยอดระบบทีละก้อน ไฟล์ทั้งบริษัทมีหมื่นกว่ารหัส ส่งทีเดียวไม่ไหว */
     return chunkedUpdate('cycles/' + cid + '/systemQty', sys)
       .then(function () { return db.update('cycles/' + cid, head); })
-      .then(function () { state.cycles[cid] = head; });
+      .then(function () {
+        state.cycles[cid] = head;
+        /* ⭐ v2.11.1 นับเมื่อเขียนผ่านจริงเท่านั้น ของเดิมนับตั้งแต่ยังไม่ได้ส่ง
+           พอรอบไหนถูกปฏิเสธ ใบสรุปจะบอกว่าย้ายแล้วทั้งที่ยังไม่ได้ย้าย */
+        report.cycles++;
+        report.keys += Object.keys(sys).length;
+        mine.forEach(function (c) { report.conflicts.push(c); });
+      });
   });
 }
 
@@ -5015,8 +5059,12 @@ function chunkedUpdate(path, patch, size) {
 
 function showCycleMigrationReport(report) {
   if (!report) return;
+  /* ⭐ v2.11.1 — บอกด้วยว่ามีรอบที่ย้ายไม่ได้เหลืออยู่ ไม่ใช่รายงานแต่ส่วนที่สำเร็จ
+     รอบพวกนี้อ่านยอดได้ตามปกติจากของเดิม แค่ไม่ได้ย้ายขึ้นมาไว้ที่รอบนับ */
+  var left = (report.skipped || []).length + (report.failed || []).length;
+  var tail = left ? ' · อีก ' + fmtNum(left) + ' รอบไม่ได้ย้าย เพราะปิดไปแล้ว (ยอดยังอ่านได้ครบ)' : '';
   if (!report.conflicts.length) {
-    toast('ย้ายยอดระบบขึ้นรอบนับแล้ว ' + fmtNum(report.cycles) + ' รอบ — ยอดที่นับไว้อยู่ครบ');
+    toast('ย้ายยอดระบบขึ้นรอบนับแล้ว ' + fmtNum(report.cycles) + ' รอบ — ยอดที่นับไว้อยู่ครบ' + tail);
     return;
   }
   var lines = report.conflicts.slice(0, 10).map(function (c) {
@@ -5025,7 +5073,7 @@ function showCycleMigrationReport(report) {
       ' → ใช้ ' + fmtNum(c.took);
   });
   ask('ย้ายยอดระบบขึ้นรอบนับแล้ว — มีบางรหัสที่ค่าไม่ตรงกัน',
-    'รวม ' + fmtNum(report.cycles) + ' รอบนับ · พบ ' + fmtNum(report.conflicts.length) +
+    'รวม ' + fmtNum(report.cycles) + ' รอบนับ' + tail + ' · พบ ' + fmtNum(report.conflicts.length) +
     ' รหัสที่ Job ต่างใบเคยเก็บยอดระบบไว้ไม่เท่ากัน ระบบเลือกค่าสูงสุดให้\n\n' +
     lines.join('\n') +
     (report.conflicts.length > 10 ? '\n(แสดง 10 รายการแรกจากทั้งหมด)' : '') +
