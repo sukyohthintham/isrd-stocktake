@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.10.9">
+<meta name="version" content="2.10.10">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.10.9</title>
+<title>ISRD Stocktake v2.10.10</title>
 
 <style>
 :root{
@@ -1725,7 +1725,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.10.9';
+var APP_VERSION = '2.10.10';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -12265,6 +12265,366 @@ function cycleScannerEntries() {
   return out;
 }
 
+/* ============================================================
+   15d. ล้างยอดของผู้ใช้ในรอบ (admin) — v2.10.10
+   ============================================================
+
+   ⚠️ นี่คือ "ลบถาวร" ซึ่งเป็นข้อยกเว้นของกฎบ้าน "ห้ามลบยอดที่นับไปแล้ว"
+   ใช้เฉพาะเก็บขยะ: คนยิงทดสอบ / ยิงผิดบัญชี — ไม่ใช่เครื่องมือแก้ยอดนับจริง
+
+   ทำไมต้องลบจริง ไม่ใช่เขียนแถวลบทับเหมือนที่อื่น:
+   leaderboard "ผู้ยิงในรอบนี้" นับยอดดิบต่อคนจาก rec.user
+   การ "เอาออกจากสรุป" เขียนแถวลบในชื่อ "คนที่กดลบ" ไม่ใช่ชื่อคนที่ยิงเดิม
+   ผลคือคนทดสอบยังโชว์ยอดเต็มบน leaderboard ส่วนแอดมินโดนหักยอดตัวเองแทน
+   (เคสจริง: Gift ยิง +8 · แอดมินลบในชื่อตัวเอง -8 → ของจริงถูก แต่ leaderboard ผิดทั้งคู่)
+
+   ── ตาข่ายนิรภัย ────────────────────────────────────────────
+   ลบแล้วกู้ไม่ได้จาก UI จึงเก็บ purgeLog ไว้ "ทั้งแถว ทุกฟิลด์" ก่อนลบเสมอ
+   กู้คืนด้วยมือได้จาก Firebase Console: หยิบ rows[] ในบันทึกมาเขียนกลับที่
+   rounds/{id}/scans/ โดยสร้างคีย์ใหม่ (คีย์เดิมเขียนซ้ำไม่ได้ Rules กันสร้างทับ)
+   แล้วติด restoredFrom = sid เดิมไว้ให้ตามรอยได้
+   ============================================================ */
+
+/* เหตุผลของแถวที่ "เป็นการหักยอดคืน" ที่ระบบเขียนเอง — ใช้คัดผู้สมัครในกรณี offset
+   จงใจไม่รวม "ย้ายไปรวมกับ …" เพราะแถวนั้นคู่กับแถวบวกที่สินค้าปลายทาง
+   ถ้าลบข้างเดียวยอดปลายทางจะเกินขึ้นมาเงียบ ๆ — ให้แอดมินติ๊กเองถ้าจำเป็นจริง */
+var PURGE_OFFSET_REASONS = [
+  'ยกเลิกการยิงล่าสุด',
+  'เอาออกจากสรุป (ยิงเกิน)',
+  'เอาออกทั้งหมดจากสรุป',
+  'ลบทิ้ง (ยิงหลุด)'
+];
+function looksLikeOffsetRow(rec) {
+  return PURGE_OFFSET_REASONS.indexOf(String((rec && rec.reason) || '')) >= 0;
+}
+
+/* อ่าน scans ของทุกใบในรอบ "ทีละใบ" — ช่องอ่านเบื้องหลังมีแค่ 2 ช่อง
+   ยิงพร้อมกันคือจองคิวจนตัน (บทเรียน v2.10.1–2.10.2)
+   ใบไหนอ่านไม่สำเร็จคืน null ไว้ จะได้รายงานว่าล้างใบนั้นไม่ได้ ไม่ใช่เงียบไป */
+function loadJobsScans(ids) {
+  var out = {};
+  return ids.reduce(function (chain, id) {
+    return chain.then(function () {
+      return db.getQuiet('rounds/' + id + '/scans').then(
+        function (d) { out[id] = d || {}; },
+        function () { out[id] = null; }
+      );
+    });
+  }, Promise.resolve()).then(function () { return out; });
+}
+
+/* รวม scans ทุกใบเป็นก้อนเดียว แล้วคิด "ของจริง" ด้วยกติกากลางตัวเดียวกับทุกหน้า
+   (countsAsRealRow ผ่าน computeJobStats) — ตัวเลขก่อน/หลังลบจึงเทียบกับที่จอโชว์ได้ตรง ๆ */
+function piecesOfBlobs(blobs, skipSids) {
+  var merged = {};
+  Object.keys(blobs).forEach(function (jid) {
+    var b = blobs[jid] || {};
+    Object.keys(b).forEach(function (sid) {
+      if (skipSids && skipSids[jid] && skipSids[jid][sid]) return;
+      merged[jid + '|' + sid] = b[sid];
+    });
+  });
+  return computeJobStats(merged, state.systemQty).pieces;
+}
+
+/* วางแผนการล้าง — ยังไม่แตะฐานสักตัว
+   คืนแผนที่บอกครบว่าจะลบแถวไหนบ้าง ใบไหนล้างไม่ได้เพราะอะไร และยอดจะเปลี่ยนเท่าไหร่ */
+function planUserPurge(targetUser) {
+  var cid = state.cycleId || cycleOf(currentJob());
+  var ids = cid ? jobsInCycle(cid) : (state.roundId ? [state.roundId] : []);
+  return loadJobsScans(ids).then(function (blobs) {
+    var jobs = [], skipped = [];
+
+    ids.forEach(function (jid) {
+      var job = state.roundIndex[jid] || {};
+      var label = job.jobCode || jid;
+      var blob = blobs[jid];
+
+      if (blob === null) {
+        skipped.push({ id: jid, label: label, why: 'อ่านข้อมูลใบนี้ไม่สำเร็จ' });
+        return;
+      }
+      /* Rules ยอมให้ลบเฉพาะใบที่ยังนับอยู่ — คัดออกตั้งแต่ตอนวางแผน
+         ไม่ปล่อยให้ยิงไปแล้วโดนปฏิเสธทีหลังแล้วค่อยมารู้ว่าใบนั้นไม่ได้ล้าง */
+      var st = job.status || 'counting';
+      if (st !== 'counting') {
+        var has = Object.keys(blob).some(function (sid) {
+          return blob[sid] && blob[sid].user === targetUser;
+        });
+        if (has) skipped.push({ id: jid, label: label, why: 'ใบนี้ ' + JOB_STATUS_TEXT[st] + ' แล้ว' });
+        return;
+      }
+
+      var rows = [], byCode = {};
+      Object.keys(blob).forEach(function (sid) {
+        var rec = blob[sid];
+        if (!rec || rec.user !== targetUser) return;
+        rows.push({ sid: sid, rec: rec });
+        var k = safeKey(rec.code);
+        byCode[k] = (byCode[k] || 0) + (Number(rec.delta) || 0);
+      });
+      if (!rows.length) return;
+
+      /* ผู้สมัครแถว offset: แถวลบของ "คนอื่น" ที่เกิดหลังเป้าหมายยิงในโค้ดเดียวกัน */
+      var firstTs = {};
+      rows.forEach(function (r) {
+        var k = safeKey(r.rec.code);
+        var t = Number(r.rec.ts) || 0;
+        if (firstTs[k] === undefined || t < firstTs[k]) firstTs[k] = t;
+      });
+      var candByCode = {};
+      Object.keys(blob).forEach(function (sid) {
+        var rec = blob[sid];
+        if (!rec || rec.user === targetUser) return;
+        if ((Number(rec.delta) || 0) >= 0) return;
+        if (!looksLikeOffsetRow(rec)) return;
+        var k = safeKey(rec.code);
+        if (byCode[k] === undefined) return;
+        if ((Number(rec.ts) || 0) < (firstTs[k] || 0)) return;
+        (candByCode[k] = candByCode[k] || []).push({ sid: sid, rec: rec });
+      });
+
+      /* ติ๊กให้ล่วงหน้าเฉพาะตอน "ไม่กำกวม" เท่านั้น:
+         ผู้สมัครของโค้ดนั้นรวมกันแล้วหักยอดเป้าหมายพอดีเป๊ะ
+         ถ้ามีแถวลบอื่นปนจนผลรวมไม่ลงตัว = ตีความได้หลายแบบ ปล่อยให้แอดมินตัดสินเอง
+         (กันไปลบ undo จริงของคนอื่นที่บังเอิญโค้ด/จำนวนใกล้เคียง) */
+      var offsets = [];
+      Object.keys(candByCode).forEach(function (k) {
+        var list = candByCode[k];
+        var sum = list.reduce(function (s, c) { return s + (Number(c.rec.delta) || 0); }, 0);
+        var exact = (byCode[k] > 0) && (sum === -byCode[k]);
+        list.forEach(function (c) { offsets.push({ sid: c.sid, rec: c.rec, autoTick: exact }); });
+      });
+      offsets.sort(function (a, b) { return (a.rec.ts || 0) - (b.rec.ts || 0); });
+
+      jobs.push({
+        id: jid, label: label, rows: rows, offsets: offsets,
+        net: rows.reduce(function (s, r) { return s + (Number(r.rec.delta) || 0); }, 0)
+      });
+    });
+
+    return {
+      targetUser: targetUser, cid: cid, blobs: blobs,
+      jobs: jobs, skipped: skipped,
+      rowCount: jobs.reduce(function (s, j) { return s + j.rows.length; }, 0),
+      net: jobs.reduce(function (s, j) { return s + j.net; }, 0),
+      before: piecesOfBlobs(blobs, null)
+    };
+  });
+}
+
+/* ยอด "ของจริง" หลังลบตามที่ติ๊กไว้ตอนนี้ — คิดใหม่จากก้อนจริง ไม่ใช่บวกลบเอาเอง */
+function purgeAfterPieces(plan, ticked) {
+  var skip = {};
+  plan.jobs.forEach(function (j) {
+    skip[j.id] = skip[j.id] || {};
+    j.rows.forEach(function (r) { skip[j.id][r.sid] = 1; });
+    j.offsets.forEach(function (o) { if (ticked[o.sid]) skip[j.id][o.sid] = 1; });
+  });
+  return piecesOfBlobs(plan.blobs, skip);
+}
+
+/* กล่องรายละเอียดในหน้ายืนยัน — ต้องเห็นครบก่อนกด ว่าจะลบอะไรและยอดจะขยับเท่าไหร่ */
+function buildPurgeDetail(plan, ticked, onChange) {
+  var box = document.createElement('div');
+
+  plan.jobs.forEach(function (j) {
+    var h = document.createElement('div');
+    h.style.cssText = 'font-weight:800;margin:10px 0 4px';
+    h.textContent = j.label + ' — ลบ ' + fmtNum(j.rows.length) + ' แถว (สุทธิ ' +
+                    (j.net > 0 ? '+' : '') + fmtNum(j.net) + ' ชิ้น)';
+    box.appendChild(h);
+
+    var byCode = {};
+    j.rows.forEach(function (r) {
+      var c = r.rec.code;
+      byCode[c] = (byCode[c] || 0) + (Number(r.rec.delta) || 0);
+    });
+    var codes = document.createElement('div');
+    codes.className = 'muted';
+    codes.style.cssText = 'font-size:13px;margin-bottom:6px';
+    codes.textContent = Object.keys(byCode).map(function (c) {
+      return c + ' ' + (byCode[c] > 0 ? '+' : '') + fmtNum(byCode[c]);
+    }).join(' · ');
+    box.appendChild(codes);
+
+    if (!j.offsets.length) return;
+    var oh = document.createElement('div');
+    oh.className = 'muted';
+    oh.style.cssText = 'font-size:13px;margin:6px 0 4px';
+    oh.textContent = 'แถวที่คนอื่นเคยหักยอดนี้คืนไว้ — ติ๊กเพื่อลบทิ้งด้วย ' +
+                     '(ไม่ติ๊ก = ยอดของจริงจะลดลงตามที่ลบ)';
+    box.appendChild(oh);
+
+    j.offsets.forEach(function (o) {
+      var lab = document.createElement('label');
+      lab.style.cssText = 'display:flex;gap:8px;align-items:flex-start;margin:6px 0;font-size:13px';
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = !!o.autoTick;
+      cb.setAttribute('data-purgeoffset', o.sid);
+      cb.style.cssText = 'width:20px;height:20px;flex:0 0 auto;margin-top:2px';
+      ticked[o.sid] = cb.checked;
+      cb.onchange = function () { ticked[o.sid] = cb.checked; onChange(); };
+      var tx = document.createElement('span');
+      tx.textContent = o.rec.code + ' ' + fmtNum(Number(o.rec.delta) || 0) + ' ชิ้น · ' +
+                       (o.rec.user || '-') + ' · ' + fmtTime(o.rec.ts) +
+                       (o.rec.reason ? ' · ' + o.rec.reason : '') +
+                       (o.autoTick ? '  ← จับคู่ได้พอดี' : '  ← ต้องตัดสินเอง');
+      lab.appendChild(cb); lab.appendChild(tx);
+      box.appendChild(lab);
+    });
+  });
+
+  if (plan.skipped.length) {
+    var sk = document.createElement('div');
+    sk.style.cssText = 'margin-top:12px;font-size:13px;color:#b45309;font-weight:700';
+    sk.textContent = '⚠ ล้างไม่ได้ ' + fmtNum(plan.skipped.length) + ' ใบ: ' +
+      plan.skipped.map(function (s) { return s.label + ' (' + s.why + ')'; }).join(' · ');
+    box.appendChild(sk);
+  }
+
+  var tot = document.createElement('div');
+  tot.setAttribute('data-purgetotal', '1');
+  tot.style.cssText = 'margin-top:12px;font-weight:800';
+  box.appendChild(tot);
+  box.__total = tot;
+  return box;
+}
+
+/* ลงมือลบจริง — ทีละใบ เขียน purgeLog ก่อนลบเสมอ
+   purgeLog ต้องสำเร็จก่อน ถ้าเขียนบันทึกไม่ได้ก็ไม่ลบใบนั้น (ห้ามลบโดยไม่มีหลักฐาน) */
+function runUserPurge(plan, ticked) {
+  var done = [], failed = [];
+  return plan.jobs.reduce(function (chain, j) {
+    return chain.then(function () {
+      var rows = j.rows.map(function (r) {
+        var o = { sid: r.sid };
+        Object.keys(r.rec).forEach(function (k) { o[k] = r.rec[k]; });
+        return o;
+      });
+      var offs = j.offsets.filter(function (o) { return ticked[o.sid]; }).map(function (o) {
+        var x = { sid: o.sid };
+        Object.keys(o.rec).forEach(function (k) { x[k] = o.rec[k]; });
+        return x;
+      });
+
+      var skip = {}; skip[j.id] = {};
+      rows.forEach(function (r) { skip[j.id][r.sid] = 1; });
+      offs.forEach(function (r) { skip[j.id][r.sid] = 1; });
+      var one = {}; one[j.id] = plan.blobs[j.id];
+
+      var entry = {
+        at: Date.now(),
+        by: state.counter || 'ไม่ระบุ',
+        targetUser: plan.targetUser,
+        jobId: j.id,
+        jobCode: j.label,
+        rows: rows,                         // แถวเต็มทุกฟิลด์ — ไว้กู้คืนด้วยมือ
+        offsetRows: offs,
+        actBefore: piecesOfBlobs(one, null),
+        actAfter: piecesOfBlobs(one, skip)
+      };
+
+      var logPatch = {};
+      logPatch['purgeLog/' + db.newKey()] = entry;
+      return db.update('rounds/' + j.id, logPatch).then(function () {
+        var del = {};
+        rows.forEach(function (r) { del['scans/' + r.sid] = null; });
+        offs.forEach(function (r) { del['scans/' + r.sid] = null; });
+        /* ก้อนละ 400 คีย์เหมือนตอนนำเข้า Master — ก้อนใหญ่เกินไปฐานจะปฏิเสธทั้งก้อน */
+        var keys = Object.keys(del), chain2 = Promise.resolve();
+        for (var i = 0; i < keys.length; i += 400) {
+          (function (part) {
+            chain2 = chain2.then(function () {
+              var p = {};
+              part.forEach(function (k) { p[k] = null; });
+              return db.update('rounds/' + j.id, p);
+            });
+          })(keys.slice(i, i + 400));
+        }
+        return chain2;
+      }).then(function () {
+        done.push({ label: j.label, rows: rows.length + offs.length });
+      }, function (err) {
+        failed.push({ label: j.label, why: String((err && err.message) || err) });
+      });
+    });
+  }, Promise.resolve()).then(function () { return { done: done, failed: failed }; });
+}
+
+/* ทางเข้าเดียวของเครื่องมือ — ด่านสิทธิ์อยู่ตรงนี้อีกชั้นนอกจากการซ่อนปุ่ม (defense in depth) */
+function purgeUserScans(targetUser) {
+  if (!targetUser) return Promise.resolve(false);
+  if (!requireAdmin('ล้างยอดของผู้ใช้ไม่ได้')) return Promise.resolve(false);
+  if (!state.roundId) { toast('เลือก Job ก่อน', true); return Promise.resolve(false); }
+  if (jobStatus() !== 'counting') {
+    toast('ล้างยอดได้เฉพาะรอบที่ยังนับอยู่ — รอบนี้' +
+          JOB_STATUS_TEXT[jobStatus()] + 'แล้ว', true);
+    return Promise.resolve(false);
+  }
+
+  toast('กำลังรวบรวมยอดของ ' + targetUser + ' ...');
+  return planUserPurge(targetUser).then(function (plan) {
+    if (!plan.rowCount) {
+      var why = plan.skipped.length
+        ? ('ยอดของ ' + targetUser + ' อยู่ในใบที่ล้างไม่ได้: ' +
+           plan.skipped.map(function (s) { return s.label + ' (' + s.why + ')'; }).join(' · '))
+        : ('ไม่พบยอดของ ' + targetUser + ' ในรอบนี้');
+      toast(why, true);
+      return false;
+    }
+
+    var ticked = {};
+    var detail = null;
+    var refresh = function () {
+      var after = purgeAfterPieces(plan, ticked);
+      detail.__total.textContent = 'ของจริงจะเปลี่ยนจาก ' + fmtNum(plan.before) +
+        ' → ' + fmtNum(after) + ' ชิ้น' +
+        (after === plan.before ? '  (ไม่เปลี่ยน)' : '  (' + (after - plan.before > 0 ? '+' : '') +
+         fmtNum(after - plan.before) + ')');
+    };
+    detail = buildPurgeDetail(plan, ticked, function () { refresh(); });
+    refresh();
+
+    return ask('ล้างยอดของ "' + targetUser + '" ในรอบนี้',
+      'ลบถาวร ' + fmtNum(plan.rowCount) + ' แถว (สุทธิ ' +
+      (plan.net > 0 ? '+' : '') + fmtNum(plan.net) + ' ชิ้น)\n\n' +
+      'ใช้กับคนที่ยิงทดสอบหรือยิงผิดบัญชีเท่านั้น — ลบแล้วกู้จากหน้าจอไม่ได้\n' +
+      'ระบบเก็บสำเนาทุกแถวไว้ที่ purgeLog ของรอบ ไว้ให้กู้ด้วยมือได้ถ้าพลาด',
+      'ลบถาวร', { danger: true, cancelLabel: 'ยกเลิก', detail: detail }
+    ).then(function (ok) {
+      if (!ok) { toast('ยกเลิก ไม่ได้ลบอะไร'); return false; }
+      return runUserPurge(plan, ticked).then(function (res) {
+        /* รายงานตามจริงเสมอ — ห้ามขึ้นว่าสำเร็จทั้งหมดถ้ามีใบที่ล้างไม่ได้ */
+        var msg = 'ล้างสำเร็จ ' + fmtNum(res.done.length) + ' ใบ';
+        if (res.done.length) {
+          msg += ' (' + res.done.map(function (d) { return d.label; }).join(' · ') + ')';
+        }
+        var bad = res.failed.concat(plan.skipped.map(function (s) {
+          return { label: s.label, why: s.why };
+        }));
+        if (bad.length) {
+          msg += ' · ล้างไม่ได้ ' + fmtNum(bad.length) + ' ใบ: ' +
+                 bad.map(function (b) { return b.label + ' (' + b.why + ')'; }).join(' · ');
+        }
+        toast(msg, bad.length > 0);
+
+        /* เฟรมลบไม่ถูกส่งต่อโดย subscribeChildren (มันข้ามค่า null)
+           ยอดในเครื่องจึงยังค้างอยู่ ต้องโหลดรอบใหม่ทั้งก้อน ไม่ใช่หวังให้สตรีมซ่อมเอง */
+        state.cycleData = null;
+        state.cycleStats = {};
+        plan.jobs.forEach(function (j) { dropJobStats(j.id); });
+        selectRound(state.roundId);
+        return res.done.length > 0;
+      });
+    });
+  }, function () {
+    toast('อ่านยอดของรอบนี้ไม่สำเร็จ ยังล้างไม่ได้ — เช็คเน็ตแล้วลองใหม่', true);
+    return false;
+  });
+}
+
 var MEDALS = ['🥇', '🥈', '🥉'];
 
 function renderScanners() {
@@ -12323,6 +12683,22 @@ function renderScanners() {
         d.appendChild(s); d.appendChild(b);
         detail.appendChild(d);
       });
+    /* ⭐ v2.10.10 — ปุ่มล้างยอดอยู่ "ในส่วนที่กางออกมา" เท่านั้น
+       ต้องกดชื่อให้การ์ดกางก่อน แล้วค่อยกดปุ่ม แล้วค่อยยืนยันในกล่องแดง = 3 จังหวะ
+       เผลอนิ้วโดนแล้วลบถาวรไม่ได้ (แนวเดียวกับล็อกนำเข้ายอดระบบ v2.10.7)
+       admin เท่านั้น และเฉพาะรอบที่ยังนับอยู่ — ตรงกับที่ Rules ยอมพอดี */
+    if (isAdmin() && jobStatus() === 'counting') {
+      var purgeBtn = document.createElement('button');
+      purgeBtn.className = 'btn grey sm block';
+      purgeBtn.style.marginTop = '10px';
+      purgeBtn.setAttribute('data-purgeuser', r.user);
+      purgeBtn.textContent = '🗑 ล้างยอดของผู้ใช้นี้ในรอบ';
+      purgeBtn.onclick = function (e) {
+        e.stopPropagation();          // ไม่ให้ไปโดน top.onclick แล้วการ์ดหุบ
+        purgeUserScans(r.user);
+      };
+      detail.appendChild(purgeBtn);
+    }
     card.appendChild(detail);
     top.onclick = function () {
       state.scannerOpen = state.scannerOpen === r.user ? null : r.user;

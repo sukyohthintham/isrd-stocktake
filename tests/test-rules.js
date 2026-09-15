@@ -109,6 +109,24 @@ const MATRIX = [
     want: function (st) { return st === 'counting' ? A_C_S : []; },
     extra: { existing: undefined,
              incoming: { code: 'A1', zone: 'no-zone', delta: 0, user: 'ผู้ใช้', ts: 1, mode: 'remark' } } },
+  /* ⭐ v2.10.10 — ล้างยอดของผู้ใช้: admin "ลบ" แถว scan ได้ เฉพาะรอบที่ยังนับอยู่
+     เป็นข้อยกเว้นเดียวของกฎ append-only (ดู CLAUDE.md) จึงต้องล็อกไว้แน่นที่สุด
+     แถวนี้ตรวจ "การลบ" โดยเฉพาะ: data มีอยู่ + newData ไม่มี = เขียน null */
+  { path: 'rounds/$id/scans/$scanId (ลบแถว)', rule: R.scans.$scanId['.write'],
+    want: function (st) { return st === 'counting' ? ['admin'] : []; },
+    /* incoming เป็น null ไม่ใช่ undefined — ตัวช่วยในไฟล์นี้แปลง undefined เป็นค่า default ให้
+       null คือสิ่งที่ RTDB ส่งมาจริงตอนลบ (newData ไม่มีอยู่) */
+    extra: { existing: { code: 'A1', zone: 'no-zone', delta: 3, user: 'Gift', ts: 1 },
+             incoming: null } },
+  /* แก้ทับแถวเดิมต้องห้ามทุกคนทุกสถานะ — อันตรายกว่าลบ เพราะตรวจย้อนไม่เห็นว่าเลขเคยเป็นเท่าไหร่ */
+  { path: 'rounds/$id/scans/$scanId (แก้ทับ)', rule: R.scans.$scanId['.write'],
+    want: function () { return []; },
+    extra: { existing: { code: 'A1', zone: 'no-zone', delta: 3, user: 'Gift', ts: 1 },
+             incoming: { code: 'A1', zone: 'no-zone', delta: 99, user: 'Gift', ts: 1 } } },
+  { path: 'rounds/$id/purgeLog', rule: R.purgeLog['.write'],
+    want: function (st) { return st === 'counting' ? ['admin'] : []; },
+    extra: { incoming: { at: 1, by: 'isrd', targetUser: 'Gift' } } },
+
   /* ⭐ v2.10.0 — ยอดสรุปของรอบ (stat/skuQty) เงื่อนไขเดียวกับ scans เป๊ะ
      ต่างจุดเดียวคือเขียนทับได้ (ไม่มี !data.exists()) เพราะเป็นยอดสะสมที่ต้องอัปเดตเรื่อย ๆ
      ถ้าวันไหนสองอันนี้หลุดจากกัน = คนยิงได้แต่ยอดสรุปไม่ขึ้น (หรือกลับกัน) ต้องดังตรงนี้ */

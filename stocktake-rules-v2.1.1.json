@@ -146,6 +146,12 @@
             ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() !== 'closed'",
             ".validate": "newData.isBoolean()"
           },
+          "purgeLog": {
+            ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin' && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting'",
+            "$entryId": {
+              ".validate": "newData.hasChildren(['at','by','targetUser'])"
+            }
+          },
           "stat": {
             ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter|scanner)$/) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting'",
             "pieces": { ".validate": "newData.isNumber()" },
@@ -161,7 +167,7 @@
           },
           "scans": {
             "$scanId": {
-              ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter|scanner)$/) && !data.exists() && newData.exists() && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting'",
+              ".write": "(auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter|scanner)$/) && !data.exists() && newData.exists() && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting') || (auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin' && data.exists() && !newData.exists() && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting')",
               ".validate": "newData.hasChildren(['code','zone','delta','user','ts'])",
               "delta": {
                 ".validate": "newData.isNumber()"
