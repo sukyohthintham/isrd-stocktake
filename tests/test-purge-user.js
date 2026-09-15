@@ -53,6 +53,10 @@ const HARNESS = `
   window.__updates = [];
   window.__failLog = false;
   window.db.getQuiet = function (p) {
+    /* v2.11.0 — ก่อนลบถาวร แอปจะอ่านสิทธิ์ของตัวเองสดจากฐานก่อนเสมอ
+       เทสจึงต้องตอบเรคอร์ดของผู้ใช้ที่ seed ไว้ ไม่งั้นแอปจะคิดว่าถูกถอดสิทธิ์แล้วปฏิเสธงาน */
+    var mu = /^users\\/(.+)$/.exec(p);
+    if (mu) return Promise.resolve({ name: state.me.name, role: state.me.role, active: true });
     var m = /^rounds\\/([^/]+)\\/scans$/.exec(p);
     if (m) {
       if (window.__readFail && window.__readFail[m[1]]) return Promise.reject(new Error('net'));

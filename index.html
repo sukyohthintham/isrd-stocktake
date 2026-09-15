@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.10.10">
+<meta name="version" content="2.11.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.10.10</title>
+<title>ISRD Stocktake v2.11.0</title>
 
 <style>
 :root{
@@ -1725,7 +1725,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.10.10';
+var APP_VERSION = '2.11.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -4605,12 +4605,21 @@ function roleBlockMessage(what) {
   return 'บัญชีนี้เป็นสิทธิ์ "' + (ROLE_LABEL[myRole()] || myRole()) + '" ' +
          (what || 'ทำรายการนี้ไม่ได้') + ' — ให้ผู้ดูแลระบบเปลี่ยนสิทธิ์ให้ก่อน';
 }
+/* ⭐ v2.11.0 — ทุกครั้งที่มีคนจะใช้สิทธิ์ ให้ไปเช็คสิทธิ์จริงจากฐานเบื้องหลังด้วย
+   ตั้งใจ "ไม่รอผล" ตรงนี้ เพราะ requireXxx เป็นฟังก์ชันคืนค่าทันที
+   ถูกเรียกจากทุกปุ่มทั่วแอป ถ้าทำให้รอเน็ตจะหน่วงทั้งระบบและต้องรื้อ call site ทุกที่
+   ของจริงบังคับที่ Database Rules อยู่แล้ว ตรงนี้ทำหน้าที่ "ปรับจอให้ตรงสิทธิ์โดยเร็ว"
+   งานที่ทำลายของจะมีด่านบังคับรอผลแยกอีกชั้น (ดู ensureRoleFresh({ force: true })) */
+function touchRoleCheck() { ensureRoleFresh(); }
+
 function requireStaff(what) {
+  touchRoleCheck();
   if (isStaff()) return true;
   toast(roleBlockMessage(what), true);
   return false;
 }
 function requireAdmin(what) {
+  touchRoleCheck();
   if (isAdmin()) return true;
   toast(roleBlockMessage(what), true);
   return false;
@@ -11729,6 +11738,14 @@ function closeRound() {
   if (!state.roundId) return;
   if (!requireStaff('ปิด Job ไม่ได้')) return;
   if (jobStatus() === 'closed') { toast('รอบนี้ปิดไปแล้ว', true); return; }
+  /* ⭐ v2.11.0 — ปิดรอบคือจุดที่ตรึงยอดถาวร ต้องแน่ใจว่ายังมีสิทธิ์จริงก่อนเริ่มถาม */
+  ensureRoleFresh({ force: true }).then(function () {
+    if (!requireStaff('ปิด Job ไม่ได้')) return;
+    closeRoundChecked();
+  });
+}
+
+function closeRoundChecked() {
 
   var notScanned = Object.keys(state.systemQty).filter(function (k) { return !state.counts[k]; }).length;
   var unknownN = unknownPending();
@@ -12556,7 +12573,15 @@ function runUserPurge(plan, ticked) {
 /* ทางเข้าเดียวของเครื่องมือ — ด่านสิทธิ์อยู่ตรงนี้อีกชั้นนอกจากการซ่อนปุ่ม (defense in depth) */
 function purgeUserScans(targetUser) {
   if (!targetUser) return Promise.resolve(false);
-  if (!requireAdmin('ล้างยอดของผู้ใช้ไม่ได้')) return Promise.resolve(false);
+  /* ⭐ v2.11.0 — งานลบถาวร ต้องยืนยันสิทธิ์สดจากฐานก่อนเสมอ ข้ามแคช
+     ยอมหน่วง 1 คำขอ ดีกว่าให้คนที่เพิ่งโดนลดสิทธิ์ลบของได้เพราะ session ยังถือของเก่า */
+  return ensureRoleFresh({ force: true }).then(function () {
+    if (!requireAdmin('ล้างยอดของผู้ใช้ไม่ได้')) return false;
+    return purgeUserScansChecked(targetUser);
+  });
+}
+
+function purgeUserScansChecked(targetUser) {
   if (!state.roundId) { toast('เลือก Job ก่อน', true); return Promise.resolve(false); }
   if (jobStatus() !== 'counting') {
     toast('ล้างยอดได้เฉพาะรอบที่ยังนับอยู่ — รอบนี้' +
@@ -12915,10 +12940,15 @@ function renderStart() {
    คำขออื่นทั้งหมดจะถูกคิวไว้ไม่มีวันได้ออก — รวมถึง PATCH ที่ใช้บันทึกการยิง
    อาการคือยิงได้ ยอดขึ้นบนจอ แต่ไม่มีอะไรถูกบันทึกเลย และไม่มี error ให้เห็น
 
-   จึงเปิดสายค้างไว้แค่ 3 อย่างที่ต้องเห็นสดจริง ๆ:
-     roundIndex (สถานะ Job) · scans · unknown
+   จึงเปิดสายค้างไว้เฉพาะของที่ต้องเห็นสดจริง ๆ — ปัจจุบัน 4 สาย:
+     cycles (ระเบียนรอบนับ) · roundIndex (สถานะ Job) · scans · unknown
+   (คอมเมนต์เดิมเขียนว่า 3 สาย ตกไปตั้งแต่ cycles ถูกเพิ่มที่ v2.1.1 — แก้ให้ตรงที่ v2.11.0)
    ที่เหลือดึงเป็นครั้ง ๆ ด้วย db.get แล้วอัปเดต state ในเครื่องทันทีตอนบันทึกเอง
-   เหลือช่องว่างให้คำขอปกติวิ่งได้เสมอ */
+   เหลือช่องว่างให้คำขอปกติวิ่งได้เสมอ
+
+   ⚠️ เหลืองบอีกแค่ ~2 สาย — ห้ามเพิ่มสายค้างใหม่โดยไม่คิดให้ถี่ถ้วน
+   การซิงก์สิทธิ์สด (v2.11.0) จึงใช้ db.getQuiet อ่านเป็นครั้ง ๆ + ยามเฝ้า 60 วิ
+   ไม่ได้เปิดสายที่ 5 — ดู ensureRoleFresh() */
 
 function refreshDocMeta() {
   if (!state.roundId) return Promise.resolve();
@@ -13206,6 +13236,128 @@ function claimFirstAdmin(user) {
   }).then(function () {
     return setMe(user, rec);
   }, function () { throw profileError('BOOTSTRAP_FAILED'); });
+}
+
+/* ============================================================
+   ซิงก์สิทธิ์สด (role / active) — v2.11.0
+   ============================================================
+
+   ช่องโหว่ที่ปิด: loadMyProfile() อ่าน users/<uid> ครั้งเดียวตอนบูต
+   พอแอดมินลดสิทธิ์หรือปิดบัญชีใคร เครื่องคนนั้นที่เปิดค้างไว้ยังถือสิทธิ์เดิม
+   จนกว่าจะรีเฟรชเอง — ปุ่มระดับแอดมินยังกดได้ (ฐานปฏิเสธก็จริง แต่จอเปิดให้ทำ)
+
+   ⚠️ ห้ามใช้ db.subscribe('users/<uid>') เด็ดขาด
+   EventSource เป็นสายเปิดค้าง เบราว์เซอร์เปิดได้ ~6 สายต่อโฮสต์บน HTTP/1.1
+   ตอนนี้ใช้ไปแล้ว 4 สาย (cycles · roundIndex · scans · unknown)
+   เพิ่มเป็นสายที่ 5 = เหลือช่องให้ PATCH ตอนยิงแค่สายเดียว
+   อาการที่เคยเจอคือ "ยิงได้ ยอดขึ้นบนจอ แต่ไม่มีอะไรถูกบันทึก และไม่มี error"
+   จึงใช้การ "อ่านเป็นครั้ง ๆ" แทน ซึ่งวิ่งผ่านคิว bgSlot ที่มีอยู่แล้ว ไม่กินสายค้างเลย
+
+   สามชั้น:
+     1. ก่อนใช้สิทธิ์  — requireAdmin/requireStaff กระทุ้งให้ตรวจเบื้องหลัง (ไม่หน่วงจอ)
+     2. ก่อนทำลายของ — บังคับตรวจสดและ "รอผล" ก่อนลงมือ (ลดสิทธิ์ · ล้างยอด · ปิดรอบ)
+     3. ยามเฝ้า      — ตรวจทุก 60 วิ เผื่อคนนั่งเฉย ๆ ไม่ได้กดอะไรเลย
+   ============================================================ */
+
+var ROLE_FRESH_TTL = 30000;      // เพิ่งตรวจไม่ถึงเท่านี้ ใช้ค่าเดิม (กันกดรัวแล้วยิงซ้ำ)
+var ROLE_POLL_MS = 60000;        // ยามเฝ้าสำหรับคนที่นั่ง idle
+var roleCheckedAt = 0;
+var roleChecking = null;
+var rolePollTimer = null;
+
+/* อ่านสิทธิ์ของตัวเองจากฐานแล้วปรับตาม — คืน promise เสมอเพื่อให้ gate ที่ต้องรอ await ได้
+   opts.force = ข้าม TTL (ใช้กับงานที่ทำลายของ ยอมหน่วง 1 คำขอเพื่อความชัวร์) */
+function ensureRoleFresh(opts) {
+  opts = opts || {};
+  if (!db.remote || !state.me || !state.me.uid) return Promise.resolve(null);
+  if (!opts.force && (Date.now() - roleCheckedAt) < ROLE_FRESH_TTL) return Promise.resolve(null);
+  /* กำลังตรวจอยู่แล้วให้ใช้ใบเดียวกัน — กดปุ่มรัว ๆ จะได้ไม่ยิงซ้อนกันหลายใบ */
+  if (roleChecking) return roleChecking;
+
+  var uid = state.me.uid;
+  roleChecking = db.getQuiet('users/' + uid).then(function (rec) {
+    roleCheckedAt = Date.now();
+    roleChecking = null;
+    /* uid ยังเป็นคนเดิมอยู่ไหม (เผื่อสลับบัญชีระหว่างรอ) */
+    if (!state.me || state.me.uid !== uid) return null;
+    return applyRoleChange(rec);
+  }, function () {
+    /* อ่านไม่ได้ (เน็ตสะดุด) — ห้ามเดาว่าโดนลดสิทธิ์แล้วเตะคนออก
+       ของจริงบังคับที่ Database Rules อยู่แล้ว ปล่อยให้ใช้ของเดิมไปก่อนปลอดภัยกว่า */
+    roleChecking = null;
+    return null;
+  });
+  return roleChecking;
+}
+
+/* เอาเรคอร์ดที่เพิ่งอ่านมาเทียบกับสิทธิ์ที่ session ถืออยู่ แล้วปรับจอให้ตรง
+   คืนค่าบอกว่าเปลี่ยนอะไรไป (ไว้ให้เทสและ gate ตรวจ) */
+function applyRoleChange(rec) {
+  if (!state.me) return null;
+
+  /* บัญชีถูกปิด = ออกทันที ไม่ต้องรอให้ไปกดอะไรแล้วเด้ง */
+  if (rec && rec.active === false) {
+    toast('บัญชีนี้ถูกปิดการใช้งานแล้ว — กำลังออกจากระบบ', true);
+    forceSignOut();
+    return { disabled: true };
+  }
+  /* เรคอร์ดหายจากทะเบียน = ถูกถอดสิทธิ์ทั้งใบ ปฏิบัติเหมือนถูกปิดบัญชี */
+  if (!rec) {
+    toast('บัญชีนี้ถูกถอดออกจากทะเบียนผู้ใช้แล้ว — กำลังออกจากระบบ', true);
+    forceSignOut();
+    return { removed: true };
+  }
+
+  var before = state.me.role;
+  setMe({ uid: state.me.uid, email: state.me.email }, rec);
+  var after = state.me.role;
+  if (after === before) return null;
+
+  /* สิทธิ์เปลี่ยนแล้ว — จอต้องตามทันที ทั้งตอนลดและตอนเพิ่ม
+     ตอนเพิ่มก็สำคัญ ไม่งั้นแอดมินเพิ่งให้สิทธิ์แล้วคนนั้นต้องล็อกอินใหม่ถึงจะใช้ได้ */
+  applyNavVisibility();
+  refreshNav();
+  renderAccount();
+
+  var down = ROLE_RANK[after] < ROLE_RANK[before];
+  if (down) {
+    toast('สิทธิ์ของคุณถูกเปลี่ยนเป็น "' + (ROLE_LABEL[after] || after) +
+          '" โดยผู้ดูแลระบบ — บางเมนูจะใช้ไม่ได้แล้ว', true);
+    /* ยืนอยู่หน้าที่ไม่มีสิทธิ์แล้วต้องเด้งออก ไม่ใช่ปล่อยให้กดต่อแล้วค่อยเจอ error */
+    if (!canSeePage(state.page)) showPage(firstAllowedPage());
+    else showPage(state.page);              // วาดใหม่ให้ปุ่มในหน้าหายตามสิทธิ์
+  } else {
+    toast('สิทธิ์ของคุณถูกปรับเป็น "' + (ROLE_LABEL[after] || after) + '" แล้ว');
+    showPage(state.page);
+  }
+  return { from: before, to: after, down: down };
+}
+
+/* ลำดับสิทธิ์ — ใช้บอกว่า "ลดลง" หรือ "เพิ่มขึ้น" เพื่อเลือกข้อความให้ถูก */
+var ROLE_RANK = { viewer: 0, scanner: 1, counter: 2, admin: 3 };
+
+function forceSignOut() {
+  stopRolePoll();
+  try { session.signOut(); } catch (e) { /* ออกให้ได้ไม่ว่าอะไรจะเกิด */ }
+  try { db.closeAll(); } catch (e) {}
+  state.me = null;
+  state.counter = '';
+  /* หน่วงนิดให้ toast ทันขึ้นจอก่อนหน้าจะรีโหลด */
+  setTimeout(function () { location.reload(); }, 1200);
+}
+
+/* ยามเฝ้าสำหรับคนที่เปิดแอปค้างไว้เฉย ๆ ไม่ได้กดอะไรเลย
+   หยุดตอนพับแอป/สลับแท็บ — ไม่มีใครใช้สิทธิ์อยู่ ไม่ต้องกินเน็ตของคนนับ */
+function startRolePoll() {
+  if (rolePollTimer || !db.remote) return;
+  rolePollTimer = setInterval(function () {
+    if (typeof document !== 'undefined' && document.hidden) return;
+    if (!state.me) return;
+    ensureRoleFresh({ force: true });
+  }, ROLE_POLL_MS);
+}
+function stopRolePoll() {
+  if (rolePollTimer) { clearInterval(rolePollTimer); rolePollTimer = null; }
 }
 
 function setMe(user, rec) {
@@ -13904,6 +14056,17 @@ function refreshUsers() {
    ทุกครั้งที่ติ๊ก ซึ่งกำหนดสาขาให้คนที่ดูแล 5 สาขาแทบไม่ได้ */
 function saveUserField(uid, patchFields, opts) {
   if (!requireAdmin('แก้ไขผู้ใช้ไม่ได้')) return Promise.resolve();
+  /* ⭐ v2.11.0 — การแก้สิทธิ์คนอื่นคือการกระทำที่แรงที่สุดในแอป ยืนยันสิทธิ์สดก่อนเสมอ */
+  if (patchFields && patchFields.role !== undefined) {
+    return ensureRoleFresh({ force: true }).then(function () {
+      if (!requireAdmin('แก้ไขผู้ใช้ไม่ได้')) return;
+      return saveUserFieldChecked(uid, patchFields, opts);
+    });
+  }
+  return saveUserFieldChecked(uid, patchFields, opts);
+}
+
+function saveUserFieldChecked(uid, patchFields, opts) {
   var patch = {};
   Object.keys(patchFields).forEach(function (f) { patch[uid + '/' + f] = patchFields[f]; });
   patch[uid + '/updatedAt'] = Date.now();
@@ -14161,9 +14324,20 @@ function renderUsers() {
         toast('เปลี่ยนสิทธิ์ของตัวเองไม่ได้ — ให้แอดมินอีกคนเปลี่ยนให้', true);
         return;
       }
+      /* ⭐ v2.11.0 — "ทะเบียนยังโหลดไม่เสร็จ" กับ "เหลือแอดมินคนเดียว" คนละเรื่องกัน
+         ของเดิมนับจาก state.users ตรง ๆ ถ้าทะเบียนยังว่างจะได้ 0 แล้วบล็อกผิด ๆ
+         พร้อมข้อความว่าต้องมีแอดมินอย่างน้อย 1 คน ซึ่งไม่ใช่สาเหตุจริง คนอ่านแล้วงง */
+      var sel2 = this;
+      var wanted = this.value;
+      if (u.role === 'admin' && wanted !== 'admin' && !Object.keys(state.users).length) {
+        sel2.value = 'admin';
+        toast('ทะเบียนผู้ใช้ยังโหลดไม่เสร็จ — กำลังโหลดให้ใหม่ แล้วลองอีกครั้ง', true);
+        refreshUsers().then(renderUsers);
+        return;
+      }
       /* ต้องเหลือ admin ที่ใช้งานได้อย่างน้อย 1 คนเสมอ ไม่งั้นไม่มีใครแก้อะไรได้อีก */
-      if (u.role === 'admin' && this.value !== 'admin' && activeAdminCount(uid) === 0) {
-        this.value = 'admin';
+      if (u.role === 'admin' && wanted !== 'admin' && activeAdminCount(uid) === 0) {
+        sel2.value = 'admin';
         toast('ลดสิทธิ์ไม่ได้ ระบบต้องมีผู้ดูแลอย่างน้อย 1 คน — ตั้งคนอื่นเป็น admin ก่อน', true);
         return;
       }
@@ -14833,6 +15007,7 @@ function boot() {
    ถ้าปล่อยให้ subscribe ตั้งแต่ยังไม่มี token ทุกสายจะโดน 401 แล้วรีทรายรัวไม่จบ */
 function startApp() {
   renderAccount();
+  startRolePoll();            // ⭐ v2.11.0 ยามเฝ้าสิทธิ์ — อ่านเป็นครั้ง ๆ ไม่เปิดสายค้างเพิ่ม
 
   var dropped = dropForeignQueue();
   if (dropped) {
