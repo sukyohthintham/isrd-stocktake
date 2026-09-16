@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.12.0">
+<meta name="version" content="2.12.1">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.12.0</title>
+<title>ISRD Stocktake v2.12.1</title>
 
 <style>
 :root{
@@ -271,6 +271,33 @@ body.locked .topbar,body.locked .wrap,body.locked .nav{display:none}
   font-family:ui-monospace,Menlo,Consolas,monospace;user-select:all;
 }
 .urow.off{background:var(--line-soft);opacity:.75}
+
+/* ⭐ v2.12.1 — หัวแถวผู้ใช้แบบพับได้
+   ก่อนหน้านี้กาง 15 ช่องติ๊ก + กล่องสาขาของทุกคนพร้อมกัน ทะเบียน 15 คนยาวเป็นหางว่าว
+   จนต้องเลื่อนหาทีละคน — พับไว้ก่อนแล้วกางเฉพาะคนที่จะแก้
+   แตะได้ทั้งแถว ไม่ใช่เล็งจิ้มลูกศรเล็ก ๆ เพราะทีมคลังใส่ถุงมือ */
+.urow.fold{padding:0}
+.u-head{
+  display:flex;align-items:center;gap:10px;width:100%;
+  padding:12px 14px;background:none;border:0;text-align:left;
+  font:inherit;color:inherit;cursor:pointer;min-height:56px;border-radius:13px;
+}
+.u-head:hover{background:var(--line-soft)}
+.u-head:focus-visible{outline:2px solid var(--brand);outline-offset:-2px}
+.u-head .u-main{flex:1 1 auto;min-width:0}
+.u-head .u-name{margin-bottom:3px}
+.u-sub{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.u-count{font-size:12.5px;color:var(--muted)}
+.u-arrow{flex:0 0 auto;color:var(--muted);font-size:16px;width:18px;text-align:center}
+.u-body{padding:0 14px 14px}
+
+/* แถบกรองสิทธิ์ — เลือกได้ทีละกลุ่ม ทำงานคู่กับช่องค้นหา (เงื่อนไข AND) */
+.u-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.u-chips button{
+  font:inherit;font-size:13px;padding:6px 12px;border-radius:999px;cursor:pointer;
+  border:1px solid var(--line);background:#fff;color:var(--muted);min-height:36px;
+}
+.u-chips button.on{background:var(--brand);border-color:var(--brand);color:#fff;font-weight:600}
 /* กล่องติ๊กสาขาที่ดูแล — เลื่อนอ่านในกล่องตัวเอง ไม่ดันการ์ดผู้ใช้ยาวเป็นหางว่าว
    แถวสูง 40px+ ให้คนใส่ถุงมือแตะโดนช่องติ๊กได้ ไม่ต้องเล็งจิ้ม */
 .brlist{
@@ -1357,6 +1384,9 @@ body.no-doc-images .doc .imgbox{display:none}
     <div class="card">
       <h3>ผู้ใช้ทั้งหมด</h3>
       <div class="muted" id="userCount">กำลังโหลด...</div>
+      <input type="text" id="userSearch" style="margin-top:10px"
+             placeholder="🔍 ค้นหาชื่อ อีเมล หรือสิทธิ์" autocomplete="off" spellcheck="false">
+      <div class="u-chips" id="userRoleChips"></div>
     </div>
     <div class="clist" id="userList"></div>
   </div>
@@ -1725,7 +1755,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.12.0';
+var APP_VERSION = '2.12.1';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -14238,6 +14268,12 @@ function copyText(text, okMessage) {
 
 /* ---------- หน้าจัดการผู้ใช้ (admin เท่านั้น) ---------- */
 
+/* ⭐ v2.12.1 — สถานะของหน้า (ไม่ใช่ข้อมูล) เก็บไว้นอก renderUsers
+   เพราะ renderUsers ถูกเรียกใหม่ทุกครั้งที่บันทึก ถ้าเก็บไว้ข้างในแถวที่กางอยู่จะพับกลับเอง
+   ระหว่างที่แอดมินกำลังแก้สิทธิ์คนนั้นอยู่ — กางได้หลายคนพร้อมกัน ไม่ใช่ accordion เดี่ยว */
+var userOpen = {};                 // uid -> true ถ้ากางอยู่
+var userRoleFilter = 'all';        // ชิปที่เลือกอยู่
+
 /* แปลงชุด perms เป็น patch รายฟิลด์ 'perms/<cap>' — เปิด = true · ปิด = null (ลบคีย์)
    ตั้งใจเขียนรายช่องแทนการยัดทั้งก้อน perms ลงไป เพื่อไม่ทับคีย์ที่แอปรุ่นหลังอาจเพิ่มมา
    และเป็นการ update รายเรคอร์ดตามกฎบ้าน ไม่ใช่ set ทับทั้งก้อน */
@@ -14497,10 +14533,76 @@ function resetUserPassword(uid) {
   });
 }
 
+/* กลุ่มสิทธิ์ที่มีชิปให้กด — เรียงตามอำนาจจากมากไปน้อย ปิดท้ายด้วย custom
+   โชว์ทุกกลุ่มเสมอแม้จำนวนเป็น 0 เพื่อให้เห็นว่า "ไม่มีใครอยู่กลุ่มนี้" ซึ่งเป็นข้อมูลเหมือนกัน */
+var USER_CHIP_ROLES = ['admin', 'counter', 'scanner', 'viewer', 'custom'];
+
+function renderUserChips() {
+  var host = $('userRoleChips');
+  if (!host) return;
+  host.innerHTML = '';
+  var uids = Object.keys(state.users);
+  var tally = {};
+  uids.forEach(function (u) {
+    var r = (state.users[u] || {}).role || 'counter';
+    tally[r] = (tally[r] || 0) + 1;
+  });
+
+  [{ key: 'all', label: 'ทั้งหมด', n: uids.length }].concat(
+    USER_CHIP_ROLES.map(function (r) {
+      return { key: r, label: ROLE_LABEL[r] || r, n: tally[r] || 0 };
+    })
+  ).forEach(function (c) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = userRoleFilter === c.key ? 'on' : '';
+    b.setAttribute('data-userchip', c.key);
+    b.textContent = c.label + ' ' + fmtNum(c.n);
+    b.onclick = function () {
+      userRoleFilter = c.key;
+      renderUserChips();
+      applyUserFilter();
+    };
+    host.appendChild(b);
+  });
+}
+
+/* กรองสดจากที่วาดไว้แล้ว ไม่วาดลิสต์ใหม่ — การวาดใหม่ทุกตัวอักษรที่พิมพ์
+   จะทำให้แถวที่กางอยู่กระพริบ และเสียตำแหน่งเคอร์เซอร์ในช่องที่กำลังแก้
+   ค้นหาจากชื่อ · อีเมล · ชื่อสิทธิ์ภาษาไทย รวมกับชิปเป็นเงื่อนไข AND */
+function applyUserFilter() {
+  var box = $('userSearch');
+  var q = normText(box ? box.value : '');
+  var rows = document.querySelectorAll('#userList [data-user]');
+  var shown = 0;
+  Array.prototype.forEach.call(rows, function (row) {
+    var uid = row.getAttribute('data-user');
+    var u = state.users[uid] || {};
+    var r = u.role || 'counter';
+    var okRole = userRoleFilter === 'all' || r === userRoleFilter;
+    var hay = normText([u.name || '', u.email || '', ROLE_LABEL[r] || r].join(' '));
+    var okText = !q || hay.indexOf(q) >= 0;
+    var ok = okRole && okText;
+    row.hidden = !ok;
+    if (ok) shown++;
+  });
+
+  var empty = $('userEmpty');
+  if (empty) {
+    empty.hidden = shown > 0 || !rows.length;
+    empty.textContent = 'ไม่พบผู้ใช้' + (q ? ' ที่ตรงกับ "' + (box.value || '').trim() + '"' : '');
+  }
+}
+
 function renderUsers() {
   if (!isAdmin()) return;
   var host = $('userList');
   host.innerHTML = '';
+  var empty = document.createElement('div');
+  empty.className = 'empty';
+  empty.id = 'userEmpty';
+  empty.hidden = true;
+  host.appendChild(empty);
   var uids = Object.keys(state.users).sort(function (a, b) {
     return String((state.users[a] || {}).name || a).localeCompare(String((state.users[b] || {}).name || b), 'th');
   });
@@ -14513,17 +14615,65 @@ function renderUsers() {
     var u = state.users[uid] || {};
     var me = (state.me || {}).uid === uid;
     var row = document.createElement('div');
-    row.className = 'urow' + (u.active === false ? ' off' : '');
+    row.className = 'urow fold' + (u.active === false ? ' off' : '');
     row.setAttribute('data-user', uid);
+    var uRole = u.role || 'counter';
+
+    /* ---------- หัวแถว (พับ/กาง) ----------
+       ใช้ <button> จริง ไม่ใช่ div ที่ผูก onclick — คีย์บอร์ดแท็บถึงและ Enter/Space ใช้ได้
+       ตัว editor ทั้งก้อนยังอยู่ใน DOM เสมอ แค่ซ่อนไว้ ไม่ได้ถอดทิ้ง
+       เพราะการถอด-สร้างใหม่จะทำให้ค่าที่พิมพ์ค้างในช่องหาย และ handler ต้องผูกใหม่ทุกครั้ง */
+    var head = document.createElement('button');
+    head.type = 'button';
+    head.className = 'u-head';
+    head.setAttribute('data-userhead', uid);
+
+    var main = document.createElement('div');
+    main.className = 'u-main';
 
     var nm = document.createElement('div');
     nm.className = 'u-name';
     nm.textContent = u.name || '(ยังไม่ได้ตั้งชื่อ)';
     if (me) { var tag = document.createElement('span'); tag.className = 'chip ok';
               tag.style.marginLeft = '8px'; tag.textContent = 'คุณ'; nm.appendChild(tag); }
+
+    var sub = document.createElement('div');
+    sub.className = 'u-sub';
+    var roleChip = document.createElement('span');
+    roleChip.className = 'chip ' + (uRole === 'admin' ? 'ok' : (uRole === 'viewer' ? 'warn' : ''));
+    roleChip.setAttribute('data-userrole', uid);
+    roleChip.textContent = ROLE_LABEL[uRole] || uRole;
+    var countEl = document.createElement('span');
+    countEl.className = 'u-count';
+    countEl.setAttribute('data-usercount', uid);
+    sub.appendChild(roleChip); sub.appendChild(countEl);
+    if (u.active === false) {
+      var offChip = document.createElement('span');
+      offChip.className = 'chip warn';
+      offChip.textContent = 'ปิดใช้งาน';
+      sub.appendChild(offChip);
+    }
+
+    main.appendChild(nm); main.appendChild(sub);
+    var arrow = document.createElement('span');
+    arrow.className = 'u-arrow';
+    head.appendChild(main); head.appendChild(arrow);
+
+    var body = document.createElement('div');
+    body.className = 'u-body';
+    body.setAttribute('data-userbody', uid);
+
+    var setOpen = function (open) {
+      userOpen[uid] = !!open;
+      body.hidden = !open;
+      arrow.textContent = open ? '▾' : '▸';
+      head.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    head.onclick = function () { setOpen(!userOpen[uid]); };
+
     var ml = document.createElement('div'); ml.className = 'u-mail'; ml.textContent = u.email || '(ไม่ได้ใส่อีเมล)';
     var ui = document.createElement('div'); ui.className = 'u-uid'; ui.textContent = uid;
-    row.appendChild(nm); row.appendChild(ml); row.appendChild(ui);
+    body.appendChild(ml); body.appendChild(ui);
 
     var nameLab = document.createElement('label');
     nameLab.className = 'fld';
@@ -14581,6 +14731,14 @@ function renderUsers() {
     };
     roleLab.appendChild(roleSp); roleLab.appendChild(sel);
 
+    /* ตัวเลขสรุปบนหัวแถวต้องขยับตามทันทีที่ติ๊ก — การติ๊กใช้ keepUi จึงไม่มีการวาดใหม่
+       ถ้าไม่อัปเดตเอง หัวแถวจะค้างเลขเก่าจนกว่าจะเปลี่ยนหน้าแล้วกลับมา */
+    var syncHeadCount = function (perms) {
+      if (uRole === 'admin') { countEl.textContent = '· ทุกสิทธิ์'; return; }
+      var on = CAPS.filter(function (c) { return perms[c] === true; }).length;
+      countEl.textContent = '· ติ๊ก ' + fmtNum(on) + '/' + fmtNum(CAPS.length);
+    };
+
     /* ---------- ช่องติ๊กความสามารถ (v2.12.0) ----------
        เก็บเฉพาะช่องที่เปิด (perms/<cap> = true) ช่องที่ปิดเขียน null ให้คีย์หายไปเลย
        ไม่เก็บ false ไว้ เพราะทั้ง Rules และ hasPerm() เช็ค === true อยู่แล้ว
@@ -14626,6 +14784,7 @@ function renderUsers() {
         cb.onchange = function () {
           if (cb.checked) live[c.key] = true; else delete live[c.key];
           permHint.textContent = describePerms();
+          syncHeadCount(live);
           /* ติ๊กเองแล้วสิทธิ์ไม่ตรงแม่แบบไหนอีก จึงเขียน role เป็น custom ไปพร้อมกัน
              ใช้ keepUi เพราะการวาดลิสต์ใหม่ทุกครั้งที่ติ๊กจะเด้งสกอลล์กลับหัวลิสต์ */
           sel.value = 'custom';
@@ -14733,9 +14892,9 @@ function renderUsers() {
     brSearch.oninput = drawBranchList;
     drawBranchList();
 
-    row.appendChild(nameLab); row.appendChild(roleLab);
-    row.appendChild(permBox); row.appendChild(permHint); row.appendChild(permNote);
-    row.appendChild(brBox); row.appendChild(brHint);
+    body.appendChild(nameLab); body.appendChild(roleLab);
+    body.appendChild(permBox); body.appendChild(permHint); body.appendChild(permNote);
+    body.appendChild(brBox); body.appendChild(brHint);
 
     /* ปุ่มรีเซ็ตรหัสผ่าน — มีทุกแถว รวมถึงของตัวเอง */
     var rst = document.createElement('button');
@@ -14744,7 +14903,7 @@ function renderUsers() {
     rst.setAttribute('data-action', 'reset');
     rst.textContent = '🔑 รีเซ็ตรหัสผ่าน';
     rst.onclick = function () { resetUserPassword(uid); };
-    row.appendChild(rst);
+    body.appendChild(rst);
 
     /* บัญชีตัวเองไม่ต้องมีปุ่มปิด — กดไปก็โดนปฏิเสธ และเป็นทางที่ล็อกตัวเองออกได้ */
     if (!me) {
@@ -14761,16 +14920,23 @@ function renderUsers() {
         }
         saveUserField(uid, { active: u.active === false });
       };
-      row.appendChild(act);
+      body.appendChild(act);
     } else {
       var note = document.createElement('div');
       note.className = 'muted';
       note.style.marginTop = '10px';
       note.textContent = 'บัญชีที่คุณใช้อยู่ — เปลี่ยนสิทธิ์หรือปิดการใช้งานตัวเองไม่ได้';
-      row.appendChild(note);
+      body.appendChild(note);
     }
+    row.appendChild(head); row.appendChild(body);
+    syncHeadCount(live);
+    setOpen(userOpen[uid] === true);      // ค่าเริ่มต้นคือพับ · จำไว้ถ้าเคยกาง
     host.appendChild(row);
   });
+
+  renderUserChips();
+  $('userSearch').oninput = applyUserFilter;
+  applyUserFilter();
 }
 
 /* ============================================================

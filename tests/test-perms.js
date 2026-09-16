@@ -553,6 +553,178 @@ const HARNESS = `
   check('custom บอกให้ไปขอติ๊กเพิ่ม', /ติ๊กเพิ่มให้ก่อน/.test(msgs.custom), msgs.custom);
   check('role เดิมยังใช้ข้อความแบบเดิม', /เป็นสิทธิ์ "พนักงานยิงอย่างเดียว"/.test(msgs.scanner), msgs.scanner);
 
+  /* ---------- [9] หน้าผู้ใช้แบบพับได้ + ค้นหา + ชิปกรอง (v2.12.1) ---------- */
+  console.log('\n[9] พับ/กางแถวผู้ใช้');
+  const SEED_USERS = `
+    window.__seedRole('admin');
+    state.me.uid = 'U1';
+    state.users = {
+      U1: { name: 'สมชาย ใจดี',  email: 'somchai@isrd.local', role: 'admin',   active: true },
+      U2: { name: 'สมหญิง รักงาน', email: 'somying@isrd.local', role: 'counter', active: true },
+      U3: { name: 'กิ๊ฟ',        email: 'gift@isrd.local',    role: 'scanner', active: true },
+      U4: { name: 'ป้าแดง',      email: 'daeng@isrd.local',   role: 'viewer',  active: false },
+      U5: { name: 'น้องบอล',     email: 'ball@isrd.local',    role: 'custom',  active: true,
+            perms: { editLocation: true, viewMasterLoc: true, docs: true } }
+    };
+    userOpen = {}; userRoleFilter = 'all';
+    document.getElementById('userSearch').value = '';
+    renderUsers();
+  `;
+
+  const fold = await page.evaluate((seed) => {
+    eval(seed);
+    const read = function (uid) {
+      const head = document.querySelector('[data-userhead="' + uid + '"]');
+      const body = document.querySelector('[data-userbody="' + uid + '"]');
+      return { hidden: body.hidden, arrow: head.querySelector('.u-arrow').textContent,
+               exp: head.getAttribute('aria-expanded'),
+               inDom: body.querySelectorAll('[data-permpick]').length };
+    };
+    const before = read('U2');
+    document.querySelector('[data-userhead="U2"]').click();
+    const after = read('U2');
+    document.querySelector('[data-userhead="U3"]').click();
+    const both = { u2: read('U2').hidden, u3: read('U3').hidden, u4: read('U4').hidden };
+    /* วาดใหม่ (เหมือนหลังบันทึก) แล้วต้องยังกางค้างอยู่ทั้งสองคน */
+    renderUsers();
+    const afterRedraw = { u2: read('U2').hidden, u3: read('U3').hidden, u4: read('U4').hidden };
+    document.querySelector('[data-userhead="U2"]').click();
+    return { before: before, after: after, both: both, afterRedraw: afterRedraw,
+             closed: read('U2').hidden, tag: document.querySelector('[data-userhead="U2"]').tagName };
+  }, SEED_USERS);
+  check('ค่าเริ่มต้นพับทุกคน', fold.before.hidden === true, fold.before);
+  check('ลูกศรพับเป็น ▸', fold.before.arrow === '▸', fold.before);
+  check('editor ยังอยู่ใน DOM ตอนพับ (ไม่ได้ถอดทิ้ง)', fold.before.inDom === 15, fold.before);
+  check('คลิกหัวแถวแล้วกาง', fold.after.hidden === false, fold.after);
+  check('ลูกศรกางเป็น ▾', fold.after.arrow === '▾', fold.after);
+  check('หัวแถวเป็นปุ่มจริง (คีย์บอร์ดใช้ได้)', fold.tag === 'BUTTON', fold.tag);
+  check('บอกสถานะด้วย aria-expanded', fold.after.exp === 'true', fold.after);
+  check('⭐ กางได้หลายคนพร้อมกัน', fold.both.u2 === false && fold.both.u3 === false, fold.both);
+  check('คนอื่นยังพับอยู่', fold.both.u4 === true, fold.both);
+  check('⭐ วาดใหม่แล้วยังกางค้าง (ไม่พับกลับตอนบันทึก)',
+        fold.afterRedraw.u2 === false && fold.afterRedraw.u3 === false, fold.afterRedraw);
+  check('คลิกซ้ำแล้วพับกลับ', fold.closed === true, fold.closed);
+
+  console.log('\n[9b] สรุปสิทธิ์บนหัวแถว');
+  const summary = await page.evaluate((seed) => {
+    eval(seed);
+    const txt = function (uid) {
+      return { count: document.querySelector('[data-usercount="' + uid + '"]').textContent,
+               role: document.querySelector('[data-userrole="' + uid + '"]').textContent };
+    };
+    const out = { admin: txt('U1'), counter: txt('U2'), scanner: txt('U3'), custom: txt('U5') };
+    /* ติ๊กเพิ่มให้ U5 แล้วตัวเลขบนหัวแถวต้องขยับทันที (ติ๊กใช้ keepUi ไม่มีการวาดใหม่) */
+    document.querySelector('[data-userhead="U5"]').click();
+    const cb = document.querySelector('[data-userbody="U5"] [data-permpick="scan"]');
+    cb.checked = true; cb.onchange();
+    out.afterTick = txt('U5').count;
+    return out;
+  }, SEED_USERS);
+  check('admin โชว์ "ทุกสิทธิ์" ไม่ใช่ตัวเลข', /ทุกสิทธิ์/.test(summary.admin.count), summary.admin);
+  check('counter โชว์ ติ๊ก 10/15', /ติ๊ก 10\/15/.test(summary.counter.count), summary.counter);
+  check('scanner โชว์ ติ๊ก 1/15', /ติ๊ก 1\/15/.test(summary.scanner.count), summary.scanner);
+  check('custom โชว์ ติ๊ก 3/15', /ติ๊ก 3\/15/.test(summary.custom.count), summary.custom);
+  check('ป้ายสิทธิ์ใช้ ROLE_LABEL', summary.counter.role === 'ผู้นับสต๊อก' &&
+        summary.custom.role === 'กำหนดเอง', summary.counter);
+  check('⭐ ติ๊กแล้วตัวเลขบนหัวแถวขยับทันที', /ติ๊ก 4\/15/.test(summary.afterTick), summary.afterTick);
+
+  console.log('\n[9c] ช่องค้นหา');
+  const search = await page.evaluate((seed) => {
+    eval(seed);
+    const box = document.getElementById('userSearch');
+    const shown = function () {
+      return Array.prototype.filter.call(
+        document.querySelectorAll('#userList [data-user]'), function (r) { return !r.hidden; })
+        .map(function (r) { return r.getAttribute('data-user'); });
+    };
+    const out = { all: shown().length };
+    box.value = 'สมหญิง'; box.oninput();      out.byName = shown();
+    box.value = 'gift@';  box.oninput();      out.byMail = shown();
+    box.value = 'ดูอย่างเดียว'; box.oninput(); out.byRole = shown();
+    box.value = 'ไม่มีคนนี้'; box.oninput();
+    out.none = shown();
+    out.emptyShown = !document.getElementById('userEmpty').hidden;
+    out.emptyText = document.getElementById('userEmpty').textContent;
+    box.value = ''; box.oninput();
+    out.back = shown().length;
+    out.emptyHidden = document.getElementById('userEmpty').hidden;
+    return out;
+  }, SEED_USERS);
+  check('เริ่มต้นเห็นครบ 5 คน', search.all === 5, search.all);
+  check('ค้นด้วยชื่อ', search.byName.join(',') === 'U2', search.byName);
+  check('ค้นด้วยอีเมล', search.byMail.join(',') === 'U3', search.byMail);
+  check('ค้นด้วยชื่อสิทธิ์ภาษาไทย', search.byRole.join(',') === 'U4', search.byRole);
+  check('ไม่เจอ = ไม่เหลือแถว', search.none.length === 0, search.none);
+  check('ขึ้นข้อความ "ไม่พบผู้ใช้"', search.emptyShown && /ไม่พบผู้ใช้/.test(search.emptyText),
+        search.emptyText);
+  check('ล้างคำค้นแล้วกลับมาครบ', search.back === 5, search.back);
+  check('ข้อความไม่พบหายไปด้วย', search.emptyHidden === true, search.emptyHidden);
+
+  console.log('\n[9d] ชิปกรองสิทธิ์ + ทำงานร่วมกับช่องค้นหา (AND)');
+  const chips = await page.evaluate((seed) => {
+    eval(seed);
+    const shown = function () {
+      return Array.prototype.filter.call(
+        document.querySelectorAll('#userList [data-user]'), function (r) { return !r.hidden; })
+        .map(function (r) { return r.getAttribute('data-user'); });
+    };
+    const labels = Array.prototype.map.call(
+      document.querySelectorAll('[data-userchip]'), function (b) { return b.textContent; });
+    const out = { labels: labels,
+                  keys: Array.prototype.map.call(document.querySelectorAll('[data-userchip]'),
+                          function (b) { return b.getAttribute('data-userchip'); }) };
+    document.querySelector('[data-userchip="counter"]').click();
+    out.counter = shown();
+    out.onClass = document.querySelector('[data-userchip="counter"]').className;
+    document.querySelector('[data-userchip="all"]').click();
+    out.all = shown();
+    /* AND: ชิป scanner + คำค้นที่ตรงกับ counter ต้องไม่เหลืออะไรเลย */
+    document.querySelector('[data-userchip="scanner"]').click();
+    const box = document.getElementById('userSearch');
+    box.value = 'สมหญิง'; box.oninput();
+    out.andNone = shown();
+    box.value = 'กิ๊ฟ'; box.oninput();
+    out.andHit = shown();
+    return out;
+  }, SEED_USERS);
+  check('มีชิปครบ 6 อัน (ทั้งหมด + 5 สิทธิ์)',
+        chips.keys.join(',') === 'all,admin,counter,scanner,viewer,custom', chips.keys);
+  check('ชิปบอกจำนวนต่อกลุ่ม', /ทั้งหมด 5/.test(chips.labels[0]) && /1$/.test(chips.labels[1]),
+        chips.labels);
+  check('โชว์กลุ่มที่ไม่มีใครด้วย (เป็นข้อมูลเหมือนกัน)', chips.labels.length === 6, chips.labels);
+  check('กดชิป counter เหลือเฉพาะ counter', chips.counter.join(',') === 'U2', chips.counter);
+  check('ชิปที่เลือกมีสถานะ on', chips.onClass === 'on', chips.onClass);
+  check('กดทั้งหมดกลับมาครบ', chips.all.length === 5, chips.all);
+  check('⭐ ชิป + ค้นหาเป็น AND — ไม่ตรงทั้งคู่ = ว่าง', chips.andNone.length === 0, chips.andNone);
+  check('⭐ ตรงทั้งคู่ = เจอ', chips.andHit.join(',') === 'U3', chips.andHit);
+
+  console.log('\n[9e] ของเดิมต้องไม่หาย');
+  const keep = await page.evaluate((seed) => {
+    eval(seed);
+    const out = {
+      newUser: !!document.getElementById('btnNewUser'),
+      linkUser: !!document.getElementById('btnLinkUser'),
+      linkUid: !!document.getElementById('linkUserUid'),
+      reset: document.querySelectorAll('#userList [data-action="reset"]').length,
+      active: document.querySelectorAll('#userList [data-action="active"]').length,
+      branch: document.querySelectorAll('#userList [data-branchlist]').length,
+      roleSel: document.querySelectorAll('#userList [data-action="role"]').length
+    };
+    /* gate admin-only ต้องยังอยู่ — ไม่ใช่ admin แล้วต้องไม่วาดอะไรเลย */
+    document.getElementById('userList').innerHTML = '<i id="untouched"></i>';
+    window.__seedRole('counter');
+    renderUsers();
+    out.blocked = !!document.getElementById('untouched');
+    return out;
+  }, SEED_USERS);
+  check('ปุ่มสร้างบัญชียังอยู่ที่เดิม', keep.newUser === true, keep);
+  check('ช่องเพิ่มด้วย UID ยังอยู่', keep.linkUser && keep.linkUid, keep);
+  check('ปุ่มรีเซ็ตรหัสผ่านครบทุกคน', keep.reset === 5, keep);
+  check('ปุ่มปิด/เปิดบัญชีครบ (ยกเว้นตัวเอง)', keep.active === 4, keep);
+  check('กล่องสาขาที่ดูแลยังอยู่ครบ', keep.branch === 5, keep);
+  check('ดรอปดาวน์สิทธิ์ยังอยู่ครบ', keep.roleSel === 5, keep);
+  check('⭐ gate admin-only ยังกันอยู่ (ไม่ใช่ admin = ไม่วาดเลย)', keep.blocked === true, keep);
+
   check('ไม่มี error ในคอนโซล', errors.length === 0, errors.slice(0, 3));
 
   console.log('\n==== ' + pass + ' passed, ' + fail + ' failed ====');
