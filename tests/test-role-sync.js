@@ -316,13 +316,13 @@ const HARNESS = `
   check('ปิดรอบมีด่านบังคับเช็คสด',
         /function closeRound\(\)[\s\S]{0,500}ensureRoleFresh\(\{ force: true \}\)/.test(src), 'closeRound');
   check('ปิดรอบตรวจสิทธิ์ซ้ำหลังได้ผลสด',
-        /ensureRoleFresh\(\{ force: true \}\)[\s\S]{0,160}requireStaff\('ปิด Job ไม่ได้'\)/.test(src),
+        /ensureRoleFresh\(\{ force: true \}\)[\s\S]{0,160}requirePerm\('closeJob', 'ปิด Job ไม่ได้'\)/.test(src),
         'closeRound recheck');
   check('แก้สิทธิ์ผู้ใช้มีด่านบังคับเช็คสด',
         /function saveUserField\([\s\S]{0,600}ensureRoleFresh\(\{ force: true \}\)/.test(src), 'saveUserField');
-  check('requireAdmin/requireStaff กระทุ้งตรวจเบื้องหลัง',
+  check('requireAdmin/requirePerm กระทุ้งตรวจเบื้องหลัง',
         /function requireAdmin\(what\) \{\s*touchRoleCheck\(\);/.test(src) &&
-        /function requireStaff\(what\) \{\s*touchRoleCheck\(\);/.test(src), 'guards');
+        /function requirePerm\(cap, what\) \{\s*touchRoleCheck\(\);/.test(src), 'guards');
 
   console.log('\n[3b] guard ปกติต้องไม่หน่วงจอ (ยังคืนค่าทันที ไม่ใช่ promise)');
   const sync = await page.evaluate(() => {

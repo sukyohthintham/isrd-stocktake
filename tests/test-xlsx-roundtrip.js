@@ -22,6 +22,7 @@ function check(name, ok, got) {
     window.__patches = [];
     window.db.update = function (p, patch) { window.__patches.push(patch); return Promise.resolve(); };
     window.requireAdmin = function () { return true; };
+    window.requirePerm = function () { return true; };
     window.ask = function () { return Promise.resolve(true); };
     window.toast = function () {};
 

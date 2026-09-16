@@ -27,6 +27,7 @@ function check(name, ok, got) {
       return Promise.resolve();
     };
     window.requireAdmin = function () { return true; };
+    window.requirePerm = function () { return true; };
     window.ask = function (title, body, okLabel) {
       window.__asks.push({ title: title, body: body, ok: okLabel });
       return Promise.resolve(true);
@@ -267,23 +268,30 @@ function check(name, ok, got) {
   console.log('\n[8] ล็อกปุ่มตามสิทธิ์');
   const r8 = await page.evaluate(() => {
     const out = {};
-    const realIsAdmin = window.isAdmin;
+    const realMe = state.me;
     state.products = {};
-    window.isAdmin = function () { return false; };
+    /* counter ไม่มีความสามารถ editMaster ตามแม่แบบ ปุ่มต้องถูกล็อก */
+    state.me = { uid: 'u1', email: 'a@b.c', name: 'ทดสอบ', role: 'counter', branches: [] };
     renderMaster();
     out.lockedNote = document.getElementById('btnImportNote').disabled;
     out.lockedType = document.getElementById('btnImportType').disabled;
     out.templateFree = document.getElementById('btnTypeTemplate').disabled;
-    window.isAdmin = function () { return true; };
+    /* ⭐ v2.12.0 — ไม่ต้องเป็น admin แล้ว ติ๊ก editMaster ให้ก็พอ */
+    state.me = { uid: 'u2', email: 'c@d.e', name: 'ทดสอบ2', role: 'custom',
+                 branches: [], perms: { editMaster: true } };
     renderMaster();
     out.openType = document.getElementById('btnImportType').disabled;
-    window.isAdmin = realIsAdmin;
+    state.me = { uid: 'u3', email: 'e@f.g', name: 'ทดสอบ3', role: 'admin', branches: [] };
+    renderMaster();
+    out.openAdmin = document.getElementById('btnImportType').disabled;
+    state.me = realMe;
     return out;
   });
   check('ไม่ใช่ admin → ปุ่มเปลี่ยนประเภทถูกล็อก', r8.lockedType === true, r8.lockedType);
   check('ล็อกพร้อมกับปุ่ม Note', r8.lockedNote === true, r8.lockedNote);
   check('ปุ่มโหลด Template ไม่ล็อก', r8.templateFree === false, r8.templateFree);
-  check('admin → ปุ่มปลดล็อก', r8.openType === false, r8.openType);
+  check('⭐ ติ๊ก editMaster ให้ (ไม่ต้องเป็น admin) → ปุ่มปลดล็อก', r8.openType === false, r8.openType);
+  check('admin → ปุ่มปลดล็อกเหมือนเดิม', r8.openAdmin === false, r8.openAdmin);
 
   console.log('\n--- console/page errors ---');
   console.log(errors.slice(0, 10).join('\n') || '(none)');

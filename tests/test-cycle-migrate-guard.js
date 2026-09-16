@@ -281,9 +281,11 @@ const HARNESS = `
         /if \(!canMigrateCycle\(cid\)\) \{ report\.skipped\.push/.test(src), 'filter');
   check('ด่านเปลี่ยนชื่อรหัสรอบอยู่ก่อน push เข้าคิวเขียน',
         /if \(!canRenameRoundCycle\(job\)\) return;[\s\S]{0,80}renames\.push/.test(src), 'rename guard');
-  check('Job ที่ปิดแล้วให้เฉพาะ admin (ตรงกับ Rules)',
-        /function canRenameRoundCycle\(job\)[\s\S]{0,180}!== 'closed' \|\| isAdmin\(\)/.test(src),
-        'admin only');
+  /* v2.12.0 — ด่านนี้ผูกกับความสามารถ reopenRound แทนการเช็ค role ตรง ๆ
+     ความหมายเท่าเดิม: แม่แบบให้ reopenRound เฉพาะ admin เท่านั้น */
+  check('Job ที่ปิดแล้วให้เฉพาะคนที่เปิดรอบได้ (ตรงกับ Rules)',
+        /function canRenameRoundCycle\(job\)[\s\S]{0,180}!== 'closed' \|\| hasPerm\('reopenRound'\)/.test(src),
+        'reopenRound only');
 
   /* ---------- [9] ไม่กระทบของเดิม ---------- */
   console.log('\n[9] ไม่แตะงานอื่น');

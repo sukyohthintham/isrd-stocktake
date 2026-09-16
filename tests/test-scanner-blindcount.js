@@ -4,8 +4,10 @@
 
    ทำไมต้องมี: ถ้า scanner เห็น "ยอดระบบ" ตอนยิง จะเกิดแรงจูงใจให้ยิงให้ครบ
    ตามที่ระบบบอก แทนที่จะนับของที่มีอยู่จริง — ผลต่างหายไปทั้งที่ของขาดจริง
-   ปิดเฉพาะ scanner เท่านั้น · counter/admin/viewer ต้องเห็นครบเหมือนเดิม
-   เพราะเป็นคนที่ต้องกระทบยอดหน้างาน
+   v2.12.0 — ย้ายจาก "เช็ค role = scanner" มาเป็นความสามารถ seeSystemQty
+   แม่แบบให้ admin/counter ติ๊กไว้ · scanner ไม่ติ๊ก (blind) · viewer ไม่ติ๊ก
+   viewer ไม่กระทบของจริง เพราะเข้าหน้ายิงไม่ได้อยู่แล้ว (PAGE_ROLES.scan = perm scan)
+   ข้อดีคือตอนนี้เปิดให้ scanner คนไหนเห็นยอดระบบได้เป็นราย ๆ โดยไม่ต้องเลื่อนเป็น counter
 
    กันอะไร:
    [1] scanner → กล่อง "ยอดระบบ" บนการ์ดสินค้าถูกซ่อน
@@ -144,9 +146,9 @@ const HARNESS = `
   check('ไม่มีเลข 3 (จำนวน SKU ทั้งรอบ) โผล่', scSku.value.indexOf('3') < 0, scSku);
   check('ยังบอกจำนวนที่ตัวเองยิงได้ (1 SKU)', scSku.value === '1', scSku);
 
-  /* ---------- [3] role อื่นต้องเห็นครบเหมือนเดิม ---------- */
-  console.log('\n[3] counter / admin / viewer — เห็นครบเหมือนเดิม');
-  for (const role of ['counter', 'admin', 'viewer']) {
+  /* ---------- [3] คนที่ติ๊ก seeSystemQty ไว้ต้องเห็นครบเหมือนเดิม ---------- */
+  console.log('\n[3] counter / admin — เห็นครบเหมือนเดิม');
+  for (const role of ['counter', 'admin']) {
     const v = await page.evaluate(r => {
       window.__seed(r);
       showScanHit('A1');
@@ -202,14 +204,26 @@ const HARNESS = `
   check('ช่องอื่นกดไม่ได้', others.every(c => c.clickable === false), others.map(c => c.label));
   check('ช่องอื่นไม่มีไอคอน ⓘ ติดมา', others.every(c => !/ⓘ/.test(c.label)), others.map(c => c.label));
 
-  /* ---------- [5] ปิดเฉพาะ scanner จริง ๆ ---------- */
-  console.log('\n[5] ต้องผูกกับ isScannerOnly() ไม่ใช่เขียนเงื่อนไข role ซ้ำเอง');
+  /* ---------- [5] ต้องผูกกับ hasPerm('seeSystemQty') ที่เดียว ---------- */
+  console.log('\n[5] ต้องผูกกับ hasPerm(seeSystemQty) ไม่ใช่เขียนเงื่อนไข role ซ้ำเอง');
   const src = require('fs').readFileSync(require('./_env').APP_FILE, 'utf8');
-  check('ซ่อนกล่องยอดระบบด้วย isScannerOnly()',
-        (src.match(/slSysBox'\)\.style\.display = isScannerOnly\(\)/g) || []).length === 2,
+  check('ซ่อนกล่องยอดระบบด้วย hasPerm(seeSystemQty)',
+        (src.match(/slSysBox'\)\.style\.display = hasPerm\('seeSystemQty'\)/g) || []).length === 2,
         'slSysBox x2');
-  check('บรรทัด SKU ใช้ isScannerOnly()',
-        /var skuCell = isScannerOnly\(\)/.test(src), 'skuCell');
+  check('บรรทัด SKU ใช้ hasPerm(seeSystemQty)',
+        /var skuCell = !hasPerm\('seeSystemQty'\)/.test(src), 'skuCell');
+  check('ไม่มีใครเขียนเงื่อนไข role = scanner ซ้ำเองนอก hasPerm',
+        !/isScannerOnly\(\)/.test(src.replace(/\/\*[\s\S]*?\*\//g, '')), 'no isScannerOnly');
+
+  /* viewer ไม่ได้ติ๊ก seeSystemQty แล้ว แต่ต้องพิสูจน์ว่าเข้าหน้ายิงไม่ได้อยู่ดี
+     ไม่งั้นการถอด viewer ออกจากข้อ [3] จะกลายเป็นการลดสิทธิ์ที่มีคนเห็นจริง */
+  const vw = await page.evaluate(() => {
+    window.__seed('viewer');
+    return { see: hasPerm('seeSystemQty'), scanPage: canSeePage('scan'), doc: hasPerm('docs') };
+  });
+  check('viewer ไม่มี seeSystemQty', vw.see === false, vw);
+  check('viewer เข้าหน้ายิงไม่ได้อยู่แล้ว จึงไม่กระทบของจริง', vw.scanPage === false, vw);
+  check('viewer ยังเปิดเอกสารได้เหมือนเดิม', vw.doc === true, vw);
 
   check('ไม่มี error ในคอนโซล', errors.length === 0, errors.slice(0, 3));
 

@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.11.1">
+<meta name="version" content="2.12.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.11.1</title>
+<title>ISRD Stocktake v2.12.0</title>
 
 <style>
 :root{
@@ -1725,7 +1725,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.11.1';
+var APP_VERSION = '2.12.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -3202,7 +3202,7 @@ function canMigrateCycle(cid) { return cycleStatus(cid) === 'counting'; }
 
 /* Job ที่ปิดแล้ว Rules เปิดให้เฉพาะ admin เขียน — counter ยิงไปก็ได้ 401 เปล่า ๆ */
 function canRenameRoundCycle(job) {
-  return ((job || {}).status || 'counting') !== 'closed' || isAdmin();
+  return ((job || {}).status || 'counting') !== 'closed' || hasPerm('reopenRound');
 }
 
 /* ข้อ F3 — รอบที่ยัง "กำลังนับ" ของสาขานี้ มีให้เข้าร่วมไหม
@@ -4572,10 +4572,18 @@ function jobStatus() {
   var j = currentJob();
   return (j && j.status) || 'counting';
 }
-/* ---------- สิทธิ์ตามบทบาท ----------
-   admin    ทำได้ทุกอย่าง เปิด Job ที่ปิดแล้ว แก้ Master ลบข้อมูล จัดการผู้ใช้
-   counter  ยิง กรอกมือ สร้าง/ปิด Job ออกเอกสาร — แต่แก้ Master ไม่ได้
-   viewer   ดูและพิมพ์เอกสารอย่างเดียว
+/* ---------- สิทธิ์แบบ "ติ๊กความสามารถ" (capability) — v2.12.0 ----------
+
+   เดิมสิทธิ์เป็น role ตายตัว 4 ค่า ปัญหาคือจะให้ใครอัปโหลด Location สักคน
+   ต้องตั้งเป็น admin เต็มใบ ซึ่งพ่วงลบ Job · จัดการผู้ใช้ · ล้างยอด ไปให้ทั้งชุด
+   ตอนนี้สิทธิ์จริงอยู่ที่ users/<uid>/perms (เก็บเฉพาะช่องที่เปิด)
+   role เหลือหน้าที่เป็นแม่แบบและป้ายชื่อ ไว้ติ๊กทีเดียวแล้วค่อยแก้รายช่องทีหลัง
+
+   ผู้ใช้เดิมที่ยังไม่มี perms ในฐาน = แปลงสดจาก role ด้วย permsFromRole()
+   จึงไม่ต้องไล่เขียน perms ให้คนเดิมก่อน และไม่มีใครเสียหรือได้สิทธิ์เพิ่มโดยไม่ตั้งใจ
+
+   manageUsers ตั้งใจไม่ทำเป็นช่องติ๊ก — ใครแก้ทะเบียนผู้ใช้ได้ ก็ติ๊กทุกช่องให้ตัวเองได้
+   มันจึงเท่ากับ admin อยู่ดี การมีช่องให้ติ๊กจะหลอกตาว่าเป็นสิทธิ์ย่อยที่ปลอดภัยกว่า
 
    ตรงนี้เป็นแค่การซ่อนปุ่มให้ใช้งานง่าย ของจริงบังคับที่ Database Rules
    ฝั่งเซิร์ฟเวอร์ ใครแก้ JavaScript ในเบราว์เซอร์ก็ยังเขียนไม่ผ่านอยู่ดี */
@@ -4583,43 +4591,143 @@ var ROLE_LABEL = {
   admin:   'ผู้ดูแลระบบ',
   counter: 'ผู้นับสต๊อก',
   scanner: 'พนักงานยิงอย่างเดียว',
-  viewer:  'ดูอย่างเดียว'
+  viewer:  'ดูอย่างเดียว',
+  custom:  'กำหนดเอง'
 };
 var ROLE_HELP = {
   admin:   'ทำได้ทุกอย่าง รวมถึงแก้ Master และจัดการผู้ใช้',
   counter: 'ยิงบาร์โค้ด สร้างและปิด Job ออกเอกสาร · ดู Master/Location ได้แต่แก้ไม่ได้',
   scanner: 'เห็นแค่หน้ายิง ยิงและใส่หมายเหตุได้ทุก Job ที่กำลังนับ',
-  viewer:  'เห็นรายการ Job และดู/พิมพ์เอกสารเท่านั้น'
+  viewer:  'เห็นรายการ Job และดู/พิมพ์เอกสารเท่านั้น',
+  custom:  'ติ๊กความสามารถเองทีละข้อ — ดูรายการที่เปิดไว้ในหน้าผู้ใช้'
 };
+
+/* 15 ช่องที่ติ๊กได้ แบ่ง 4 กลุ่มตามงานที่ทีมคลังเข้าใจ ไม่ได้แบ่งตามโครงฐานข้อมูล
+   ลำดับในนี้คือลำดับที่โชว์บนจอด้วย แก้ที่เดียวแล้วทั้งแอปตามหมด */
+var CAP_GROUPS = [
+  { label: 'งานนับ', caps: [
+    { key: 'scan',         label: 'ยิงบาร์โค้ด',           help: 'ยิงและใส่หมายเหตุใน Job ที่กำลังนับ' },
+    { key: 'seeSystemQty', label: 'เห็นยอดระบบตอนยิง',      help: 'ไม่ติ๊ก = นับแบบไม่เห็นเฉลย กันยิงให้ครบตามที่ระบบบอก' },
+    { key: 'createJob',    label: 'สร้าง Job',             help: 'เปิดรอบนับใหม่ของสาขา' },
+    { key: 'closeJob',     label: 'ส่งตรวจสอบ / ปิด Job',   help: 'เปลี่ยนสถานะรอบนับ' }
+  ] },
+  { label: 'จัดการข้อมูล', caps: [
+    { key: 'editMaster',   label: 'แก้ / อัปโหลด Master',   help: 'ทะเบียนสินค้า รูป Note ประเภท ค่า Status ประเภทคลัง' },
+    { key: 'editLocation', label: 'แก้ / อัปโหลด Location', help: 'รวมทะเบียนคลัง/สาขา' },
+    { key: 'importSysQty', label: 'นำเข้ายอดระบบ',          help: 'ไฟล์ยอดจาก Zort เข้ารอบนับ' },
+    { key: 'adjustCount',  label: 'แก้ยอดที่นับไปแล้ว',      help: 'เอาของออก ลบบาร์โค้ดขยะ นำเข้ายอดนับ กรอกจำนวนเอง' }
+  ] },
+  { label: 'ดู / เอกสาร', caps: [
+    { key: 'viewSummary',   label: 'หน้าสรุป / ภาพรวมผลต่าง', help: 'เห็นตัวเลขขาด-เกินรายตัวและดาวน์โหลด Excel' },
+    { key: 'docs',          label: 'ดู + พิมพ์เอกสาร',        help: 'เปิดและสั่งพิมพ์อย่างเดียว' },
+    { key: 'editDoc',       label: 'แก้หมายเหตุ / ออกเลขที่',  help: 'พิมพ์เหตุผลผลต่างและจองเลขที่เอกสาร' },
+    { key: 'viewMasterLoc', label: 'ดู Master / Location',    help: 'ค้นหาได้ แต่ไม่มีช่องกรอกให้' }
+  ] },
+  { label: 'ผู้ดูแล', caps: [
+    { key: 'deleteJob',   label: 'ลบ Job',              help: 'ใช้ตอนสร้าง Job ผิดเท่านั้น' },
+    { key: 'reopenRound', label: 'เปิดรอบที่ปิดแล้ว',     help: 'รวมถึงแก้ข้อมูลของรอบที่ปิดไปแล้ว' },
+    { key: 'purgeUser',   label: 'ล้างยอดของผู้ใช้ในรอบ',  help: 'ลบแถวการนับถาวร เก็บสำเนาไว้ที่ purgeLog' }
+  ] }
+];
+
+var CAPS = [];                 // รายชื่อ cap ที่ติ๊กได้ เรียงตามลำดับบนจอ
+var CAP_LABEL = {};            // cap -> ชื่อไทย ใช้ตอนบอกว่าสิทธิ์ไหนหายไป
+CAP_GROUPS.forEach(function (g) {
+  g.caps.forEach(function (c) { CAPS.push(c.key); CAP_LABEL[c.key] = c.label; });
+});
+
+/* แม่แบบ — เลือก role แล้วติ๊กให้ตามนี้ทันที
+   ค่าพวกนี้ตั้งให้ "ตรงกับพฤติกรรมจริงก่อน v2.12.0 เป๊ะ" ไม่ใช่ตรงตามตารางในเอกสาร
+   โดยเฉพาะ viewer ที่ของจริงเห็นแค่เอกสาร (v2.9.0 กันออกจากหน้าสรุปและ Master ไปแล้ว)
+   ถ้าตั้งตามตารางจะกลายเป็นคนเดิมได้สิทธิ์เพิ่มโดยไม่มีใครสั่ง */
+var ROLE_PERMS = {
+  admin:   CAPS.slice(),
+  counter: ['scan', 'seeSystemQty', 'createJob', 'closeJob', 'importSysQty',
+            'viewSummary', 'docs', 'viewMasterLoc', 'editDoc', 'adjustCount'],
+  scanner: ['scan'],
+  viewer:  ['docs'],
+  custom:  []
+};
+
+/* role -> ชุด perms ตามแม่แบบ · role ที่ไม่รู้จักถือเป็น counter (ตรงกับ setMe) */
+function permsFromRole(role) {
+  var list = ROLE_PERMS[role] || ROLE_PERMS.counter;
+  var out = {};
+  list.forEach(function (c) { out[c] = true; });
+  return out;
+}
+
+/* กรองให้เหลือเฉพาะ cap ที่รู้จักและเป็น true จริง ๆ
+   ค่าจากฐานอาจมีคีย์แปลกปลอมหรือค่า 'true' ที่เป็นสตริง ห้ามเชื่อดิบ ๆ */
+function normPerms(raw) {
+  var out = {};
+  if (raw && typeof raw === 'object') {
+    CAPS.forEach(function (c) { if (raw[c] === true) out[c] = true; });
+  }
+  return out;
+}
+
+/* ลายเซ็นของชุดสิทธิ์ — ใช้เทียบว่าสิทธิ์เปลี่ยนไหมตอนซิงก์สด (ดู applyRoleChange) */
+function permsSig(p) {
+  return CAPS.filter(function (c) { return p && p[c] === true; }).join(',');
+}
 
 function myRole() { return (state.me && state.me.role) || null; }
 function isAdmin() { return myRole() === 'admin'; }
-/* isStaff = จัดการ Job ได้ (สร้าง ปิด นำเข้าไฟล์ ออกเอกสาร) — scanner ทำไม่ได้ */
-function isStaff() { return myRole() === 'admin' || myRole() === 'counter'; }
-/* ยิงบาร์โค้ดได้ — scanner ทำได้อย่างเดียวเรื่องนี้ */
-function canScanRole() { return isStaff() || myRole() === 'scanner'; }
-function isScannerOnly() { return myRole() === 'scanner'; }
-/* ดูอย่างเดียว — เห็นได้แค่ "รายการ Job + เอกสาร" ยิงไม่ได้ แก้ไม่ได้ (v2.9.0) */
-function isViewer() { return myRole() === 'viewer'; }
 
-/* ออกเอกสารได้ = admin · counter (ตามหน้าที่) และ viewer (ดู + สั่งพิมพ์อย่างเดียว)
-   scanner ไม่ได้ เพราะเอกสารมีตัวเลขผลต่างรายตัวทั้งใบซึ่ง scanner ไม่ควรเห็น
-   viewer เปิดดูและพิมพ์ได้ แต่แก้หมายเหตุ/ยอดไม่ได้ — ตัวบล็อกอยู่ที่ canEdit() */
-function canSeeDoc() { return isStaff() || isViewer(); }
+/* สิทธิ์ที่ใช้อยู่จริงของคนที่ล็อกอิน — perms ว่างแปลว่าเป็นผู้ใช้เดิมก่อน v2.12.0
+   จึงแปลงสดจาก role ให้ พฤติกรรมเลยเท่าเดิมเป๊ะโดยไม่ต้อง migrate ฐาน */
+function myPerms() {
+  if (!state.me) return {};
+  var p = state.me.perms;
+  if (p && Object.keys(p).length) return p;
+  return permsFromRole(myRole());
+}
+
+/* ⭐ ด่านเดียวของทั้งแอป — ห้ามเขียนเงื่อนไข role ตรง ๆ ที่อื่นอีก
+   admin ผ่านทุกข้อเสมอ ให้ตรงกับ Rules ที่เขียนว่า role==='admin' || perms/<cap>
+   ถ้าตรงนี้ไม่ลัดให้ admin จะเกิดเคส "จอไม่ให้กด แต่ฐานยอม" ซึ่งหาสาเหตุยาก */
+function hasPerm(cap) {
+  if (!state.me) return false;
+  /* manageUsers ไม่ใช่ช่องติ๊ก — เป็นของ admin เท่านั้นตลอดไป (ดูเหตุผลข้างบน) */
+  if (cap === 'manageUsers') return isAdmin();
+  if (isAdmin()) return true;
+  return myPerms()[cap] === true;
+}
+
+/* ยิงบาร์โค้ดได้ไหม — คงชื่อเดิมไว้เพราะมีที่เรียกทั่วแอป ข้างในชี้ไป hasPerm แล้ว */
+function canScanRole() { return hasPerm('scan'); }
+
+/* ออกเอกสารได้ = ดูและสั่งพิมพ์ ไม่รวมแก้หมายเหตุหรือออกเลขที่ (นั่นคือ editDoc) */
+function canSeeDoc() { return hasPerm('docs'); }
+
+/* หน้า Master เปิดให้ทุกคนที่มีธุระกับข้อมูลกลาง ไม่ใช่แค่คนที่ "ดูได้"
+   ถ้าเช็คแค่ viewMasterLoc คนที่ติ๊กมาเฉพาะ editLocation จะเข้าหน้าไม่ได้เลย
+   แล้วอัปโหลด Location ไม่ได้ทั้งที่ติ๊กให้แล้ว — แท็บย่อยเช็คสิทธิ์ของตัวเองอีกชั้น */
+function canSeeMasterPage() {
+  return hasPerm('viewMasterLoc') || hasPerm('editMaster') || hasPerm('editLocation') || isAdmin();
+}
 
 /* หน้าแรกที่สิทธิ์นี้เข้าได้จริง — ใช้ตอนถูกเด้งออกจากหน้าที่ไม่มีสิทธิ์
-   ห้าม hardcode 'summary' เป็นตัวสำรองเหมือนก่อน v2.9.0 เพราะ viewer เข้า summary
-   ไม่ได้แล้ว การเด้งไปหน้าที่ไม่มีสิทธิ์ซ้ำอีกจะกลายเป็นวนไม่จบ */
+   ห้าม hardcode หน้าใดหน้าหนึ่งเป็นตัวสำรอง เพราะทุกหน้ามีสิทธิ์กำกับหมดแล้ว
+   การเด้งไปหน้าที่ไม่มีสิทธิ์ซ้ำอีกจะกลายเป็นวนไม่จบ (เคยเกิดตอน v2.9.0) */
 function firstAllowedPage() {
-  if (canScanRole()) return 'scan';
-  if (isStaff()) return 'summary';
-  if (isViewer() && state.roundId) return 'doc';
+  if (hasPerm('scan')) return 'scan';
+  if (hasPerm('viewSummary')) return 'summary';
+  if (hasPerm('docs') && state.roundId) return 'doc';
+  if (canSeeMasterPage()) return 'master';
   return 'jobs';                       // รายการ Job เปิดให้ทุกสิทธิ์อยู่แล้ว
 }
 
 /* ข้อความบอกว่าทำไมทำไม่ได้ — ต้องบอกสาเหตุจริง ไม่ใช่ "ไม่มีสิทธิ์" ลอย ๆ */
 function roleBlockMessage(what) {
   if (!state.me) return 'ยังไม่ได้เข้าสู่ระบบ';
+  /* custom ไม่มีชื่อสิทธิ์ที่สื่อความหมาย บอกว่ายังไม่ได้เปิดช่องนี้ให้ตรงกว่า
+     ไม่งั้นคนอ่านจะเจอ บัญชีนี้เป็นสิทธิ์ "กำหนดเอง" ซึ่งไม่ช่วยให้รู้ว่าต้องขออะไร */
+  if (myRole() === 'custom') {
+    return 'บัญชีนี้ยังไม่ได้เปิดความสามารถนี้ให้ ' + (what || 'ทำรายการนี้ไม่ได้') +
+           ' — ให้ผู้ดูแลระบบติ๊กเพิ่มให้ก่อน';
+  }
   return 'บัญชีนี้เป็นสิทธิ์ "' + (ROLE_LABEL[myRole()] || myRole()) + '" ' +
          (what || 'ทำรายการนี้ไม่ได้') + ' — ให้ผู้ดูแลระบบเปลี่ยนสิทธิ์ให้ก่อน';
 }
@@ -4630,12 +4738,15 @@ function roleBlockMessage(what) {
    งานที่ทำลายของจะมีด่านบังคับรอผลแยกอีกชั้น (ดู ensureRoleFresh({ force: true })) */
 function touchRoleCheck() { ensureRoleFresh(); }
 
-function requireStaff(what) {
+/* ⭐ ด่านชั้นฟังก์ชัน — ใช้คู่กับการซ่อนปุ่มเสมอ (defense-in-depth ตามกฎบ้าน)
+   ซ่อนปุ่มกันมือได้ แต่กันคนแก้ DOM หรือเรียกจาก Console ไม่ได้ */
+function requirePerm(cap, what) {
   touchRoleCheck();
-  if (isStaff()) return true;
+  if (hasPerm(cap)) return true;
   toast(roleBlockMessage(what), true);
   return false;
 }
+/* เหลือไว้เฉพาะงานจัดการผู้ใช้ ซึ่งเป็นของ admin เท่านั้นและไม่มีช่องติ๊ก */
 function requireAdmin(what) {
   touchRoleCheck();
   if (isAdmin()) return true;
@@ -4643,11 +4754,26 @@ function requireAdmin(what) {
   return false;
 }
 
-function canScan() { return !!state.roundId && jobStatus() === 'counting' && canScanRole(); }
-function canEdit() { return !!state.roundId && jobStatus() !== 'closed' && isStaff(); }
+function canScan() { return !!state.roundId && jobStatus() === 'counting' && hasPerm('scan'); }
+
+/* รอบนี้ยังแก้ข้อมูลได้ไหม — เรื่องสถานะรอบล้วน ไม่เกี่ยวกับสิทธิ์
+   แยกออกมาเพราะที่เรียกแต่ละแห่งใช้ cap คนละตัว (editDoc / editMaster) */
+function roundEditable() { return !!state.roundId && jobStatus() !== 'closed'; }
+
+/* แก้หมายเหตุและออกเลขที่เอกสาร — viewer เปิดดูเอกสารได้แต่ต้องแก้ไม่ได้
+   ตัวบล็อกจึงอยู่ที่ editDoc ไม่ใช่ docs */
+function canEdit() { return roundEditable() && hasPerm('editDoc'); }
+
+/* บอกเหตุผลให้ตรงตัว — "ไม่มีสิทธิ์" กับ "รอบปิดแล้ว" เป็นคนละเรื่องและแก้คนละทาง
+   ถ้าใช้ blockedMessage() ลอย ๆ คนที่แค่ยังไม่ได้ติ๊ก editDoc จะได้ข้อความเรื่องสถานะรอบ
+   แล้วไปงมหาว่ารอบผิดตรงไหน ทั้งที่ต้องไปขอให้แอดมินติ๊กสิทธิ์ให้ */
+function docEditBlocked() {
+  return hasPerm('editDoc') ? blockedMessage()
+                            : roleBlockMessage('แก้หมายเหตุหรือออกเลขที่เอกสารไม่ได้');
+}
 
 function blockedMessage() {
-  if (!canScanRole()) return roleBlockMessage('ยิงบาร์โค้ดไม่ได้');
+  if (!hasPerm('scan')) return roleBlockMessage('ยิงบาร์โค้ดไม่ได้');
   return jobStatus() === 'closed'
     ? 'รอบนี้ปิดแล้ว แก้ไขไม่ได้'
     : 'รอบนี้อยู่ขั้นตรวจสอบ ยิงเพิ่มไม่ได้แล้ว';
@@ -4930,7 +5056,7 @@ function migrateRoundIfNeeded(roundId, data) {
    รันซ้ำได้ — ข้ามรอบที่มี info/schema แล้ว
    ============================================================ */
 function migrateCyclesIfNeeded() {
-  if (!isStaff()) return Promise.resolve(null);      // scanner/viewer เขียนไม่ได้อยู่แล้ว
+  if (!hasPerm('importSysQty')) return Promise.resolve(null);   // scanner/viewer เขียนไม่ได้อยู่แล้ว
 
   var groups = {};
   Object.keys(state.roundIndex).forEach(function (id) {
@@ -6175,7 +6301,7 @@ function showScanHit(key) {
      ถ้าเห็นยอดระบบตอนยิง จะเกิดแรงจูงใจให้ "ยิงให้ครบตามที่ระบบบอก" แทนที่จะนับของจริง
      ซึ่งทำให้ผลต่างหายไปทั้งที่ของขาดจริง — ปิดเฉพาะ scanner เท่านั้น
      counter/admin/viewer ยังเห็นครบเหมือนเดิม เพราะเป็นคนที่ต้องกระทบยอดหน้างาน */
-  $('slSysBox').style.display = isScannerOnly() ? 'none' : '';
+  $('slSysBox').style.display = hasPerm('seeSystemQty') ? '' : 'none';
   $('slQty').textContent = fmtNum(state.counts[key] || 0);
   $('slMeta').textContent = foreign
     ? 'สินค้านี้มีใน Master แต่ไม่อยู่ในยอดของสาขานี้ — บันทึกแล้ว ต้องตรวจว่ามาจากไหน'
@@ -6201,7 +6327,7 @@ function showScanNewCode(value, key) {
   renderZoneLock();
   $('slSys').textContent = '0';
   /* ต้องปิดที่นี่ด้วย — การ์ดถูกวาดสองทาง ถ้าใส่ที่เดียวจะรั่วตอนยิงบาร์โค้ดที่ไม่มีในระบบ */
-  $('slSysBox').style.display = isScannerOnly() ? 'none' : '';
+  $('slSysBox').style.display = hasPerm('seeSystemQty') ? '' : 'none';
   $('slQty').textContent = fmtNum(state.counts[key] || 0);
   $('slMeta').textContent = 'ยิงตัวถัดไปต่อได้เลย';
   showUnknownNote(value);
@@ -6248,7 +6374,7 @@ function renderLivePanel() {
   host.innerHTML = '';
   /* ⭐ v2.10.8 — scanner เห็นแค่ "ยิงไปกี่ SKU แล้ว" ไม่เห็นตัวหาร (ยอดรวมทั้งรอบ)
      ตัวหารคือเฉลยว่ารอบนี้มีของกี่ตัว ซึ่งเดาต่อได้ว่าเหลืออีกเท่าไหร่ต้องยิง */
-  var skuCell = isScannerOnly()
+  var skuCell = !hasPerm('seeSystemQty')
     ? fmtNum(skus)
     : (fmtNum(skus) + ' / ' + fmtNum(Object.keys(state.systemQty).length));
   [['ชิ้นที่ยิงได้', fmtNum(pieces)],
@@ -6636,7 +6762,7 @@ function renderManualResults() {
    ไม่ซ่อนช่องทิ้ง เพราะคนกรอกต้องเห็นว่ากำลังจะบันทึกกี่ชิ้น แค่แก้ไม่ได้เท่านั้น
    ตัวบังคับจริงอยู่ใน saveManual() อีกชั้น ซ่อน/ล็อกบนจออย่างเดียวไม่พอ */
 function applyManualQtyPermission() {
-  var staff = isStaff();
+  var staff = hasPerm('adjustCount');
   var qty = $('manualQty');
   qty.readOnly = !staff;
   qty.title = staff ? '' : roleBlockMessage('กรอกจำนวนเองไม่ได้');
@@ -6740,7 +6866,7 @@ function saveManual() {
   if (raw === '' || !isFinite(qty) || qty <= 0) { toast('ใส่จำนวนเป็นตัวเลขมากกว่า 0', true); return; }
   /* defense-in-depth — readOnly บนจอกันมือได้ แต่กันคนแก้ DOM หรือเรียกฟังก์ชันตรง ๆ ไม่ได้
      บัญชียิงอย่างเดียวบันทึกได้ครั้งละ 1 ชิ้นเสมอ ไม่ว่าช่องจะมีเลขอะไรอยู่ */
-  if (!isStaff() && qty !== 1) {
+  if (!hasPerm('adjustCount') && qty !== 1) {
     qty = 1;
     toast('บัญชีนี้กรอกได้ครั้งละ 1 ชิ้น — บันทึกให้ 1 ชิ้น', true);
   }
@@ -6852,7 +6978,7 @@ function parseScanImportFile(parsed) {
 /* Template หัวคอลัมน์เปล่า — ตั้งใจไม่เติมรายการสินค้าลงไป
    ไฟล์นี้คือ "ของที่นับเจอ" ถ้าใส่รายชื่อทั้งคลังไปให้ คนจะเผลอกรอกยอดลงแถวที่ไม่ได้ไปนับ */
 function downloadScanImportTemplate() {
-  if (!isStaff()) { toast(roleBlockMessage('ดาวน์โหลด Template ไม่ได้'), true); return; }
+  if (!hasPerm('adjustCount')) { toast(roleBlockMessage('ดาวน์โหลด Template ไม่ได้'), true); return; }
   var rows = [['รหัสสินค้า', 'จำนวน']];
   var blob = buildXlsx([{ name: 'นำเข้ายอดนับ', rows: rows, widths: [24, 14] }]);
   var a = document.createElement('a');
@@ -6875,7 +7001,7 @@ function scanImportSample(items, max) {
 function handleScanImport(file) {
   /* defense-in-depth — ซ่อนปุ่มอย่างเดียวไม่พอ เรียกฟังก์ชันตรง ๆ ก็ต้องไม่ผ่าน
      (แบบเดียวกับ removeOverScan) ตัวจริงบังคับที่ Database Rules อีกชั้น */
-  if (!isStaff()) { toast(roleBlockMessage('นำเข้ายอดนับจากไฟล์ไม่ได้'), true); return Promise.resolve(false); }
+  if (!hasPerm('adjustCount')) { toast(roleBlockMessage('นำเข้ายอดนับจากไฟล์ไม่ได้'), true); return Promise.resolve(false); }
   if (!canScan()) { toast(blockedMessage() + ' — นำเข้าไฟล์ไม่ได้', true); return Promise.resolve(false); }
   if (!file) return Promise.resolve(false);
 
@@ -7340,7 +7466,7 @@ function masterRows(ignoreSearch) {
 
 function saveProductEdit(key, field, value) {
   /* Master เป็นข้อมูลกลางของทุกสาขา — admin เท่านั้นที่แก้ได้ (ข้อ B1) */
-  if (!requireAdmin('แก้ข้อมูลสินค้าไม่ได้')) return Promise.resolve();
+  if (!requirePerm('editMaster', 'แก้ข้อมูลสินค้าไม่ได้')) return Promise.resolve();
   /* ถ้ากำลังเปิด Job ที่ปิดแล้วอยู่ ให้อ่านอย่างเดียวตามกติกาเดิม */
   if (state.roundId && jobStatus() === 'closed') { toast(blockedMessage(), true); return Promise.resolve(); }
   var patch = {};
@@ -7388,11 +7514,11 @@ function renderMaster() {
   if (tab === 'users') { refreshUsers().then(renderUsers); return; }
 
   /* สินค้าเป็นข้อมูลกลาง แก้ได้เฉพาะ admin — คนอื่นดูได้แต่ช่องกรอกถูกล็อก */
-  $('btnImportImages').disabled = !isAdmin();
-  $('btnImportMaster').disabled = !isAdmin();
+  $('btnImportImages').disabled = !hasPerm('editMaster');
+  $('btnImportMaster').disabled = !hasPerm('editMaster');
   /* ปุ่มโหลด Template ไม่ล็อก — เป็นการอ่านอย่างเดียว ใครดูหน้านี้ได้ก็โหลดไปดูได้ */
-  $('btnImportNote').disabled = !isAdmin();
-  $('btnImportType').disabled = !isAdmin();
+  $('btnImportNote').disabled = !hasPerm('editMaster');
+  $('btnImportType').disabled = !hasPerm('editMaster');
 
   document.querySelectorAll('[data-mfilter]').forEach(function (b) {
     b.className = 'btn sm ' + (b.getAttribute('data-mfilter') === state.masterFilter ? '' : 'grey');
@@ -7605,7 +7731,7 @@ function renderMaster() {
 
     /* Master เป็นข้อมูลกลางของทุกสาขา แก้ได้เฉพาะ admin (ข้อ B1)
        ล็อกช่องให้เห็นชัดว่าแก้ไม่ได้ ดีกว่าปล่อยให้พิมพ์แล้วค่อยเด้ง error */
-    if (!isAdmin()) {
+    if (!hasPerm('editMaster')) {
       costIn.disabled = true; typeBtn.disabled = true; imgIn.disabled = true;
       stSel.disabled = true; noteIn.disabled = true;
       costIn.title = typeBtn.title = imgIn.title = noteIn.title = roleBlockMessage('แก้ข้อมูลสินค้าไม่ได้');
@@ -8125,7 +8251,7 @@ function sumCardRow(r, kind) {
      แสดงทุกกลุ่มที่ยิงไปแล้วจริง (jobAct > 0) ไม่ใช่แค่กลุ่ม "เกิน" — ของที่ยอดตรงพอดี
      ก็ยิงเกินมาแล้วแก้ผิดตัวได้เหมือนกัน ที่ยังไม่ได้ยิงในใบนี้ ไม่มีอะไรให้เอาออก
      เป็นของ staff (admin + counter) เพราะการปรับยอดลงคือจุดที่ทุจริตได้ง่ายที่สุด */
-  if (jobAct > 0 && isStaff()) {
+  if (jobAct > 0 && hasPerm('adjustCount')) {
     var act = document.createElement('button');
     act.type = 'button';
     act.className = 'btn grey block sm';
@@ -8163,7 +8289,7 @@ function sumCardRow(r, kind) {
    qty = จำนวนที่จะหัก (ไม่ส่งมา = 1) · มากกว่า 1 ต้องถามยืนยันก่อนเสมอ */
 function removeOverScan(r, kind, qty) {
   qty = Math.max(1, Number(qty) || 1);
-  if (!isStaff()) { toast(roleBlockMessage('เอาของออกจากสรุปไม่ได้'), true); return; }
+  if (!hasPerm('adjustCount')) { toast(roleBlockMessage('เอาของออกจากสรุปไม่ได้'), true); return; }
   if (!canScan()) { toast(blockedMessage() + ' — เอาออกไม่ได้', true); return; }
 
   /* หักได้ไม่เกินที่ Job ใบนี้ยิงไว้จริง — ยอดบนจออาจเป็นยอดรวมทุกใบ (v2.7.0)
@@ -8212,7 +8338,7 @@ function removeOverScan(r, kind, qty) {
 }
 
 function openSumCard(kind) {
-  if (!isStaff()) { toast(roleBlockMessage('ดูรายละเอียดผลต่างไม่ได้'), true); return Promise.resolve(); }
+  if (!hasPerm('viewSummary')) { toast(roleBlockMessage('ดูรายละเอียดผลต่างไม่ได้'), true); return Promise.resolve(); }
   var spec = SUM_CARD_SPEC[kind];
   var rows = sumCardRows(reportDataSync(), kind);
   var money = sumCardValue(rows);
@@ -8262,7 +8388,7 @@ function openSumCard(kind) {
   var msg = fmtNum(rows.length) + ' รายการ' +
     (kind === 'match' ? '' : ' · มูลค่าผลต่างรวม ' + signedMoney(money));
   /* บอกวิธีใช้ปุ่มเมื่อมีปุ่มให้กดจริง — ปุ่มขึ้นทุกกลุ่มที่ยิงไปแล้ว ไม่ใช่แค่กลุ่ม "เกิน" */
-  if (isStaff() && rows.some(function (r) { return r.act > 0; })) {
+  if (hasPerm('adjustCount') && rows.some(function (r) { return r.act > 0; })) {
     msg += '\nยิงเกินโดยไม่ตั้งใจ กด "เอาออก 1 ชิ้น" ได้ — ระบบบันทึกเป็นประวัติ ไม่ได้ลบยอดเดิม';
   }
   return ask(spec.title, msg, 'ปิด', { hideCancel: true, detail: box });
@@ -8279,10 +8405,10 @@ var SUMMARY_ADMIN_ONLY = ['sumCards', 'sumTableWrap', 'costNote', 'foreignCard',
                           'unknownCard', 'statusCard', 'manualCard', 'btnExport',
                           'priceFilters', 'sumBar'];
 
-/* เปิดให้ staff (admin + counter) / คงซ่อนสำหรับคนอื่น — คืนค่าว่าเป็น staff ไหม
+/* เปิดให้คนที่มีสิทธิ์ดูสรุป / คงซ่อนสำหรับคนอื่น — คืนค่าว่าเปิดให้ไหม
    ใช้ร่วมกันทั้งหน้าสรุปและหน้ายิง กติกาการซ่อนจะได้ไม่แตกเป็นสองชุด */
 function applyStaffOnly(ids) {
-  var staff = isStaff();
+  var staff = hasPerm('viewSummary');
   ids.forEach(function (id) {
     var el = document.getElementById(id);
     if (el) el.style.display = staff ? '' : 'none';
@@ -8406,7 +8532,7 @@ function renderSumChips() {
   var host = $('sumChips');
   if (!host) return;
   host.innerHTML = '';
-  if (!isStaff()) return;
+  if (!hasPerm('viewSummary')) return;
   SUMMARY_CARDS.forEach(function (c) {
     var card = document.getElementById(c.id);
     if (!card || card.style.display === 'none') return;
@@ -8512,11 +8638,11 @@ function renderSummary() {
   data.rows.forEach(function (r) { actByKey[r.key] = r.act; });
   var notScanned = Object.keys(state.systemQty).filter(function (k) { return !actByKey[k]; }).length;
   var unknownLeft = unknownPending();
-  $('btnReview').style.display = (isStaff() && st !== 'closed') ? 'flex' : 'none';
+  $('btnReview').style.display = (hasPerm('closeJob') && st !== 'closed') ? 'flex' : 'none';
   $('btnReview').textContent = st === 'reviewing' ? '← กลับไปขั้นนับ' : '→ ส่งเข้าขั้นตรวจสอบ';
-  $('btnClose').style.display = (isStaff() && st !== 'closed') ? 'flex' : 'none';
-  $('btnReopen').style.display = (isAdmin() && st === 'closed') ? 'flex' : 'none';
-  $('btnDeleteJob').style.display = isAdmin() ? 'flex' : 'none';
+  $('btnClose').style.display = (hasPerm('closeJob') && st !== 'closed') ? 'flex' : 'none';
+  $('btnReopen').style.display = (hasPerm('reopenRound') && st === 'closed') ? 'flex' : 'none';
+  $('btnDeleteJob').style.display = hasPerm('deleteJob') ? 'flex' : 'none';
   renderStatusLog(round);
   $('closeHint').textContent = st === 'closed'
     ? ('ปิดโดย ' + (round.closedBy || 'ไม่ระบุ') + ' เมื่อ ' + fmtTime(round.closedAt))
@@ -8564,7 +8690,7 @@ function renderSummary() {
 
       /* ลบของที่ยิงหลุดได้จากตรงนี้เลย ไม่ต้องเข้าแท็บ Master (ซึ่ง counter ก็เข้าไม่ได้)
          แถวรอบเก่าไม่มียอดให้หัก จึงไม่มีปุ่ม */
-      if (isStaff() && !u.legacy) {
+      if (hasPerm('adjustCount') && !u.legacy) {
         var drop = document.createElement('button');
         drop.className = 'btn grey sm block';
         drop.style.margin = '0 0 8px';
@@ -8834,7 +8960,7 @@ function docCell(row, text, cls) {
 function remarkHistoryWritable() { return jobStatus() === 'counting'; }
 
 function saveReason(key, value) {
-  if (!canEdit()) { toast(blockedMessage(), true); return Promise.resolve(); }
+  if (!canEdit()) { toast(docEditBlocked(), true); return Promise.resolve(); }
   /* defense-in-depth (v2.7.5) — readOnly บนช่องกันมือได้ แต่กันคนแก้ DOM ไม่ได้
      ในโหมดรวม ช่องโชว์ข้อความของทุกใบต่อกัน ถ้าปล่อยให้เขียนทับ
      หมายเหตุของใบอื่นจะถูกก๊อปมาซ้ำอยู่ในใบที่เปิดอยู่ */
@@ -8928,7 +9054,7 @@ function saveDocType(type) {
 }
 
 function saveDocNo(value) {
-  if (!canEdit()) { toast(blockedMessage(), true); return Promise.resolve(); }
+  if (!canEdit()) { toast(docEditBlocked(), true); return Promise.resolve(); }
   state.docNo = state.docNo || {};
   if (value) state.docNo[docType()] = value; else delete state.docNo[docType()];
   var patch = {};
@@ -9276,7 +9402,7 @@ function buildDocItemTable(title, rows, opts) {
     /* ⭐ v2.9.0 — viewer เปิดหน้าเอกสารได้แล้ว แต่ต้องแก้หมายเหตุไม่ได้
        saveReason() บล็อกอยู่แล้วชั้นหนึ่ง (canEdit = isStaff) แต่ถ้าปล่อยให้ช่องพิมพ์ได้
        คนจะพิมพ์จนจบแล้วค่อยโดนเด้ง ซึ่งเสียเวลาเปล่า — ล็อกที่ช่องด้วยให้เห็นตั้งแต่แรก */
-    if (!isStaff()) {
+    if (!hasPerm('editDoc')) {
       input.readOnly = true;
       input.title = roleBlockMessage('แก้หมายเหตุไม่ได้');
     } else if (!remarkEditableHere(r.key)) {
@@ -10029,7 +10155,7 @@ function confirmBranch(stat) {
    ต่างจากการนำเข้าในรอบนับตรงที่เขียนแค่ products ไม่แตะ systemQty ของรอบไหนเลย
    เพราะไฟล์นี้บอกว่า "บริษัทมีสินค้าอะไรบ้าง" ไม่ได้บอกว่า "สาขานี้ควรมีเท่าไหร่" */
 function handleMasterImport(file) {
-  if (!requireAdmin('นำเข้า Master ไม่ได้')) return;
+  if (!requirePerm('editMaster', 'นำเข้า Master ไม่ได้')) return;
   var isXlsx = /\.xlsx$/i.test(file.name);
   $('btnImportMaster').disabled = true;
   $('masterCount').textContent = 'กำลังอ่านไฟล์...';
@@ -10112,7 +10238,7 @@ function noteMissingColumnsHelp(missing) {
 }
 
 function handleNoteImport(file) {
-  if (!requireAdmin('อัปเดต Note ไม่ได้')) return;
+  if (!requirePerm('editMaster', 'อัปเดต Note ไม่ได้')) return;
   var isXlsx = /\.xlsx$/i.test(file.name);
   $('btnImportNote').disabled = true;
   $('masterCount').textContent = 'กำลังอ่านไฟล์...';
@@ -10228,7 +10354,7 @@ function typeMissingColumnsHelp(missing) {
 }
 
 function handleTypeImport(file) {
-  if (!requireAdmin('เปลี่ยนประเภทสินค้าไม่ได้')) return;
+  if (!requirePerm('editMaster', 'เปลี่ยนประเภทสินค้าไม่ได้')) return;
   var isXlsx = /\.xlsx$/i.test(file.name);
   $('btnImportType').disabled = true;
   $('masterCount').textContent = 'กำลังอ่านไฟล์...';
@@ -10559,6 +10685,9 @@ function confirmDuplicateImport(result) {
 }
 
 function handleImport(file) {
+  /* ⭐ v2.12.0 — ด่านชั้นฟังก์ชันที่หายไปแต่เดิม: ของเก่ามีแค่ canScan() ซึ่งรวม scanner ด้วย
+     รอดมาได้เพราะปุ่มอยู่หน้าที่ scanner เข้าไม่ได้ แต่ลากไฟล์มาวางหรือเรียกจาก Console ก็ผ่าน */
+  if (!requirePerm('importSysQty', 'นำเข้ายอดระบบไม่ได้')) return;
   if (!state.roundId) { toast('เลือก Job ก่อนนำเข้าไฟล์', true); return; }
   if (!canScan()) { toast(blockedMessage() + ' — นำเข้าไฟล์ไม่ได้', true); return; }
   if (!requireOpenCycle()) return;
@@ -11288,18 +11417,18 @@ function jobActions() {
   /* ▶ เริ่มนับ — เข้าหน้านับของ Job นี้ได้ตรงจากเมนูจัดการ (ข้อ UX) */
   if (canScanRole() && st === 'counting') {
     acts.push({ id: 'start', label: '▶ เริ่มนับ', cls: 'ghost',
-      run: function () { showPage(isStaff() ? 'start' : 'scan'); } });
+      run: function () { showPage(canSeePage('start') ? 'start' : 'scan'); } });
   }
-  if (isStaff() && st === 'counting') {
+  if (hasPerm('closeJob') && st === 'counting') {
     acts.push({ id: 'review', label: '→ ส่งเข้าขั้นตรวจสอบ', cls: 'ghost', run: sendToReview });
   }
-  if (isStaff() && st === 'reviewing') {
+  if (hasPerm('closeJob') && st === 'reviewing') {
     acts.push({ id: 'back', label: '← กลับไปขั้นนับ (ยิงต่อได้)', cls: '', run: backToCounting });
   }
-  if (isStaff() && st !== 'closed') {
+  if (hasPerm('closeJob') && st !== 'closed') {
     acts.push({ id: 'close', label: '🔒 ปิดรอบนับ', cls: 'grey', run: closeRound });
   }
-  if (isAdmin() && st === 'closed') {
+  if (hasPerm('reopenRound') && st === 'closed') {
     acts.push({ id: 'reopen', label: '🔓 เปิดรอบนับกลับมาแก้', cls: '', run: reopenRound });
   }
   /* สองปุ่มนี้พาไปหน้าอื่น ต้องเช็คสิทธิ์หน้านั้นก่อน ไม่งั้น scanner กดแล้วเด้งกลับเปล่า ๆ
@@ -11310,7 +11439,7 @@ function jobActions() {
   if (canSeePage('doc')) {
     acts.push({ id: 'doc', label: '📄 ไปหน้าเอกสาร', cls: 'grey', run: function () { showPage('doc'); } });
   }
-  if (isAdmin()) {
+  if (hasPerm('deleteJob')) {
     acts.push({ id: 'delete', label: '🗑 ลบ Job นี้', cls: 'grey', run: deleteJob });
   }
   return acts;
@@ -11338,7 +11467,7 @@ function openJobMenu() {
 
   ask('จัดการรอบนับ',
       (job.jobCode || '') + ' · ' + jobBranchLabel(job) + '\nสถานะตอนนี้: ' + JOB_STATUS_TEXT[st] +
-      (st === 'closed' && !isAdmin() ? '\n\nรอบนี้ปิดแล้ว ต้องให้ผู้ดูแลระบบเปิดกลับมาให้' : ''),
+      (st === 'closed' && !hasPerm('reopenRound') ? '\n\nรอบนี้ปิดแล้ว ต้องให้ผู้ดูแลระบบเปิดกลับมาให้' : ''),
       'ปิดเมนู', { hideCancel: true, detail: box });
 }
 
@@ -11374,7 +11503,7 @@ function renderReopenBanner() {
    ทุกอย่างที่เป็นการจัดการรอบหรือดึงตัวเลขออกไปเป็นไฟล์ ต้องไม่โผล่ให้เห็น
    (ปุ่มส่งตรวจ/ปิด/เปิด/ลบ Job อยู่ใน jobActions ซึ่งกรองด้วย isStaff อยู่แล้ว) */
 function applyJobsPermissions() {
-  var staff = isStaff();
+  var staff = hasPerm('createJob');
   var tabs = $('jobViewTabs');
   if (tabs) tabs.style.display = staff ? '' : 'none';
   /* กันค้างอยู่แท็บ "สร้าง Job" ตอนสลับบัญชี — ไม่มีแท็บให้กดกลับแล้ว */
@@ -11431,7 +11560,7 @@ function renderJobs() {
     var empty = ids.length ? 'ไม่มี Job ในตัวกรองนี้'
       : (myBranches().length && !isAdmin()
           ? 'ยังไม่มี Job ของสาขาที่คุณดูแล (' + myBranchLabel() + ') — ให้ผู้ดูแลระบบสร้างให้ก่อน'
-          : (isStaff() ? 'ยังไม่มี Job — สร้างอันแรกด้านบน' : 'ยังไม่มี Job ให้เลือก'));
+          : (hasPerm('createJob') ? 'ยังไม่มี Job — สร้างอันแรกด้านบน' : 'ยังไม่มี Job ให้เลือก'));
     list.innerHTML = '<div class="empty"></div>';
     list.firstChild.textContent = empty;
     return;
@@ -11582,9 +11711,9 @@ function renderJobCard(id, list) {
        ปุ่มนี้เปิด Job ให้ก่อนเสมอ เพราะทุกฟังก์ชันทำงานกับ Job ที่เลือกอยู่ */
     var jstatus = j.status || 'counting';
     var quick = null;
-    if (isStaff() && jstatus === 'counting') quick = { id: 'review', label: '→ ส่งตรวจสอบ', run: sendToReview };
-    else if (isStaff() && jstatus === 'reviewing') quick = { id: 'back', label: '← กลับไปขั้นนับ', run: backToCounting };
-    else if (isAdmin() && jstatus === 'closed') quick = { id: 'reopen', label: '🔓 เปิดกลับมาแก้', run: reopenRound };
+    if (hasPerm('closeJob') && jstatus === 'counting') quick = { id: 'review', label: '→ ส่งตรวจสอบ', run: sendToReview };
+    else if (hasPerm('closeJob') && jstatus === 'reviewing') quick = { id: 'back', label: '← กลับไปขั้นนับ', run: backToCounting };
+    else if (hasPerm('reopenRound') && jstatus === 'closed') quick = { id: 'reopen', label: '🔓 เปิดกลับมาแก้', run: reopenRound };
 
     var acts = document.createElement('div');
     acts.className = 'row';
@@ -11615,8 +11744,8 @@ function renderJobCard(id, list) {
     acts.appendChild(mb);
 
     /* ข้อ C1 — ดาวน์โหลด Excel ของ Job ใบนี้ได้จากการ์ดเลย ไม่ต้องเปิดเข้าไปก่อน
-       ไฟล์มีผลต่างรายตัวทั้งใบ scanner จึงไม่ได้ปุ่มนี้ */
-    if (isStaff()) {
+       ไฟล์มีผลต่างรายตัวทั้งใบ คนที่ดูสรุปไม่ได้จึงไม่ได้ปุ่มนี้ */
+    if (hasPerm('viewSummary')) {
       var xb = document.createElement('button');
       xb.className = 'btn sm grey';
       xb.style.flex = '0 0 auto';
@@ -11630,8 +11759,8 @@ function renderJobCard(id, list) {
     }
     card.appendChild(acts);
 
-    /* ข้อ C2 — ติ๊กเลือกหลายใบแล้วรวมเป็นไฟล์เดียว (staff เท่านั้น ด้วยเหตุผลเดียวกัน) */
-    if (isStaff()) {
+    /* ข้อ C2 — ติ๊กเลือกหลายใบแล้วรวมเป็นไฟล์เดียว (ต้องดูสรุปได้ ด้วยเหตุผลเดียวกัน) */
+    if (hasPerm('viewSummary')) {
       var pick = document.createElement('label');
       pick.style.cssText = 'display:flex;align-items:center;gap:8px;margin-top:8px;font-size:13px;color:var(--muted)';
       var cb = document.createElement('input');
@@ -11696,7 +11825,7 @@ function openJob(id) {
   /* scanner ไม่มีหน้า "ตั้งค่า" ให้เข้า — เลือก Job แล้วพาไปหน้ายิงเลย
      v2.9.0 — viewer ก็เข้า start ไม่ได้แล้ว firstAllowedPage() จะพาไปหน้าเอกสารให้แทน
      (ตอนนี้ selectRound ตั้ง roundId ไว้แล้ว หน้าเอกสารจึงมีข้อมูลให้แสดงจริง) */
-  showPage(isStaff() ? 'start' : firstAllowedPage());
+  showPage(canSeePage('start') ? 'start' : firstAllowedPage());
 }
 
 function renderStoreTypePicker() {
@@ -11763,7 +11892,7 @@ function changeJobStatus(next, extra) {
 
 function sendToReview() {
   if (!state.roundId) return;
-  if (!requireStaff('เปลี่ยนสถานะ Job ไม่ได้')) return;
+  if (!requirePerm('closeJob', 'เปลี่ยนสถานะ Job ไม่ได้')) return;
   if (jobStatus() !== 'counting') { toast('รอบนี้ไม่ได้อยู่ขั้นนับแล้ว', true); return; }
   ask('ส่งเข้าขั้นตรวจสอบ?',
       'หลังจากนี้จะยิงเพิ่มไม่ได้ แต่ยังแก้ Reason และออกเอกสารได้\nถ้าต้องยิงเพิ่มให้กดกลับมาเป็น "กำลังนับ" ได้เอง',
@@ -11775,7 +11904,7 @@ function sendToReview() {
 
 function backToCounting() {
   if (!state.roundId || jobStatus() !== 'reviewing') return;
-  if (!requireStaff('เปลี่ยนสถานะ Job ไม่ได้')) return;
+  if (!requirePerm('closeJob', 'เปลี่ยนสถานะ Job ไม่ได้')) return;
   changeJobStatus('counting').then(function () {
     toast('กลับมาขั้นนับแล้ว ยิงต่อได้เลย');
     refreshNav();
@@ -11784,11 +11913,11 @@ function backToCounting() {
 
 function closeRound() {
   if (!state.roundId) return;
-  if (!requireStaff('ปิด Job ไม่ได้')) return;
+  if (!requirePerm('closeJob', 'ปิด Job ไม่ได้')) return;
   if (jobStatus() === 'closed') { toast('รอบนี้ปิดไปแล้ว', true); return; }
   /* ⭐ v2.11.0 — ปิดรอบคือจุดที่ตรึงยอดถาวร ต้องแน่ใจว่ายังมีสิทธิ์จริงก่อนเริ่มถาม */
   ensureRoleFresh({ force: true }).then(function () {
-    if (!requireStaff('ปิด Job ไม่ได้')) return;
+    if (!requirePerm('closeJob', 'ปิด Job ไม่ได้')) return;
     closeRoundChecked();
   });
 }
@@ -11821,7 +11950,7 @@ function closeRoundChecked() {
 function reopenRound() {
   var job = currentJob();
   if (!job || job.status !== 'closed') return;
-  if (!requireAdmin('เปิดรอบที่ปิดแล้วไม่ได้')) return;
+  if (!requirePerm('reopenRound', 'เปิดรอบที่ปิดแล้วไม่ได้')) return;
   ask('เปิดรอบนับกลับมาแก้ (ผู้ดูแลระบบ)',
       'ต้องระบุเหตุผล\nระบบจะบันทึกชื่อคุณ เวลา และเหตุผลไว้ถาวร และขึ้นแถบเตือนทั้งในแอปและในเอกสาร',
       'เปิดรอบนับ',
@@ -11850,7 +11979,7 @@ function reopenRound() {
 function deleteJob() {
   var job = currentJob();
   if (!job) return;
-  if (!requireAdmin('ลบ Job ไม่ได้')) return;
+  if (!requirePerm('deleteJob', 'ลบ Job ไม่ได้')) return;
   var scanCount = Object.keys(state.counts).length;
   ask('ลบ Job นี้ (ผู้ดูแลระบบ)',
       'ใช้เฉพาะกรณีสร้าง Job ผิดเท่านั้น\n\n' +
@@ -11926,11 +12055,12 @@ var PAGE_ROLES = {
   jobs:    function () { return true; },
   /* ⭐ v2.9.0 — start / master / summary เป็นงานของคนที่จัดการรอบนับจริง (admin + counter)
      เดิมใช้ !isScannerOnly() ซึ่งกัน scanner ออกได้อย่างเดียว viewer จึงหลุดเข้ามาหมด
+     v2.12.0 ผูกกับ perms ตรง ๆ แล้ว ไม่ต้องไล่ยกเว้น role ทีละตัวอีก
      ทั้งที่ viewer ควรเห็นแค่ "รายการ Job + เอกสาร" เท่านั้น */
-  start:   function () { return isStaff(); },
+  start:   function () { return hasPerm('importSysQty'); },
   scan:    function () { return canScanRole(); },
-  master:  function () { return isStaff(); },
-  summary: function () { return isStaff(); },
+  master:  function () { return canSeeMasterPage(); },
+  summary: function () { return hasPerm('viewSummary'); },
   /* เอกสารมีตัวเลขผลต่างรายตัวทั้งใบ — admin กับ counter ออกเอกสารได้ตามหน้าที่
      viewer เข้าได้ด้วย (v2.9.0) เพราะหน้าที่ของสิทธิ์นี้คือดูและพิมพ์เอกสารโดยเฉพาะ
      scanner ไม่ได้ เพราะเห็นผลต่างไม่ได้อยู่แล้ว */
@@ -12189,7 +12319,7 @@ function loadJobsRaw(ids) {
 function renderExportBar() {
   var bar = $('exportBar');
   /* ไฟล์รวมหลาย Job มีตัวเลขผลต่างทุกใบ — scanner ต้องไม่มีทางกดได้ */
-  var n = isStaff() ? state.exportPick.length : 0;
+  var n = hasPerm('viewSummary') ? state.exportPick.length : 0;
   bar.style.display = n ? 'block' : 'none';
   $('exportPickInfo').textContent = n
     ? ('เลือกไว้ ' + fmtNum(n) + ' Job — ไฟล์เดียวจะมีชีทสรุปรวมบนสุด แล้วตามด้วยชีทของแต่ละ Job')
@@ -12624,7 +12754,7 @@ function purgeUserScans(targetUser) {
   /* ⭐ v2.11.0 — งานลบถาวร ต้องยืนยันสิทธิ์สดจากฐานก่อนเสมอ ข้ามแคช
      ยอมหน่วง 1 คำขอ ดีกว่าให้คนที่เพิ่งโดนลดสิทธิ์ลบของได้เพราะ session ยังถือของเก่า */
   return ensureRoleFresh({ force: true }).then(function () {
-    if (!requireAdmin('ล้างยอดของผู้ใช้ไม่ได้')) return false;
+    if (!requirePerm('purgeUser', 'ล้างยอดของผู้ใช้ไม่ได้')) return false;
     return purgeUserScansChecked(targetUser);
   });
 }
@@ -12760,7 +12890,7 @@ function renderScanners() {
        ต้องกดชื่อให้การ์ดกางก่อน แล้วค่อยกดปุ่ม แล้วค่อยยืนยันในกล่องแดง = 3 จังหวะ
        เผลอนิ้วโดนแล้วลบถาวรไม่ได้ (แนวเดียวกับล็อกนำเข้ายอดระบบ v2.10.7)
        admin เท่านั้น และเฉพาะรอบที่ยังนับอยู่ — ตรงกับที่ Rules ยอมพอดี */
-    if (isAdmin() && jobStatus() === 'counting') {
+    if (hasPerm('purgeUser') && jobStatus() === 'counting') {
       var purgeBtn = document.createElement('button');
       purgeBtn.className = 'btn grey sm block';
       purgeBtn.style.marginTop = '10px';
@@ -12861,14 +12991,14 @@ function appendFixButtons(box) {
   var acts = [];
   if (!state.roundId) {
     acts.push({ id: 'gojobs', label: '→ ไปเลือก Job', cls: '', run: function () { showPage('jobs'); } });
-  } else if (isStaff() && st === 'reviewing') {
+  } else if (hasPerm('closeJob') && st === 'reviewing') {
     acts.push({ id: 'back', label: '← กลับไปขั้นนับ (ยิงต่อได้)', cls: '', run: backToCounting });
-  } else if (isAdmin() && st === 'closed') {
+  } else if (hasPerm('reopenRound') && st === 'closed') {
     acts.push({ id: 'reopen', label: '🔓 เปิดรอบนับกลับมาแก้', cls: '', run: reopenRound });
   } else if (state.roundId && st === 'closed') {
     acts.push({ id: 'gojobs', label: '→ ไปเลือก Job อื่น', cls: 'grey', run: function () { showPage('jobs'); } });
   }
-  if (state.roundId && st !== 'closed' && !Object.keys(state.systemQty).length && isStaff()) {
+  if (state.roundId && st !== 'closed' && !Object.keys(state.systemQty).length && hasPerm('importSysQty')) {
     acts.push({ id: 'import', label: '📄 นำเข้ายอดระบบ', cls: 'grey',
                 run: function () { $('fileInput').click(); } });
   }
@@ -12963,16 +13093,16 @@ function renderStart() {
     $('btnImport').disabled = true; $('btnImport').textContent = defLabel;
   } else if (!hasSys) {
     $('importAction').style.display = ''; $('importLocked').style.display = 'none';
-    $('btnImport').disabled = false; $('btnImport').textContent = defLabel;
+    $('btnImport').disabled = !hasPerm('importSysQty'); $('btnImport').textContent = defLabel;
   } else if (state.importUnlocked) {
     $('importAction').style.display = ''; $('importLocked').style.display = 'none';
-    $('btnImport').disabled = false;
+    $('btnImport').disabled = !hasPerm('importSysQty');
     $('btnImport').textContent = '📄 เขียนทับยอดระบบเดิม (เลือกไฟล์ใหม่)';
   } else {
     $('importAction').style.display = 'none'; $('importLocked').style.display = '';
     $('importLockedMsg').textContent = '🔒 ยอดระบบล็อกไว้แล้ว (' +
       fmtNum(Object.keys(state.systemQty).length) + ' รายการ) กันเผลอนำเข้าทับ';
-    $('btnUnlockImport').style.display = isStaff() ? '' : 'none';
+    $('btnUnlockImport').style.display = hasPerm('importSysQty') ? '' : 'none';
   }
 
   refreshNav();
@@ -13097,7 +13227,7 @@ function refreshStatuses() {
 }
 
 function addCustomStatus(value) {
-  if (!requireAdmin('เพิ่มค่า Status ไม่ได้')) return Promise.resolve();
+  if (!requirePerm('editMaster', 'เพิ่มค่า Status ไม่ได้')) return Promise.resolve();
   var v = String(value || '').trim();
   if (!v) return Promise.resolve();
   if (statusList().indexOf(v) >= 0) { toast('มีค่านี้อยู่แล้ว', true); return Promise.resolve(); }
@@ -13120,7 +13250,7 @@ function refreshStoreTypes() {
 }
 
 function addStoreType(key, label) {
-  if (!requireAdmin('เพิ่มประเภทคลังไม่ได้')) return Promise.resolve();
+  if (!requirePerm('editMaster', 'เพิ่มประเภทคลังไม่ได้')) return Promise.resolve();
   var k = String(key || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
   var l = String(label || '').trim() || k;
   if (!k) { toast('ตัวย่อต้องเป็น A-Z หรือ 0-9 อย่างน้อย 1 ตัว', true); return Promise.resolve(); }
@@ -13356,10 +13486,16 @@ function applyRoleChange(rec) {
     return { removed: true };
   }
 
+  /* ⭐ v2.12.0 — ต้องเทียบ perms ด้วย ไม่ใช่แค่ role
+     แอดมินติ๊กสิทธิ์เพิ่ม/ถอนโดยไม่แตะ role เป็นเคสปกติของระบบนี้ ถ้าเทียบแค่ role
+     ฟังก์ชันจะคืน null แล้วเครื่องปลายทางถือสิทธิ์เก่าต่อจนกว่าจะรีเฟรชเอง */
   var before = state.me.role;
+  var beforePerms = myPerms();
+  var beforeSig = permsSig(beforePerms);
   setMe({ uid: state.me.uid, email: state.me.email }, rec);
   var after = state.me.role;
-  if (after === before) return null;
+  var afterPerms = myPerms();
+  if (after === before && permsSig(afterPerms) === beforeSig) return null;
 
   /* สิทธิ์เปลี่ยนแล้ว — จอต้องตามทันที ทั้งตอนลดและตอนเพิ่ม
      ตอนเพิ่มก็สำคัญ ไม่งั้นแอดมินเพิ่งให้สิทธิ์แล้วคนนั้นต้องล็อกอินใหม่ถึงจะใช้ได้ */
@@ -13367,22 +13503,25 @@ function applyRoleChange(rec) {
   refreshNav();
   renderAccount();
 
-  var down = ROLE_RANK[after] < ROLE_RANK[before];
+  /* "ลดลง" วัดจากความสามารถที่หายไปจริง ไม่ใช่ลำดับของ role
+     role 'custom' ไม่มีลำดับให้เทียบ และการถอนติ๊กทีละช่องก็ไม่เปลี่ยน role เลย */
+  var lost = CAPS.filter(function (c) { return beforePerms[c] === true && afterPerms[c] !== true; });
+  var down = lost.length > 0;
+  var roleWord = ROLE_LABEL[after] || after;
   if (down) {
-    toast('สิทธิ์ของคุณถูกเปลี่ยนเป็น "' + (ROLE_LABEL[after] || after) +
-          '" โดยผู้ดูแลระบบ — บางเมนูจะใช้ไม่ได้แล้ว', true);
+    /* บอกชื่อความสามารถที่หายไปตรง ๆ — "บางเมนูใช้ไม่ได้" ลอย ๆ ทำให้คนงมหาเอง */
+    toast('สิทธิ์ของคุณถูกเปลี่ยนเป็น "' + roleWord + '" โดยผู้ดูแลระบบ — ' +
+          lost.map(function (c) { return CAP_LABEL[c] || c; }).join(' · ') + ' ใช้ไม่ได้แล้ว', true);
     /* ยืนอยู่หน้าที่ไม่มีสิทธิ์แล้วต้องเด้งออก ไม่ใช่ปล่อยให้กดต่อแล้วค่อยเจอ error */
     if (!canSeePage(state.page)) showPage(firstAllowedPage());
     else showPage(state.page);              // วาดใหม่ให้ปุ่มในหน้าหายตามสิทธิ์
   } else {
-    toast('สิทธิ์ของคุณถูกปรับเป็น "' + (ROLE_LABEL[after] || after) + '" แล้ว');
+    toast('สิทธิ์ของคุณถูกปรับเป็น "' + roleWord + '" แล้ว');
     showPage(state.page);
   }
-  return { from: before, to: after, down: down };
+  return { from: before, to: after, down: down, lost: lost };
 }
 
-/* ลำดับสิทธิ์ — ใช้บอกว่า "ลดลง" หรือ "เพิ่มขึ้น" เพื่อเลือกข้อความให้ถูก */
-var ROLE_RANK = { viewer: 0, scanner: 1, counter: 2, admin: 3 };
 
 function forceSignOut() {
   stopRolePoll();
@@ -13408,12 +13547,26 @@ function stopRolePoll() {
   if (rolePollTimer) { clearInterval(rolePollTimer); rolePollTimer = null; }
 }
 
+/* perms ที่ใช้จริงของเรคอร์ดหนึ่งใบ — ว่างแปลว่ายังไม่เคยติ๊ก ให้ถอยไปใช้แม่แบบของ role
+   แยกเป็นฟังก์ชันเพราะทั้ง setMe และหน้าจัดการผู้ใช้ต้องตอบเหมือนกันเป๊ะ
+   ถ้าคำนวณคนละที่ จอจะโชว์ติ๊กไม่ตรงกับสิทธิ์ที่เครื่องนั้นใช้อยู่จริง */
+function permsForRecord(rec) {
+  var p = normPerms(rec && rec.perms);
+  return Object.keys(p).length ? p : permsFromRole((rec && rec.role) || 'counter');
+}
+
 function setMe(user, rec) {
   state.me = {
     uid: user.uid,
     email: rec.email || user.email || '',
     name: rec.name || defaultNameFromEmail(user.email),
-    role: /^(admin|viewer|scanner)$/.test(rec.role) ? rec.role : 'counter',
+    /* ⭐ v2.12.0 — ต้องรับ 'custom' ด้วย ไม่งั้นคนที่ติ๊กสิทธิ์เองจะถูกแปลงเป็น counter
+       ทุกครั้งที่โหลดหน้า แล้วได้สิทธิ์ counter เต็มใบโดยไม่มีใครสั่ง (พังเงียบสนิท) */
+    role: /^(admin|viewer|scanner|custom)$/.test(rec.role) ? rec.role : 'counter',
+    /* perms ว่าง = ผู้ใช้เดิมก่อน v2.12.0 → แปลงสดจาก role ให้เท่าพฤติกรรมเดิมเป๊ะ
+       RTDB ไม่เก็บออบเจ็กต์ว่าง คนที่ปลดติ๊กออกหมดจึงอ่านกลับมาได้ undefined เหมือนกัน
+       แต่ role ของคนนั้นเป็น 'custom' ซึ่งแม่แบบว่างอยู่แล้ว ผลจึงถูกต้องทั้งสองทาง */
+    perms: permsForRecord(rec),
     /* สาขาที่ดูแล — ว่าง = เห็นทุกสาขา (ดู canSeeBranch) */
     branches: normBranchCodes(rec.branches)
   };
@@ -13484,8 +13637,10 @@ function renderAccount() {
   $('meRole').textContent = (ROLE_LABEL[me.role] || '—') + ' · ' + (ROLE_HELP[me.role] || '');
   $('meRole').className = 'chip ' + (me.role === 'admin' ? 'ok' : (me.role === 'viewer' ? 'warn' : ''));
   $('tabUsers').style.display = isAdmin() ? '' : 'none';
-  $('tabNewcodes').style.display = isAdmin() ? '' : 'none';
-  if (!isAdmin() && (state.masterTab === 'users' || state.masterTab === 'newcodes')) {
+  $('tabNewcodes').style.display = hasPerm('editMaster') ? '' : 'none';
+  /* แท็บย่อยคนละสิทธิ์กัน — ผู้ใช้เป็นของ admin เท่านั้น บาร์โค้ดใหม่ผูกกับ editMaster */
+  if ((state.masterTab === 'users' && !isAdmin()) ||
+      (state.masterTab === 'newcodes' && !hasPerm('editMaster'))) {
     state.masterTab = 'products';
   }
 }
@@ -13498,7 +13653,7 @@ function renderLocationMaster() {
   document.querySelectorAll('[data-lset]').forEach(function (b) {
     b.className = 'btn sm ' + (b.getAttribute('data-lset') === locViewSet ? '' : 'grey');
   });
-  $('btnImportLoc').disabled = !isAdmin();
+  $('btnImportLoc').disabled = !hasPerm('editLocation');
 
   var counts = LOCATION_SETS.map(function (s) {
     return s.label + ' ' + fmtNum(Object.keys(state.locations[s.key] || {}).length) + ' SKU';
@@ -13587,7 +13742,7 @@ function renderLocationMaster() {
 
     /* Location เป็นข้อมูลกลางของทุกสาขา แก้ได้เฉพาะ admin (กติกาเดียวกับหน้าสินค้า)
        คนอื่นเห็นค่าปัจจุบันได้ แต่ไม่มีช่องกรอกให้เลย */
-    if (isAdmin()) {
+    if (hasPerm('editLocation')) {
       var edit = document.createElement('div');
       edit.className = 'm-edit';
 
@@ -13637,7 +13792,7 @@ function renderLocationMaster() {
    RTDB ลบคีย์ด้วย null ได้ และ Rules ของ locations เป็น .write ระดับ admin
    ไม่มี .validate บังคับรูปเรคอร์ด จึงลบได้จริงทั้งบนฐานกลางและโหมดทดสอบในเครื่อง */
 function saveLocationEdit(key, sku, name, pick, refill) {
-  if (!requireAdmin('แก้ Location ไม่ได้')) return Promise.resolve();
+  if (!requirePerm('editLocation', 'แก้ Location ไม่ได้')) return Promise.resolve();
   var set = locViewSet;
   pick = String(pick == null ? '' : pick).trim();
   refill = String(refill == null ? '' : refill).trim();
@@ -13656,7 +13811,7 @@ function saveLocationEdit(key, sku, name, pick, refill) {
 }
 
 function handleLocationImport(file) {
-  if (!requireAdmin('นำเข้า Location ไม่ได้')) return;
+  if (!requirePerm('editLocation', 'นำเข้า Location ไม่ได้')) return;
   var setKey = $('locSetPick').value === 'online' ? 'online' : 'offline';
   var isXlsx = /\.xlsx$/i.test(file.name);
   $('btnImportLoc').disabled = true;
@@ -13731,8 +13886,8 @@ function handleLocationImport(file) {
 
 /* ผูกกับสินค้าที่มีอยู่ — ย้ายยอดด้วยสองแถว: ลบออกจากบาร์โค้ดใหม่ บวกเข้าสินค้าปลายทาง */
 function linkUnknownToProduct(u, targetKey) {
-  if (!requireAdmin('จัดการบาร์โค้ดใหม่ไม่ได้')) return Promise.resolve();
-  if (!canEdit()) { toast(blockedMessage(), true); return Promise.resolve(); }
+  if (!requirePerm('editMaster', 'จัดการบาร์โค้ดใหม่ไม่ได้')) return Promise.resolve();
+  if (!roundEditable()) { toast(blockedMessage(), true); return Promise.resolve(); }
   var p = state.products[targetKey];
   if (!p) { toast('ไม่พบสินค้าปลายทาง', true); return Promise.resolve(); }
 
@@ -13768,7 +13923,7 @@ function linkUnknownToProduct(u, targetKey) {
    ยอดเหลือ 0 → unknownResolved เป็นจริง → หลุดจากรายการที่ต้องจัดการ
    ติดธง discard ไว้ด้วย เพื่อให้ตารางท้ายเอกสารตัดออก (ดู buildUnknownDocTable) */
 function discardUnknown(u) {
-  if (!isStaff()) { toast(roleBlockMessage('ลบบาร์โค้ดออกจากรายการไม่ได้'), true); return Promise.resolve(false); }
+  if (!hasPerm('adjustCount')) { toast(roleBlockMessage('ลบบาร์โค้ดออกจากรายการไม่ได้'), true); return Promise.resolve(false); }
   if (!canScan()) { toast(blockedMessage() + ' — ลบไม่ได้', true); return Promise.resolve(false); }
 
   return ask('ลบบาร์โค้ดนี้ทิ้ง?',
@@ -13790,7 +13945,7 @@ function discardUnknown(u) {
 
 /* สร้างเป็นสินค้าใหม่ — คีย์เท่ากับ safeKey(บาร์โค้ด) ยอดที่ยิงไว้จึงเกาะเข้ามาเอง */
 function createProductFromUnknown(u, name, sellPrice) {
-  if (!requireAdmin('สร้างสินค้าใหม่ไม่ได้')) return Promise.resolve();
+  if (!requirePerm('editMaster', 'สร้างสินค้าใหม่ไม่ได้')) return Promise.resolve();
   var rec = {
     code: u.value,
     name: name,
@@ -13821,7 +13976,7 @@ function createProductFromUnknown(u, name, sellPrice) {
 }
 
 function renderNewCodes() {
-  if (!isAdmin()) return;
+  if (!hasPerm('editMaster')) return;
   var host = $('ncList');
   host.innerHTML = '';
 
@@ -13892,7 +14047,7 @@ function renderNewCodes() {
       act.appendChild(bLink); act.appendChild(bNew);
 
       /* ทางที่สาม — ของที่ยิงหลุดจริง ๆ ไม่ควรต้องผูกหรือสร้างสินค้าหลอกให้รก */
-      if (isStaff()) {
+      if (hasPerm('adjustCount')) {
         var bDrop = document.createElement('button');
         bDrop.className = 'btn grey sm block';
         bDrop.style.marginTop = '8px';
@@ -14083,6 +14238,16 @@ function copyText(text, okMessage) {
 
 /* ---------- หน้าจัดการผู้ใช้ (admin เท่านั้น) ---------- */
 
+/* แปลงชุด perms เป็น patch รายฟิลด์ 'perms/<cap>' — เปิด = true · ปิด = null (ลบคีย์)
+   ตั้งใจเขียนรายช่องแทนการยัดทั้งก้อน perms ลงไป เพื่อไม่ทับคีย์ที่แอปรุ่นหลังอาจเพิ่มมา
+   และเป็นการ update รายเรคอร์ดตามกฎบ้าน ไม่ใช่ set ทับทั้งก้อน */
+function permsPatchFields(perms, extra) {
+  var out = {};
+  Object.keys(extra || {}).forEach(function (k) { out[k] = extra[k]; });
+  CAPS.forEach(function (c) { out['perms/' + c] = (perms && perms[c] === true) ? true : null; });
+  return out;
+}
+
 /* ต้องเหลือ admin ที่ใช้งานได้อย่างน้อย 1 คนเสมอ ไม่งั้นไม่มีใครแก้อะไรได้อีกเลย */
 function activeAdminCount(excludeUid) {
   return Object.keys(state.users).filter(function (u) {
@@ -14104,8 +14269,11 @@ function refreshUsers() {
    ทุกครั้งที่ติ๊ก ซึ่งกำหนดสาขาให้คนที่ดูแล 5 สาขาแทบไม่ได้ */
 function saveUserField(uid, patchFields, opts) {
   if (!requireAdmin('แก้ไขผู้ใช้ไม่ได้')) return Promise.resolve();
-  /* ⭐ v2.11.0 — การแก้สิทธิ์คนอื่นคือการกระทำที่แรงที่สุดในแอป ยืนยันสิทธิ์สดก่อนเสมอ */
-  if (patchFields && patchFields.role !== undefined) {
+  /* ⭐ v2.11.0 — การแก้สิทธิ์คนอื่นคือการกระทำที่แรงที่สุดในแอป ยืนยันสิทธิ์สดก่อนเสมอ
+     v2.12.0 นับการติ๊ก perms เป็นการแก้สิทธิ์ด้วย ไม่ใช่เฉพาะตอนเปลี่ยน role */
+  var touchesPower = patchFields && (patchFields.role !== undefined ||
+    Object.keys(patchFields).some(function (f) { return f.indexOf('perms/') === 0; }));
+  if (touchesPower) {
     return ensureRoleFresh({ force: true }).then(function () {
       if (!requireAdmin('แก้ไขผู้ใช้ไม่ได้')) return;
       return saveUserFieldChecked(uid, patchFields, opts);
@@ -14114,13 +14282,27 @@ function saveUserField(uid, patchFields, opts) {
   return saveUserFieldChecked(uid, patchFields, opts);
 }
 
+/* เซ็ตค่าตาม path แบบ 'perms/scan' ลงในออบเจ็กต์ · null = ลบคีย์ทิ้ง (ให้ตรงกับที่ RTDB ทำ) */
+function setDeep(obj, path, value) {
+  var seg = String(path).split('/');
+  var node = obj;
+  for (var i = 0; i < seg.length - 1; i++) {
+    if (!node[seg[i]] || typeof node[seg[i]] !== 'object') node[seg[i]] = {};
+    node = node[seg[i]];
+  }
+  var last = seg[seg.length - 1];
+  if (value === null) delete node[last]; else node[last] = value;
+}
+
 function saveUserFieldChecked(uid, patchFields, opts) {
   var patch = {};
   Object.keys(patchFields).forEach(function (f) { patch[uid + '/' + f] = patchFields[f]; });
   patch[uid + '/updatedAt'] = Date.now();
   return db.update('users', patch).then(function () {
     if (state.users[uid]) {
-      Object.keys(patchFields).forEach(function (f) { state.users[uid][f] = patchFields[f]; });
+      /* คีย์แบบ 'perms/scan' ต้องลงไปเซ็ตในลูก ไม่ใช่สร้างคีย์ชื่อ 'perms/scan' แบน ๆ
+         ไม่งั้นสำเนาในเครื่องจะเพี้ยนจากฐานทันที แล้วช่องติ๊กบนจอโชว์ไม่ตรงกับของจริง */
+      Object.keys(patchFields).forEach(function (f) { setDeep(state.users[uid], f, patchFields[f]); });
     }
     if (state.me && state.me.uid === uid && patchFields.name) {
       state.me.name = patchFields.name;
@@ -14145,6 +14327,9 @@ function writeUserRecord(uid, name, email, role) {
   var patch = {};
   patch[uid] = {
     name: name, email: email, role: role, active: true,
+    /* เขียน perms ตามแม่แบบไว้เลยตั้งแต่สร้าง คนใหม่จะได้ไม่ต้องพึ่งการถอยไปอ่าน role
+       และแอดมินเห็นช่องติ๊กตรงกับของจริงทันทีโดยไม่ต้องกดอะไรเพิ่ม */
+    perms: permsFromRole(role),
     createdAt: Date.now(), updatedAt: Date.now(), createdBy: (state.me || {}).uid || ''
   };
   return db.update('users', patch).then(function () {
@@ -14360,7 +14545,7 @@ function renderUsers() {
     var roleSp = document.createElement('span'); roleSp.textContent = 'สิทธิ์การใช้งาน';
     var sel = document.createElement('select');
     sel.setAttribute('data-action', 'role');
-    ['admin', 'counter', 'scanner', 'viewer'].forEach(function (r) {
+    ['admin', 'counter', 'scanner', 'viewer', 'custom'].forEach(function (r) {
       var o = document.createElement('option');
       o.value = r; o.textContent = ROLE_LABEL[r] + ' — ' + ROLE_HELP[r];
       if ((u.role || 'counter') === r) o.selected = true;
@@ -14389,9 +14574,78 @@ function renderUsers() {
         toast('ลดสิทธิ์ไม่ได้ ระบบต้องมีผู้ดูแลอย่างน้อย 1 คน — ตั้งคนอื่นเป็น admin ก่อน', true);
         return;
       }
-      saveUserField(uid, { role: this.value });
+      /* ⭐ v2.12.0 — เลือก role = เขียน perms ตามแม่แบบไปด้วยในคำขอเดียว
+         ถ้าเขียนแค่ role แล้วปล่อยให้ perms เดิมค้าง คนจะเห็นป้าย "ผู้นับสต๊อก"
+         แต่สิทธิ์จริงยังเป็นของเดิม ซึ่งเป็นความเข้าใจผิดที่อันตรายที่สุดของหน้านี้ */
+      saveUserField(uid, permsPatchFields(permsFromRole(wanted), { role: wanted }));
     };
     roleLab.appendChild(roleSp); roleLab.appendChild(sel);
+
+    /* ---------- ช่องติ๊กความสามารถ (v2.12.0) ----------
+       เก็บเฉพาะช่องที่เปิด (perms/<cap> = true) ช่องที่ปิดเขียน null ให้คีย์หายไปเลย
+       ไม่เก็บ false ไว้ เพราะทั้ง Rules และ hasPerm() เช็ค === true อยู่แล้ว
+       การมีคีย์ false ปนอยู่จะทำให้ 'perms ว่างไหม' ตอบผิด แล้วคนเดิมจะไม่ถอยไปใช้แม่แบบ
+
+       ติ๊กเองทีไร role กลายเป็น custom อัตโนมัติ — ป้ายชื่อจะได้ไม่โกหกว่ายังเป็น counter
+       ทั้งที่สิทธิ์จริงไม่ตรงแม่แบบแล้ว */
+    var permBox = document.createElement('div');
+    permBox.className = 'fld';
+    permBox.style.margin = '10px 0 0';
+    var permSp = document.createElement('span');
+    permSp.textContent = 'ความสามารถที่เปิดให้';
+    permBox.appendChild(permSp);
+
+    var live = permsForRecord(u);
+    var permAdmin = (u.role || 'counter') === 'admin';
+    var permHint = document.createElement('div');
+    permHint.className = 'hint';
+    permHint.setAttribute('data-permhint', uid);
+
+    var describePerms = function () {
+      if (permAdmin) return 'ผู้ดูแลระบบได้ทุกความสามารถเสมอ ติ๊กออกไม่ได้';
+      var on = CAPS.filter(function (c) { return live[c] === true; });
+      return on.length ? ('เปิดไว้ ' + fmtNum(on.length) + ' จาก ' + fmtNum(CAPS.length) + ' ข้อ')
+                       : 'ยังไม่ได้เปิดความสามารถใดเลย — เข้าระบบได้แต่เห็นแค่รายการ Job';
+    };
+
+    CAP_GROUPS.forEach(function (g) {
+      var gl = document.createElement('div');
+      gl.className = 'hint';
+      gl.style.cssText = 'margin:8px 0 2px;font-weight:600';
+      gl.textContent = g.label;
+      permBox.appendChild(gl);
+
+      g.caps.forEach(function (c) {
+        var lab = document.createElement('label');
+        lab.className = 'brline';
+        var cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.setAttribute('data-permpick', c.key);
+        cb.checked = permAdmin || live[c.key] === true;
+        cb.disabled = permAdmin;
+        cb.onchange = function () {
+          if (cb.checked) live[c.key] = true; else delete live[c.key];
+          permHint.textContent = describePerms();
+          /* ติ๊กเองแล้วสิทธิ์ไม่ตรงแม่แบบไหนอีก จึงเขียน role เป็น custom ไปพร้อมกัน
+             ใช้ keepUi เพราะการวาดลิสต์ใหม่ทุกครั้งที่ติ๊กจะเด้งสกอลล์กลับหัวลิสต์ */
+          sel.value = 'custom';
+          saveUserField(uid, permsPatchFields(live, { role: 'custom' }), { keepUi: true });
+        };
+        var tx = document.createElement('span');
+        tx.textContent = c.label + (c.help ? ' — ' + c.help : '');
+        lab.appendChild(cb); lab.appendChild(tx);
+        permBox.appendChild(lab);
+      });
+    });
+
+    permHint.textContent = describePerms();
+
+    /* จัดการผู้ใช้ไม่มีช่องให้ติ๊ก — ต้องบอกให้ชัดว่าทำไม ไม่ใช่ปล่อยให้หาไม่เจอแล้วเดาเอง */
+    var permNote = document.createElement('div');
+    permNote.className = 'muted';
+    permNote.style.marginTop = '6px';
+    permNote.textContent = 'หมายเหตุ: การจัดการผู้ใช้และสิทธิ์เป็นของผู้ดูแลระบบเท่านั้น ' +
+                           'ไม่มีช่องให้ติ๊ก เพราะใครแก้ทะเบียนนี้ได้ก็เปิดสิทธิ์ทุกข้อให้ตัวเองได้อยู่ดี';
 
     /* ---------- สาขาที่ดูแล ----------
        ไม่ติ๊กเลย = เห็นทุกสาขา (เท่ากับพฤติกรรมเดิมก่อนมีฟิลด์นี้)
@@ -14480,6 +14734,7 @@ function renderUsers() {
     drawBranchList();
 
     row.appendChild(nameLab); row.appendChild(roleLab);
+    row.appendChild(permBox); row.appendChild(permHint); row.appendChild(permNote);
     row.appendChild(brBox); row.appendChild(brHint);
 
     /* ปุ่มรีเซ็ตรหัสผ่าน — มีทุกแถว รวมถึงของตัวเอง */
@@ -14589,7 +14844,7 @@ function init() {
   $('newJobStoreType').addEventListener('change', function () {
     if (this.value === '__add__') {
       this.value = DEFAULT_STORE_TYPE;
-      if (!requireAdmin('เพิ่มประเภทคลังไม่ได้')) { previewJobCode(); return; }
+      if (!requirePerm('editMaster', 'เพิ่มประเภทคลังไม่ได้')) { previewJobCode(); return; }
       ask('เพิ่มประเภทคลังย่อย', 'ใช้ได้กับทุกสาขา และจะไปอยู่ในรหัส Job ด้วย', 'เพิ่มประเภทนี้',
           { fields: [
             { key: 'key', label: 'ตัวย่อสำหรับรหัส Job (A-Z 0-9)', type: 'text', placeholder: 'เช่น WH' },
@@ -14603,7 +14858,7 @@ function init() {
   $('btnAddRound').onclick = function () {
     var name = $('newRoundName').value.trim();
     var abbr = $('newJobAbbr').value.trim();
-    if (!requireStaff('สร้าง Job ไม่ได้')) return;
+    if (!requirePerm('createJob', 'สร้าง Job ไม่ได้')) return;
     if (!state.newBranch) { toast('เลือกสาขาจากทะเบียนก่อน', true); return; }
     if (!name) { toast('ตั้งชื่อรอบนับก่อน', true); return; }
 
@@ -14750,11 +15005,11 @@ function init() {
 
   /* ---- ทะเบียนสาขา ---- */
   $('btnImportBranch').onclick = function () {
-    if (!requireAdmin('นำเข้าทะเบียนสาขาไม่ได้')) return;
+    if (!requirePerm('editLocation', 'นำเข้าทะเบียนสาขาไม่ได้')) return;
     $('branchFile').click();
   };
   $('btnResetBranch').onclick = function () {
-    if (!requireAdmin('ล้างทะเบียนสาขาไม่ได้')) return;
+    if (!requirePerm('editLocation', 'ล้างทะเบียนสาขาไม่ได้')) return;
     resetBranchRegistry();
   };
   $('branchFile').addEventListener('change', function () {
@@ -14763,7 +15018,7 @@ function init() {
   });
   /* ---- Master Location ---- */
   $('btnImportLoc').onclick = function () {
-    if (!requireAdmin('นำเข้า Location ไม่ได้')) return;
+    if (!requirePerm('editLocation', 'นำเข้า Location ไม่ได้')) return;
     $('locFile').click();
   };
   $('locFile').addEventListener('change', function () {
@@ -14908,7 +15163,7 @@ function init() {
   };
 
   $('btnImportMaster').onclick = function () {
-    if (!requireAdmin('นำเข้า Master ไม่ได้')) return;
+    if (!requirePerm('editMaster', 'นำเข้า Master ไม่ได้')) return;
     $('masterFile').click();
   };
   $('masterFile').addEventListener('change', function () {
@@ -14918,7 +15173,7 @@ function init() {
 
   $('btnNoteTemplate').onclick = downloadNoteTemplate;
   $('btnImportNote').onclick = function () {
-    if (!requireAdmin('อัปเดต Note ไม่ได้')) return;
+    if (!requirePerm('editMaster', 'อัปเดต Note ไม่ได้')) return;
     $('noteFile').click();
   };
   $('noteFile').addEventListener('change', function () {
@@ -14928,7 +15183,7 @@ function init() {
 
   $('btnTypeTemplate').onclick = downloadTypeTemplate;
   $('btnImportType').onclick = function () {
-    if (!requireAdmin('เปลี่ยนประเภทสินค้าไม่ได้')) return;
+    if (!requirePerm('editMaster', 'เปลี่ยนประเภทสินค้าไม่ได้')) return;
     $('typeFile').click();
   };
   $('typeFile').addEventListener('change', function () {
@@ -14937,7 +15192,7 @@ function init() {
   });
 
   $('btnImportImages').onclick = function () {
-    if (!requireAdmin('นำเข้ารูปสินค้าไม่ได้')) return;
+    if (!requirePerm('editMaster', 'นำเข้ารูปสินค้าไม่ได้')) return;
     $('imageFile').click();
   };
   $('imageFile').addEventListener('change', function () {
@@ -14962,7 +15217,7 @@ function init() {
   });
   $('btnGenDocNo').onclick = function () {
     if (!state.roundId) { toast('เลือก Job ก่อน', true); return; }
-    if (!canEdit()) { toast(blockedMessage(), true); return; }
+    if (!canEdit()) { toast(docEditBlocked(), true); return; }
     var existing = currentDocNo();
     var go = existing
       ? ask('ออกเลขที่ใหม่?', 'ตอนนี้มีเลขที่อยู่แล้ว: ' + existing + '\n\nออกเลขใหม่จะทับเลขเดิม',
@@ -15566,7 +15821,7 @@ init();
         ในรอบนั้นแบบ "เอาค่าสูงสุดรายรหัส" ทันทีโดยไม่เขียนอะไร
         → viewer/scanner ที่เขียนไม่ได้ก็เห็นตัวเลขถูกก่อน migrate
 
-        migrateCyclesIfNeeded() รันครั้งเดียวตอนเปิดแอป เฉพาะ isStaff()
+        migrateCyclesIfNeeded() รันครั้งเดียวตอนเปิดแอป เฉพาะคนที่มีสิทธิ์ importSysQty
         ยุบ systemQty แบบเอาค่าสูงสุดรายรหัส — ห้ามบวกกันเด็ดขาด
         ถ้ามีรหัสที่ Job ต่างใบเก็บไว้ไม่เท่ากันจะขึ้นโมดัลบอกว่ารหัสไหน ค่าจากใบไหน
         และเลือกค่าไหน (10 รายการแรก) ไม่ยุบเงียบ

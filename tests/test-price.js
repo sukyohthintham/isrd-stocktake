@@ -25,6 +25,7 @@ function check(name, ok, got) {
       return Promise.resolve();
     };
     window.requireAdmin = function () { return true; };
+    window.requirePerm = function () { return true; };
     window.ask = function (t, b, ok) { window.__asks.push({ t: t, b: b, ok: ok }); return Promise.resolve(true); };
     window.toast = function () {};
 

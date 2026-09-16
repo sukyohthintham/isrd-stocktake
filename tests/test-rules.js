@@ -85,6 +85,7 @@ function canWrite(expr, role, roundStatus, extra) {
 
 const S = rules.rules.stocktake2026;
 const R = S.rounds.$roundId;
+const C = S.cycles.$cycleId;
 const ROLES = ['admin', 'counter', 'scanner', 'viewer'];
 const STATUSES = ['counting', 'reviewing', 'closed'];
 
@@ -285,6 +286,181 @@ check('อ่านได้เฉพาะผู้ใช้ที่ยัง 
 /* WMS Dashboard ใช้ฐานเดียวกัน ถ้าบล็อกนี้หายตอนวาง Rules ใหม่ ระบบนั้นจะเขียนไม่ได้ทันที */
 check('บล็อก wms2026 ยังอยู่ (ห้ามหายตอน publish)',
       !!rules.rules.wms2026 && rules.rules.wms2026['.write'] === true, rules.rules.wms2026);
+
+/* ============================================================
+   [8] สิทธิ์แบบติ๊กความสามารถ (perms) — v2.12.0
+   ============================================================
+
+   กติกาของ Rules ชุดนี้: เงื่อนไขทุก path เขียนเป็น
+     (เงื่อนไข role เดิม) || (perms/<cap> === true)
+   จงใจไม่ตัดท่อน role เดิมทิ้ง เพราะผู้ใช้ 15 คนเดิมยังไม่มีฟิลด์ perms ในฐาน
+   ถ้าตัด พวกเขาจะหลุดสิทธิ์ทันทีที่กด Publish (ข้อ [1] ข้างบนคือตัวคุมเรื่องนี้)
+
+   ส่วนข้อนี้คุมอีกด้าน: ติ๊ก cap ให้แล้วต้องเขียนได้จริง และติ๊กผิดช่องต้องเขียนไม่ได้
+   ============================================================ */
+console.log('\n[8] perms — ติ๊ก cap แล้วเขียนได้จริง (custom user)');
+
+const ALL_CAPS = ['scan', 'seeSystemQty', 'createJob', 'closeJob', 'editMaster', 'editLocation',
+                  'importSysQty', 'adjustCount', 'viewSummary', 'docs', 'editDoc', 'viewMasterLoc',
+                  'deleteJob', 'reopenRound', 'purgeUser'];
+
+/* ผู้ใช้ role 'custom' ที่ติ๊กเฉพาะ cap ที่ระบุ */
+function canWriteCaps(expr, caps, roundStatus, extra, cycleStatus) {
+  extra = extra || {};
+  const db = makeDb('custom', roundStatus);
+  const perms = {};
+  caps.forEach(function (c) { perms[c] = true; });
+  db.stocktake2026.users.u_me.perms = perms;
+  if (cycleStatus) db.stocktake2026.cycles.C1.status = cycleStatus;
+  return evalRule(expr, {
+    db: db, auth: { uid: 'u_me' },
+    existing: extra.existing,
+    incoming: extra.incoming === undefined ? { x: 1 } : extra.incoming
+  });
+}
+
+/* cap ที่ควรปลดล็อก path นั้น · สถานะ Job ที่ควรเขียนได้ */
+const PERM_ROWS = [
+  { path: 'products',   rule: S.products['.write'],   cap: 'editMaster',   st: STATUSES },
+  { path: 'settings',   rule: S.settings['.write'],   cap: 'editMaster',   st: STATUSES },
+  { path: 'locations',  rule: S.locations['.write'],  cap: 'editLocation', st: STATUSES },
+  { path: 'branches',   rule: S.branches['.write'],   cap: 'editLocation', st: STATUSES },
+  { path: 'rounds/$id/schema',    rule: R.schema['.write'],    cap: 'importSysQty', st: STATUSES,
+    extra: { incoming: 2 } },
+  { path: 'rounds/$id/systemQty', rule: R.systemQty['.write'], cap: 'importSysQty', st: ['counting'] },
+  { path: 'rounds/$id/transfers', rule: R.transfers['.write'], cap: 'importSysQty', st: ['counting'] },
+  { path: 'rounds/$id/docNo',     rule: R.docNo['.write'],     cap: 'editDoc',
+    st: ['counting', 'reviewing'], extra: { incoming: 'D-1' } },
+  { path: 'rounds/$id/docType',   rule: R.docType['.write'],   cap: 'editDoc',
+    st: ['counting', 'reviewing'], extra: { incoming: 'stockTake' } },
+  { path: 'rounds/$id/transferNo', rule: R.transferNo['.write'], cap: 'editDoc',
+    st: ['counting', 'reviewing'], extra: { incoming: 'T-1' } },
+  { path: 'rounds/$id/reasons',   rule: R.reasons['.write'],   cap: 'editDoc',
+    st: ['counting', 'reviewing'], also: ['scan'], extra: { incoming: 'ของชำรุด' } },
+  { path: 'rounds/$id/purgeLog',  rule: R.purgeLog['.write'],  cap: 'purgeUser', st: ['counting'],
+    extra: { incoming: { at: 1, by: 'isrd', targetUser: 'Gift' } } },
+  { path: 'rounds/$id/stat',      rule: R.stat['.write'],      cap: 'scan', st: ['counting'],
+    also: ['adjustCount'],
+    extra: { existing: { pieces: 1 }, incoming: { pieces: 2, skus: 1, lastAt: 5, ver: 1 } } },
+  { path: 'rounds/$id/skuQty',    rule: R.skuQty['.write'],    cap: 'scan', st: ['counting'],
+    also: ['adjustCount'],
+    extra: { existing: { A1: 1 }, incoming: { A1: 2 } } },
+  { path: 'rounds/$id/unknown/$id', rule: R.unknown.$id['.write'], cap: 'scan', st: ['counting'],
+    also: ['adjustCount'],
+    extra: { existing: undefined, incoming: { value: 'X' } } },
+  { path: 'rounds/$id/scans/$scanId', rule: R.scans.$scanId['.write'], cap: 'scan', st: ['counting'],
+    also: ['adjustCount'],
+    extra: { existing: undefined,
+             incoming: { code: 'A1', zone: 'no-zone', delta: 1, user: 'ท', ts: 1 } } },
+  { path: 'rounds/$id/scans/$scanId (ลบแถว)', rule: R.scans.$scanId['.write'], cap: 'purgeUser',
+    st: ['counting'],
+    extra: { existing: { code: 'A1', zone: 'no-zone', delta: 3, user: 'Gift', ts: 1 },
+             incoming: null } },
+  { path: 'docCounters/$b/$k/$ym', rule: S.docCounters.$branch.$kind.$yearMonth['.write'],
+    cap: 'editDoc', st: STATUSES, extra: { incoming: 5 } }
+];
+
+PERM_ROWS.forEach(function (row) {
+  const good = row.st.every(function (st) {
+    return canWriteCaps(row.rule, [row.cap], st, row.extra);
+  });
+  check('ติ๊ก ' + row.cap + ' แล้วเขียน ' + row.path + ' ได้', good,
+        { path: row.path, cap: row.cap, st: row.st });
+
+  /* ติ๊กครบทุกช่อง "ยกเว้น" ช่องนี้ ต้องเขียนไม่ได้ — พิสูจน์ว่ากฎดูที่ cap ของตัวเองจริง
+     ไม่ใช่บังเอิญผ่านเพราะ cap อื่นในนิพจน์เดียวกัน */
+  const also = row.also || [];
+  const others = ALL_CAPS.filter(function (c) { return c !== row.cap && also.indexOf(c) < 0; });
+  const leaked = row.st.filter(function (st) {
+    return canWriteCaps(row.rule, others, st, row.extra);
+  });
+  check('ไม่ติ๊ก ' + [row.cap].concat(also).join('/') + ' แล้วเขียน ' + row.path + ' ไม่ได้',
+        leaked.length === 0, { path: row.path, leakedAt: leaked });
+});
+
+console.log('\n[8b] adjustCount — แก้ยอดที่นับไปแล้วต้องเขียน scans/stat/skuQty ได้');
+['stat', 'skuQty'].forEach(function (k) {
+  check('adjustCount เขียน rounds/$id/' + k + ' ได้',
+        canWriteCaps(R[k]['.write'], ['adjustCount'], 'counting',
+          { existing: { A1: 1 }, incoming: { A1: 2 } }) === true, k);
+});
+check('adjustCount เขียนแถว scan ใหม่ได้ (การหักยอดคือการเขียนแถวใหม่ ไม่ใช่ลบ)',
+      canWriteCaps(R.scans.$scanId['.write'], ['adjustCount'], 'counting',
+        { existing: undefined,
+          incoming: { code: 'A1', zone: 'no-zone', delta: -1, user: 'ท', ts: 1 } }) === true, 'adjust');
+check('⭐ adjustCount ลบแถว scan ไม่ได้ (ข้อยกเว้นเป็นของ purgeUser เท่านั้น)',
+      canWriteCaps(R.scans.$scanId['.write'], ['adjustCount'], 'counting',
+        { existing: { code: 'A1', zone: 'no-zone', delta: 3, user: 'Gift', ts: 1 },
+          incoming: null }) === false, 'adjust delete');
+
+console.log('\n[8c] กฎบ้านที่ห้ามผ่อน — แก้ทับแถว scan');
+check('⭐ ติ๊กครบทุก cap ก็ยังแก้ทับแถว scan ไม่ได้',
+      STATUSES.every(function (st) {
+        return canWriteCaps(R.scans.$scanId['.write'], ALL_CAPS, st,
+          { existing: { code: 'A1', zone: 'no-zone', delta: 3, user: 'Gift', ts: 1 },
+            incoming: { code: 'A1', zone: 'no-zone', delta: 99, user: 'Gift', ts: 1 } }) === false;
+      }), 'overwrite');
+check('⭐ ติ๊กครบทุก cap ก็ยังลบแถว scan นอกรอบ counting ไม่ได้',
+      ['reviewing', 'closed'].every(function (st) {
+        return canWriteCaps(R.scans.$scanId['.write'], ALL_CAPS, st,
+          { existing: { code: 'A1', zone: 'no-zone', delta: 3, user: 'Gift', ts: 1 },
+            incoming: null }) === false;
+      }), 'delete outside counting');
+
+console.log('\n[8d] ทะเบียนผู้ใช้ — ไม่มี cap ไหนปลดล็อกได้ (admin เท่านั้น)');
+check('⭐ custom ที่ติ๊กครบทุกช่องก็เขียน users/ ไม่ได้',
+      canWriteCaps(S.users.$uid['.write'], ALL_CAPS, 'counting',
+        { incoming: { name: 'x', role: 'counter', active: true } }) === false, 'users');
+check('นิพจน์ users/ ไม่มีการอ้าง perms เลย', !/perms\//.test(S.users.$uid['.write']),
+      S.users.$uid['.write'].slice(0, 60));
+check("role/.validate ยอมรับ custom",
+      /custom/.test(S.users.$uid.role['.validate']), S.users.$uid.role['.validate']);
+check('perms รับเฉพาะ boolean',
+      S.users.$uid.perms.$cap['.validate'] === 'newData.isBoolean()', S.users.$uid.perms);
+
+console.log('\n[8e] custom ที่ไม่ติ๊กอะไรเลย = เขียนไม่ได้สักที่');
+const emptyLeaks = [];
+STATUSES.forEach(function (st) {
+  MATRIX.forEach(function (row) {
+    if (canWriteCaps(row.rule, [], st, row.extra)) emptyLeaks.push(row.path + '@' + st);
+  });
+});
+check('custom เปล่าเขียนไม่ได้เลย', emptyLeaks.length === 0, emptyLeaks);
+
+console.log('\n[8f] cap ฝั่งแสดงผลต้องไม่ปลดล็อกการเขียนอะไรเลย');
+/* viewSummary · docs · viewMasterLoc · seeSystemQty คุมที่จอพอ ตามที่ตกลงกันไว้
+   ถ้าวันหนึ่งมีคนเผลอเอาไปใส่ในนิพจน์ .write ต้องดังตรงนี้ */
+const VIEW_ONLY = ['viewSummary', 'docs', 'viewMasterLoc', 'seeSystemQty'];
+const viewLeaks = [];
+STATUSES.forEach(function (st) {
+  MATRIX.forEach(function (row) {
+    if (canWriteCaps(row.rule, VIEW_ONLY, st, row.extra)) viewLeaks.push(row.path + '@' + st);
+  });
+});
+check('cap ดูอย่างเดียวเขียนไม่ได้เลย', viewLeaks.length === 0, viewLeaks);
+
+console.log('\n[8g] รอบที่ปิดแล้ว + การลบ Job');
+check('closeJob ปิดรอบได้ แต่เปิดรอบที่ปิดแล้วไม่ได้',
+      canWriteCaps(C.status['.write'], ['closeJob'], 'counting', { existing: 'counting', incoming: 'closed' }) === true &&
+      canWriteCaps(C.status['.write'], ['closeJob'], 'counting', { existing: 'closed', incoming: 'counting' }) === false,
+      'closeJob');
+check('⭐ reopenRound เปิดรอบที่ปิดแล้วได้',
+      canWriteCaps(C.status['.write'], ['closeJob', 'reopenRound'], 'counting',
+        { existing: 'closed', incoming: 'counting' }) === true, 'reopenRound');
+check('createJob สร้าง Job ได้ แต่ลบไม่ได้',
+      canWriteCaps(S.roundIndex.$roundId['.write'], ['createJob'], 'counting',
+        { existing: undefined, incoming: { jobCode: 'J1', branchCode: 'B1', status: 'counting' } }) === true &&
+      canWriteCaps(S.roundIndex.$roundId['.write'], ['createJob'], 'counting',
+        { existing: { jobCode: 'J1', branchCode: 'B1', status: 'counting' }, incoming: null }) === false,
+      'createJob');
+check('⭐ deleteJob ลบ Job ได้',
+      canWriteCaps(S.roundIndex.$roundId['.write'], ['createJob', 'deleteJob'], 'counting',
+        { existing: { jobCode: 'J1', branchCode: 'B1', status: 'counting' }, incoming: null }) === true,
+      'deleteJob');
+check('ไม่มี reopenRound แล้วแตะ Job ที่ปิดแล้วไม่ได้',
+      canWriteCaps(S.roundIndex.$roundId['.write'], ['createJob', 'closeJob', 'editDoc'], 'closed',
+        { existing: { jobCode: 'J1', branchCode: 'B1', status: 'closed' },
+          incoming: { jobCode: 'J1', branchCode: 'B1', status: 'counting' } }) === false, 'closed');
 
 console.log('\n==== ' + pass + ' passed, ' + fail + ' failed ====');
 process.exit(fail ? 1 : 0);
