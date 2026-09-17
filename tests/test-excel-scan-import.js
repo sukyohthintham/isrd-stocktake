@@ -160,7 +160,7 @@ function check(name, ok, got) {
         r2.recCount === 1 && r2.delta === 10, r2);
   check('ลงที่ rounds/R1 · mode = scan', r2.path === 'rounds/R1' && r2.mode === 'scan', r2);
   check('บันทึกชื่อไฟล์ไว้ในเหตุผล ตรวจย้อนหลังได้',
-        /^นำเข้า Excel: count\.xlsx /.test(r2.reason || ''), r2.reason);
+        /^นำเข้าเพิ่ม Excel: count\.xlsx /.test(r2.reason || ''), r2.reason);
   check('บันทึกว่าใครนำเข้าและเมื่อไหร่', r2.user === 'สมชาย' && r2.hasTs === true, r2);
 
   /* ---------- 3. อัปไฟล์เดิมซ้ำ = เบิ้ล (พฤติกรรมที่เตือนไว้) ---------- */
@@ -192,14 +192,18 @@ function check(name, ok, got) {
     return { ok: ok, title: a.t, body: a.b || '', writes: window.__writes.length,
              counts: state.counts.A1, toast: (window.__toasts[0] || {}).m };
   });
-  check('บอกจำนวนแถว / รวมชิ้น / SKU ไม่ซ้ำ',
-        /แถวที่นำเข้าได้ 3 แถว/.test(r4.body) &&
-        /รวม 22 ชิ้น/.test(r4.body) && /3 SKU \(ไม่ซ้ำ\)/.test(r4.body), r4.body);
+  check('บอกยอดฝั่งเพิ่มครบทั้งชิ้นและ SKU',
+        /➕ เพิ่ม\s+22 ชิ้น · 3 SKU/.test(r4.body), r4.body);
+  check('ไฟล์ชีตเดียวยังบอกฝั่งลบเป็น 0 ไม่ใช่ซ่อนทิ้ง',
+        /➖ ลบ\s+0 ชิ้น · 0 SKU/.test(r4.body), r4.body);
+  check('บอกยอดสุทธิ', /สุทธิ \+22 ชิ้น/.test(r4.body), r4.body);
+  check('⭐ บอกว่าไฟล์รูปแบบเดิมถูกอ่านเป็นชีต "เพิ่ม"',
+        /ไฟล์รูปแบบเดิม \(ชีตเดียว\)/.test(r4.body), r4.body);
   check('ลิสต์รหัสที่ไม่มีใน Master ให้เห็น',
         /ไม่มีใน Master 1 รายการ/.test(r4.body) && /· ZZZ9 × 7/.test(r4.body), r4.body);
   check('บอกชื่อไฟล์ในพรีวิว', /ไฟล์: count\.xlsx/.test(r4.body), r4.body);
   check('หัวกล่องบอกยอดรวมที่กำลังจะเขียน',
-        /ยืนยันนำเข้ายอดนับ 22 ชิ้น\?/.test(r4.title || ''), r4.title);
+        /ยืนยันนำเข้า: เพิ่ม 22 ชิ้น\?/.test(r4.title || ''), r4.title);
   check('กดยกเลิกแล้วไม่เขียนอะไรเลย',
         r4.ok === false && r4.writes === 0 && r4.counts === 2, r4);
   check('บอกผู้ใช้ว่ายกเลิกแล้ว ยังไม่ได้บันทึก', /ยังไม่ได้บันทึก/.test(r4.toast || ''), r4.toast);

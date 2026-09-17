@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.12.1">
+<meta name="version" content="2.13.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.12.1</title>
+<title>ISRD Stocktake v2.13.0</title>
 
 <style>
 :root{
@@ -1755,7 +1755,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.12.1';
+var APP_VERSION = '2.13.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -3009,6 +3009,40 @@ function parseXlsx(buffer, preferredSheet) {
           fellBackToFirstSheet: fellBack
         };
       });
+    });
+  });
+}
+
+/* อ่านทุกชีตในไฟล์เดียว — ใช้กับไฟล์นำเข้ายอดนับที่แยกชีต "เพิ่ม" กับ "ลบ" (v2.13.0)
+   แยกจาก parseXlsx() ที่อ่านชีตเดียวโดยตั้งใจ: ไฟล์ยอดระบบจาก Zort มีชีตเดียวแต่แถวเป็นหมื่น
+   ถ้าให้ตัวนั้นแกะ XML ทุกชีตเสมอ จะเสียเวลากับชีตที่ไม่มีใครอ่านทุกครั้งที่นำเข้ายอดระบบ
+   อ่านทีละชีตต่อกันเป็นลูกโซ่ ไม่ยิงพร้อมกัน — คลายบีบอัดหลายก้อนพร้อมกันบนมือถือรุ่นเล็กแล้วค้าง */
+function parseXlsxSheets(buffer) {
+  var zip;
+  try { zip = unzip(buffer); }
+  catch (e) { return Promise.reject(e); }
+
+  return zip.read('xl/sharedStrings.xml').then(function (ssBytes) {
+    var shared = [];
+    if (ssBytes) {
+      var ssXml = new TextDecoder('utf-8').decode(ssBytes);
+      var re = /<si>([\s\S]*?)<\/si>/g, m;
+      while ((m = re.exec(ssXml)) !== null) shared.push(textOfNode(m[1]));
+    }
+    return xlsxSheetList(zip).then(function (sheets) {
+      var usable = sheets.filter(function (s) { return s.path && zip.has(s.path); });
+      if (!usable.length) throw new Error('NO_SHEET');
+      var out = [];
+      var chain = Promise.resolve();
+      usable.forEach(function (s) {
+        chain = chain.then(function () {
+          return zip.read(s.path).then(function (bytes) {
+            var parsed = parseSheetXml(new TextDecoder('utf-8').decode(bytes), shared);
+            out.push({ name: s.name, rows: parsed.rows, rowNums: parsed.rowNums });
+          });
+        });
+      });
+      return chain.then(function () { return out; });
     });
   });
 }
@@ -6938,7 +6972,11 @@ var SCAN_IMPORT_COLUMNS = {
 /* คืนผลการอ่านล้วน ๆ ไม่เขียนอะไรทั้งสิ้น — คนเรียกเอาไปโชว์พรีวิวก่อนตัดสินใจ
    รหัสซ้ำในไฟล์ถูกยุบเป็นแถวเดียวแล้วบวกจำนวนกัน (คนละล็อตของตัวเดียวกัน)
    เขียนเป็น scan แถวเดียวต่อ SKU ไฟล์ห้าพันแถวจึงไม่กลายเป็นห้าพันเรคอร์ด */
-function parseScanImportFile(parsed) {
+function parseScanImportFile(parsed, opts) {
+  opts = opts || {};
+  /* ชีต "ลบ" ไม่บังคับกรอกจำนวน — เว้นว่าง = เอาออกทั้งหมดเท่าที่ Job นี้นับไว้
+     เก็บเป็น qty: null ไม่ใช่ 0 เพราะ 0 แปลว่า "ไม่เอาออกเลย" ซึ่งคนละความหมายกัน */
+  var blankMeansAll = opts.blankMeansAll === true;
   var rows = (parsed && parsed.rows) || [];
   if (!rows.length) throw new Error('EMPTY_FILE');
 
@@ -6975,13 +7013,18 @@ function parseScanImportFile(parsed) {
     var code = cellText(row[idx.code]);
     if (!code) { stat.noCode.push(num); continue; }
 
-    /* จำนวนต้องเป็นตัวเลขมากกว่า 0 — ว่าง/ตัวหนังสือ/0/ติดลบ = ข้ามทั้งแถว
-       ติดลบตั้งใจไม่รับ: ไฟล์นี้คือ "ของที่นับเจอ" การหักยอดต้องทำผ่านหน้าสรุป
-       ซึ่งมีกล่องยืนยันและบันทึกเหตุผลของมันเอง */
+    /* จำนวนต้องเป็นตัวเลขมากกว่า 0 — ตัวหนังสือ/0/ติดลบ = ข้ามทั้งแถว
+       ติดลบตั้งใจไม่รับแม้ในชีต "ลบ": ทิศทางบอกด้วยชื่อชีตแล้ว การปนเครื่องหมายลบ
+       ในชีตลบจะกลายเป็น "ลบสองครั้ง" ในหัวคนกรอก ซึ่งเดาไม่ถูกว่าหมายถึงอะไร */
     var cell = parseNumberCell(row[idx.qty]);
-    if (cell.bad || cell.blank || !(cell.value > 0)) {
+    var qty;
+    if (blankMeansAll && cell.blank) {
+      qty = null;                                   // ทั้งหมดเท่าที่ Job นี้นับไว้
+    } else if (cell.bad || cell.blank || !(cell.value > 0)) {
       stat.badQty.push(num);
       continue;
+    } else {
+      qty = cell.value;
     }
 
     var known = state.scanIndex.get(code.toUpperCase());
@@ -6992,32 +7035,94 @@ function parseScanImportFile(parsed) {
     } else {
       stat.dupCodes++;
     }
-    byKey[key].qty += cell.value;
+    /* null ("ทั้งหมด") ชนะเสมอเมื่อปนกับตัวเลขในรหัสเดียวกัน
+       เพราะบวกเลขอื่นเข้าไปก็ไม่ทำให้มากกว่า "ทั้งหมดที่นับไว้" ได้อยู่ดี */
+    if (qty === null || byKey[key].qty === null) byKey[key].qty = null;
+    else byKey[key].qty += qty;
     byKey[key].rows.push(num);
     stat.rows++;
-    stat.pieces += cell.value;
+    stat.pieces += (qty === null ? 0 : qty);
   }
 
   var items = order.map(function (k) { return byKey[k]; });
   stat.skus = items.length;
+  stat.allRows = items.filter(function (it) { return it.qty === null; }).length;
   stat.skipped = stat.noCode.length + stat.badQty.length;
   stat.unknownItems = items.filter(function (it) { return !it.known; });
   return { items: items, stat: stat };
+}
+
+/* ชื่อชีตที่ใช้แยกทิศทาง — เทียบด้วย normText จึงไม่สนช่องว่างหรือตัวพิมพ์ */
+var SCAN_SHEET_ADD = 'เพิ่ม';
+var SCAN_SHEET_REMOVE = 'ลบ';
+
+/* อ่านไฟล์นำเข้ายอดนับทั้งใบ คืน { add, remove } — ยังไม่เขียนอะไรทั้งสิ้น
+   ⭐ backward compat: ไฟล์รุ่นก่อน v2.13.0 มีชีตเดียวชื่อ "นำเข้ายอดนับ"
+   ถ้าหาชีตชื่อ เพิ่ม/ลบ ไม่เจอเลย ให้ถือชีตแรกเป็น "เพิ่ม" ทั้งใบ
+   (กติกาเดียวกับ parseXlsx ที่ถอยไปอ่านชีตแรกเมื่อไม่เจอชื่อที่ต้องการ)
+   ไฟล์ที่ทีมกรอกค้างไว้ก่อนอัปเดตจึงยังอัปได้เหมือนเดิม ไม่ต้องทำใหม่ */
+function readScanImportBook(file) {
+  if (!/\.xlsx$/i.test(file.name)) {
+    /* CSV มีชีตเดียวโดยธรรมชาติ จึงเป็น "เพิ่ม" ล้วนเสมอ
+       อยากลบต้องใช้ .xlsx เพราะต้องมีสองชีตถึงจะบอกทิศทางได้ */
+    return file.arrayBuffer().then(function (buf) {
+      return { add: parseScanImportFile(parseCsv(decodeTextFile(buf))), remove: null, legacy: true };
+    });
+  }
+  return file.arrayBuffer().then(parseXlsxSheets).then(function (sheets) {
+    var find = function (want) {
+      var w = normText(want);
+      for (var i = 0; i < sheets.length; i++) {
+        if (normText(sheets[i].name) === w) return sheets[i];
+      }
+      return null;
+    };
+    var addSheet = find(SCAN_SHEET_ADD);
+    var remSheet = find(SCAN_SHEET_REMOVE);
+    var legacy = false;
+    if (!addSheet && !remSheet) { addSheet = sheets[0]; legacy = true; }
+
+    /* ชีตที่ปล่อยว่างไว้ไม่ใช่ความผิดพลาด — คนที่ต้องการแค่เพิ่มจะไม่แตะชีตลบเลย
+       แต่ชีตที่มีข้อมูลแล้วหาหัวตารางไม่เจอ ต้องดังตามเดิม ห้ามกลืนทิ้ง
+       ติดชื่อชีตไปกับ error ด้วย ไม่งั้นคนแก้ไฟล์ไม่รู้ว่าต้องไปแก้ชีตไหน */
+    var one = function (sheet, opts) {
+      if (!sheet) return null;
+      try { return parseScanImportFile(sheet, opts); }
+      catch (e) {
+        if (e && e.message === 'EMPTY_FILE') return null;
+        if (e) e.sheet = sheet.name;
+        throw e;
+      }
+    };
+    return {
+      add: one(addSheet),
+      remove: one(remSheet, { blankMeansAll: true }),
+      legacy: legacy
+    };
+  });
 }
 
 /* Template หัวคอลัมน์เปล่า — ตั้งใจไม่เติมรายการสินค้าลงไป
    ไฟล์นี้คือ "ของที่นับเจอ" ถ้าใส่รายชื่อทั้งคลังไปให้ คนจะเผลอกรอกยอดลงแถวที่ไม่ได้ไปนับ */
 function downloadScanImportTemplate() {
   if (!hasPerm('adjustCount')) { toast(roleBlockMessage('ดาวน์โหลด Template ไม่ได้'), true); return; }
-  var rows = [['รหัสสินค้า', 'จำนวน']];
-  var blob = buildXlsx([{ name: 'นำเข้ายอดนับ', rows: rows, widths: [24, 14] }]);
+  /* สองชีตในไฟล์เดียว — งานรอบเดียวจบ ไม่ต้องอัปสองไฟล์แล้วลืมใบใดใบหนึ่ง
+     ชีต "ลบ" มีบรรทัดอธิบายอยู่เหนือหัวตาราง findHeaderRow ข้ามให้เองอยู่แล้ว
+     เขียนไว้ในไฟล์ดีกว่าเขียนแต่ในแอป เพราะคนกรอกเปิดแต่ Excel ไม่ได้เปิดแอปค้างไว้ */
+  var blob = buildXlsx([
+    { name: SCAN_SHEET_ADD, widths: [24, 14],
+      rows: [['รหัสสินค้า', 'จำนวน']] },
+    { name: SCAN_SHEET_REMOVE, widths: [24, 14],
+      rows: [['เว้นช่องจำนวนว่าง = เอาออกทั้งหมดเท่าที่ Job นี้นับไว้'],
+             ['รหัสสินค้า', 'จำนวน']] }
+  ]);
   var a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = 'ISRD-Scan-Import-Template.xlsx';
   document.body.appendChild(a);
   a.click();
   setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
-  toast('ดาวน์โหลด Template แล้ว — กรอกแค่รหัสสินค้ากับจำนวน');
+  toast('ดาวน์โหลด Template แล้ว — มีชีต "เพิ่ม" กับชีต "ลบ" อยู่ในไฟล์เดียวกัน');
 }
 
 /* รายการตัวอย่างในพรีวิว — ยาวเกินก็ตัด ไม่งั้นกล่องยืนยันยาวจนกดปุ่มไม่เจอ */
@@ -7028,78 +7133,153 @@ function scanImportSample(items, max) {
   return head + (items.length > max ? '\n· ... อีก ' + fmtNum(items.length - max) + ' รายการ' : '');
 }
 
+/* สถิติเปล่า — ใช้แทนชีตที่ไม่มีหรือปล่อยว่างไว้ จะได้ไม่ต้องเช็ค null ทุกบรรทัดข้างล่าง */
+function emptyScanStat() {
+  return { rows: 0, pieces: 0, skus: 0, skipped: 0, dupCodes: 0, allRows: 0,
+           noCode: [], badQty: [], unknownItems: [] };
+}
+
+/* แปลงรายการในชีต "ลบ" เป็นแผนที่หักได้จริง — กติกาเดียวกับ removeOverScan เป๊ะ
+   หักได้ไม่เกินที่ Job ใบนี้ยิงไว้ (state.counts) เพราะยอดบนจออาจเป็นยอดรวมทุกใบ (v2.7.0)
+   ปล่อยให้หักเกินคือทำยอดใบนี้ติดลบ ซึ่งกู้คืนยากกว่าการไม่หักให้แล้วบอกเหตุผล
+   ของที่ Job นี้ไม่ได้นับเลยจึงไม่ใช่ error แต่เป็นรายการที่ต้องรายงานให้คนเห็นก่อนยืนยัน */
+function planScanRemoval(items) {
+  var plan = { items: [], pieces: 0, blocked: [], capped: [] };
+  (items || []).forEach(function (it) {
+    var cur = Number(state.counts[it.key]) || 0;
+    if (cur <= 0) { plan.blocked.push(it); return; }
+    var want = (it.qty === null) ? cur : it.qty;   // null = ทั้งหมดเท่าที่นับไว้
+    if (want > cur) { plan.capped.push({ code: it.code, asked: it.qty, cur: cur }); want = cur; }
+    plan.items.push({ key: it.key, code: it.code, qty: want, all: it.qty === null });
+    plan.pieces += want;
+  });
+  plan.skus = plan.items.length;
+  return plan;
+}
+
+function scanRemoveSample(items, max) {
+  var head = items.slice(0, max).map(function (it) {
+    return '· ' + it.code + ' × ' + fmtNum(it.qty) + (it.all ? ' (ทั้งหมด)' : '');
+  }).join('\n');
+  return head + (items.length > max ? '\n· ... อีก ' + fmtNum(items.length - max) + ' รายการ' : '');
+}
+
+function scanCodeSample(items, max) {
+  var head = items.slice(0, max).map(function (it) { return '· ' + it.code; }).join('\n');
+  return head + (items.length > max ? '\n· ... อีก ' + fmtNum(items.length - max) + ' รายการ' : '');
+}
+
 function handleScanImport(file) {
   /* defense-in-depth — ซ่อนปุ่มอย่างเดียวไม่พอ เรียกฟังก์ชันตรง ๆ ก็ต้องไม่ผ่าน
-     (แบบเดียวกับ removeOverScan) ตัวจริงบังคับที่ Database Rules อีกชั้น */
+     (แบบเดียวกับ removeOverScan) ตัวจริงบังคับที่ Database Rules อีกชั้น
+     ด่านนี้คุมทั้งฝั่งเพิ่มและฝั่งลบ — ทางเข้าเดียวกัน เช็คครั้งเดียวจบ */
   if (!hasPerm('adjustCount')) { toast(roleBlockMessage('นำเข้ายอดนับจากไฟล์ไม่ได้'), true); return Promise.resolve(false); }
   if (!canScan()) { toast(blockedMessage() + ' — นำเข้าไฟล์ไม่ได้', true); return Promise.resolve(false); }
   if (!file) return Promise.resolve(false);
 
-  var isXlsx = /\.xlsx$/i.test(file.name);
   $('btnScanImport').disabled = true;
 
-  return file.arrayBuffer().then(function (buf) {
-    return isXlsx ? parseXlsx(buf) : Promise.resolve(parseCsv(decodeTextFile(buf)));
-  }).then(function (parsed) {
-    var res = parseScanImportFile(parsed);
-    var stat = res.stat;
+  return readScanImportBook(file).then(function (book) {
+    var add = book.add || { items: [], stat: emptyScanStat() };
+    var rem = book.remove || { items: [], stat: emptyScanStat() };
+    var plan = planScanRemoval(rem.items);
+    var unknown = add.stat.unknownItems;
+    var net = add.stat.pieces - plan.pieces;
 
-    if (!res.items.length) {
-      return ask('ไม่มีแถวไหนนำเข้าได้',
+    if (!add.items.length && !plan.items.length) {
+      var why =
         'อ่านไฟล์ได้ แต่ไม่มีแถวที่ใช้ได้เลย\n\n' +
-        'ไม่มีรหัสสินค้า ' + fmtNum(stat.noCode.length) + ' แถว\n' +
-        'จำนวนไม่ใช่ตัวเลขมากกว่า 0 ' + fmtNum(stat.badQty.length) + ' แถว\n\n' +
-        'ตรวจว่าไฟล์มีหัวตาราง "รหัสสินค้า" และ "จำนวน" แล้วลองใหม่',
-        'ปิด', { hideCancel: true }).then(function () { return false; });
+        'ชีต "' + SCAN_SHEET_ADD + '" — ไม่มีรหัสสินค้า ' + fmtNum(add.stat.noCode.length) +
+        ' แถว · จำนวนไม่ใช่ตัวเลขมากกว่า 0 ' + fmtNum(add.stat.badQty.length) + ' แถว\n' +
+        'ชีต "' + SCAN_SHEET_REMOVE + '" — ไม่มีรหัสสินค้า ' + fmtNum(rem.stat.noCode.length) +
+        ' แถว · จำนวนไม่ถูกต้อง ' + fmtNum(rem.stat.badQty.length) + ' แถว\n' +
+        (plan.blocked.length
+          ? '\n⚠ มี ' + fmtNum(plan.blocked.length) + ' รายการที่สั่งลบ แต่ Job ที่เปิดอยู่ไม่ได้นับไว้\n' +
+            'ของพวกนี้ถูกนับที่ Job อื่น ต้องไปเอาออกจากใบนั้น\n' + scanCodeSample(plan.blocked, 10) + '\n'
+          : '') +
+        '\nตรวจว่าไฟล์มีหัวตาราง "รหัสสินค้า" และ "จำนวน" แล้วลองใหม่';
+      return ask('ไม่มีแถวไหนนำเข้าได้', why, 'ปิด', { hideCancel: true }).then(function () { return false; });
     }
 
-    var unknown = stat.unknownItems;
+    /* สรุปหัวกล่องให้เห็นทั้งสองทิศพร้อมยอดสุทธิ — คนอนุมัติต้องรู้ว่ายอดรวมจะขยับไปทางไหน
+       ไม่ใช่เห็นแค่ "นำเข้า 500 ชิ้น" แล้วเซ็นโดยไม่รู้ว่ามีการหักออก 480 ปนอยู่ */
+    var head = [];
+    if (add.stat.pieces) head.push('เพิ่ม ' + fmtNum(add.stat.pieces));
+    if (plan.pieces) head.push('ลบ ' + fmtNum(plan.pieces));
+    var headText = head.join(' · ') + ' ชิ้น';
+
     var msg =
-      'ไฟล์: ' + file.name + '\n\n' +
-      'แถวที่นำเข้าได้ ' + fmtNum(stat.rows) + ' แถว\n' +
-      'รวม ' + fmtNum(stat.pieces) + ' ชิ้น · ' + fmtNum(stat.skus) + ' SKU (ไม่ซ้ำ)\n' +
-      (stat.dupCodes ? 'รหัสซ้ำในไฟล์ ' + fmtNum(stat.dupCodes) + ' แถว — รวมยอดให้แล้ว\n' : '') +
-      (stat.skipped
-        ? 'ข้าม ' + fmtNum(stat.skipped) + ' แถว (ไม่มีรหัส ' + fmtNum(stat.noCode.length) +
-          ' · จำนวนไม่ถูกต้อง ' + fmtNum(stat.badQty.length) + ')\n'
+      'ไฟล์: ' + file.name + '\n' +
+      (book.legacy ? 'ไฟล์รูปแบบเดิม (ชีตเดียว) — อ่านเป็น "' + SCAN_SHEET_ADD + '" ทั้งใบ\n' : '') +
+      '\n➕ เพิ่ม  ' + fmtNum(add.stat.pieces) + ' ชิ้น · ' + fmtNum(add.stat.skus) + ' SKU\n' +
+      '➖ ลบ    ' + fmtNum(plan.pieces) + ' ชิ้น · ' + fmtNum(plan.skus) + ' SKU\n' +
+      'สุทธิ ' + (net >= 0 ? '+' : '−') + fmtNum(Math.abs(net)) + ' ชิ้น\n' +
+      (add.stat.dupCodes || rem.stat.dupCodes
+        ? '\nรหัสซ้ำในไฟล์ ' + fmtNum(add.stat.dupCodes + rem.stat.dupCodes) + ' แถว — รวมยอดให้แล้ว\n'
+        : '') +
+      (add.stat.skipped || rem.stat.skipped
+        ? 'ข้าม ' + fmtNum(add.stat.skipped + rem.stat.skipped) + ' แถวที่กรอกไม่ครบ\n'
+        : '') +
+      (rem.stat.allRows
+        ? '\nชีต "' + SCAN_SHEET_REMOVE + '" เว้นช่องจำนวนว่างไว้ ' + fmtNum(rem.stat.allRows) +
+          ' รายการ — ถือว่าเอาออกทั้งหมดเท่าที่ Job นี้นับไว้\n'
+        : '') +
+      (plan.capped.length
+        ? '\n⚠ สั่งลบเกินยอดที่ Job นี้นับไว้ ' + fmtNum(plan.capped.length) + ' รายการ — ' +
+          'ระบบหักให้เท่าที่มีจริง ไม่ทำให้ยอดติดลบ\n'
+        : '') +
+      (plan.blocked.length
+        ? '\n⚠ ลบไม่ได้ ' + fmtNum(plan.blocked.length) + ' รายการ — Job ที่เปิดอยู่ไม่ได้นับไว้\n' +
+          'ของพวกนี้ถูกนับที่ Job อื่น ต้องไปเอาออกจากใบนั้น\n' + scanCodeSample(plan.blocked, 10) + '\n'
         : '') +
       (unknown.length
         ? '\n⚠ ไม่มีใน Master ' + fmtNum(unknown.length) + ' รายการ — จะถูกนับเข้าไปเป็น ' +
           '"บาร์โค้ดที่ไม่มีในระบบ" ให้ไปจัดการทีหลังที่หน้าสรุป\n' +
           scanImportSample(unknown, 10) + '\n'
         : '') +
-      '\n⚠ ยอดนี้จะ "บวกเพิ่ม" จากที่ยิงไว้แล้ว ไม่ได้เขียนทับ\n' +
-      'อัปไฟล์เดิมซ้ำอีกรอบ = ยอดเบิ้ล ตรวจให้แน่ใจก่อนกดยืนยัน\n\n' +
-      'ตัวอย่างรายการ:\n' + scanImportSample(res.items, 10);
+      '\n⚠ ยอดฝั่งเพิ่มจะ "บวกเพิ่ม" จากที่ยิงไว้แล้ว ไม่ได้เขียนทับ\n' +
+      'อัปไฟล์เดิมซ้ำอีกรอบ = ยอดเบิ้ล ตรวจให้แน่ใจก่อนกดยืนยัน\n' +
+      'ทั้งสองฝั่งบันทึกเป็นแถวใหม่ ยอดเดิมไม่ถูกลบทิ้ง ตรวจย้อนหลังได้เสมอ' +
+      (add.items.length ? '\n\nตัวอย่างที่จะเพิ่ม:\n' + scanImportSample(add.items, 10) : '') +
+      (plan.items.length ? '\n\nตัวอย่างที่จะลบ:\n' + scanRemoveSample(plan.items, 10) : '');
 
-    return ask('ยืนยันนำเข้ายอดนับ ' + fmtNum(stat.pieces) + ' ชิ้น?', msg,
-               'นำเข้า ' + fmtNum(stat.pieces) + ' ชิ้น', { danger: true })
+    return ask('ยืนยันนำเข้า: ' + headText + '?', msg, 'นำเข้า (' + headText + ')', { danger: true })
       .then(function (ok) {
         if (!ok) { toast('ยกเลิกการนำเข้าแล้ว ยังไม่ได้บันทึกอะไร'); return false; }
 
         /* ชื่อไฟล์ + เวลาติดไปกับทุกแถว — ตรวจย้อนหลังได้ว่ายอดก้อนนี้มาจากไฟล์ไหน
-           และแยกออกจากยอดที่ยิงจริงได้ตอนไล่ดูประวัติ */
+           แยกข้อความสองฝั่ง เพราะตอนไล่ประวัติต้องแยกออกว่าแถวไหนมาจากการเพิ่ม แถวไหนมาจากการลบ */
         var stamp = fmtTime(Date.now());
-        var reason = 'นำเข้า Excel: ' + file.name + ' ' + stamp;
-        res.items.forEach(function (it) {
-          if (it.known) writeScan(it.key, it.qty, 'scan', reason);
-          else writeScan(it.key, it.qty, 'scan', reason, { unknown: true, raw: it.code });
+        var addReason = 'นำเข้าเพิ่ม Excel: ' + file.name + ' ' + stamp;
+        var remReason = 'นำเข้าลบ Excel: ' + file.name + ' ' + stamp;
+
+        add.items.forEach(function (it) {
+          if (it.known) writeScan(it.key, it.qty, 'scan', addReason);
+          else writeScan(it.key, it.qty, 'scan', addReason, { unknown: true, raw: it.code });
+        });
+        /* ลบ = เขียนแถวใหม่ delta ติดลบ ไม่ได้ลบแถวเดิม ตามกฎบ้าน "ห้ามลบยอดที่นับไปแล้ว" */
+        plan.items.forEach(function (it) {
+          writeScan(it.key, -it.qty, 'scan', remReason);
         });
 
         renderScanTotals();
         renderLivePanel();
         renderSyncBar();
         if (state.page === 'summary') renderSummary();
-        toast('นำเข้าแล้ว ' + fmtNum(stat.pieces) + ' ชิ้น · ' + fmtNum(stat.skus) + ' SKU' +
-              (unknown.length ? ' · มีของไม่มีใน Master ' + fmtNum(unknown.length) + ' รายการ' : ''));
+        toast('นำเข้าแล้ว · เพิ่ม ' + fmtNum(add.stat.pieces) + ' ชิ้น · ลบ ' + fmtNum(plan.pieces) +
+              ' ชิ้น · สุทธิ ' + (net >= 0 ? '+' : '−') + fmtNum(Math.abs(net)) + ' ชิ้น' +
+              (plan.blocked.length ? ' · ลบไม่ได้ ' + fmtNum(plan.blocked.length) + ' รายการ' : '') +
+              (unknown.length ? ' · ไม่มีใน Master ' + fmtNum(unknown.length) + ' รายการ' : ''));
         return true;
       });
   }).catch(function (err) {
     var code = err && err.message;
+    var where = (err && err.sheet) ? ' (ชีต "' + err.sheet + '")' : '';
     if (code === 'MISSING_COLUMNS') {
-      ask('ไฟล์นี้ยังขาดคอลัมน์',
+      ask('ไฟล์นี้ยังขาดคอลัมน์' + where,
           'ไฟล์ต้องมีหัวตาราง: ' + (err.missing || []).join(' และ ') + '\n\n' +
           'ต้องการแค่ 2 คอลัมน์: รหัสสินค้า กับ จำนวน\n' +
+          'ชีต "' + SCAN_SHEET_REMOVE + '" เว้นช่องจำนวนว่างได้ แต่หัวตารางต้องมีครบ\n' +
           'กดปุ่ม "ดาวน์โหลด Template" เพื่อเอาไฟล์ตัวอย่างไปกรอก',
           'ปิด', { hideCancel: true });
       return false;
