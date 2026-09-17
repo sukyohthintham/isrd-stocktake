@@ -27,7 +27,7 @@ function check(name, ok, got) {
   else { fail++; console.log('  FAIL  ' + name + '  ->  ' + JSON.stringify(got)); }
 }
 
-const RULES_FILE = path.join(__dirname, '..', 'stocktake-rules-v2.1.1.json');
+const RULES_FILE = path.join(__dirname, '..', 'stocktake-rules-v2.1.3.json');
 const rules = JSON.parse(fs.readFileSync(RULES_FILE, 'utf8'));
 
 /* ---------- จำลองฐานข้อมูลเท่าที่กฎอ้างถึง ---------- */
@@ -97,7 +97,10 @@ const A_C_S = ['admin', 'counter', 'scanner'];
 
 const MATRIX = [
   /* ---- ข้อมูลกลางของบริษัท: admin เท่านั้น ไม่เกี่ยวกับสถานะ Job ---- */
-  { path: 'products',   rule: S.products['.write'],   want: function () { return ['admin']; } },
+  /* ⭐ v2.1.3 — counter ต้องเขียน products ได้ด้วย ไม่ใช่แค่ admin
+     applyImport() เขียนสินค้าใหม่จากไฟล์ Zort ลง products เป็นก้าวแรกของการนำเข้ายอดระบบ
+     ถ้าให้เฉพาะ admin ผู้นับสต๊อกทุกคนจะนำเข้าไม่ได้เลย (ดูข้อ [9]) */
+  { path: 'products',   rule: S.products['.write'],   want: function () { return A_C; } },
   { path: 'branches',   rule: S.branches['.write'],   want: function () { return ['admin']; } },
   { path: 'locations',  rule: S.locations['.write'],  want: function () { return ['admin']; } },
   { path: 'settings',   rule: S.settings['.write'],   want: function () { return ['admin']; } },
@@ -229,14 +232,20 @@ check('รอบปิดแล้ว scanner เขียนหมายเห�
       canWrite(R.reasons['.write'], 'scanner', 'closed') === false, 'closed');
 
 /* ---------- 4. Master เป็นของ admin คนเดียว ---------- */
-console.log('\n[4] Master/Location/สาขา — admin เท่านั้น');
-['products', 'locations', 'branches', 'settings'].forEach(function (p) {
+console.log('\n[4] Location/สาขา/settings — admin เท่านั้น');
+/* products ถูกย้ายออกจากกลุ่มนี้ตั้งแต่ v2.1.3 — counter ต้องเขียนได้เพื่อนำเข้ายอดระบบ
+   สามตัวที่เหลือยังเป็นข้อมูลกลางที่ admin คุมคนเดียวจริง ๆ */
+['locations', 'branches', 'settings'].forEach(function (p) {
   const others = ['counter', 'scanner', 'viewer'].filter(function (role) {
     return STATUSES.some(function (st) { return canWrite(S[p]['.write'], role, st); });
   });
   check(p + ': counter/scanner/viewer แก้ไม่ได้เลย', others.length === 0, others);
   check(p + ': admin แก้ได้', canWrite(S[p]['.write'], 'admin', 'counting') === true, p);
 });
+check('products: scanner/viewer ยังแก้ไม่ได้',
+      ['scanner', 'viewer'].every(function (role) {
+        return STATUSES.every(function (st) { return !canWrite(S.products['.write'], role, st); });
+      }), 'products');
 
 /* ---------- 5. บัญชีที่ถูกปิดใช้งาน เขียนไม่ได้แม้เป็น admin ----------
    active=false คือปุ่มถอนสิทธิ์ฉุกเฉิน ต้องได้ผลทันทีทุก path ไม่ใช่แค่ซ่อนปุ่ม */
@@ -321,7 +330,10 @@ function canWriteCaps(expr, caps, roundStatus, extra, cycleStatus) {
 
 /* cap ที่ควรปลดล็อก path นั้น · สถานะ Job ที่ควรเขียนได้ */
 const PERM_ROWS = [
-  { path: 'products',   rule: S.products['.write'],   cap: 'editMaster',   st: STATUSES },
+  /* products ปลดล็อกได้สองทาง: editMaster (แก้ทะเบียนตรง ๆ)
+     และ importSysQty เพราะ applyImport() เขียนสินค้าใหม่จากไฟล์ Zort ลง products ก่อนเสมอ */
+  { path: 'products',   rule: S.products['.write'],   cap: 'editMaster',   st: STATUSES,
+    also: ['importSysQty'] },
   { path: 'settings',   rule: S.settings['.write'],   cap: 'editMaster',   st: STATUSES },
   { path: 'locations',  rule: S.locations['.write'],  cap: 'editLocation', st: STATUSES },
   { path: 'branches',   rule: S.branches['.write'],   cap: 'editLocation', st: STATUSES },
@@ -377,6 +389,23 @@ PERM_ROWS.forEach(function (row) {
   check('ไม่ติ๊ก ' + [row.cap].concat(also).join('/') + ' แล้วเขียน ' + row.path + ' ไม่ได้',
         leaked.length === 0, { path: row.path, leakedAt: leaked });
 });
+
+/* ⭐ บั๊กที่เจอตอน v2.1.2 — เคยให้เฉพาะ editMaster เขียน products ได้
+   แต่ applyImport() (ด่าน importSysQty) เขียน products ก่อนเขียนยอดระบบเสมอ
+   คนที่ติ๊กแค่ importSysQty จึงโดน 401 ตั้งแต่ก้าวแรก นำเข้ายอดระบบไม่ได้เลย
+   ถ้าวันหลังมีคนไปตัดท่อน importSysQty ออกจาก products ต้องดังตรงนี้ */
+console.log('\n[8a] ⭐ importSysQty ต้องเขียน products ได้ (applyImport เขียนสินค้าใหม่ลงทะเบียน)');
+check('ติ๊กแค่ importSysQty ก็เขียน products ได้',
+      canWriteCaps(S.products['.write'], ['importSysQty'], 'counting') === true, 'products');
+check('เขียน cycles/systemQty ได้ในคำขอเดียวกัน',
+      canWriteCaps(C.systemQty['.write'], ['importSysQty'], 'counting') === true, 'systemQty');
+check('แต่ยังแก้ locations/branches ไม่ได้ (คนละ cap)',
+      canWriteCaps(S.locations['.write'], ['importSysQty'], 'counting') === false &&
+      canWriteCaps(S.branches['.write'], ['importSysQty'], 'counting') === false, 'loc/branch');
+check('cap อื่นที่ไม่เกี่ยวยังเขียน products ไม่ได้',
+      ['scan', 'closeJob', 'docs', 'purgeUser'].every(function (c) {
+        return canWriteCaps(S.products['.write'], [c], 'counting') === false;
+      }), 'others');
 
 console.log('\n[8b] adjustCount — แก้ยอดที่นับไปแล้วต้องเขียน scans/stat/skuQty ได้');
 ['stat', 'skuQty'].forEach(function (k) {
@@ -461,6 +490,175 @@ check('ไม่มี reopenRound แล้วแตะ Job ที่ปิด�
       canWriteCaps(S.roundIndex.$roundId['.write'], ['createJob', 'closeJob', 'editDoc'], 'closed',
         { existing: { jobCode: 'J1', branchCode: 'B1', status: 'closed' },
           incoming: { jobCode: 'J1', branchCode: 'B1', status: 'counting' } }) === false, 'closed');
+
+/* ============================================================
+   [9] ⭐ ผู้ใช้ที่ได้สิทธิ์จาก role อย่างเดียว (ไม่มี perms node ในฐาน)
+   ============================================================
+
+   กติกาที่คุมตรงนี้ — และเป็นคลาสของบั๊กที่เทสเดิมมองไม่เห็นมาตลอด:
+
+     ฝั่งแอป  myPerms() แปลง role เป็น perms ให้เองเมื่อฐานไม่มีฟิลด์ perms
+     ฝั่ง Rules  อ่านได้เฉพาะสิ่งที่มีอยู่จริง — perms/<cap> ที่ไม่มี node = false เสมอ
+
+   Rules จึง derive จาก role ไม่ได้ ทุก cap ที่แม่แบบของ role ไหนได้
+   ต้องมีท่อน role.matches(...) ครอบคลุมใน Rules ด้วย ไม่งั้นได้อาการ
+   "ปุ่มกดได้ แต่ฐานเด้ง 401" กับผู้ใช้เดิมทุกคนที่ยังไม่เคยถูกติ๊ก perms
+
+   เคสจริง (v2.1.3): products ยอมแค่ role === 'admin' แต่ counter ได้ importSysQty
+   จากแม่แบบ → applyImport() เขียน products เป็นก้าวแรก → ผู้นับสต๊อกทุกคนอัปไม่ได้
+
+   ทำไมเทสเดิม 137 ข้อจับไม่ได้: fixture makeDb() สร้าง user แบบ role-only อยู่แล้ว
+   (ไม่มี perms node) — ปัญหาไม่ได้อยู่ที่ fixture แต่อยู่ที่ค่า want ของแถว products
+   ซึ่งเขียนไว้ว่า ['admin'] คือ "เอาสิ่งที่กฎทำอยู่มาเป็นคำตอบที่ถูก"
+   แทนที่จะเขียนจาก "แอปต้องการอะไร" ข้อ [9] จึงไล่จากแม่แบบ role เป็นตัวตั้งแทน
+   ============================================================ */
+console.log('\n[9] ⭐ role-only (ไม่มี perms node) ต้องเขียนได้ครบตามแม่แบบ');
+
+/* แม่แบบ role → cap ต้องตรงกับ ROLE_PERMS ใน index.html
+   ตรวจซ้ำกับซอร์สข้างล่าง กันตารางนี้ล้าสมัยเงียบ ๆ เมื่อมีคนแก้แม่แบบในแอป */
+const ROLE_TEMPLATE = {
+  admin: ['scan', 'seeSystemQty', 'createJob', 'closeJob', 'editMaster', 'editLocation',
+          'importSysQty', 'adjustCount', 'viewSummary', 'docs', 'editDoc', 'viewMasterLoc',
+          'deleteJob', 'reopenRound', 'purgeUser'],
+  counter: ['scan', 'seeSystemQty', 'createJob', 'closeJob', 'importSysQty',
+            'viewSummary', 'docs', 'viewMasterLoc', 'editDoc', 'adjustCount'],
+  scanner: ['scan'],
+  viewer: ['docs']
+};
+
+const appSrc = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+const counterLine = /counter: \[([^\]]*)\]/.exec(appSrc.replace(/\s+/g, ' '));
+check('ตารางแม่แบบในเทสตรงกับ ROLE_PERMS ในแอป (counter)',
+      !!counterLine && ROLE_TEMPLATE.counter.every(function (c) {
+        return counterLine[1].indexOf("'" + c + "'") >= 0;
+      }) && counterLine[1].split(',').length === ROLE_TEMPLATE.counter.length,
+      counterLine && counterLine[1]);
+
+/* path ที่แต่ละ cap "ต้องเขียนได้จริง" ตอนใช้งาน — ไล่จากโค้ดที่เขียนฐานจริง ไม่ใช่จากกฎ
+   view-only cap (seeSystemQty · viewSummary · docs · viewMasterLoc) ไม่มี path เขียน จึงไม่มีในตาราง */
+const ROUND_LIVE = { jobCode: 'J1', branchCode: 'B1', status: 'counting' };
+const CAP_WRITES = {
+  /* applyImport() เขียนสามที่เรียงกัน: products → cycles/systemQty → cycles/info
+     ทั้งสามต้องผ่านด้วยสิทธิ์ชุดเดียวกัน ไม่งั้นนำเข้าค้างกลางคัน */
+  importSysQty: [
+    { label: 'products', rule: S.products['.write'] },
+    { label: 'cycles/$cid/systemQty', rule: C.systemQty['.write'] },
+    { label: 'cycles/$cid/transfers', rule: C.transfers['.write'] },
+    { label: 'cycles/$cid/info', rule: C.info['.write'] },
+    { label: 'rounds/$id/systemQty', rule: R.systemQty['.write'] },
+    { label: 'rounds/$id/schema', rule: R.schema['.write'], extra: { incoming: 2 } },
+    { label: 'rounds/$id/transfers', rule: R.transfers['.write'] },
+    { label: 'roundIndex/$id (importedAt)', rule: S.roundIndex.$roundId['.write'],
+      extra: { existing: ROUND_LIVE, incoming: ROUND_LIVE } }
+  ],
+  createJob: [
+    { label: 'roundIndex/$id (สร้างใหม่)', rule: S.roundIndex.$roundId['.write'],
+      extra: { existing: undefined, incoming: ROUND_LIVE } },
+    { label: 'cycles/$cid/info', rule: C.info['.write'] }
+  ],
+  closeJob: [
+    { label: 'roundIndex/$id (เปลี่ยนสถานะ)', rule: S.roundIndex.$roundId['.write'],
+      extra: { existing: ROUND_LIVE, incoming: { jobCode: 'J1', branchCode: 'B1', status: 'closed' } } },
+    { label: 'cycles/$cid/status', rule: C.status['.write'],
+      extra: { existing: 'counting', incoming: 'closed' } }
+  ],
+  editDoc: [
+    { label: 'rounds/$id/docNo', rule: R.docNo['.write'], extra: { incoming: 'D-1' } },
+    { label: 'rounds/$id/docType', rule: R.docType['.write'], extra: { incoming: 'stockTake' } },
+    { label: 'rounds/$id/transferNo', rule: R.transferNo['.write'], extra: { incoming: 'T-1' } },
+    { label: 'rounds/$id/reasons', rule: R.reasons['.write'], extra: { incoming: 'ของชำรุด' } },
+    { label: 'docCounters/$b/$k/$ym', rule: S.docCounters.$branch.$kind.$yearMonth['.write'],
+      extra: { incoming: 5 } }
+  ],
+  scan: [
+    { label: 'rounds/$id/scans/$scanId', rule: R.scans.$scanId['.write'],
+      extra: { existing: undefined,
+               incoming: { code: 'A1', zone: 'no-zone', delta: 1, user: 'ท', ts: 1 } } },
+    { label: 'rounds/$id/stat', rule: R.stat['.write'],
+      extra: { existing: { pieces: 1 }, incoming: { pieces: 2, skus: 1, lastAt: 5, ver: 1 } } },
+    { label: 'rounds/$id/skuQty', rule: R.skuQty['.write'],
+      extra: { existing: { A1: 1 }, incoming: { A1: 2 } } },
+    { label: 'rounds/$id/unknown/$id', rule: R.unknown.$id['.write'],
+      extra: { existing: undefined, incoming: { value: 'X' } } },
+    { label: 'rounds/$id/reasons', rule: R.reasons['.write'], extra: { incoming: 'ของชำรุด' } }
+  ],
+  adjustCount: [
+    { label: 'rounds/$id/scans/$scanId (หักยอด)', rule: R.scans.$scanId['.write'],
+      extra: { existing: undefined,
+               incoming: { code: 'A1', zone: 'no-zone', delta: -1, user: 'ท', ts: 1 } } },
+    { label: 'rounds/$id/stat', rule: R.stat['.write'],
+      extra: { existing: { pieces: 2 }, incoming: { pieces: 1, skus: 1, lastAt: 5, ver: 1 } } },
+    { label: 'rounds/$id/skuQty', rule: R.skuQty['.write'],
+      extra: { existing: { A1: 2 }, incoming: { A1: 1 } } }
+  ],
+  editMaster: [
+    { label: 'products', rule: S.products['.write'] },
+    { label: 'settings', rule: S.settings['.write'] }
+  ],
+  editLocation: [
+    { label: 'locations', rule: S.locations['.write'] },
+    { label: 'branches', rule: S.branches['.write'] }
+  ],
+  deleteJob: [
+    { label: 'roundIndex/$id (ลบ)', rule: S.roundIndex.$roundId['.write'],
+      extra: { existing: ROUND_LIVE, incoming: null } }
+  ],
+  reopenRound: [
+    { label: 'cycles/$cid/status (เปิดรอบที่ปิด)', rule: C.status['.write'],
+      extra: { existing: 'closed', incoming: 'counting' } }
+  ],
+  purgeUser: [
+    { label: 'rounds/$id/purgeLog', rule: R.purgeLog['.write'],
+      extra: { incoming: { at: 1, by: 'isrd', targetUser: 'Gift' } } },
+    { label: 'rounds/$id/scans/$scanId (ลบแถว)', rule: R.scans.$scanId['.write'],
+      extra: { existing: { code: 'A1', zone: 'no-zone', delta: 3, user: 'Gift', ts: 1 },
+               incoming: null } }
+  ]
+};
+
+Object.keys(ROLE_TEMPLATE).forEach(function (role) {
+  const blocked = [];
+  ROLE_TEMPLATE[role].forEach(function (cap) {
+    (CAP_WRITES[cap] || []).forEach(function (w) {
+      if (!canWrite(w.rule, role, 'counting', w.extra)) blocked.push(cap + ' → ' + w.label);
+    });
+  });
+  check('⭐ ' + role + ' (role อย่างเดียว ไม่มี perms node) เขียนได้ครบทุก path ตามแม่แบบ',
+        blocked.length === 0, blocked);
+});
+
+console.log('\n[9b] เคสบั๊กจริง — counter นำเข้ายอดระบบ');
+check('⭐ counter role-only เขียน products ได้ (ก้าวแรกของ applyImport)',
+      canWrite(S.products['.write'], 'counter', 'counting') === true, 'products');
+check('⭐ counter role-only เขียน cycles/$cid/systemQty ได้ (ก้าวที่สอง)',
+      canWrite(C.systemQty['.write'], 'counter', 'counting') === true, 'systemQty');
+check('products กับ systemQty ยอมชุดผู้เขียนเดียวกันตอน import',
+      ['admin', 'counter', 'scanner', 'viewer'].every(function (r) {
+        return canWrite(S.products['.write'], r, 'counting') ===
+               canWrite(C.systemQty['.write'], r, 'counting');
+      }), 'ชุดผู้เขียนต้องตรงกัน');
+
+console.log('\n[9c] เคสลบ — ใครที่ต้องเขียน products ไม่ได้');
+check('scanner เขียน products ไม่ได้',
+      canWrite(S.products['.write'], 'scanner', 'counting') === false, 'scanner');
+check('viewer เขียน products ไม่ได้',
+      canWrite(S.products['.write'], 'viewer', 'counting') === false, 'viewer');
+check('custom ที่ติ๊กแค่ scan เขียน products ไม่ได้',
+      canWriteCaps(S.products['.write'], ['scan'], 'counting') === false, 'custom scan');
+check('custom ที่ไม่ติ๊กอะไรเลยก็เขียนไม่ได้',
+      canWriteCaps(S.products['.write'], [], 'counting') === false, 'custom เปล่า');
+
+console.log('\n[9d] เคสบวก — custom ที่ติ๊กมาเองต้องเขียน products ได้');
+check('custom + importSysQty เขียน products ได้',
+      canWriteCaps(S.products['.write'], ['importSysQty'], 'counting') === true, 'importSysQty');
+check('custom + editMaster เขียน products ได้',
+      canWriteCaps(S.products['.write'], ['editMaster'], 'counting') === true, 'editMaster');
+check('custom + importSysQty เขียน systemQty ได้ในคำขอเดียวกัน',
+      canWriteCaps(C.systemQty['.write'], ['importSysQty'], 'counting') === true, 'systemQty');
+
+console.log('\n[9e] บัญชีถูกปิดใช้งาน — role-only ก็ต้องเขียนไม่ได้');
+check('counter ที่ active=false เขียน products ไม่ได้',
+      canWriteInactive(S.products['.write'], 'counter') === false, 'inactive counter');
 
 console.log('\n==== ' + pass + ' passed, ' + fail + ' failed ====');
 process.exit(fail ? 1 : 0);

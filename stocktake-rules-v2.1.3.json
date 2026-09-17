@@ -34,7 +34,7 @@
         }
       },
       "products": {
-        ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && (root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin' || root.child('stocktake2026/users').child(auth.uid).child('perms/editMaster').val() === true || root.child('stocktake2026/users').child(auth.uid).child('perms/importSysQty').val() === true)"
+        ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && (root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) || root.child('stocktake2026/users').child(auth.uid).child('perms/editMaster').val() === true || root.child('stocktake2026/users').child(auth.uid).child('perms/importSysQty').val() === true)"
       },
       "branches": {
         ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && (root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin' || root.child('stocktake2026/users').child(auth.uid).child('perms/editLocation').val() === true)"

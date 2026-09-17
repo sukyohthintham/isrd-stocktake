@@ -3265,7 +3265,7 @@ function cycleInfo(cid) { return (state.cycles[cid] || {}).info || {}; }
 function cycleMigrated(cid) { return Number(cycleInfo(cid).schema) >= 1; }
 
 /* ⭐ v2.11.1 — ย้ายข้อมูลขึ้นรอบนับได้เฉพาะรอบที่ยัง "นับอยู่" เท่านั้น
-   ตาม stocktake-rules-v2.1.1.json:
+   ตาม stocktake-rules-v2.1.3.json:
      cycles/$cid/systemQty  เขียนได้เมื่อ status ยังไม่มี หรือเป็น counting
      cycles/$cid/info       เขียนได้เมื่อ status ไม่ใช่ closed
    รอบที่ปิดหรือกำลังตรวจจึงถูกปฏิเสธ แล้วมันจะไม่ถูกทำเครื่องหมายว่าย้ายแล้ว
@@ -16338,7 +16338,7 @@ init();
            ทางแก้จริงอยู่นอกแอป — ไม่เดาต่อ
 
     Database Rules: ต้องวางใหม่ เพราะมี node cycles เพิ่ม ถ้าไม่วางจะนำเข้ายอดระบบไม่ได้
-    ไฟล์พร้อมก๊อปอยู่ที่ stocktake-rules-v2.1.1.json ที่รากโปรเจกต์ (ตรงกับบล็อกท้ายไฟล์นี้)
+    ไฟล์พร้อมก๊อปอยู่ที่ stocktake-rules-v2.1.3.json ที่รากโปรเจกต์ (ตรงกับบล็อกท้ายไฟล์นี้)
 
   v2.1.0 — Master ทั้งบริษัท · พิมพ์เร็วขึ้น · Export หลาย Job · role scanner
 

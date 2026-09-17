@@ -126,7 +126,7 @@ const HARNESS = `
 
   console.log('\n[0b] Rules ต้องรู้จัก custom + perms');
   const rules = JSON.parse(fs.readFileSync(
-    require('path').join(__dirname, '..', 'stocktake-rules-v2.1.1.json'), 'utf8'));
+    require('path').join(__dirname, '..', 'stocktake-rules-v2.1.3.json'), 'utf8'));
   const RU = rules.rules.stocktake2026.users.$uid;
   check('role/.validate ยอมรับ custom', /custom/.test(RU.role['.validate']), RU.role['.validate']);
   check('perms รับเฉพาะ boolean', RU.perms.$cap['.validate'] === 'newData.isBoolean()', RU.perms);
