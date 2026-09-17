@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.14.0">
+<meta name="version" content="2.14.1">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.14.0</title>
+<title>ISRD Stocktake v2.14.1</title>
 
 <style>
 :root{
@@ -844,6 +844,18 @@ body.no-doc-images .doc .imgbox{display:none}
 <!-- ============ PAGE 0 : JOB LIST ============ -->
 <section class="page active" id="pageJobs">
   <div id="modeBanner"></div>
+
+  <!-- ⭐ v2.14.1 — การ์ดบัญชี + ปุ่มออกระบบสำหรับสิทธิ์ที่เข้าหน้า Master ไม่ได้
+       ปุ่มออกระบบเดิมอยู่แต่ในหน้า Master ซึ่ง scanner/viewer เข้าไม่ถึงเลย
+       คนยิงจึงไม่มีทางออกจากระบบได้ ต้องล้างข้อมูลเบราว์เซอร์อย่างเดียว
+       หน้า Job เปิดให้ทุกสิทธิ์อยู่แล้ว (PAGE_ROLES.jobs = true) จึงเป็นที่เดียวที่วางแล้วเห็นแน่
+       ซ่อนจากคนที่เข้าหน้า Master ได้ กันการ์ดบัญชีโผล่ซ้ำสองที่ -->
+  <div class="card" id="jobsAccountCard" style="display:none">
+    <div class="u-name" id="meName2">—</div>
+    <div class="u-mail" id="meMail2"></div>
+    <div style="margin:8px 0 12px"><span class="chip" id="meRole2"></span></div>
+    <button class="btn grey block" id="btnLogout2">ออกจากระบบ</button>
+  </div>
 
   <!-- รายการกับฟอร์มสร้างเคยซ้อนกันหน้าเดียว พอ Job เยอะฟอร์มถูกดันลงล่างจนหาไม่เจอ -->
   <div class="filters" id="jobViewTabs" style="margin-bottom:12px">
@@ -1756,7 +1768,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.14.0';
+var APP_VERSION = '2.14.1';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -12356,6 +12368,9 @@ function applyNavVisibility() {
     var btn = $('nav' + p);
     if (btn) btn.style.display = canSeePage(key) ? '' : 'none';
   });
+  /* สิทธิ์เปลี่ยนสดจากอีกเครื่องได้ (role-sync v2.11.0) การ์ดจึงต้องโผล่/หายตามทันที
+     ไม่ใช่รอให้ล็อกอินใหม่ — คนที่เพิ่งถูกลดเป็น scanner ต้องได้ปุ่มออกระบบเดี๋ยวนั้น */
+  var _jac = $('jobsAccountCard'); if (_jac) _jac.style.display = canSeeMasterPage() ? 'none' : '';
 }
 
 /* สลับแท็บในหน้า Job — 'list' รายการงาน / 'create' ฟอร์มสร้าง
@@ -13914,6 +13929,14 @@ function renderAccount() {
   $('meMail').textContent = me.email || '';
   $('meRole').textContent = (ROLE_LABEL[me.role] || '—') + ' · ' + (ROLE_HELP[me.role] || '');
   $('meRole').className = 'chip ' + (me.role === 'admin' ? 'ok' : (me.role === 'viewer' ? 'warn' : ''));
+  /* การ์ดคู่บนหน้า Job — ข้อมูลชุดเดียวกัน ต่างแค่ที่อยู่ ให้คนที่เข้าหน้า Master ไม่ได้เห็นด้วย */
+  if ($('meName2')) {
+    $('meName2').textContent = me.name || '—';
+    $('meMail2').textContent = me.email || '';
+    $('meRole2').textContent = (ROLE_LABEL[me.role] || '—') + ' · ' + (ROLE_HELP[me.role] || '');
+    $('meRole2').className = 'chip ' + (me.role === 'admin' ? 'ok' : (me.role === 'viewer' ? 'warn' : ''));
+    $('jobsAccountCard').style.display = canSeeMasterPage() ? 'none' : '';
+  }
   $('tabUsers').style.display = isAdmin() ? '' : 'none';
   $('tabNewcodes').style.display = hasPerm('editMaster') ? '' : 'none';
   /* แท็บย่อยคนละสิทธิ์กัน — ผู้ใช้เป็นของ admin เท่านั้น บาร์โค้ดใหม่ผูกกับ editMaster */
@@ -15213,6 +15236,8 @@ function init() {
     });
   });
   $('btnLogout').onclick = doLogout;
+  /* ปุ่มที่สองบนหน้า Job — ใช้ doLogout ตัวเดียวกัน ไม่ได้ทำทางออกเส้นใหม่ */
+  var _lo2 = $('btnLogout2'); if (_lo2) _lo2.onclick = doLogout;
   session.onToken(function () { db.reopenStreams(); });
 
   /* ---- สร้าง/จัดการผู้ใช้ ---- */

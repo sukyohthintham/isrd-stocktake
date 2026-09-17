@@ -725,6 +725,100 @@ const HARNESS = `
   check('ดรอปดาวน์สิทธิ์ยังอยู่ครบ', keep.roleSel === 5, keep);
   check('⭐ gate admin-only ยังกันอยู่ (ไม่ใช่ admin = ไม่วาดเลย)', keep.blocked === true, keep);
 
+  /* ---------- [10] ทุกสิทธิ์ต้องมีทางออกจากระบบ (v2.14.1) ----------
+     บั๊กเดิม: ปุ่มออกระบบอยู่แต่ในหน้า Master ซึ่ง scanner/viewer เข้าไม่ถึงเลย
+     คนยิงจึงออกจากระบบไม่ได้ ต้องล้างข้อมูลเบราว์เซอร์อย่างเดียว
+     ข้อนี้คุมกติกาที่แรงกว่าตัวบั๊ก: "ทุกสิทธิ์ต้องมีปุ่มออกระบบที่กดถึงจริง"
+     ถ้าวันหลังมีคนย้ายปุ่มหรือเพิ่มสิทธิ์ใหม่ที่เข้าหน้าไหนไม่ได้ ต้องดังตรงนี้ */
+  console.log('\n[10] ⭐ ทุกสิทธิ์ต้องมีปุ่มออกจากระบบที่กดถึงจริง');
+  const LOGOUTS = [
+    { id: 'btnLogout',  page: 'master' },   // การ์ดเดิมบนหน้า Master
+    { id: 'btnLogout2', page: 'jobs' }      // การ์ดบนหน้า Job (ทุกสิทธิ์เห็นหน้านี้)
+  ];
+  const escape = await page.evaluate((spots, roles) => {
+    const out = {};
+    roles.forEach(function (r) {
+      window.__seedRole(r);
+      renderAccount();
+      applyNavVisibility();
+      out[r] = spots.map(function (s) {
+        const el = document.getElementById(s.id);
+        if (!el) return { id: s.id, ok: false, why: 'ไม่มีปุ่มนี้ในหน้า' };
+        /* กดถึงจริง = ปุ่มไม่ถูกซ่อน · การ์ดแม่ไม่ถูกซ่อน · และเข้าหน้านั้นได้ */
+        const card = el.closest('.card');
+        const visible = el.style.display !== 'none' &&
+                        (!card || card.style.display !== 'none');
+        return { id: s.id, page: s.page, visible: visible, reachable: visible && canSeePage(s.page),
+                 wired: el.onclick === window.doLogout };
+      });
+    });
+    return out;
+  }, LOGOUTS, ['admin', 'counter', 'scanner', 'viewer']);
+
+  ['admin', 'counter', 'scanner', 'viewer'].forEach(function (r) {
+    const any = escape[r].filter(function (s) { return s.reachable && s.wired; });
+    check(r + ': มีปุ่มออกระบบที่กดถึงจริงอย่างน้อย 1 ที่', any.length >= 1, escape[r]);
+  });
+  check('⭐ scanner ได้ปุ่มบนหน้า Job (บั๊กเดิมที่แก้)',
+        escape.scanner.filter(function (s) { return s.id === 'btnLogout2'; })[0].reachable === true,
+        escape.scanner);
+  check('⭐ viewer ก็โดนบั๊กเดียวกัน ต้องได้ปุ่มด้วย',
+        escape.viewer.filter(function (s) { return s.id === 'btnLogout2'; })[0].reachable === true,
+        escape.viewer);
+  check('admin ไม่เห็นการ์ดซ้ำบนหน้า Job',
+        escape.admin.filter(function (s) { return s.id === 'btnLogout2'; })[0].visible === false,
+        escape.admin);
+  check('counter ก็ไม่เห็นการ์ดซ้ำ',
+        escape.counter.filter(function (s) { return s.id === 'btnLogout2'; })[0].visible === false,
+        escape.counter);
+  check('ปุ่มเดิมบนหน้า Master ไม่ถูกแตะ — admin/counter ยังใช้ได้',
+        escape.admin.filter(function (s) { return s.id === 'btnLogout'; })[0].reachable === true &&
+        escape.counter.filter(function (s) { return s.id === 'btnLogout'; })[0].reachable === true,
+        { admin: escape.admin[0], counter: escape.counter[0] });
+
+  console.log('\n[10b] custom ที่ติ๊กไม่ครบก็ต้องออกระบบได้');
+  const escCustom = await page.evaluate(() => {
+    const read = function () {
+      renderAccount(); applyNavVisibility();
+      const el = document.getElementById('btnLogout2');
+      const card = el.closest('.card');
+      return { shown: card.style.display !== 'none', jobs: canSeePage('jobs'),
+               master: canSeeMasterPage() };
+    };
+    const out = {};
+    /* ติ๊กแค่ยิงอย่างเดียว — เข้าหน้า Master ไม่ได้ */
+    window.__seedRec({ name: 'ท', email: 'a@b.c', role: 'custom', active: true, perms: { scan: true } });
+    out.scanOnly = read();
+    /* ไม่ติ๊กอะไรเลย — เห็นแค่รายการ Job ก็ยังต้องออกได้ */
+    window.__seedRec({ name: 'ท', email: 'a@b.c', role: 'custom', active: true, perms: {} });
+    out.nothing = read();
+    /* ติ๊ก editLocation = เข้าหน้า Master ได้ การ์ดต้องหายไป ไม่โผล่ซ้ำ */
+    window.__seedRec({ name: 'ท', email: 'a@b.c', role: 'custom', active: true,
+                       perms: { editLocation: true } });
+    out.locEditor = read();
+    return out;
+  });
+  check('custom ที่ติ๊กแค่ scan ได้ปุ่มออกระบบ',
+        escCustom.scanOnly.shown === true && escCustom.scanOnly.jobs === true, escCustom.scanOnly);
+  check('custom ที่ไม่ติ๊กอะไรเลยก็ยังออกระบบได้',
+        escCustom.nothing.shown === true, escCustom.nothing);
+  check('custom ที่เข้าหน้า Master ได้ ไม่เห็นการ์ดซ้ำ',
+        escCustom.locEditor.shown === false && escCustom.locEditor.master === true,
+        escCustom.locEditor);
+
+  console.log('\n[10c] สิทธิ์เปลี่ยนสดจากอีกเครื่อง — การ์ดต้องตามทันที');
+  const escLive = await page.evaluate(() => {
+    window.__seedRole('admin');
+    renderAccount(); applyNavVisibility();
+    const before = document.getElementById('btnLogout2').closest('.card').style.display;
+    /* แอดมินอีกเครื่องลดสิทธิ์เราเป็น scanner ระหว่างเปิดแอปค้างไว้ */
+    applyRoleChange({ name: 'ทดสอบ', email: 'a@b.c', role: 'scanner', active: true });
+    const after = document.getElementById('btnLogout2').closest('.card').style.display;
+    return { before: before, after: after };
+  });
+  check('admin: ซ่อนอยู่', escLive.before === 'none', escLive);
+  check('⭐ ถูกลดเป็น scanner แล้วการ์ดโผล่ทันที ไม่ต้องล็อกอินใหม่', escLive.after === '', escLive);
+
   check('ไม่มี error ในคอนโซล', errors.length === 0, errors.slice(0, 3));
 
   console.log('\n==== ' + pass + ' passed, ' + fail + ' failed ====');

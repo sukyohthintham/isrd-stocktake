@@ -51,14 +51,22 @@ function check(name, ok, got) {
       footOutsideL: !L.contains(sec.querySelector('.foot')),
       footOutsideC: !C.contains(sec.querySelector('.foot')),
       footIsLast: sec.lastElementChild.className === 'foot',
-      /* modeBanner ยังอยู่บนสุด ก่อนแท็บ */
-      bannerBeforeTabs: sec.children[0].id === 'modeBanner' && sec.children[1].id === 'jobViewTabs',
+      /* modeBanner ยังอยู่บนสุด และแท็บยังมาก่อนกลุ่มรายการ/ฟอร์ม
+         ไม่ล็อกว่าต้องติดกัน — v2.14.1 มีการ์ดบัญชีคั่นไว้ให้สิทธิ์ที่เข้าหน้า Master ไม่ได้ */
+      bannerFirst: sec.children[0].id === 'modeBanner',
+      tabsBeforeGroups: (function () {
+        const ids = Array.prototype.map.call(sec.children, c => c.id);
+        return ids.indexOf('jobViewTabs') >= 0 &&
+               ids.indexOf('jobViewTabs') < ids.indexOf('jobViewList') &&
+               ids.indexOf('jobViewTabs') < ids.indexOf('jobViewCreate');
+      })(),
       order: Array.prototype.map.call(sec.children, c => c.id || c.className)
     };
   });
   check('แท็บอยู่ใน section และอยู่นอก div ทั้งสอง',
         r1.tabsInSection && r1.tabsOutsideBoth, r1);
-  check('modeBanner อยู่บนสุด แล้วตามด้วยแท็บ', r1.bannerBeforeTabs, r1.order);
+  check('modeBanner อยู่บนสุด', r1.bannerFirst, r1.order);
+  check('แท็บมาก่อนกลุ่มรายการและกลุ่มฟอร์ม', r1.tabsBeforeGroups, r1.order);
   check('กลุ่มรายการครบ (ตัวกรอง + สาขา + exportBar + jobList)',
         r1.statusFilters && r1.branchFilter && r1.exportBar && r1.jobList, r1);
   check('กลุ่มฟอร์มครบทุกช่อง',
