@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.13.0">
+<meta name="version" content="2.14.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.13.0</title>
+<title>ISRD Stocktake v2.14.0</title>
 
 <style>
 :root{
@@ -1039,6 +1039,7 @@ body.no-doc-images .doc .imgbox{display:none}
       <button class="btn grey sm" id="btnUndo" disabled>↶ ยกเลิกการยิงล่าสุด <kbd>F3</kbd></button>
       <button class="btn grey sm" id="btnManual">✎ กรอกมือ <kbd>F2</kbd></button>
       <button class="btn grey sm" id="btnKeyboard">⌨ เปิดแป้นพิมพ์</button>
+      <button class="btn grey sm" id="btnVoice" aria-pressed="true">🔊 เสียงพูด: เปิด</button>
     </div>
 
     <!-- ผลต่างสดระหว่างยิง — admin เท่านั้น ซ่อนไว้ตั้งแต่ HTML เหมือนหน้าสรุป (กัน FOUC)
@@ -1755,7 +1756,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.13.0';
+var APP_VERSION = '2.14.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -5298,6 +5299,70 @@ function vibrate(pattern) {
   try { if (navigator.vibrate) navigator.vibrate(pattern); } catch (e) { /* ไม่รองรับก็ข้าม */ }
 }
 
+/* ---------- เสียงพูดไทย (v2.14.0) ----------
+   เพิ่มจากเสียงติ๊ด ไม่ได้แทนที่ — เสียงติ๊ดทั้งห้าแบบยังทำงานเหมือนเดิมทุกอัน
+   เหตุผลที่ต้องมีทั้งสองอย่าง: ติ๊ดแยกออกจากกันได้ด้วยหูก็จริง แต่ต้องจำว่าเสียงไหน
+   แปลว่าอะไร คนใหม่เข้ากะแรกจำไม่ทัน เสียงพูดบอกตรง ๆ ไม่ต้องจำและไม่ต้องมองจอ
+
+   ใช้ Web Speech API ของเบราว์เซอร์ ไม่ได้โหลดไลบรารีหรือไฟล์เสียงเพิ่ม
+   เครื่องไหนไม่มีเสียงไทยก็อ่านด้วยเสียงที่มี ไม่มีเลยก็เงียบ แต่ยังยิงได้ปกติ */
+var ttsVoice = null;
+function initVoice() {
+  try {
+    if (!('speechSynthesis' in window)) return;
+    var pick = function () {
+      var vs = window.speechSynthesis.getVoices() || [];
+      ttsVoice = vs.find(function (v) { return v.lang && v.lang.toLowerCase().indexOf('th') === 0; }) || null;
+    };
+    pick();
+    /* รายชื่อเสียงมาทีหลังบนหลายเบราว์เซอร์ ต้องรอ event ไม่ใช่เชื่อผลครั้งแรก */
+    if (typeof speechSynthesis !== 'undefined' && speechSynthesis.onvoiceschanged !== undefined) {
+      speechSynthesis.onvoiceschanged = pick;
+    }
+  } catch (e) { /* ไม่รองรับก็ข้าม */ }
+}
+
+/* ค่าเริ่มต้น = เปิด — คนส่วนใหญ่อยากได้ ใครไม่เอาค่อยกดปิดแล้วจำไว้ให้ */
+function voiceEnabled() {
+  try { return localStorage.getItem('isrd_voice') !== 'off'; } catch (e) { return true; }
+}
+
+var ttsWarmed = false;
+/* iOS ต้อง speak ครั้งแรกใน user gesture ก่อน ไม่งั้นครั้งถัดไปจะเงียบสนิททั้งกะ
+   ยิงด้วยเครื่องยิงไม่นับเป็น gesture จึงต้องปลดล็อกตอนแตะช่องยิงหรือกดปุ่ม */
+function warmVoice() {
+  if (ttsWarmed || !('speechSynthesis' in window)) return;
+  try {
+    var u = new SpeechSynthesisUtterance(' ');
+    u.volume = 0;
+    window.speechSynthesis.speak(u);
+    ttsWarmed = true;
+  } catch (e) {}
+}
+
+function speak(text) {
+  try {
+    if (!voiceEnabled() || !('speechSynthesis' in window)) return;
+    /* ยิงรัว ๆ ต้องพูดเฉพาะคำล่าสุด ไม่งั้นคิวสะสมแล้วเสียงตามหลังของจริงไปหลายชิ้น
+       จนคนฟังเข้าใจผิดว่าชิ้นที่เพิ่งยิงผิดสาขา ทั้งที่เป็นเสียงของชิ้นก่อนหน้า */
+    window.speechSynthesis.cancel();
+    var u = new SpeechSynthesisUtterance(text);
+    u.lang = 'th-TH';
+    if (ttsVoice) u.voice = ttsVoice;
+    u.rate = 1.15; u.volume = 1;
+    window.speechSynthesis.speak(u);
+  } catch (e) { /* เครื่องไม่มีเสียงพูดก็ยังยิงได้ */ }
+}
+
+/* ปุ่มบอกสถานะจริงเสมอ ไม่ใช่ป้ายตายตัว — คนกดแล้วต้องเห็นว่าตอนนี้เปิดหรือปิดอยู่ */
+function syncVoiceBtn() {
+  var b = $('btnVoice');
+  if (!b) return;
+  var on = voiceEnabled();
+  b.textContent = on ? '🔊 เสียงพูด: เปิด' : '🔇 เสียงพูด: ปิด';
+  b.setAttribute('aria-pressed', on ? 'true' : 'false');
+}
+
 var flashTimer = null;
 function flashStage(cls) {
   var el = $('scanStage');
@@ -6130,6 +6195,7 @@ function handleScanValue(raw) {
   if (!canScan()) {
     flashStage('miss');
     beep(180, 260, 'sawtooth');
+    speak('ยิงไม่ได้');
     toast(blockedMessage(), true);
     return;
   }
@@ -6148,6 +6214,7 @@ function handleScanValue(raw) {
     renderScanRemark();
     flashStage('newcode');
     beepNewCode();
+    speak('บาร์โค้ดแปลก');
     vibrate([40, 50, 40]);
     showScanNewCode(value, newKey);
     pushRecent(value, 1, newRec.rec.ts);
@@ -6169,6 +6236,7 @@ function handleScanValue(raw) {
   var special = isSpecialStatus(productStatus(state.products[key]));
   flashStage(foreign ? 'foreign' : (special ? 'special' : 'hit'));
   if (foreign) beepForeign(); else if (special) beepSpecial(); else beep(1180, 70, 'square');
+  if (foreign) speak('ผิดสาขา'); else if (special) speak('สินค้าพิเศษ'); else speak('ยิงแล้ว');
   vibrate(foreign ? [60, 50, 60] : (special ? [30, 40, 30, 40, 30] : 40));
 
   showScanHit(key);
@@ -15275,7 +15343,13 @@ function init() {
   $('navSummary').onclick = function () { if (state.roundId) showPage('summary'); };
 
   /* ---- หน้ายิงบาร์โค้ด ---- */
+  initVoice();
+  syncVoiceBtn();
   var scanInput = $('scanInput');
+  /* ปลดล็อกเสียงพูดตั้งแต่จังหวะแรกที่คนแตะช่องยิง — ต้องเป็น user gesture เท่านั้น
+     ผูกทั้ง focus และ keydown เพราะบางเครื่องยิงส่งคีย์เข้ามาโดยช่องได้โฟกัสอยู่ก่อนแล้ว */
+  scanInput.addEventListener('focus', warmVoice);
+  scanInput.addEventListener('keydown', warmVoice);
   scanInput.addEventListener('keydown', function (e) {
     if (e.key !== 'Enter') return;
     e.preventDefault();
@@ -15332,6 +15406,20 @@ function init() {
     scanInput.setAttribute('inputmode', on ? 'text' : 'none');
     $('btnKeyboard').textContent = on ? '⌨ ปิดแป้นพิมพ์' : '⌨ เปิดแป้นพิมพ์';
     scanInput.blur();
+    setTimeout(focusScan, 30);
+  };
+
+  $('btnVoice').onclick = function () {
+    var next = !voiceEnabled();
+    /* เปิด = ลบคีย์ทิ้ง ไม่ใช่เขียน 'on' — ค่าเริ่มต้นคือเปิดอยู่แล้ว
+       เก็บไว้เฉพาะตอนปิด สถานะในเครื่องจึงมีความหมายเดียวคือ "คนนี้ขอปิด" */
+    try {
+      if (next) localStorage.removeItem('isrd_voice');
+      else localStorage.setItem('isrd_voice', 'off');
+    } catch (e) { /* โหมดส่วนตัวเขียนไม่ได้ ก็ใช้ค่าเริ่มต้นไปก่อน */ }
+    syncVoiceBtn();
+    if (next) { warmVoice(); speak('เปิดเสียงพูดแล้ว'); }   // ได้ยินทันทีว่ากดติด
+    else toast('ปิดเสียงพูดแล้ว — เสียงติ๊ดยังทำงานเหมือนเดิม');
     setTimeout(focusScan, 30);
   };
 
