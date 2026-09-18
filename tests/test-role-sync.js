@@ -24,7 +24,7 @@
    ============================================================ */
 
 const fs = require('fs');
-const { puppeteer, CHROME, APP_URL, APP_FILE } = require('./_env');
+const { puppeteer, CHROME, APP_URL, APP_FILE, forceLive } = require('./_env');
 
 let pass = 0, fail = 0;
 function check(name, ok, got) {
@@ -123,6 +123,8 @@ const HARNESS = `
   const errors = [];
   page.on('pageerror', e => errors.push('PAGEERROR: ' + e.message));
   page.on('console', m => { if (m.type() === 'error') errors.push('CONSOLE: ' + m.text()); });
+  /* ensureRoleFresh ทำงานเฉพาะโหมดต่อฐานจริง ต้องปิดโหมดทดสอบก่อนโหลดหน้า */
+  await forceLive(page);
   await page.goto(APP_URL, { waitUntil: 'load' });
   await new Promise(r => setTimeout(r, 1200));
   await page.evaluate(HARNESS);

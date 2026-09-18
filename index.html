@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.15.0">
+<meta name="version" content="2.16.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.15.0</title>
+<title>ISRD Stocktake v2.16.0</title>
 
 <style>
 :root{
@@ -709,6 +709,18 @@ body.no-doc-images .doc .imgbox{display:none}
    แล้วกลุ่ม Product/Not Product เรียงลงมา = 2x2 เหมือนหน้าเอกสาร */
 #sumDonut .donut-pair{flex-direction:row;gap:28px;align-items:flex-start;justify-content:center;flex-wrap:wrap}
 #sumDonut .donut-cell{width:auto;flex:0 0 auto}
+/* ⭐ v2.16.0 — ปุ่มเลือกประเภทตอนยิง ต้องกดโดนง่ายด้วยมือใส่ถุงมือ
+   ตัวที่เลือกอยู่ต้องต่างชัดแบบเห็นแวบเดียว เพราะกดผิดแล้วยอดไปลงผิดประเภททั้งกอง */
+.scantype{display:flex;gap:8px;margin-bottom:12px}
+.scantype button{
+  flex:1 1 0;min-height:46px;font:inherit;font-size:15px;font-weight:700;cursor:pointer;
+  border-radius:10px;border:2px solid var(--line);background:#fff;color:var(--muted);
+}
+.scantype button.on{background:var(--brand);border-color:var(--brand);color:#fff}
+#sdDonut .donut-svg{width:34mm;height:34mm}
+#sdDonut .donut-pair{flex-direction:row;gap:28px;align-items:flex-start;justify-content:center;flex-wrap:wrap}
+#sdDonut .donut-cell{width:auto;flex:0 0 auto}
+.scantype button:focus-visible{outline:2px solid var(--brand-dark);outline-offset:2px}
 /* ระยะห่างระหว่างบล็อกถูกบีบไว้ให้ทั้งก้อนพอดีใต้เพดาน 1/3 หน้า (92mm ≈ 349px)
    วัดจริง: บล็อกละ 169px + ระยะขอบ 6px = 344px */
 .donut-block{text-align:center;margin:2px 0;page-break-inside:avoid;break-inside:avoid}
@@ -1096,6 +1108,16 @@ body.no-doc-images .doc .imgbox{display:none}
             style="display:none;margin-bottom:12px">⬇ ดาวน์โหลด Template (รหัส + จำนวน)</button>
     <input type="file" id="scanImportFile" accept=".xlsx,.csv" style="display:none">
 
+    <!-- ⭐ v2.16.0 — ประเภทของที่กำลังนับ ติดไปกับทุกแถวที่ยิง
+         เดิมต้องแยก Job คนละใบ (SHOW / STOCK / STOCKASSET) เพื่อให้รู้ว่าของอยู่ฝั่งไหน
+         ทำให้สาขาหนึ่งมีสามใบ ยอดกระจาย ต้องไล่เปิดทีละใบ
+         ตอนนี้ใบเดียวพอ แล้วแยกด้วยปุ่มนี้แทน -->
+    <div class="scantype" id="scanTypeBtns">
+      <button type="button" data-scantype="display">🖼 โชว์</button>
+      <button type="button" data-scantype="stock">📦 สต็อก</button>
+      <button type="button" data-scantype="asset">🔧 Asset</button>
+    </div>
+
     <label class="fld" style="margin-bottom:12px">
       <span>เก็บทีละโซน — แสดงเฉพาะ Location ที่ขึ้นต้นด้วย</span>
       <input type="text" id="locFilter" placeholder="เช่น A หรือ B4" autocomplete="off"
@@ -1417,6 +1439,40 @@ body.no-doc-images .doc .imgbox{display:none}
   <div class="filters" id="sumTabs">
     <button class="btn sm" data-sumtab="overview">ภาพรวมทุกสาขา</button>
     <button class="btn sm grey" data-sumtab="job">สรุปรอบนี้</button>
+    <button class="btn sm grey" data-sumtab="sd">โชว์/สต็อก</button>
+  </div>
+
+  <!-- ⭐ v2.16.0 — รายงาน "มีสต็อก ไม่มีโชว์"
+       อยู่เป็นแท็บในหน้าสรุป ไม่ใช่ปุ่มบนแถบล่าง เพราะแถบล่างมี 6 ปุ่มเต็มแล้ว -->
+  <div id="sumSd" style="display:none">
+    <div id="sdShareHead" style="text-align:center;margin:6px 0 10px">
+      <div class="tbl-title">Stock vs Display</div>
+      <div id="sdBranchLine" style="font-weight:700"></div>
+      <div id="sdAuditDate" class="muted"></div>
+    </div>
+    <button class="btn block" id="btnSdExport" style="margin-bottom:12px">⬇ ดาวน์โหลด Excel</button>
+    <div class="stats" id="sdCards"></div>
+    <div id="sdDonut"></div>
+    <div class="card">
+      <h3>กระจุกอยู่กลุ่มไหน</h3>
+      <div class="clist" id="sdGroups"></div>
+    </div>
+    <div class="card">
+      <h3>มีสต็อก ไม่มีโชว์ <span class="chip" id="sdChip">0</span></h3>
+      <input type="text" id="sdSearch" placeholder="🔍 ค้นหารหัส ชื่อ หรือกลุ่ม" autocomplete="off">
+      <div class="filters" id="sdSortBtns" style="margin-top:8px">
+        <button class="btn sm" data-sdsort="value">มูลค่ามาก→น้อย</button>
+        <button class="btn sm grey" data-sdsort="qty">จำนวนมาก→น้อย</button>
+        <button class="btn sm grey" data-sdsort="code">รหัส A→Z</button>
+      </div>
+    </div>
+    <div class="tablewrap">
+      <table class="grid" id="sdTable">
+        <thead><tr><th>รหัส</th><th>ชื่อสินค้า</th><th>กลุ่ม</th>
+          <th>Stock (ชิ้น)</th><th>โซน</th><th>มูลค่า</th></tr></thead>
+        <tbody id="sdBody"></tbody>
+      </table>
+    </div>
   </div>
 
   <div id="sumOverview">
@@ -1786,7 +1842,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.15.0';
+var APP_VERSION = '2.16.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -1819,6 +1875,30 @@ var ROOT_PATH = 'stocktake2026';
    ไม่งั้นสาย EventSource จะถูกตัดกลางวันแล้วยิงไม่เข้าโดยไม่มีใครรู้
    เก็บเฉพาะ refreshToken ลง localStorage (ข้อ A2 ปิดเบราว์เซอร์แล้วไม่ต้องล็อกอินซ้ำ)
    ============================================================ */
+
+/* ⭐ v2.16.0 — โหมดทดสอบ (Preview)
+
+   เปิดไฟล์จากเครื่อง (file://) หรือรันที่ localhost = กำลังลองของ ไม่ใช่ใช้งานจริง
+   ต้องตัดสายไปฐาน production ตั้งแต่ต้น ไม่ใช่หวังว่าจะไม่มีใครกดปุ่มผิด
+
+   ทำด้วยการล้าง databaseURL ทิ้งก่อน REMOTE_MODE จะถูกคำนวณ — ทั้งแอปอ่านค่านั้น
+   ตัวเดียว (อ่าน/เขียน/สาย EventSource/ล็อกอิน) จึงกลายเป็นโหมดเก็บในเครื่องทั้งใบ
+   โดยไม่ต้องไปไล่แก้ทีละจุด และไม่มีทางหลุดไปแตะของจริงได้เลยแม้แต่คำขอเดียว
+
+   ของที่ทำในโหมดนี้เก็บลง localStorage (คีย์ isrd_stocktake_v1) จึงรอด reload
+   ใช้ทดสอบได้ครบวง: ล็อกอิน · สร้าง Job · ยิง · ปรับยอด · ดูสรุป · ออกเอกสาร */
+var PREVIEW_MODE = (function () {
+  try {
+    /* ช่องเดียวที่ปิดโหมดนี้ได้ — ตั้งไว้ก่อนสคริปต์หน้าเริ่มทำงานเท่านั้น
+       มีไว้ให้ชุดเทสที่ต้องทดสอบชั้นเน็ตจริง (timeout · retry · ซิงก์สิทธิ์)
+       จงใจไม่ทำเป็น query string หรือปุ่มบนจอ ไม่งั้นจะกลายเป็นทางให้เปิดไฟล์
+       ในเครื่องแล้วยิงเข้าฐาน production ได้โดยไม่ตั้งใจ ซึ่งคือสิ่งที่โหมดนี้กันอยู่ */
+    if (window.__ISRD_LIVE === true) return false;
+    var h = String(location.hostname || '').toLowerCase();
+    return location.protocol === 'file:' || h === 'localhost' || h === '127.0.0.1';
+  } catch (e) { return false; }
+})();
+if (PREVIEW_MODE) FIREBASE_CONFIG.databaseURL = '';
 
 /* มี databaseURL จริง = ต่อฐานกลาง ไม่งั้นเป็นโหมดทดสอบเก็บในเครื่อง */
 var REMOTE_MODE = /^https?:\/\//.test(FIREBASE_CONFIG.databaseURL || '');
@@ -3920,6 +4000,8 @@ var state = {
   locations: { offline: {}, online: {} },   // ชุด -> safeKey(sku) -> {sku,name,pick,refill}
   locationSet: 'offline',                   // ชุดที่รอบนับนี้ใช้
   locationFilter: '',                       // กรองเฉพาะ Location ที่ขึ้นต้นด้วย...
+  scanType: 'stock',                        // ประเภทของที่กำลังนับ: display | stock | asset
+  sdSort: 'value',                          // การเรียงในตารางรายงานโชว์/สต็อก
   customStatuses: [],                       // ค่า status ที่แอดมินเพิ่มเอง
   customStoreTypes: [],                     // ประเภทคลังย่อยที่แอดมินเพิ่มเอง
   docScope: 'job',                          // เอกสาร: 'job' = เฉพาะ Job นี้ · 'cycle' = รวมทั้งสาขา
@@ -4875,6 +4957,38 @@ function blockedMessage() {
     : 'รอบนี้อยู่ขั้นตรวจสอบ ยิงเพิ่มไม่ได้แล้ว';
 }
 
+/* ⭐ v2.16.0 — ประเภทของที่กำลังนับ
+   จำแยกรายรอบ เพราะคนละรอบคนละงาน (รอบนี้เดินนับตัวโชว์ รอบหน้าเดินนับสต็อก)
+   ค่าเริ่มต้นเป็น 'stock' เพราะของส่วนใหญ่ในคลังคือสต็อก กดผิดน้อยที่สุด */
+var SCAN_TYPES = ['display', 'stock', 'asset'];
+
+function scanTypeKey() { return 'isrd_scantype_' + (state.roundId || 'none'); }
+
+function loadScanType() {
+  var v = 'stock';
+  try {
+    var saved = localStorage.getItem(scanTypeKey());
+    if (saved && SCAN_TYPES.indexOf(saved) >= 0) v = saved;
+  } catch (e) { /* โหมดส่วนตัวอ่านไม่ได้ ใช้ค่าเริ่มต้น */ }
+  state.scanType = v;
+  renderScanType();
+}
+
+function setScanType(v) {
+  if (SCAN_TYPES.indexOf(v) < 0) return;
+  state.scanType = v;
+  try { localStorage.setItem(scanTypeKey(), v); } catch (e) {}
+  renderScanType();
+  focusScan();
+}
+
+function renderScanType() {
+  document.querySelectorAll('[data-scantype]').forEach(function (b) {
+    b.classList.toggle('on', b.getAttribute('data-scantype') === state.scanType);
+    b.setAttribute('aria-pressed', b.getAttribute('data-scantype') === state.scanType ? 'true' : 'false');
+  });
+}
+
 /* v2.1.9 — ปุ่มโซนเหลือหน้าที่เดียวคือตัวกรองไล่เก็บทีละโซน
    ไม่เขียนฐาน ไม่สร้างเรคอร์ดโซน เพราะโซนที่บันทึกมาจาก Location ของสินค้าเสมอ
    ตัวกรองกับช่อง "เก็บทีละโซน" บนหน้ายิงเป็นค่าเดียวกัน แก้ที่ไหนก็เห็นตรงกัน */
@@ -4917,6 +5031,10 @@ function writeScan(key, delta, mode, reason, extra) {
   /* v2.x — โซนที่ "เก็บทีละโซน" ถูกตั้งไว้ตอนยิง = ที่ที่ไปเจอ/นับจริง (ต่างจากโซนใน master) */
   var _fz = String(state.locationFilter || '').trim();
   if (_fz) rec.foundZone = _fz;
+  /* ⭐ v2.16.0 — ประเภทของที่กำลังนับ (โชว์/สต็อก/asset) ติดไปกับแถวเลย
+     Rules ของ scans เช็คแค่ hasChildren ไม่ได้ห้ามฟิลด์เพิ่ม จึงไม่ต้องแก้ฝั่งฐาน
+     แถวเก่าที่ไม่มีฟิลด์นี้ยังอ่านได้ตามปกติ (รายงานถอยไปเดาจาก foundZone ให้) */
+  if (state.scanType) rec.stockType = state.scanType;
   if (extra) Object.keys(extra).forEach(function (f) { rec[f] = extra[f]; });
 
   applyScanRecord(id, rec);                       // นับในเครื่องทันที ไม่รอเน็ต
@@ -6872,6 +6990,7 @@ function renderScanPage() {
   /* โซนย้ายไปอยู่ในบล็อกตัวใหญ่ข้าง ๆ แล้ว ไม่ต้องเขียนซ้ำตรงนี้
      จอมือถือ 390px แคบ ถ้าใส่ครบสามอย่างข้อความจะตกไปสามบรรทัด */
   $('sessionText').textContent = roundLabel(round.name) + ' · ผู้นับ ' + state.counter;
+  loadScanType();                  // ค่าประเภทจำแยกรายรอบ เปลี่ยน Job แล้วต้องตามใบใหม่
   renderZoneLock();
   renderScanTotals();
   renderSyncBar();
@@ -11808,6 +11927,334 @@ function cycleBranch(cid) {
   return state.roundIndex[ids[0]] || {};
 }
 
+/* ============================================================
+   รายงาน "มีสต็อก ไม่มีโชว์" (v2.16.0)
+   ============================================================
+
+   คำถามหน้างาน: ของที่มีในสต็อกแต่ไม่ได้เอาออกมาโชว์หน้าร้าน มีอะไรบ้าง
+   ขายไม่ออกเพราะลูกค้าไม่เห็น ทั้งที่ของอยู่ในร้าน — ต้องรู้เป็นรายตัวถึงจะไปจัดของได้
+
+   ก่อน v2.16.0 ตอบไม่ได้เลย เพราะไม่มีใครบันทึกว่าแถวไหนนับจากฝั่งไหน
+   ตอนนี้ทุกแถวติด stockType มาแล้ว (ดูปุ่มประเภทบนหน้ายิง)
+   แถวเก่าที่ยังไม่มีฟิลด์นี้ ถอยไปเดาจากตัวแรกของ foundZone: D = โชว์ · S = สต็อก
+   เดาไม่ได้ก็ยอมรับว่าเดาไม่ได้ ไปอยู่กลุ่ม "ยังไม่ระบุ" ไม่ใช่เดามั่วแล้วรายงานผิด
+   ============================================================ */
+
+function stockTypeOfScan(rec) {
+  if (!rec) return '';
+  if (rec.stockType) return rec.stockType;
+  var fz = String(rec.foundZone || '').trim().toUpperCase();
+  if (fz.charAt(0) === 'D') return 'display';
+  if (fz.charAt(0) === 'S') return 'stock';
+  return '';
+}
+
+/* กลุ่มสินค้า = สองตัวอักษรแรกของรหัสหลังตัดคำนำหน้า NT/SO ทิ้ง (BG · OV ...)
+   รหัสที่มีคำว่า SALE ถือเป็นกลุ่ม SALE ของมันเอง ไม่ต้องไปดูตัวอักษร */
+function skuGroupOf(code) {
+  var c = String(code || '').toUpperCase();
+  if (!c) return '(ไม่ระบุ)';
+  if (c.indexOf('SALE') >= 0) return 'SALE';
+  var body = c.replace(/^(NT|SO)/, '');
+  return body.slice(0, 2) || '(ไม่ระบุ)';
+}
+
+var SD_STATUS = {
+  stock_no_display: 'มีสต็อก ไม่มีโชว์',
+  display_no_stock: 'มีโชว์ ไม่มีสต็อก',
+  both: 'มีทั้งสองฝั่ง',
+  uncategorized: 'ยังไม่ระบุประเภท'
+};
+var SD_ORDER = ['stock_no_display', 'display_no_stock', 'both', 'uncategorized'];
+
+/* รวมทุก Job ในรอบเหมือน fzMap ในไฟล์ Excel — ของกระจายหลายใบต้องมองเป็นก้อนเดียว */
+function stockDisplayReport() {
+  var per = {};                      // key -> { disp, stock, other, zones:{} }
+  function add(rec) {
+    if (!rec) return;
+    var k = safeKey(rec.code);
+    var d = Number(rec.delta) || 0;
+    var e = per[k] || (per[k] = { disp: 0, stock: 0, other: 0, zones: {} });
+    var t = stockTypeOfScan(rec);
+    if (t === 'display') e.disp += d;
+    else if (t === 'stock') e.stock += d;
+    else e.other += d;
+    var z = (rec.foundZone && String(rec.foundZone).trim()) || zoneNameForKey(k);
+    e.zones[z] = (e.zones[z] || 0) + d;
+  }
+  var scope = cycleScope();
+  if (scope.multi && cycleCacheFresh() && state.cycleData && state.cycleData.raw &&
+      state.cycleData.raw.jobs) {
+    state.cycleData.raw.jobs.forEach(function (j) {
+      var sc = j.scans || {};
+      Object.keys(sc).forEach(function (sid) { add(sc[sid]); });
+    });
+  } else {
+    state.scanLog.forEach(function (x) { add(x.rec); });
+  }
+
+  var rows = [];
+  var counts = { stock_no_display: 0, display_no_stock: 0, both: 0, uncategorized: 0 };
+  var byGroup = {};
+  Object.keys(per).forEach(function (k) {
+    var e = per[k];
+    var act = e.disp + e.stock + e.other;
+    /* ยิงแล้วหักคืนจนเหลือ 0 = ไม่มีของจริง ไม่ต้องรายงาน (กติกาเดียวกับแถวผี) */
+    if (act === 0) return;
+    var p = state.products[k] || {};
+    var status = e.stock > 0 && e.disp === 0 ? 'stock_no_display'
+               : (e.disp > 0 && e.stock === 0 ? 'display_no_stock'
+               : (e.disp > 0 && e.stock > 0 ? 'both' : 'uncategorized'));
+    var price = Number(p[state.priceField]) || 0;
+    var zones = Object.keys(e.zones).filter(function (z) { return e.zones[z] > 0; }).sort()
+      .map(function (z) { return z + ' (' + e.zones[z] + ')'; }).join(', ');
+    var row = {
+      key: k, code: p.code || k, name: p.name || '(ไม่มีใน Master)',
+      group: skuGroupOf(p.code || k),
+      dispQty: e.disp, stockQty: e.stock, otherQty: e.other, act: act,
+      zones: zones, price: price,
+      value: Math.round(e.stock * price * 100) / 100,
+      status: status
+    };
+    rows.push(row);
+    counts[status]++;
+    if (status === 'stock_no_display') {
+      var g = byGroup[row.group] || (byGroup[row.group] = { group: row.group, skus: 0, qty: 0, value: 0 });
+      g.skus++; g.qty += e.stock; g.value += row.value;
+    }
+  });
+
+  var total = rows.length;
+  var pct = {};
+  SD_ORDER.forEach(function (kk) {
+    pct[kk] = total ? Math.round(counts[kk] / total * 1000) / 10 : 0;
+  });
+  return {
+    rows: rows, counts: counts, pct: pct, total: total,
+    groups: Object.keys(byGroup).map(function (g) { return byGroup[g]; })
+      .sort(function (a, b) { return b.skus - a.skus; })
+  };
+}
+
+/* สีของการ์ด/โดนัทแต่ละสถานะ — ใช้ชุดเดียวกันทั้งการ์ด โดนัท และ legend
+   สีต้องสื่อความหมาย ไม่ใช่สุ่มมา: แดง = ต้องไปจัดของ · เทา = ยังบอกอะไรไม่ได้ */
+var SD_TONE = {
+  stock_no_display: 'neg', display_no_stock: 'pos', both: '', uncategorized: 'muted'
+};
+
+function sdVisibleRows(rep) {
+  var q = normText(($('sdSearch') || {}).value || '');
+  var rows = rep.rows.filter(function (r) { return r.status === 'stock_no_display'; });
+  if (q) {
+    rows = rows.filter(function (r) {
+      return normText(r.code + ' ' + r.name + ' ' + r.group).indexOf(q) >= 0;
+    });
+  }
+  var by = state.sdSort;
+  return rows.sort(function (a, b) {
+    if (by === 'qty') return b.stockQty - a.stockQty;
+    if (by === 'code') return String(a.code).localeCompare(String(b.code), 'th');
+    return b.value - a.value;
+  });
+}
+
+function renderStockDisplay() {
+  var rep = stockDisplayReport();
+  var round = state.roundIndex[state.roundId] || { name: '-' };
+  $('sdBranchLine').textContent = 'สาขา: ' + jobBranchLabel(round);
+  $('sdAuditDate').textContent = 'วันที่ Audit: ' + thaiDate(Date.now());
+
+  /* ---- การ์ด 4 ใบ พร้อม % ของจำนวน SKU ทั้งหมด ---- */
+  var cards = $('sdCards');
+  cards.innerHTML = '';
+  SD_ORDER.forEach(function (k) {
+    var b = document.createElement('div');
+    b.className = 'stat';
+    b.setAttribute('data-sdcard', k);
+    var num = document.createElement('div');
+    num.className = 's-num ' + (SD_TONE[k] || '');
+    num.setAttribute('data-sdnum', k);
+    num.textContent = fmtNum(rep.counts[k]);
+    var lab = document.createElement('div');
+    lab.className = 's-lab';
+    lab.textContent = SD_STATUS[k];
+    var sub = document.createElement('div');
+    sub.className = 's-sub';
+    sub.setAttribute('data-sdpct', k);
+    sub.textContent = rep.pct[k] + '%';
+    b.appendChild(num); b.appendChild(lab); b.appendChild(sub);
+    cards.appendChild(b);
+  });
+
+  /* ---- โดนัทสัดส่วน: กลุ่มหลักคือ "มีสต็อกไม่มีโชว์" เทียบกับที่เหลือ ---- */
+  renderSdDonut(rep);
+
+  /* ---- กระจุกกลุ่มไหน ---- */
+  var gh = $('sdGroups');
+  gh.innerHTML = '';
+  if (!rep.groups.length) {
+    gh.innerHTML = '<div class="empty">ไม่มีรายการมีสต็อกไม่มีโชว์</div>';
+  } else {
+    rep.groups.slice(0, 12).forEach(function (g) {
+      var d = document.createElement('div');
+      d.className = 'rep-line';
+      d.setAttribute('data-sdgroup', g.group);
+      var sp = document.createElement('span');
+      sp.textContent = g.group + ' · ' + fmtNum(g.skus) + ' SKU';
+      var bb = document.createElement('b');
+      bb.textContent = fmtNum(g.qty) + ' ชิ้น · ' + fmtMoney(g.value);
+      d.appendChild(sp); d.appendChild(bb);
+      gh.appendChild(d);
+    });
+  }
+
+  renderSdTable(rep);
+}
+
+/* โดนัทวงเดียว: สัดส่วน "มีสต็อกไม่มีโชว์" ต่อ SKU ทั้งหมดที่นับได้
+   วาดเป็น SVG ตรง ๆ เหมือน renderDonuts ไม่ได้ใช้ไลบรารีอะไรเพิ่ม */
+function renderSdDonut(rep) {
+  var host = $('sdDonut');
+  host.innerHTML = '';
+  if (!rep.total) return;
+  var block = document.createElement('div');
+  block.className = 'donut-block';
+  var pair = document.createElement('div');
+  pair.className = 'donut-pair';
+
+  SD_ORDER.forEach(function (k) {
+    if (!rep.counts[k]) return;
+    var cell = document.createElement('div');
+    cell.className = 'donut-cell';
+    cell.setAttribute('data-sddonut', k);
+    var cap = document.createElement('div');
+    cap.className = 'donut-cap';
+    cap.textContent = SD_STATUS[k];
+    cell.appendChild(cap);
+    cell.appendChild(sdDonutSvg(rep.pct[k]));
+    var leg = document.createElement('div');
+    leg.className = 'muted';
+    leg.setAttribute('data-sdlegend', k);
+    leg.textContent = fmtNum(rep.counts[k]) + ' SKU · ' + rep.pct[k] + '% ของทั้งหมด';
+    cell.appendChild(leg);
+    pair.appendChild(cell);
+  });
+  block.appendChild(pair);
+  host.appendChild(block);
+}
+
+function sdDonutSvg(pct) {
+  var NS = 'http://www.w3.org/2000/svg';
+  var svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 42 42');
+  svg.setAttribute('class', 'donut-svg');
+  var r = 15.9155, c = 2 * Math.PI * r;
+  function ring(color, dash) {
+    var ci = document.createElementNS(NS, 'circle');
+    ci.setAttribute('cx', '21'); ci.setAttribute('cy', '21'); ci.setAttribute('r', String(r));
+    ci.setAttribute('fill', 'none'); ci.setAttribute('stroke', color);
+    ci.setAttribute('stroke-width', '5');
+    if (dash !== null) {
+      ci.setAttribute('stroke-dasharray', dash + ' ' + (c - dash));
+      ci.setAttribute('transform', 'rotate(-90 21 21)');
+    }
+    return ci;
+  }
+  svg.appendChild(ring('#e6ebe9', null));
+  svg.appendChild(ring('#0f6e5c', c * Math.max(0, Math.min(100, pct)) / 100));
+  var t = document.createElementNS(NS, 'text');
+  t.setAttribute('x', '21'); t.setAttribute('y', '22');
+  t.setAttribute('text-anchor', 'middle');
+  t.setAttribute('font-size', '8'); t.setAttribute('font-weight', '800');
+  t.textContent = pct + '%';
+  svg.appendChild(t);
+  return svg;
+}
+
+function renderSdTable(rep) {
+  rep = rep || stockDisplayReport();
+  document.querySelectorAll('[data-sdsort]').forEach(function (b) {
+    b.className = 'btn sm ' + (b.getAttribute('data-sdsort') === state.sdSort ? '' : 'grey');
+  });
+  var rows = sdVisibleRows(rep);
+  $('sdChip').textContent = fmtNum(rows.length);
+  var body = $('sdBody');
+  body.innerHTML = '';
+  if (!rows.length) {
+    var tr = document.createElement('tr');
+    var td = document.createElement('td');
+    td.colSpan = 6; td.className = 'empty';
+    td.textContent = 'ไม่มีรายการที่ตรงกับเงื่อนไข';
+    tr.appendChild(td); body.appendChild(tr);
+    return;
+  }
+  rows.forEach(function (r) {
+    var tr = document.createElement('tr');
+    tr.setAttribute('data-sdrow', r.code);
+    [[r.code, ''], [r.name, ''], [r.group, ''],
+     [fmtNum(r.stockQty), 'num'], [r.zones, ''], [fmtMoney(r.value), 'num']
+    ].forEach(function (c) {
+      var td = document.createElement('td');
+      if (c[1] === 'num') td.style.textAlign = 'right';
+      td.textContent = c[0];
+      tr.appendChild(td);
+    });
+    body.appendChild(tr);
+  });
+}
+
+/* ไฟล์ Excel 4 ชีท — ใช้ buildXlsx ตัวเดียวกับที่เหลือทั้งโปรเจกต์ ไม่มีไลบรารีนอก */
+function exportStockDisplayExcel() {
+  var rep = stockDisplayReport();
+  var round = state.roundIndex[state.roundId] || {};
+  var priceLabel = state.priceField === 'sellPrice' ? 'ราคาขาย' : 'ราคาต้นทุน';
+
+  var s1 = [['รายงาน', 'มีสต็อก ไม่มีโชว์'],
+            ['สาขา', jobBranchLabel(round)],
+            ['Job', round.jobCode || state.roundId || '-'],
+            ['วันที่ Audit', thaiDate(Date.now())],
+            [], ['สถานะ', 'จำนวน SKU', 'สัดส่วน %', 'มูลค่า Stock']];
+  SD_ORDER.forEach(function (k) {
+    var v = rep.rows.filter(function (r) { return r.status === k; })
+      .reduce(function (a, r) { return a + r.value; }, 0);
+    s1.push([SD_STATUS[k], rep.counts[k], rep.pct[k], Math.round(v * 100) / 100]);
+  });
+
+  var pick = function (st) { return rep.rows.filter(function (r) { return r.status === st; }); };
+  var s2 = [['รหัสสินค้า', 'ชื่อสินค้า', 'กลุ่ม', 'Stock (ชิ้น)', 'โซน', priceLabel, 'มูลค่า']];
+  pick('stock_no_display').sort(function (a, b) { return b.value - a.value; })
+    .forEach(function (r) {
+      s2.push([r.code, r.name, r.group, r.stockQty, r.zones, r.price, r.value]);
+    });
+
+  var s3 = [['รหัสสินค้า', 'ชื่อสินค้า', 'กลุ่ม', 'โชว์ (ชิ้น)', 'โซน']];
+  pick('display_no_stock').sort(function (a, b) { return b.dispQty - a.dispQty; })
+    .forEach(function (r) { s3.push([r.code, r.name, r.group, r.dispQty, r.zones]); });
+
+  var s4 = [['รหัสสินค้า', 'ชื่อสินค้า', 'กลุ่ม', 'สถานะ', 'โชว์ (ชิ้น)', 'Stock (ชิ้น)',
+             'จำนวนจริง', 'โซน']];
+  rep.rows.slice().sort(function (a, b) { return String(a.code).localeCompare(String(b.code), 'th'); })
+    .forEach(function (r) {
+      s4.push([r.code, r.name, r.group, SD_STATUS[r.status], r.dispQty, r.stockQty, r.act, r.zones]);
+    });
+
+  var blob = buildXlsx([
+    { name: 'สรุป', rows: s1, widths: [26, 14, 12, 16] },
+    { name: 'มีสต็อกไม่มีโชว์', rows: s2, widths: [18, 34, 10, 12, 26, 12, 14] },
+    { name: 'มีโชว์ไม่มีสต็อก', rows: s3, widths: [18, 34, 10, 12, 26] },
+    { name: 'ทั้งหมด-จำแนก', rows: s4, widths: [18, 34, 10, 20, 12, 12, 12, 26] }
+  ]);
+  var name = 'stock-no-display-' + (round.jobCode || state.roundId || 'job') + '-' +
+             thaiDate(Date.now()).replace(/[^0-9]/g, '-') + '.xlsx';
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+  toast('ดาวน์โหลดไฟล์แล้ว · ' + fmtNum(rep.counts.stock_no_display) + ' รายการที่มีสต็อกไม่มีโชว์');
+}
+
 function renderOverview() {
   document.querySelectorAll('[data-ostatus]').forEach(function (b) {
     b.className = 'btn sm ' + (b.getAttribute('data-ostatus') === state.overviewStatus ? '' : 'grey');
@@ -11908,7 +12355,9 @@ function setSummaryTab(tab) {
   });
   $('sumOverview').style.display = tab === 'overview' ? 'block' : 'none';
   $('sumJob').style.display = tab === 'job' ? 'block' : 'none';
+  $('sumSd').style.display = tab === 'sd' ? 'block' : 'none';
   if (tab === 'overview') renderOverview();
+  else if (tab === 'sd') renderStockDisplay();
   /* ⭐ v2.14.2 — วาดหน้าสรุปทันทีตอนสลับมาแท็บนี้
      ของเดิมสลับกลับมาแล้วตัวเลขค้างจากครั้งก่อน ต้องไปกดสลับราคาให้มันวาดใหม่เอง */
   else renderSummary();
@@ -15550,8 +15999,25 @@ function renderUsers() {
    19. เริ่มทำงาน
    ============================================================ */
 
+/* แบนเนอร์ถาวรของโหมดทดสอบ — อยู่นอก #modeBanner ที่ถูกล้างทุกครั้งที่วาดหน้า Job
+   ต้องเห็นตลอดเวลาไม่ว่าอยู่หน้าไหน ไม่งั้นคนลองของอยู่แล้วลืมว่าไม่ใช่ของจริง */
+function showPreviewBanner() {
+  if (!PREVIEW_MODE) return;
+  var host = $('modeBannerHost');
+  if (!host) return;
+  host.style.display = '';
+  host.innerHTML = '';
+  var b = document.createElement('div');
+  b.className = 'banner';
+  b.id = 'previewBanner';
+  b.textContent = '🧪 โหมดทดสอบ (Preview) — เปิดจากไฟล์ในเครื่อง ไม่ต่อฐานจริง ' +
+                  'ข้อมูลไม่กระทบ production';
+  host.appendChild(b);
+}
+
 function init() {
   $('verText').textContent = APP_VERSION;
+  showPreviewBanner();
 
   $('modeBanner').innerHTML = '';
   if (!db.remote) {
@@ -15762,6 +16228,10 @@ function init() {
   $('manualBackdrop').onclick = closeManual;
   $('btnManualSave').onclick = saveManual;
   $('manualSearch').addEventListener('input', renderManualResults);
+  document.querySelectorAll('[data-scantype]').forEach(function (b) {
+    b.onclick = function () { setScanType(b.getAttribute('data-scantype')); };
+  });
+
   $('btnKeyboard').onclick = function () {
     var on = scanInput.getAttribute('inputmode') === 'none';
     scanInput.setAttribute('inputmode', on ? 'text' : 'none');
@@ -15895,6 +16365,14 @@ function init() {
   document.querySelectorAll('[data-sumtab]').forEach(function (b) {
     b.onclick = function () { setSummaryTab(b.getAttribute('data-sumtab')); };
   });
+
+  /* รายงานโชว์/สต็อก — ค้นหาและเรียงวาดเฉพาะตาราง ไม่วาดทั้งหน้าใหม่
+     ไม่งั้นพิมพ์ทีละตัวอักษรแล้วการ์ดกับโดนัทกระพริบทุกครั้ง */
+  $('sdSearch').oninput = function () { renderSdTable(); };
+  document.querySelectorAll('[data-sdsort]').forEach(function (b) {
+    b.onclick = function () { state.sdSort = b.getAttribute('data-sdsort'); renderSdTable(); };
+  });
+  $('btnSdExport').onclick = exportStockDisplayExcel;
   document.querySelectorAll('[data-ostatus]').forEach(function (b) {
     b.onclick = function () { state.overviewStatus = b.getAttribute('data-ostatus'); renderOverview(); };
   });

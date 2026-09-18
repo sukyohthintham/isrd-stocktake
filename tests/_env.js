@@ -94,7 +94,15 @@ function appScript() {
   return m[1];
 }
 
+/* เปิดโหมดต่อฐานจริงให้หน้าที่กำลังจะโหลด — ต้องเรียกก่อน page.goto
+   ใช้เฉพาะเทสที่ทดสอบชั้นเน็ตเอง (quiet-read · role-sync) ไฟล์อื่นไม่ต้องแตะ
+   ปกติเทสทุกไฟล์รันผ่าน file:// ซึ่งเข้าโหมดทดสอบอัตโนมัติตั้งแต่ v2.16.0 */
+async function forceLive(page) {
+  await page.evaluateOnNewDocument(function () { window.__ISRD_LIVE = true; });
+}
+
 module.exports = {
+  forceLive: forceLive,
   puppeteer: loadPuppeteer(),
   CHROME: findChrome(),
   APP_FILE: APP_FILE,

@@ -29,7 +29,7 @@
    [12] กลับมาเห็นหน้าจอ (ปลุกจากล็อกจอ / กลับจาก bfcache) ต้องเปิดสายใหม่ + อ่านข้อมูลกลับ
    ============================================================ */
 
-const { puppeteer, CHROME, APP_URL } = require('./_env');
+const { puppeteer, CHROME, APP_URL, forceLive } = require('./_env');
 
 let pass = 0, fail = 0;
 function check(name, ok, got) {
@@ -140,6 +140,8 @@ const HARNESS = `
   const errors = [];
   page.on('pageerror', e => errors.push('PAGEERROR: ' + e.message));
   page.on('console', m => { if (m.type() === 'error') errors.push('CONSOLE: ' + m.text()); });
+  /* เทสนี้วัดชั้นเน็ต/สายค้างจริง ต้องปิดโหมดทดสอบก่อนโหลดหน้า (v2.16.0) */
+  await forceLive(page);
   await page.goto(APP_URL, { waitUntil: 'load' });
   await new Promise(r => setTimeout(r, 1200));
   await page.evaluate(HARNESS);

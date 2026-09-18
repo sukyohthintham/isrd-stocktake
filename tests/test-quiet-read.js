@@ -21,7 +21,7 @@
    [5] quiet read ที่ล้มต้องไม่ลาก banner ไปออฟไลน์ (โซน v2.9.5 ห้ามถอย)
    ============================================================ */
 
-const { puppeteer, CHROME, APP_URL } = require('./_env');
+const { puppeteer, CHROME, APP_URL, forceLive } = require('./_env');
 
 let pass = 0, fail = 0;
 function check(name, ok, got) {
@@ -72,6 +72,8 @@ const HARNESS = `
   const errors = [];
   page.on('pageerror', e => errors.push('PAGEERROR: ' + e.message));
   page.on('console', m => { if (m.type() === 'error') errors.push('CONSOLE: ' + m.text()); });
+  /* เทสนี้วัดชั้นเน็ตจริง (timeout · ไม่ลองซ้ำ) ต้องปิดโหมดทดสอบก่อนโหลดหน้า */
+  await forceLive(page);
   await page.goto(APP_URL, { waitUntil: 'load' });
   await new Promise(r => setTimeout(r, 1200));
   await page.evaluate(HARNESS);
