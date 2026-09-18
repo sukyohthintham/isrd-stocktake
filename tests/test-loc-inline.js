@@ -25,6 +25,19 @@ function check(name, ok, got) {
       window.__writes.push({ path: path, patch: patch });
       return Promise.resolve();
     };
+    /* ต้องปิดทางอ่านด้วย ไม่ใช่ปิดแค่ทางเขียน — เทสนี้ seed state เองทั้งหมด
+       ถ้าไม่ปิด การอ่านเบื้องหลัง (ซิงก์สิทธิ์ ฯลฯ) จะหลุดไปหา Firebase จริงแล้วได้ 401
+       เทสยังผ่านเพราะไม่เกี่ยวกับสิ่งที่ตรวจ แต่ทำให้ผลแกว่งตามเน็ตและช้าโดยไม่มีเหตุผล */
+    window.db.get = function () { return Promise.resolve(null); };
+    /* ⚠️ ห้ามคืน null ให้ users/<uid> — ensureRoleFresh() แปลว่า "ถูกถอดออกจากทะเบียน"
+       แล้วเตะออกจากระบบกลางเทส ต้องคืนเรคอร์ดของคนที่ seed ไว้กลับไป */
+    window.db.getQuiet = function (p) {
+      if (String(p).indexOf("users/") === 0) {
+        var me = state.me || {};
+        return Promise.resolve({ name: me.name, email: me.email || "", role: me.role, active: true });
+      }
+      return Promise.resolve(null);
+    };
     hideLogin();
 
     window.__seed = function (role) {
@@ -225,6 +238,10 @@ function check(name, ok, got) {
 
   console.log('\n--- console/page errors ---');
   console.log(errors.slice(0, 10).join('\n') || '(none)');
+  /* ⭐ ดัก error ไว้แล้วต้องตรวจด้วย ไม่ใช่พิมพ์ทิ้งไว้ให้เลื่อนผ่าน
+     เคสจริง: NotFoundError ใน renderOverview โผล่มาตั้งแต่ ส.ค. 69 แต่ไม่มีใครเห็น
+     เพราะทุกไฟล์พิมพ์อย่างเดียว กว่าจะเจอก็ตอนเขียนเทสใหม่ไปสะกิดโดนพอดี */
+  check('ไม่มี error ในคอนโซลเลยสักข้อ', errors.length === 0, errors.slice(0, 3));
   console.log('\n==== ' + pass + ' passed, ' + fail + ' failed ====');
   await browser.close();
   process.exit(fail ? 1 : 0);

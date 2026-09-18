@@ -14,6 +14,7 @@ function check(name, ok, got) {
   const page = await browser.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push('PAGEERROR: ' + e.message));
+  page.on('console', m => { if (m.type() === 'error') errors.push('CONSOLE: ' + m.text()); });
   await page.goto(APP_URL, { waitUntil: 'load' });
   await new Promise(r => setTimeout(r, 1200));
 
@@ -61,6 +62,10 @@ function check(name, ok, got) {
 
   console.log('\n--- errors ---');
   console.log(errors.slice(0, 8).join('\n') || '(none)');
+  /* ⭐ ดัก error ไว้แล้วต้องตรวจด้วย ไม่ใช่พิมพ์ทิ้งไว้ให้เลื่อนผ่าน
+     เคสจริง: NotFoundError ใน renderOverview โผล่มาตั้งแต่ ส.ค. 69 แต่ไม่มีใครเห็น
+     เพราะทุกไฟล์พิมพ์อย่างเดียว กว่าจะเจอก็ตอนเขียนเทสใหม่ไปสะกิดโดนพอดี */
+  check('ไม่มี error ในคอนโซลเลยสักข้อ', errors.length === 0, errors.slice(0, 3));
   console.log('\n==== ' + pass + ' passed, ' + fail + ' failed ====');
   await browser.close();
   process.exit(fail ? 1 : 0);
