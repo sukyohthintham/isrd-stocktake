@@ -181,8 +181,23 @@ function check(name, ok, got) {
 
     const rowA1 = items.rows.filter(function (r) { return r[0] === 'A1'; })[0];
     const rowB2 = items.rows.filter(function (r) { return r[0] === 'B2'; })[0];
-    return { doc: doc, xlA1: rowA1[rowA1.length - 1], xlB2: rowB2[rowB2.length - 1] };
+    /* หาคอลัมน์โดยชื่อหัวตาราง ไม่นับตำแหน่ง — จะได้ไม่พังเวลามีใครเพิ่ม/ถอดคอลัมน์
+       (เคยพังมาแล้วตอน v2.15.0 เพิ่มแล้วถอดคอลัมน์ท้ายตารางออก) */
+    const head = items.rows[0];
+    const iNote = head.indexOf('หมายเหตุ');
+    const iZone = head.indexOf('โซนที่เก็บ');
+    return { doc: doc, head: head, xlA1: rowA1[iNote], xlB2: rowB2[iNote],
+             xlZoneHead: head[iZone],
+             xlZoneA1: rowA1[iZone] };
   });
+  /* ⭐ v2.15.0 — คอลัมน์ "โซนที่เก็บ" ต้องบอกจำนวนต่อโซนในช่องเดียวกัน
+     ของเดิมบอกแค่ชื่อโซน คนอ่านไฟล์ไม่รู้ว่าของกระจายอยู่โซนละเท่าไหร่ */
+  check('คอลัมน์ "โซนที่เก็บ" ยังอยู่ที่เดิม', r2.xlZoneHead === 'โซนที่เก็บ', r2.xlZoneHead);
+  check('⭐ บอกจำนวนในวงเล็บต่อท้ายชื่อโซน เช่น "DA-5 (3)"',
+        /\(\d+\)/.test(r2.xlZoneA1 || ''), r2.xlZoneA1);
+  check('⭐ ไม่มีคอลัมน์แยกท้ายตารางแล้ว (อ่านจบในช่องเดียว)',
+        r2.head.indexOf('จำนวนแยกโซน') < 0, r2.head);
+
   check('เอกสารโชว์หมายเหตุรวมของ A1',
         r2.doc.a1.value === 'STOCK-01: ของชำรุด 2 ชิ้น · SHOW-01: เจอหลังชั้น' &&
         r2.doc.a1.printed === r2.doc.a1.value, r2.doc.a1);

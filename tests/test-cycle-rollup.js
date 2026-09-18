@@ -295,7 +295,9 @@ function check(name, ok, got) {
   check('รูปร่างข้อมูลเหมือน summaryData() ทุกประการ', r5.sameShape === true, r5.sameShape);
 
   /* ---------- 6. ปุ่มเอาออก ต้องหักได้แค่ยอดของใบที่เปิดอยู่ ---------- */
-  console.log('\n[6] ปุ่มเอาออกในป๊อปอัป — เขียนลงใบที่เปิดอยู่ใบเดียว');
+  /* v2.15.0 — ปุ่มเอาออกเปลี่ยนเป็นรายการรายใบ ปุ่ม 'เอาออกทั้งหมด' จึงผูกกับ jobId
+     ใจความเดิมยังเหมือนกัน: ตัวเลขบนปุ่มต้องเป็นยอดของใบนั้น ไม่ใช่ยอดรวมทั้งรอบ */
+  console.log('\n[6] ปุ่มเอาออกในป๊อปอัป — ผูกกับยอดของใบนั้น ไม่ใช่ยอดรวมรอบ');
   const r6 = await page.evaluate(async () => {
     window.__seed(['R-STOCK-01', 'R-STOCK-02', 'R-SHOW-01'], 'R-STOCK-01');
     await ensureCycleData();
@@ -306,12 +308,12 @@ function check(name, ok, got) {
 
     /* P1: ทั้งรอบ 1,300 แต่ใบที่เปิดอยู่ยิงไว้ 1,000 — ปุ่มต้องบอก 1,000 ไม่ใช่ 1,300 */
     const row = document.querySelector('[data-sumcard-rows="match"] [data-sku="P1"]');
-    const btnAll = row.querySelector('[data-removeall]');
+    const btnAll = row.querySelector('[data-removejoball]');
     const note = row.querySelector('[data-jobact]');
 
     /* TF1 ใบนี้ไม่ได้ยิงเลย — ต้องไม่มีปุ่มให้กด */
     const tfRow = document.querySelector('[data-sumcard-rows="match"] [data-sku="TF1"]');
-    const tfBtn = tfRow ? tfRow.querySelector('[data-removeover]') : null;
+    const tfBtn = tfRow ? tfRow.querySelector('[data-removejob="R-STOCK-01"]') : null;
 
     window.__writes = []; window.__toasts = [];
     removeOverScan({ key: 'TF1', code: 'TF1' }, 'match', 6);
@@ -328,11 +330,11 @@ function check(name, ok, got) {
     return out;
   });
   check('แถวโชว์ยอดรวมทั้งรอบ 1,300', r6.shownAct === '1,300', r6.shownAct);
-  check('แต่ปุ่มเอาออกทั้งหมดบอก 1,000 (เท่าที่ใบนี้ยิงไว้)',
+  check('ปุ่มเอาออกทั้งหมดของใบนี้บอก 1,000 (ไม่ใช่ยอดรวมรอบ 1,300)',
         /1,000/.test(r6.btnLabel || '') && !/1,300/.test(r6.btnLabel || ''), r6.btnLabel);
   check('มีบรรทัดบอกว่ายอดที่เห็นเป็นยอดรวม ใบนี้ยิงไว้เท่าไหร่',
         /รวมทุก Job/.test(r6.noteText || '') && /1,000/.test(r6.noteText || ''), r6.noteText);
-  check('SKU ที่ใบนี้ไม่ได้ยิง ไม่มีปุ่มให้กด', r6.tfHasBtn === false, r6.tfHasBtn);
+  check('SKU ที่ใบนี้ไม่ได้ยิง ไม่มีปุ่มของใบนี้ให้กด', r6.tfHasBtn === false, r6.tfHasBtn);
   check('เรียกตรง ๆ ก็ไม่เขียน + บอกให้ไปเอาออกที่ใบที่นับ',
         r6.blocked.writes === 0 && /Job อื่น/.test(r6.blocked.toast || ''), r6.blocked);
 
@@ -804,6 +806,228 @@ function check(name, ok, got) {
   check('แต่เห็นโซนตรง ๆ', r12.solo.flatZones > 0, r12.solo.flatZones);
   check('⭐ รอบที่มี Job เดียว — ไม่มีชั้น Job', r12.single.jobRows.length === 0, r12.single.jobRows);
   check('และเห็นโซนตรง ๆ เหมือนก่อน v2.14.3', r12.single.flatZones > 0, r12.single.flatZones);
+
+  /* ==========================================================
+     [13] ⭐ ปรับยอดราย Job จากหน้าสรุป (v2.15.0)
+     ==========================================================
+
+     ของเดิมมีปุ่มเดียวที่หักเข้า "ใบที่เปิดอยู่" เสมอ ซึ่งผิดทันทีเมื่อของอยู่คนละใบ:
+     P1 อยู่ใบ STOCK-01 1,000 และใบ SHOW-01 300 — ถ้าคนเปิดใบ STOCK แล้วอยากหักของ
+     ที่ใบ SHOW นับเกิน กดปุ่มเดิมจะไปหักใบ STOCK แทน ใบ STOCK ยอดลดทั้งที่ไม่ผิด
+     ส่วนใบ SHOW ยังเกินเหมือนเดิม = พังสองใบพร้อมกัน
+
+     ตอนนี้โชว์ยอดแยกรายใบให้เลือกหักตรงใบ */
+  console.log('\n[13] เอาออกราย Job — เลือกใบได้เอง');
+  const r13 = await page.evaluate(async () => {
+    const openCard = async function () {
+      window.__seed(['R-STOCK-01', 'R-STOCK-02', 'R-SHOW-01'], 'R-STOCK-01');
+      await ensureCycleData();
+      renderSummary();
+      openSumCard('match');
+    };
+    const readJobs = function (sku) {
+      const row = document.querySelector('[data-sumcard-rows="match"] [data-sku="' + sku + '"]');
+      if (!row) return null;
+      return Array.prototype.map.call(row.querySelectorAll('[data-adjustjob]'), function (e) {
+        const btn = e.querySelector('[data-removejob]');
+        return { id: e.getAttribute('data-adjustjob'),
+                 label: e.querySelector('span').textContent,
+                 net: Number(e.querySelector('[data-jobnet]').getAttribute('data-jobnet')),
+                 disabled: btn.disabled, btnText: btn.textContent };
+      });
+    };
+
+    await openCard();
+    const listed = readJobs('P1');
+    const netOf = function (jobId, key) {
+      const j = (state.cycleData.raw.jobs || []).filter(function (p) { return p.id === jobId; })[0];
+      if (!j) return null;
+      let n = 0;
+      Object.keys(j.scans || {}).forEach(function (sid) {
+        if (safeKey(j.scans[sid].code) === key) n += Number(j.scans[sid].delta) || 0;
+      });
+      return n;
+    };
+    const before = { show: netOf('R-SHOW-01', 'P1'), stock: netOf('R-STOCK-01', 'P1'),
+                     total: state.cycleData.data.groups.total.actQty };
+
+    /* [a] กด ➖ ที่ใบ SHOW-01 ทั้งที่เปิดใบ STOCK-01 อยู่ */
+    window.__writes = []; window.__toasts = [];
+    document.querySelector('[data-sumcard-rows="match"] [data-sku="P1"] ' +
+                           '[data-removejob="R-SHOW-01"]').click();
+    await new Promise(function (r) { setTimeout(r, 80); });
+    const wroteOther = window.__writes.slice();
+    const recOther = wroteOther.length
+      ? wroteOther[0].patch[Object.keys(wroteOther[0].patch)[0]] : null;
+    const countsAfterOther = state.counts.P1;
+
+    /* [b] กด ➖ ที่ใบที่เปิดอยู่ */
+    await openCard();
+    window.__writes = []; window.__toasts = [];
+    const countsBeforeOwn = state.counts.P1;
+    document.querySelector('[data-sumcard-rows="match"] [data-sku="P1"] ' +
+                           '[data-removejob="R-STOCK-01"]').click();
+    /* อ่านทันที — writeScan อัปเดตยอดในเครื่องแบบ sync ส่วนการโหลดยอดรวมรอบใหม่
+       จะมาทับทีหลัง (ยอดรวมมาจาก mock ที่ยังไม่รู้จักแถวที่เพิ่งเขียน) */
+    const countsRightAfter = state.counts.P1;
+    await new Promise(function (r) { setTimeout(r, 80); });
+    const wroteOwn = window.__writes.slice();
+    const recOwn = wroteOwn.length ? wroteOwn[0].patch[Object.keys(wroteOwn[0].patch)[0]] : null;
+
+    /* [d] หักเกินยอดของใบนั้น → ต้องถูก cap */
+    await openCard();
+    window.__writes = [];
+    /* หักมากกว่า 1 ชิ้นมีกล่องยืนยันคั่นเสมอ — ตอบตกลงให้ เพื่อทดสอบตัว cap ไม่ใช่ตัวถาม */
+    const realAsk = window.ask;
+    window.ask = function () { return Promise.resolve(true); };
+    removeFromJob({ key: 'P1', code: 'P1' }, 'match', 'R-SHOW-01', 9999);
+    await new Promise(function (r) { setTimeout(r, 80); });
+    const capped = window.__writes.length
+      ? window.__writes[0].patch[Object.keys(window.__writes[0].patch)[0]].delta : null;
+    window.ask = realAsk;
+
+    /* [e] ➕ เพิ่ม 1 → เข้าใบที่เปิดอยู่ */
+    await openCard();
+    window.__writes = [];
+    document.querySelector('[data-sumcard-rows="match"] [data-sku="P1"] [data-addone]').click();
+    await new Promise(function (r) { setTimeout(r, 80); });
+    const added = window.__writes.length
+      ? { path: window.__writes[0].path,
+          rec: window.__writes[0].patch[Object.keys(window.__writes[0].patch)[0]] } : null;
+
+    /* [c] ใบเป้าหมายไม่ได้อยู่ขั้นนับ */
+    await openCard();
+    state.roundIndex['R-SHOW-01'].status = 'reviewing';
+    renderSummary();
+    openSumCard('match');
+    const closedList = readJobs('P1');
+    window.__writes = []; window.__toasts = [];
+    removeFromJob({ key: 'P1', code: 'P1' }, 'match', 'R-SHOW-01', 1);
+    await new Promise(function (r) { setTimeout(r, 60); });
+    const closedBlocked = { writes: window.__writes.length, toast: (window.__toasts[0] || {}).m };
+    state.roundIndex['R-SHOW-01'].status = 'counting';
+
+    /* [f] ไม่มีสิทธิ์ adjustCount */
+    await openCard();
+    /* ต้องมี viewSummary ด้วย ไม่งั้น openSumCard ไม่ยอมเปิดกล่องเลย
+       แล้วจะไปอ่าน DOM ที่ค้างจากรอบก่อนแทน ซึ่งไม่ได้พิสูจน์อะไร */
+    state.me = { uid: 'u9', name: 'ท', role: 'custom', branches: [],
+                 perms: { scan: true, viewSummary: true } };
+    renderSummary();
+    openSumCard('match');
+    const noPerm = { jobs: readJobs('P1'),
+                     add: !!document.querySelector('[data-sumcard-rows="match"] [data-sku="P1"] [data-addone]') };
+    window.__writes = []; window.__toasts = [];
+    removeFromJob({ key: 'P1', code: 'P1' }, 'match', 'R-SHOW-01', 1);
+    await new Promise(function (r) { setTimeout(r, 60); });
+    const noPermBlocked = { writes: window.__writes.length, toast: (window.__toasts[0] || {}).m };
+
+    $('modalOk').click();
+    return {
+      listed: listed, before: before,
+      other: { writes: wroteOther.length, path: wroteOther[0] && wroteOther[0].path,
+               rec: recOther, counts: countsAfterOther },
+      own: { writes: wroteOwn.length, path: wroteOwn[0] && wroteOwn[0].path, rec: recOwn,
+             countsBefore: countsBeforeOwn, countsAfter: countsRightAfter },
+      capped: capped, added: added,
+      closedList: closedList, closedBlocked: closedBlocked,
+      noPerm: noPerm, noPermBlocked: noPermBlocked
+    };
+  });
+
+  check('โชว์ทุกใบที่นับ SKU นี้ไว้ (P1 อยู่ 2 ใบ)', r13.listed.length === 2, r13.listed);
+  check('ยอดรายใบถูก (STOCK-01 = 1,000 · SHOW-01 = 300)',
+        JSON.stringify(r13.listed.map(function (j) { return j.id + ':' + j.net; })) ===
+        JSON.stringify(['R-STOCK-01:1000', 'R-SHOW-01:300']), r13.listed);
+  check('ติดป้ายว่าใบไหนคือใบที่เปิดอยู่',
+        /ใบที่เปิดอยู่/.test(r13.listed[0].label) && !/ใบที่เปิดอยู่/.test(r13.listed[1].label),
+        r13.listed.map(function (j) { return j.label; }));
+
+  console.log('\n[13a] ⭐ กด ➖ ที่ใบอื่น — ต้องเขียนเข้าใบนั้น ไม่ใช่ใบที่เปิดอยู่');
+  check('เขียน 1 แถว', r13.other.writes === 1, r13.other);
+  check('⭐ ลงที่ rounds/R-SHOW-01 ไม่ใช่ใบที่เปิดอยู่', r13.other.path === 'rounds/R-SHOW-01', r13.other.path);
+  check('delta = -1 · mode = scan', r13.other.rec.delta === -1 && r13.other.rec.mode === 'scan', r13.other.rec);
+  check('⭐ เหตุผลระบุ Job ที่ถูกหักถูกใบ',
+        r13.other.rec.reason === 'เอาออกจากสรุป (Job SHOW-01)', r13.other.rec.reason);
+  check('บันทึกคนทำและเวลา', !!r13.other.rec.user && !!r13.other.rec.ts, r13.other.rec);
+  check('⭐ ยอดของใบที่เปิดอยู่ไม่ถูกแตะ (state.counts เท่าเดิม)',
+        r13.other.counts === 1000, r13.other.counts);
+
+  console.log('\n[13b] กด ➖ ที่ใบที่เปิดอยู่ — เส้นทางเดิม');
+  check('ลงที่ใบที่เปิดอยู่', r13.own.path === 'rounds/R-STOCK-01', r13.own.path);
+  check('delta = -1', r13.own.rec.delta === -1, r13.own.rec);
+  check('เหตุผลระบุใบที่เปิดอยู่',
+        r13.own.rec.reason === 'เอาออกจากสรุป (Job STOCK-01)', r13.own.rec.reason);
+  check('ยอดในเครื่องขยับทันที (1,000 → 999)',
+        r13.own.countsBefore === 1000 && r13.own.countsAfter === 999, r13.own);
+
+  console.log('\n[13c] ใบที่ไม่ได้อยู่ขั้นนับ');
+  check('ปุ่มของใบนั้นถูกล็อก',
+        r13.closedList.filter(function (j) { return j.id === 'R-SHOW-01'; })[0].disabled === true,
+        r13.closedList);
+  check('ปุ่มบอกเหตุผลว่าใบนี้ปิดอยู่',
+        /ใบนี้ปิดอยู่/.test(r13.closedList.filter(function (j) { return j.id === 'R-SHOW-01'; })[0].btnText),
+        r13.closedList);
+  check('ใบที่ยังนับอยู่ยังกดได้ตามปกติ',
+        r13.closedList.filter(function (j) { return j.id === 'R-STOCK-01'; })[0].disabled === false,
+        r13.closedList);
+  check('⭐ เรียกฟังก์ชันตรง ๆ ก็ไม่เขียน', r13.closedBlocked.writes === 0, r13.closedBlocked);
+  check('บอกเหตุผลเป็นภาษาคน', /ไม่ได้อยู่ขั้นนับ/.test(r13.closedBlocked.toast || ''),
+        r13.closedBlocked.toast);
+
+  console.log('\n[13d] หักเกินยอดของใบนั้น ต้องถูก cap');
+  check('⭐ ขอหัก 9,999 จากใบที่มี 300 → เขียน -300 ไม่ใช่ -9,999', r13.capped === -300, r13.capped);
+
+  console.log('\n[13e] ➕ เพิ่ม 1 ชิ้น');
+  check('เข้าใบที่เปิดอยู่', r13.added.path === 'rounds/R-STOCK-01', r13.added);
+  check('delta = +1 · mode = scan',
+        r13.added.rec.delta === 1 && r13.added.rec.mode === 'scan', r13.added.rec);
+  check('เหตุผลบอกว่าเจอของเพิ่ม',
+        r13.added.rec.reason === 'เพิ่มจากสรุป (เจอของ)', r13.added.rec.reason);
+
+  console.log('\n[13f] ไม่มีสิทธิ์ adjustCount');
+  check('⭐ ไม่มีรายการรายใบให้กดเลย', r13.noPerm.jobs.length === 0, r13.noPerm.jobs);
+  check('ไม่มีปุ่มเพิ่มด้วย', r13.noPerm.add === false, r13.noPerm.add);
+  check('⭐ เรียกฟังก์ชันตรง ๆ ก็ไม่เขียน', r13.noPermBlocked.writes === 0, r13.noPermBlocked);
+  check('บอกเหตุผลเรื่องสิทธิ์',
+        /สิทธิ์|ความสามารถ/.test(r13.noPermBlocked.toast || ''), r13.noPermBlocked.toast);
+
+  /* ==========================================================
+     [14] กราฟโดนัท + หัวข้อสำหรับแคปส่งทีม (v2.15.0)
+     ========================================================== */
+  console.log('\n[14] โดนัทบนหน้าสรุป — ตัวเลขต้องตรงกับหน้าเอกสาร');
+  const r14 = await page.evaluate(async () => {
+    window.__seed(['R-STOCK-01', 'R-STOCK-02', 'R-SHOW-01'], 'R-STOCK-01');
+    await ensureCycleData();
+    state.page = 'summary';
+    renderSummary();
+    const fig = donutFigures(state.cycleData.data);
+    const texts = Array.prototype.map.call(
+      document.querySelectorAll('#sumDonut text'), function (t) { return t.textContent; });
+    return {
+      blocks: document.querySelectorAll('#sumDonut .donut-block').length,
+      docBlocks: document.querySelectorAll('#donutGroups .donut-block').length,
+      texts: texts,
+      fig: fig,
+      branch: $('sumBranchLine').textContent,
+      date: $('sumAuditDate').textContent,
+      title: document.querySelector('#sumShareHead .tbl-title').textContent
+    };
+  });
+  check('วาดโดนัทลงกล่องของหน้าสรุป', r14.blocks > 0, r14.blocks);
+  check('⭐ วาดครบทุกกลุ่มเท่าที่หน้าเอกสารวาด (สองกล่องอยู่แยกกันได้)',
+        r14.blocks === r14.docBlocks, { sumDonut: r14.blocks, docGroups: r14.docBlocks });
+  check('⭐ ตัวเลขบนโดนัทตรงกับ donutFigures() ที่หน้าเอกสารใช้',
+        r14.fig.every(function (f) {
+          const want = function (v) { return v === null || v === undefined ? '–' : v + '%'; };
+          return r14.texts.indexOf(want(f.pieces)) >= 0 && r14.texts.indexOf(want(f.sku)) >= 0;
+        }), { texts: r14.texts, fig: r14.fig });
+  check('มีกราฟทั้ง Product และ Not Product',
+        r14.fig.map(function (f) { return f.key; }).join(',') === 'product,notProduct',
+        r14.fig.map(function (f) { return f.key; }));
+  check('โชว์ชื่อสาขา', /^สาขา: .+/.test(r14.branch) && !/undefined/.test(r14.branch), r14.branch);
+  check('โชว์วันที่ Audit', /^วันที่ Audit: .+/.test(r14.date) && !/undefined|NaN/.test(r14.date), r14.date);
+  check('มีหัวข้อภาษาอังกฤษไว้แคปส่ง', r14.title === 'Stock Counting Accuracy', r14.title);
 
   console.log('\n--- console/page errors ---');
   console.log(errors.slice(0, 10).join('\n') || '(none)');

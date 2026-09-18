@@ -135,7 +135,7 @@ function check(name, ok, got) {
       const cell = n => row.querySelector('[data-cell="' + n + '"]').textContent;
       return { sku: row.getAttribute('data-sku'), sys: cell('sys'), act: cell('act'),
                diff: cell('diff'), value: cell('value'),
-               hasRemove: !!row.querySelector('[data-removeover]') };
+               hasRemove: !!row.querySelector('[data-removejob]') };
     });
     const out = { title: $('modalTitle').textContent, msg: $('modalMsg').textContent,
                   shown: $('modalBg').classList.contains('show'), rows: rows };
@@ -157,7 +157,7 @@ function check(name, ok, got) {
     openSumCard('over');
     const list = document.querySelector('[data-sumcard-list="over"]');
     const rows = Array.prototype.map.call(list.querySelectorAll('.srow'), function (row) {
-      const btn = row.querySelector('[data-removeover]');
+      const btn = row.querySelector('[data-removejob]');
       return { sku: row.getAttribute('data-sku'),
                diff: row.querySelector('[data-cell="diff"]').textContent,
                value: row.querySelector('[data-cell="value"]').textContent,
@@ -170,7 +170,7 @@ function check(name, ok, got) {
   check('กลุ่มเกินเรียงเยอะสุดก่อน (O1 แล้ว F1)',
         a3.rows.map(r => r.sku).join(',') === 'O1,F1', a3.rows.map(r => r.sku));
   check('ทุกแถวในกลุ่มเกินมีปุ่มเอาออก (admin)',
-        a3.rows.every(r => r.btn === '➖ เอาออก 1 ชิ้น' && r.btnDisabled === false), a3.rows);
+        a3.rows.every(r => r.btn === '➖' && r.btnDisabled === false), a3.rows);
   check('ของสาขาอื่นที่ยิงเกินก็อยู่ในกลุ่มนี้ด้วย',
         a3.rows[1].sku === 'F1' && a3.rows[1].diff === '+3' && a3.rows[1].value === '+฿90.00', a3.rows[1]);
   check('popup เกินบอกวิธีใช้ปุ่ม', /เอาออก 1 ชิ้น/.test(a3.msg) && /ไม่ได้ลบยอดเดิม/.test(a3.msg), a3.msg);
@@ -181,7 +181,7 @@ function check(name, ok, got) {
     window.__writes = []; window.__toasts = [];
     const before = state.counts.O1;
     openSumCard('over');
-    document.querySelector('[data-removeover="O1"]').click();
+    document.querySelector('[data-sku="O1"] [data-removejob]').click();
     const rec = window.__writes.length ? Object.keys(window.__writes[0].patch)
       .map(k => window.__writes[0].patch[k])[0] : null;
     const out = {
@@ -204,7 +204,7 @@ function check(name, ok, got) {
   check('เขียน 1 เรคอร์ดลง rounds/R1/scans (ไม่ได้ลบของเดิม)',
         a4.writes === 1 && a4.path === 'rounds/R1' && a4.isScansKey === true, a4);
   check('delta = -1 · mode = scan · มีเหตุผลกำกับ',
-        a4.delta === -1 && a4.mode === 'scan' && a4.reason === 'เอาออกจากสรุป (ยิงเกิน)', a4);
+        a4.delta === -1 && a4.mode === 'scan' && /^เอาออกจากสรุป \(Job /.test(a4.reason || ''), a4);
   check('บันทึกว่าใครทำและเมื่อไหร่', a4.user === 'สมชาย' && a4.hasTs === true, a4);
   check('การ์ดเกินอัปเดตทันที (+฿190 → +฿170)', a4.cardOverVal === '+฿170.00', a4.cardOverVal);
   check('popup เปิดใหม่ให้เห็นค่าที่เปลี่ยน (+5 → +4)',
@@ -216,14 +216,14 @@ function check(name, ok, got) {
     state.roundIndex.R1.status = 'closed';
     renderSummary();
     openSumCard('over');
-    const btn = document.querySelector('[data-removeover="O1"]');
+    const btn = document.querySelector('[data-sku="O1"] [data-removejob]');
     const out = { disabled: btn.disabled, title: btn.title };
     $('modalOk').click();
     state.roundIndex.R1.status = 'counting';
     return out;
   });
   check('Job ปิดแล้ว ปุ่มเอาออกถูกล็อก', a5.disabled === true, a5);
-  check('ปุ่มที่ล็อกบอกเหตุผล', /ปิดแล้ว/.test(a5.title || ''), a5.title);
+  check('ปุ่มที่ล็อกบอกเหตุผล', /ปิดแล้ว|ปิดอยู่/.test(a5.title || ''), a5.title);
 
   /* ---------- เอาออกจากกลุ่ม "ตรง" → ต้องเด้งไปกลุ่ม "ขาด" ---------- */
   console.log('\n[A4] เอาออกจากกลุ่ม "ตรง" แล้ว SKU ต้องย้ายกลุ่ม');
@@ -232,8 +232,8 @@ function check(name, ok, got) {
     window.__writes = [];
     const before = { count: state.counts.M1, card: $('cardMatchNum').textContent };
     openSumCard('match');
-    const hadBtn = !!document.querySelector('[data-sumcard-list="match"] [data-removeover="M1"]');
-    document.querySelector('[data-removeover="M1"]').click();
+    const hadBtn = !!document.querySelector('[data-sumcard-list="match"] [data-sku="M1"] [data-removejob]');
+    document.querySelector('[data-sku="M1"] [data-removejob]').click();
     const rec = Object.keys(window.__writes[0].patch).map(k => window.__writes[0].patch[k])[0];
     const out = {
       hadBtn: hadBtn,
@@ -258,7 +258,7 @@ function check(name, ok, got) {
   check('ยอดลดลง 1 (5 → 4)', a6.before === 5 && a6.after === 4, a6);
   check('มี log 1 แถว delta -1 พร้อมคนทำและเวลา',
         a6.writes === 1 && a6.delta === -1 && a6.user === 'สมชาย' && a6.hasTs === true &&
-        a6.reason === 'เอาออกจากสรุป (ยิงเกิน)', a6);
+        /^เอาออกจากสรุป \(Job /.test(a6.reason || ''), a6);
   check('ป๊อปอัปเปิดกลุ่มเดิมกลับ (ตรง) ไม่ใช่เด้งไปกลุ่มเกิน', a6.reopenedList === true, a6);
   check('M1 หายจากกลุ่ม "ตรง"', a6.stillInMatch === false, a6);
   check('การ์ดขยับ ตรง 3→2 · ขาด 2→3',
@@ -290,7 +290,7 @@ function check(name, ok, got) {
     openSumCard('short');
     const out = { shown: $('modalBg').classList.contains('show'),
                   rows: document.querySelectorAll('[data-sumcard-list="short"] .srow').length,
-                  hasBtn: !!document.querySelector('[data-sumcard-list="short"] [data-removeover]') };
+                  hasBtn: !!document.querySelector('[data-sumcard-list="short"] [data-removejob]') };
     $('modalOk').click();
     return out;
   });
@@ -306,7 +306,7 @@ function check(name, ok, got) {
       const sku = { match: 'M1', short: 'S1', over: 'O1' }[kind];
       const before = state.counts[sku];
       openSumCard(kind);
-      const btn = document.querySelector('[data-removeover="' + sku + '"]');
+      const btn = document.querySelector('[data-sku="' + sku + '"] [data-removejob]');
       if (!btn) { out[kind] = { noButton: true }; $('modalOk').click(); return; }
       btn.click();
       const rec = window.__writes.length
@@ -323,7 +323,7 @@ function check(name, ok, got) {
     check('counter เอาออกจากกลุ่ม "' + kind + '" ได้ (ยอด -1 + มี log)',
           !g.noButton && g.after === g.before - 1 && g.writes === 1 &&
           g.delta === -1 && g.user === 'สมชาย' &&
-          g.reason === 'เอาออกจากสรุป (ยิงเกิน)', g);
+          /^เอาออกจากสรุป \(Job /.test(g.reason || ''), g);
   });
 
   /* ---------- หน้าเอกสาร: counter เข้าได้ ---------- */

@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.14.4">
+<meta name="version" content="2.15.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.14.4</title>
+<title>ISRD Stocktake v2.15.0</title>
 
 <style>
 :root{
@@ -702,6 +702,13 @@ body.no-doc-images .doc .imgbox{display:none}
    ทั้งบล็อกต้องสูงไม่เกิน 1/3 หน้ากระดาษ และห้ามถูกตัดข้ามหน้า */
 #donutTitle{text-align:center}
 #donutGroups{page-break-inside:avoid;break-inside:avoid}
+/* โดนัทบนหน้าสรุปใหญ่กว่าในเอกสารนิดหน่อย — บนจอไม่มีข้อจำกัดเรื่องกระดาษ */
+#sumDonut .donut-svg{width:34mm;height:34mm}
+/* บนจอ .donut-pair เป็น column (แนวนอนเฉพาะตอนพิมพ์) หน้าสรุปจึงเรียงตั้ง 4 วงรก
+   override เฉพาะกล่องของหน้าสรุป: 2 วงในกลุ่มเดียวอยู่แถวเดียวกัน
+   แล้วกลุ่ม Product/Not Product เรียงลงมา = 2x2 เหมือนหน้าเอกสาร */
+#sumDonut .donut-pair{flex-direction:row;gap:28px;align-items:flex-start;justify-content:center;flex-wrap:wrap}
+#sumDonut .donut-cell{width:auto;flex:0 0 auto}
 /* ระยะห่างระหว่างบล็อกถูกบีบไว้ให้ทั้งก้อนพอดีใต้เพดาน 1/3 หน้า (92mm ≈ 349px)
    วัดจริง: บล็อกละ 169px + ระยะขอบ 6px = 344px */
 .donut-block{text-align:center;margin:2px 0;page-break-inside:avoid;break-inside:avoid}
@@ -1482,6 +1489,16 @@ body.no-doc-images .doc .imgbox{display:none}
     <button class="btn sm" data-price="sellPrice">ราคาขาย</button>
     <button class="btn sm grey" data-price="costPrice">ราคาต้นทุน</button>
   </div>
+
+  <!-- ⭐ v2.15.0 — หัวกราฟสำหรับแคปหน้าจอส่งทีม
+       เดิมต้องเข้าหน้าเอกสารแล้วสั่งพิมพ์ถึงจะได้กราฟ ซึ่งเกินความจำเป็นตอนอยากส่งไลน์รูปเดียว
+       ต้องมีชื่อสาขากับวันที่ติดไปในรูปด้วย ไม่งั้นแคปแล้วไม่รู้ว่าของสาขาไหนวันไหน -->
+  <div id="sumShareHead" style="text-align:center;margin:6px 0 4px">
+    <div class="tbl-title">Stock Counting Accuracy</div>
+    <div id="sumBranchLine" style="font-weight:700"></div>
+    <div id="sumAuditDate" class="muted"></div>
+  </div>
+  <div id="sumDonut"></div>
   <div class="card collapsible" id="tfCard">
     <h3 class="card-hd" data-collapse="tfCard" role="button" tabindex="0" aria-expanded="false">
       <span class="hd-t">รายการโอนกลับในรอบนี้</span>
@@ -1520,7 +1537,8 @@ body.no-doc-images .doc .imgbox{display:none}
   <div class="tablewrap" id="sumTableWrap" style="display:none">
     <table class="grid" id="sumTable">
       <thead><tr>
-        <th>กลุ่ม</th><th>จำนวนระบบ</th><th>จำนวนจริง</th><th>ผลต่าง (ชิ้น)</th>
+        <th>กลุ่ม</th><th>จำนวนระบบ</th><th>จำนวนจริง</th>
+        <th>ขาด (ชิ้น)</th><th>เกิน (ชิ้น)</th><th>ผลต่าง (ชิ้น)</th>
         <th>SKU ตรง</th><th>SKU ขาด</th><th>SKU เกิน</th>
         <th>%Success (ชิ้น)</th><th>%Success (SKU)</th>
         <th>มูลค่าระบบ</th><th>มูลค่าจริง</th><th>ผลต่าง (บาท)</th>
@@ -1768,7 +1786,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.14.4';
+var APP_VERSION = '2.15.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -8538,39 +8556,218 @@ function sumCardRow(r, kind) {
     row.appendChild(scopeLine);
   }
 
-  /* ยิงเกินโดยไม่ตั้งใจต้องแก้ได้จากตรงนี้เลย ไม่ต้องเดินกลับไปหน้ายิง
-     แสดงทุกกลุ่มที่ยิงไปแล้วจริง (jobAct > 0) ไม่ใช่แค่กลุ่ม "เกิน" — ของที่ยอดตรงพอดี
-     ก็ยิงเกินมาแล้วแก้ผิดตัวได้เหมือนกัน ที่ยังไม่ได้ยิงในใบนี้ ไม่มีอะไรให้เอาออก
-     เป็นของ staff (admin + counter) เพราะการปรับยอดลงคือจุดที่ทุจริตได้ง่ายที่สุด */
-  if (jobAct > 0 && hasPerm('adjustCount')) {
-    var act = document.createElement('button');
-    act.type = 'button';
-    act.className = 'btn grey block sm';
-    act.style.marginTop = '10px';
-    act.setAttribute('data-removeover', r.code || r.key);
-    act.textContent = '➖ เอาออก 1 ชิ้น';
-    act.disabled = !canScan();
-    if (act.disabled) act.title = blockedMessage();
-    act.onclick = function () { removeOverScan(r, kind); };
-    row.appendChild(act);
+  /* ⭐ v2.15.0 — ปรับยอดได้ตรงใบ ไม่ต้องเดินไปเปิดใบนั้นก่อน
+     ของเดิมมีปุ่มเดียวที่หักเข้าใบที่เปิดอยู่เสมอ ซึ่งผิดทันทีเมื่อของอยู่คนละใบ
+     ตอนนี้โชว์ทุกใบที่นับ SKU นี้ไว้ พร้อมยอดของใบนั้น แล้วเลือกหักทีละใบ
+     เป็นของคนที่มี adjustCount เพราะการปรับยอดลงคือจุดที่ทุจริตได้ง่ายที่สุด */
+  if (hasPerm('adjustCount')) {
+    var jobsFor = jobBreakdownFor(r.key);
+    var locked = !canScan();
 
-    /* ยิงรัวติดกันสิบยี่สิบครั้งเพราะเครื่องค้าง ต้องเอาออกทีเดียวได้
-       ไม่ใช่กดทีละชิ้นยี่สิบครั้ง · มีเฉพาะตอนเหลือให้เอาออกมากกว่า 1 ชิ้น
-       สีแดงเพราะย้อนกลับยากกว่าปุ่มบน และ removeOverScan จะถามยืนยันก่อนอีกชั้น */
-    if (jobAct > 1) {
-      var actAll = document.createElement('button');
-      actAll.type = 'button';
-      actAll.className = 'btn danger block sm';
-      actAll.style.marginTop = '8px';
-      actAll.setAttribute('data-removeall', r.code || r.key);
-      actAll.textContent = '🗑 เอาออกทั้งหมด (' + fmtNum(jobAct) + ' ชิ้น)';
-      actAll.disabled = !canScan();
-      if (actAll.disabled) actAll.title = blockedMessage();
-      actAll.onclick = function () { removeOverScan(r, kind, jobAct); };
-      row.appendChild(actAll);
+    if (jobsFor.length) {
+      var jh = document.createElement('div');
+      jh.className = 'muted';
+      jh.style.margin = '10px 0 4px';
+      jh.setAttribute('data-adjusthead', r.code || r.key);
+      jh.textContent = jobsFor.length > 1
+        ? 'ของกระจายอยู่ ' + fmtNum(jobsFor.length) + ' ใบ — เลือกเอาออกทีละใบ'
+        : 'เอาออกจากใบที่นับไว้';
+      row.appendChild(jh);
+
+      jobsFor.forEach(function (j) {
+        var line = document.createElement('div');
+        line.className = 'rep-line';
+        line.setAttribute('data-adjustjob', j.id);
+
+        var sp = document.createElement('span');
+        sp.textContent = j.jobCode + (j.id === state.roundId ? ' (ใบที่เปิดอยู่)' : '');
+        var qtyB = document.createElement('b');
+        qtyB.setAttribute('data-jobnet', String(j.net));
+        qtyB.textContent = fmtNum(j.net) + ' ชิ้น';
+
+        var minus = document.createElement('button');
+        minus.type = 'button';
+        minus.className = 'btn grey sm';
+        minus.style.marginLeft = '8px';
+        minus.setAttribute('data-removejob', j.id);
+        minus.textContent = '➖';
+        /* ใบที่ปิด/ส่งตรวจแล้วแก้ไม่ได้ — บอกเหตุผลที่ปุ่ม ไม่ใช่ปล่อยให้กดแล้วเด้ง */
+        if (j.status !== 'counting') {
+          minus.disabled = true;
+          minus.title = 'ใบนี้ปิดอยู่';
+          minus.textContent = 'ใบนี้ปิดอยู่';
+        } else if (locked) {
+          minus.disabled = true;
+          minus.title = blockedMessage();
+        } else {
+          minus.onclick = function (ev) { ev.stopPropagation(); removeFromJob(r, kind, j.id, 1); };
+        }
+
+        var right = document.createElement('span');
+        right.style.display = 'flex';
+        right.style.alignItems = 'center';
+        right.appendChild(qtyB); right.appendChild(minus);
+        line.appendChild(sp); line.appendChild(right);
+        row.appendChild(line);
+
+        /* หักทีเดียวหมดใบ — มีเฉพาะตอนเหลือมากกว่า 1 ชิ้นและใบยังนับอยู่ */
+        if (j.net > 1 && j.status === 'counting' && !locked) {
+          var allBtn = document.createElement('button');
+          allBtn.type = 'button';
+          allBtn.className = 'btn danger block sm';
+          allBtn.style.margin = '4px 0 8px';
+          allBtn.setAttribute('data-removejoball', j.id);
+          allBtn.textContent = '🗑 เอาออกทั้งหมดจากใบ ' + j.jobCode + ' (' + fmtNum(j.net) + ' ชิ้น)';
+          allBtn.onclick = function (ev) { ev.stopPropagation(); removeFromJob(r, kind, j.id, j.net); };
+          row.appendChild(allBtn);
+        }
+      });
     }
+
+    /* เจอของเพิ่มตอนตรวจก็ต้องเพิ่มได้จากตรงนี้เลย — เข้าใบที่เปิดอยู่ */
+    var addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.className = 'btn ghost block sm';
+    addBtn.style.marginTop = '8px';
+    addBtn.setAttribute('data-addone', r.code || r.key);
+    addBtn.textContent = '➕ เพิ่ม 1 ชิ้น (เข้าใบที่เปิดอยู่)';
+    addBtn.disabled = locked;
+    if (locked) addBtn.title = blockedMessage();
+    else addBtn.onclick = function (ev) { ev.stopPropagation(); addFromSummary(r, kind); };
+    row.appendChild(addBtn);
   }
-  return row;
+    return row;
+}
+
+/* ---------- ปรับยอดข้ามใบจากหน้าสรุป (v2.15.0) ----------
+
+   ปัญหาเดิม: ปุ่ม "เอาออก" เขียนเข้าใบที่เปิดอยู่เสมอ แต่ของกระจายอยู่หลายใบ
+   ถ้าของอยู่ใบ SHOW แล้วคนเปิดใบ STOCK อยู่ กดเอาออกจะไปหักใบ STOCK ที่ไม่มีของ
+   ยอดใบ STOCK ติดลบ ส่วนใบ SHOW ยังเกินเหมือนเดิม = ผิดสองใบพร้อมกัน
+   ทางแก้เดิมคือให้คนไปเปิดใบนั้นก่อน ซึ่งรอบใหญ่มีสิบกว่าใบ ไล่เปิดทีละใบไม่ไหว
+
+   ตอนนี้จึงโชว์ยอดแยกรายใบให้เลือกหักเองได้ตรงจุด */
+
+function jobCodeOf(id) { return (state.roundIndex[id] || {}).jobCode || id; }
+
+/* ยอดสุทธิของ SKU นี้แยกตามใบที่นับไว้จริง — เรียงจากมากไปน้อย
+   ใบที่สุทธิเป็น 0 ไม่ต้องโชว์ ไม่มีอะไรให้หัก (ยิงแล้วหักคืนจนหมดไปแล้ว) */
+function jobBreakdownFor(key) {
+  var jobs = (state.cycleData && state.cycleData.raw && state.cycleData.raw.jobs) || null;
+  if (!jobs) {
+    /* รอบ Job เดียว หรือยอดรวมยังมาไม่ถึง — มีแค่ใบที่เปิดอยู่ให้หัก
+       ใช้ state.counts ซึ่งเป็นยอดของใบที่เปิดอยู่ พฤติกรรมจึงเท่าเดิมทุกประการ */
+    var cur = Number(state.counts[key]) || 0;
+    if (!state.roundId || cur === 0) return [];
+    return [{ id: state.roundId, jobCode: jobCodeOf(state.roundId), net: cur,
+              status: (state.roundIndex[state.roundId] || {}).status || 'counting' }];
+  }
+  var out = [];
+  jobs.forEach(function (p) {
+    var net = 0;
+    Object.keys(p.scans || {}).forEach(function (sid) {
+      var rec = p.scans[sid];
+      if (rec && safeKey(rec.code) === key) net += Number(rec.delta) || 0;
+    });
+    if (net === 0) return;
+    out.push({ id: p.id, jobCode: jobCodeOf(p.id), net: net,
+               status: (state.roundIndex[p.id] || {}).status || 'counting' });
+  });
+  return out.sort(function (a, b) { return b.net - a.net; });
+}
+
+/* เขียนแถวปรับยอดเข้า "ใบที่ระบุ" ไม่ใช่ใบที่เปิดอยู่
+   ⚠️ ตั้งใจไม่เรียก applyScanRecord — state.counts เป็นยอดของใบที่เปิดอยู่เท่านั้น
+   บวกเข้าไปจะทำให้ยอดใบที่เปิดเพี้ยนทันทีทั้งที่ของถูกหักจากใบอื่น
+   ปล่อยให้โหลดยอดรวมทั้งรอบใหม่แล้ววาดทับ ซึ่งเป็นแหล่งความจริงของหน้านี้อยู่แล้ว
+   รูปเรคอร์ดต้องเหมือน writeScan เป๊ะ — Rules บังคับ hasChildren(['code','zone','delta','user','ts']) */
+function adjustJobCount(roundId, key, delta, reason) {
+  var product = state.products[key] || { code: key };
+  var id = db.newKey();
+  var zn = zoneNameForKey(key);
+  var rec = {
+    code: product.code || key,
+    zone: zn === NO_ZONE_NAME ? 'no-zone' : zn,
+    zoneName: zn,
+    user: state.counter || 'ไม่ระบุ',
+    ts: Date.now(),
+    delta: delta,
+    mode: 'scan'
+  };
+  if (reason) rec.reason = reason;
+  var patch = {};
+  patch['scans/' + id] = rec;
+  enqueueWrite('rounds/' + roundId, patch);
+  return { id: id, rec: rec };
+}
+
+/* โหลดยอดรวมใหม่แล้วเปิดลิสต์เดิมกลับ — ใช้ร่วมกันทุกปุ่มปรับยอดในหน้าสรุป */
+function reloadAfterAdjust(kind) {
+  /* รอบที่มี Job เดียวต้องเปิดลิสต์กลับ "ทันที" ไม่ผ่าน Promise เลย (กติกาเดิมตั้งแต่ v2.7.x)
+     ไม่ใช่แค่เรื่องเร็ว — ถ้าเลื่อนไปรอบถัดไป ลิสต์จะไปโผล่ทีหลังตอนคนกดออกจากหน้าไปแล้ว
+     และยอดในเครื่องก็ขยับครบแล้วตั้งแต่ writeScan ไม่มีอะไรต้องรอโหลด */
+  if (!cycleScope().multi) {
+    renderSummary();
+    openSumCard(kind || 'over');
+    return;
+  }
+  /* หลายใบ — ยอดรวมทั้งรอบต้องดึงใหม่ เพราะแถวที่เพิ่งเขียนอาจลงใบอื่นที่ไม่ได้เปิดอยู่ */
+  state.cycleData = null;
+  var reopen = function () {
+    if (state.page !== 'summary') return;
+    renderSummary();
+    openSumCard(kind || 'over');
+  };
+  ensureReportData().then(reopen, reopen);
+}
+
+/* เอาออกจากใบที่เลือก — ใบที่เปิดอยู่ใช้ writeScan ตัวเดิม (ยอดในเครื่องขยับทันที)
+   ใบอื่นใช้ adjustJobCount แล้วรอโหลดใหม่ ไม่งั้นยอดใบที่เปิดจะเพี้ยน */
+function removeFromJob(r, kind, jobId, qty) {
+  qty = Math.max(1, Number(qty) || 1);
+  if (!hasPerm('adjustCount')) { toast(roleBlockMessage('เอาของออกจากสรุปไม่ได้'), true); return; }
+  if (!canScan()) { toast(blockedMessage() + ' — เอาออกไม่ได้', true); return; }
+
+  var job = jobBreakdownFor(r.key).filter(function (j) { return j.id === jobId; })[0];
+  if (!job) { toast('ใบนี้ไม่ได้นับ ' + (r.code || r.key) + ' ไว้ — ลองเปิดหน้านี้ใหม่', true); return; }
+  if (job.status !== 'counting') {
+    toast('ใบ ' + job.jobCode + ' ไม่ได้อยู่ขั้นนับแล้ว แก้ยอดไม่ได้', true);
+    return;
+  }
+  /* หักได้ไม่เกินที่ใบนั้นนับไว้จริง — เกินกว่านั้นคือทำยอดใบนั้นติดลบ */
+  if (qty > job.net) qty = job.net;
+  if (qty <= 0) { toast('ใบ ' + job.jobCode + ' ไม่มียอดให้เอาออกแล้ว', true); return; }
+
+  var reason = 'เอาออกจากสรุป (Job ' + job.jobCode + ')';
+  var write = function () {
+    if (jobId === state.roundId) writeScan(r.key, -qty, 'scan', reason);
+    else adjustJobCount(jobId, r.key, -qty, reason);
+    toast('เอา ' + (r.code || r.key) + ' ออกจากใบ ' + job.jobCode + ' ' + fmtNum(qty) +
+          ' ชิ้นแล้ว — บันทึกเป็นประวัติไว้ ไม่ได้ลบยอดเดิม');
+    $('modalOk').click();
+    reloadAfterAdjust(kind);
+  };
+
+  if (qty <= 1) { write(); return; }
+  ask('เอาออกทั้งหมดจากใบนี้?',
+      'เอา ' + (r.code || r.key) + ' ออกจากใบ ' + job.jobCode + ' ทั้งหมด ' + fmtNum(qty) + ' ชิ้น?\n' +
+      (r.name ? r.name + '\n' : '') +
+      '\nยอดของใบนี้จะถูกหักจนเหลือ 0 (ใบอื่นไม่ถูกแตะ)\n' +
+      'ระบบบันทึกเป็นประวัติไว้ ไม่ได้ลบยอดเดิมทิ้ง ตรวจย้อนหลังได้เสมอ',
+      'เอาออก ' + fmtNum(qty) + ' ชิ้น', { danger: true }).then(function (ok) {
+    if (!ok) { openSumCard(kind || 'over'); return; }
+    write();
+  });
+}
+
+/* เจอของเพิ่มตอนตรวจ — เข้าใบที่เปิดอยู่เสมอ เพราะคนที่กดคือคนที่ถือของอยู่ตรงนั้น */
+function addFromSummary(r, kind) {
+  if (!hasPerm('adjustCount')) { toast(roleBlockMessage('เพิ่มยอดจากสรุปไม่ได้'), true); return; }
+  if (!canScan()) { toast(blockedMessage() + ' — เพิ่มไม่ได้', true); return; }
+  writeScan(r.key, 1, 'scan', 'เพิ่มจากสรุป (เจอของ)');
+  toast('เพิ่ม ' + (r.code || r.key) + ' 1 ชิ้นเข้าใบ ' + jobCodeOf(state.roundId) + ' แล้ว');
+  $('modalOk').click();
+  reloadAfterAdjust(kind);
 }
 
 /* เอาของที่ยิงเกินออก — เขียนเป็นแถวใหม่ delta ติดลบ ไม่ได้ลบแถวเดิม
@@ -8883,6 +9080,14 @@ function renderSummary() {
     });
   }
   renderSumCards(data);
+
+  /* ⭐ v2.15.0 — กราฟชุดเดียวกับหน้าเอกสาร เอามาไว้ให้แคปส่งทีมได้จากหน้านี้เลย
+     ใช้ renderDonuts ตัวเดิม ตัวเลขจึงตรงกับเอกสารเสมอโดยไม่ต้องคำนวณซ้ำ
+     ชื่อสาขากับวันที่ต้องติดไปในรูปด้วย ไม่งั้นแคปไปแล้วไม่รู้ว่าของสาขาไหนวันไหน */
+  renderDonuts(data, 'sumDonut');
+  $('sumBranchLine').textContent = 'สาขา: ' + jobBranchLabel(round);
+  $('sumAuditDate').textContent = 'วันที่ Audit: ' + thaiDate(Date.now());
+
   var body = $('sumBody');
   body.innerHTML = '';
 
@@ -8906,6 +9111,11 @@ function renderSummary() {
       [GROUP_LABEL[name], ''],
       [fmtNum(g.sysQty), 'sysQty'],
       [fmtNum(g.actQty), 'actQty'],
+      /* ⭐ v2.15.0 — ขาด/เกินเป็นชิ้น เคยมีแต่ในหน้าเอกสาร ตารางนี้โชว์แต่ผลต่างสุทธิ
+         ขาด 100 เกิน 100 กับไม่ขาดไม่เกินเลย ให้ผลต่างสุทธิ 0 เท่ากัน แต่คนละเรื่องกันสิ้นเชิง
+         (g.pcShort / g.pcOver คำนวณไว้อยู่แล้ว แค่ไม่เคยเอามาโชว์) */
+      [fmtNum(g.pcShort), g.pcShort > 0 ? 'neg' : ''],
+      [fmtNum(g.pcOver), g.pcOver > 0 ? 'pos' : ''],
       [(diffQty > 0 ? '+' : '') + fmtNum(diffQty), diffQty > 0 ? 'pos' : (diffQty < 0 ? 'neg' : '')],
       [fmtNum(g.skuMatch), ''],
       [fmtNum(g.skuShort), ''],
@@ -9081,8 +9291,47 @@ function buildSummaryExcel(data) {
              'จำนวนระบบ', 'จำนวนจริง', 'ผลต่าง',
              'จากการยิง', 'จากการกรอกมือ', priceLabel, 'มูลค่าระบบ', 'มูลค่าจริง',
              'หมายเหตุ']];
+
+  /* ⭐ v2.15.0 — โซนที่เก็บ/นับจริง ต้องรวมทุก Job ในรอบ ไม่ใช่แค่ใบที่เปิดค้างอยู่
+     ของเดิมอ่าน foundZoneText() ซึ่งดูจาก state.foundZones ของใบที่เปิดอยู่ใบเดียว
+     รอบที่มีทั้งใบตัวโชว์และใบ Stock จึงเห็นโซนแค่ใบเดียว อีกใบว่างทั้งที่ข้อมูลมีครบ
+
+     foundZone ถูกเซฟติดไปกับทุกแถว scan ตอนคนนับพิมพ์ช่อง "เก็บทีละโซน" อยู่แล้ว
+     จึงอ่านจาก raw ของทุกใบได้เลย ไม่ต้องยิงเน็ตเพิ่ม
+
+     เก็บ "จำนวนต่อโซน" ไว้ด้วย (รวม delta ดังนั้นแถวหักลบก็หักถูกโซน)
+     เพื่อบอกได้ว่าโซนไหนนับได้กี่ชิ้น ไม่ใช่บอกแค่ว่าเคยเจอที่โซนไหนบ้าง */
+  var fzMap = {};   // key -> { ชื่อโซน -> จำนวนสุทธิ }
+  (function () {
+    function add(rec) {
+      if (!rec) return;
+      var k = safeKey(rec.code);
+      var z = (rec.foundZone && String(rec.foundZone).trim()) || zoneNameForKey(k);
+      var m = fzMap[k] || (fzMap[k] = {});
+      m[z] = (m[z] || 0) + (Number(rec.delta) || 0);
+    }
+    if (xScope.multi && cycleCacheFresh() && state.cycleData && state.cycleData.raw &&
+        state.cycleData.raw.jobs) {
+      state.cycleData.raw.jobs.forEach(function (j) {
+        var sc = j.scans || {};
+        Object.keys(sc).forEach(function (sid) { add(sc[sid]); });
+      });
+    } else {
+      /* รอบ Job เดียว (หรือยอดรวมยังไม่พร้อม) — ใบที่เปิดอยู่มีข้อมูลครบอยู่แล้ว */
+      state.scanLog.forEach(function (s) { add(s.rec); });
+    }
+  })();
+  /* โซนที่สุทธิเหลือ 0 ไม่ต้องโชว์ — ยิงแล้วหักคืนจนหมด ไม่ใช่ที่ที่มีของอยู่จริง
+     ใส่จำนวนในวงเล็บไปเลยในช่องเดียว ดีกว่าแยกอีกคอลัมน์ท้ายตาราง
+     คนเปิดไฟล์อ่านทีเดียวจบว่าของกระจายอยู่โซนไหนโซนละเท่าไหร่ */
+  function fzZones(k) {           // "DA-5 (3), SB-1 (2)"
+    var m = fzMap[k]; if (!m) return '';
+    return Object.keys(m).filter(function (z) { return m[z] > 0; }).sort()
+      .map(function (z) { return z + ' (' + m[z] + ')'; }).join(', ');
+  }
+
   data.rows.forEach(function (r) {
-    s2.push([r.code, r.name, r.location || '', foundZoneText(r.key), r.status || DEFAULT_STATUS, r.unit,
+    s2.push([r.code, r.name, r.location || '', fzZones(r.key), r.status || DEFAULT_STATUS, r.unit,
              r.type === 'notProduct' ? 'Not Product' : 'Product',
              r.sys, r.act, r.diff, r.scanQty, r.manualQty, r.price,
              Math.round(r.sys * r.price * 100) / 100, Math.round(r.act * r.price * 100) / 100,
@@ -9131,7 +9380,7 @@ function buildSummaryExcel(data) {
 
   var blob = buildXlsx([
     { name: 'สรุป', rows: s1, widths: [16, 12, 12, 13, 10, 10, 10, 14, 14, 14, 14, 14] },
-    { name: 'รายสินค้า', rows: s2, widths: [18, 34, 16, 8, 18, 10, 12, 12, 12, 10, 11, 14, 12, 14, 14, 30] },
+    { name: 'รายสินค้า', rows: s2, widths: [18, 34, 16, 22, 18, 10, 12, 12, 12, 10, 11, 14, 12, 14, 14, 30] },
     { name: 'ประวัติการนับ', rows: s3,
       widths: histAll ? [22, 16, 18, 36, 16, 14, 10, 13, 22, 24]
                       : [22, 18, 36, 16, 14, 10, 13, 22, 24] },
@@ -9490,8 +9739,10 @@ var DONUT_GROUPS = [
   { key: 'notProduct', label: 'Not Product' }
 ];
 
-function renderDonuts(data) {
-  var host = $('donutGroups');
+/* hostId — หน้าเอกสารกับหน้าสรุปวาดคนละกล่องแต่ใช้กราฟชุดเดียวกัน (v2.15.0)
+   ไม่ส่งมา = กล่องของหน้าเอกสารเหมือนเดิม ตัวเรียกเดิมจึงไม่ต้องแก้ */
+function renderDonuts(data, hostId) {
+  var host = $(hostId || 'donutGroups');
   host.innerHTML = '';
 
   DONUT_GROUPS.forEach(function (g) {

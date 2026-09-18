@@ -341,6 +341,8 @@ const READ_CARD = `
     const cells = Array.prototype.map.call(row.children, td => td.textContent);
     return {
       cells: cells,
+      head: Array.prototype.map.call(
+        document.querySelectorAll('#sumTable thead th'), function (th) { return th.textContent; }),
       match: $('cardMatchNum').textContent,
       short: $('cardShortNum').textContent,
       over: $('cardOverNum').textContent,
@@ -351,7 +353,21 @@ const READ_CARD = `
   check('SKU ตรง = 2', totals.match === '2', totals.match);
   check('SKU ขาด = 1', totals.short === '1', totals.short);
   check('SKU เกิน = 2', totals.over === '2', totals.over);
-  check('แถวรวมยังมีครบ 12 ช่อง', totals.cells.length === 12, totals.cells);
+  /* ⭐ v2.15.0 — เพิ่มคอลัมน์ ขาด(ชิ้น) กับ เกิน(ชิ้น) คั่นระหว่าง จำนวนจริง กับ ผลต่าง
+     ผลต่างสุทธิอย่างเดียวบอกไม่ได้ว่าของหายหรือของเกิน: ขาด 100 เกิน 100 ได้ผลต่าง 0
+     เท่ากับไม่ขาดไม่เกินเลย ซึ่งเป็นคนละสถานการณ์กันสิ้นเชิงสำหรับคนตรวจ
+     ลำดับคอลัมน์: กลุ่ม · ระบบ · จริง · ขาด · เกิน · ผลต่าง · SKU×3 · %×2 · มูลค่า×3 */
+  check('แถวรวมมีครบ 14 ช่อง', totals.cells.length === 14, totals.cells);
+  check('⭐ คอลัมน์ ขาด(ชิ้น) กับ เกิน(ชิ้น) อยู่ถัดจาก จำนวนจริง',
+        /^\d/.test(totals.cells[3]) && /^\d/.test(totals.cells[4]), totals.cells);
+  check('⭐ เกิน − ขาด = ผลต่างสุทธิ (ตัวเลขสามช่องต้องสอดคล้องกัน)',
+        (function () {
+          const num = function (t) { return Number(String(t).replace(/[^0-9.-]/g, '')) || 0; };
+          return num(totals.cells[4]) - num(totals.cells[3]) === num(totals.cells[5]);
+        })(), { ขาด: totals.cells[3], เกิน: totals.cells[4], ผลต่าง: totals.cells[5] });
+  check('หัวตารางตั้งชื่อคอลัมน์ใหม่ถูก',
+        totals.head.indexOf('ขาด (ชิ้น)') === 3 && totals.head.indexOf('เกิน (ชิ้น)') === 4,
+        totals.head);
   check('ยุบ/กางไม่เขียนอะไรลงฐานข้อมูล', totals.writes === 0, totals.writes);
 
   /* ---------- ไม่มี error หลุด ---------- */

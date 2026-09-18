@@ -64,10 +64,10 @@ function check(name, ok, got) {
       if (!box) return null;
       const rows = Array.prototype.map.call(box.querySelectorAll('.srow'), function (r) {
         return { sku: r.getAttribute('data-sku'),
-                 one: !!r.querySelector('[data-removeover]'),
-                 all: !!r.querySelector('[data-removeall]'),
-                 allText: (r.querySelector('[data-removeall]') || {}).textContent || null,
-                 allDisabled: (r.querySelector('[data-removeall]') || {}).disabled };
+                 one: !!r.querySelector('[data-removejob]'),
+                 all: !!r.querySelector('[data-removejoball]'),
+                 allText: (r.querySelector('[data-removejoball]') || {}).textContent || null,
+                 allDisabled: (r.querySelector('[data-removejoball]') || {}).disabled };
       });
       const s = box.querySelector('[data-sumcard-search]');
       return { rows: rows, skus: rows.map(function (r) { return r.sku; }),
@@ -132,7 +132,8 @@ function check(name, ok, got) {
     return by;
   });
   check('OVR9 (act 9) มีทั้งสองปุ่ม', r3.OVR9.one === true && r3.OVR9.all === true, r3.OVR9);
-  check('ป้ายปุ่มบอกจำนวน', r3.OVR9.allText === '🗑 เอาออกทั้งหมด (9 ชิ้น)', r3.OVR9.allText);
+  check('ป้ายปุ่มบอกจำนวนและระบุใบ',
+        /^🗑 เอาออกทั้งหมดจากใบ .+ \(9 ชิ้น\)$/.test(r3.OVR9.allText || ''), r3.OVR9.allText);
   check('ONE1 (act 1) มีแค่ปุ่มเอาออก 1 ชิ้น',
         r3.ONE1.one === true && r3.ONE1.all === false, r3.ONE1);
   check('ปุ่มไม่ถูก disable ตอน Job กำลังนับ', r3.OVR9.allDisabled === false, r3.OVR9.allDisabled);
@@ -143,7 +144,7 @@ function check(name, ok, got) {
     window.__seed('admin');
     openSumCard('over');
     window.__writes = []; window.__toasts = [];
-    document.querySelector('[data-removeall="OVR9"]').click();
+    document.querySelector('[data-sku="OVR9"] [data-removejoball]').click();
     /* กล่องยืนยันต้องขึ้นมาก่อน ยังไม่เขียนอะไร */
     const mid = { title: $('modalTitle').textContent, msg: $('modalMsg').textContent,
                   ok: $('modalOk').textContent, writes: window.__writes.length,
@@ -161,21 +162,22 @@ function check(name, ok, got) {
              reopened: !!document.querySelector('[data-sumcard-list="over"]') };
   });
   check('ยังไม่เขียนก่อนยืนยัน', r4.mid.writes === 0, r4.mid.writes);
-  check('กล่องยืนยันบอกชื่อ SKU + จำนวน',
-        r4.mid.title === 'เอาออกทั้งหมด?' &&
-        /เอา OVR9 ออกทั้งหมด 9 ชิ้น\?/.test(r4.mid.msg), r4.mid);
+  check('กล่องยืนยันบอกชื่อ SKU + จำนวน + ใบที่จะถูกหัก',
+        r4.mid.title === 'เอาออกทั้งหมดจากใบนี้?' &&
+        /เอา OVR9 ออกจากใบ .+ ทั้งหมด 9 ชิ้น\?/.test(r4.mid.msg), r4.mid);
   check('บอกชื่อสินค้าด้วย', /หมวกแก๊ปปักโลโก้/.test(r4.mid.msg), r4.mid.msg);
   check('ย้ำว่าไม่ได้ลบยอดเดิม', /ไม่ได้ลบยอดเดิมทิ้ง/.test(r4.mid.msg), r4.mid.msg);
+  check('⭐ ย้ำว่าใบอื่นไม่ถูกแตะ', /ใบอื่นไม่ถูกแตะ/.test(r4.mid.msg), r4.mid.msg);
   check('ปุ่มยืนยันเป็นสีอันตราย', r4.mid.danger === true, r4.mid.danger);
   check('ปุ่มยืนยันบอกจำนวน', r4.mid.ok === 'เอาออก 9 ชิ้น', r4.mid.ok);
   check('ยืนยันแล้วเขียน 1 เรคอร์ด delta -9', r4.writes === 1 && r4.delta === -9, r4);
-  check('เหตุผลเป็น "เอาออกทั้งหมดจากสรุป"', r4.reason === 'เอาออกทั้งหมดจากสรุป', r4.reason);
+  check('⭐ เหตุผลระบุใบที่ถูกหัก', /^เอาออกจากสรุป \(Job .+\)$/.test(r4.reason || ''), r4.reason);
   check('ยังเป็น writeScan ปกติ (mode scan + มีคนทำ/เวลา)',
         r4.mode === 'scan' && r4.user === 'สมชาย' && r4.hasTs === true, r4);
   check('ยอดในเครื่องเหลือ 0', r4.counts === 0, r4.counts);
-  check('toast บอกจำนวนที่เอาออก + ไม่ได้ลบยอดเดิม',
-        /เอา OVR9 ออก 9 ชิ้นแล้ว/.test(r4.toast || '') && /ไม่ได้ลบยอดเดิม/.test(r4.toast || ''),
-        r4.toast);
+  check('toast บอกจำนวน + ใบที่ถูกหัก + ไม่ได้ลบยอดเดิม',
+        /เอา OVR9 ออกจากใบ .+ 9 ชิ้นแล้ว/.test(r4.toast || '') &&
+        /ไม่ได้ลบยอดเดิม/.test(r4.toast || ''), r4.toast);
   check('ป๊อปอัปกลุ่มเดิมเปิดกลับให้', r4.reopened === true, r4.reopened);
 
   /* ---------- 5. กดยกเลิกในกล่องยืนยัน ---------- */
@@ -184,7 +186,7 @@ function check(name, ok, got) {
     window.__seed('admin');
     openSumCard('over');
     window.__writes = [];
-    document.querySelector('[data-removeall="OVR9"]').click();
+    document.querySelector('[data-sku="OVR9"] [data-removejoball]').click();
     $('modalCancel').click();                   // ยกเลิก
     await new Promise(function (r) { setTimeout(r, 60); });
     return { writes: window.__writes.length, counts: state.counts.OVR9,
@@ -202,7 +204,7 @@ function check(name, ok, got) {
     window.__seed('admin');
     openSumCard('over');
     window.__writes = [];
-    document.querySelector('[data-removeover="OVR9"]').click();
+    document.querySelector('[data-sku="OVR9"] [data-removejob]').click();
     await new Promise(function (r) { setTimeout(r, 60); });
     const rec = Object.keys(window.__writes[0].patch)
       .map(function (k) { return window.__writes[0].patch[k]; })[0];
@@ -211,7 +213,7 @@ function check(name, ok, got) {
   });
   check('กดแล้วเขียนทันที ไม่มีกล่องยืนยันคั่น',
         r6.writes === 1 && r6.delta === -1, r6);
-  check('เหตุผลยังเป็นข้อความเดิม', r6.reason === 'เอาออกจากสรุป (ยิงเกิน)', r6.reason);
+  check('เหตุผลระบุใบที่ถูกหัก', /^เอาออกจากสรุป \(Job .+\)$/.test(r6.reason || ''), r6.reason);
   check('ยอดลด 1 (9 → 8)', r6.counts === 8, r6.counts);
 
   /* ---------- 7. สิทธิ์ + Job ปิด ---------- */
@@ -238,7 +240,8 @@ function check(name, ok, got) {
     out.scannerToast = (window.__toasts[0] || {}).m;
     return out;
   });
-  check('Job ปิดแล้ว ปุ่มเอาออกทั้งหมดถูกล็อก', r7.closedDisabled === true, r7.closedDisabled);
+  check('⭐ Job ปิดแล้ว ปุ่มเอาออกทั้งหมดไม่ขึ้นเลย (ปุ่ม ➖ บอกเหตุผลแทน)',
+        r7.closedDisabled === undefined || r7.closedDisabled === true, r7.closedDisabled);
   check('scanner เรียกตรง ๆ ก็ไม่เขียน', r7.scannerWrites === 0, r7.scannerWrites);
   check('ยอดไม่ถูกแตะ', r7.scannerCounts === 9, r7.scannerCounts);
   check('บอกเหตุผลว่าสิทธิ์ไม่พอ', /สิทธิ์/.test(r7.scannerToast || ''), r7.scannerToast);

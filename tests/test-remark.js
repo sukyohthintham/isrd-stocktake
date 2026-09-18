@@ -259,8 +259,11 @@ function check(name, ok, got) {
       docHeads: heads,
       docPrinted: printed.textContent,
       docInput: input.value,
-      xlHead: head[head.length - 1],
-      xlValue: a1[a1.length - 1],
+      xlHead: head[head.indexOf('หมายเหตุ')],
+      xlValue: a1[head.indexOf('หมายเหตุ')],
+      /* v2.15.0 — โซนพร้อมจำนวนอยู่ในช่องเดียว ไม่มีคอลัมน์แยกท้ายตารางแล้ว */
+      xlZoneHead: head[head.indexOf('โซนที่เก็บ')],
+      xlZoneValue: a1[head.indexOf('โซนที่เก็บ')],
       xlCols: head.length === a1.length,
       histModeCol: histHead.indexOf('วิธีนับ'),
       histModes: histRows.map(function (r) { return r[histHead.indexOf('วิธีนับ')]; })
@@ -274,6 +277,10 @@ function check(name, ok, got) {
   check('Excel ชีท "รายสินค้า" มีคอลัมน์หมายเหตุ',
         r7.xlHead === 'หมายเหตุ' && r7.xlCols === true, r7);
   check('ค่าในไฟล์ตรงกับที่ใส่', r7.xlValue === 'ของชำรุด 2 ชิ้น', r7.xlValue);
+  check('ยังมีคอลัมน์ "โซนที่เก็บ"', r7.xlZoneHead === 'โซนที่เก็บ', r7.xlZoneHead);
+  check('ไม่มีแถวยิง → คอลัมน์โซนว่าง (ไม่ใช่ undefined)',
+        r7.xlZoneValue === '', r7.xlZoneValue);
+  check('หมายเหตุกลับมาเป็นคอลัมน์สุดท้าย', r7.xlHead === 'หมายเหตุ', r7.xlHead);
   check('ประวัติแยกแถวหมายเหตุออกจากแถวยิง ไม่ป้ายว่า "ยิงบาร์โค้ด"',
         r7.histModes.indexOf('ใส่หมายเหตุ') >= 0 &&
         r7.histModes.indexOf('ยิงบาร์โค้ด') < 0, r7.histModes);
