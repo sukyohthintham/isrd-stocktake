@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.14.3">
+<meta name="version" content="2.14.4">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.14.3</title>
+<title>ISRD Stocktake v2.14.4</title>
 
 <style>
 :root{
@@ -1768,7 +1768,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.14.3';
+var APP_VERSION = '2.14.4';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -3918,7 +3918,8 @@ var state = {
   overviewStatus: 'all',                    // ตัวกรองหน้าภาพรวมทุกสาขา
   overviewFrom: '', overviewTo: '',
   overviewRows: [],
-  scannerOpen: null,                        // ชื่อผู้ยิงที่กางดูรายโซนอยู่
+  scannerOpen: null,                        // ชื่อผู้ยิงที่กางดูรายละเอียดอยู่
+  scannerJobOpen: null,                     // 'user|jobCode' ของ Job ที่กางดูโซนอยู่
   exportPick: [],                           // Job ที่ติ๊กไว้รอรวมดาวน์โหลด
   printImages: true,                        // พิมพ์พร้อมรูปสินค้าไหม (ข้อ B3)
   compactImages: true,                      // ย่อรูปก่อนพิมพ์ไหม (v2.1.2)
@@ -12744,8 +12745,16 @@ function scannerStats(entries) {
     var zn = s.rec.zoneName || zoneName(s.rec.zone) || '(ไม่ระบุโซน)';
     e.zones[zn] = (e.zones[zn] || 0) + d;
     /* อยู่หลังด่านตัดแถวผีข้างบน ยอดรายคนแยกตาม Job จึงรวมได้เท่ากับ e.pieces เสมอ
-       s.job มีเฉพาะตอนอ่านจาก cycleScannerEntries() — โหมด Job เดียวไม่มี ก็ไม่ต้องโชว์ */
-    if (s.job) e.jobs[s.job] = (e.jobs[s.job] || 0) + d;
+       s.job มีเฉพาะตอนอ่านจาก cycleScannerEntries() — โหมด Job เดียวไม่มี ก็ไม่ต้องโชว์
+
+       ⭐ v2.14.4 — เก็บโซนซ้อนอยู่ในแต่ละ Job ด้วย ไม่ใช่เก็บแค่ยอดรวมของ Job
+       เพราะ "โซน A" ของคนละ Job คนละสาขาเป็นคนละที่กัน การรวมโซนข้าม Job
+       ทำให้ได้ตัวเลขที่ไม่มีความหมายในโลกจริง (เดินไปหาของที่โซน A ไม่เจอเพราะคนละคลัง) */
+    if (s.job) {
+      var jb = e.jobs[s.job] || (e.jobs[s.job] = { pieces: 0, zones: {} });
+      jb.pieces += d;
+      jb.zones[zn] = (jb.zones[zn] || 0) + d;
+    }
   });
   return Object.keys(byUser).map(function (u) {
     var e = byUser[u];
@@ -13197,49 +13206,62 @@ function renderScanners() {
     detail.style.display = state.scannerOpen === r.user ? 'block' : 'none';
     detail.style.marginTop = '10px';
 
-    /* ⭐ v2.14.3 — แยกตาม Job โชว์เฉพาะคนที่ยิงข้ามหลายใบ
-       คนที่ยิงใบเดียวเห็นหัวข้อนี้ก็ไม่ได้ข้อมูลเพิ่ม มีแต่ทำให้การ์ดยาวขึ้นเปล่า ๆ
-       พอมีสองหัวข้อแล้วต้องติดป้าย "แยกตามโซน" ให้ของเดิมด้วย ไม่งั้นอ่านไม่ออกว่าท่อนล่างคืออะไร */
+    /* ⭐ v2.14.4 — เจาะสองชั้น: คน → Job → โซนของ Job นั้น
+       เลิกโชว์โซนรวมทุก Job ปนกัน เพราะโซนชื่อเดียวกันของคนละใบคือคนละที่จริง ๆ
+       เอามารวมกันแล้วได้ตัวเลขที่เดินไปหาของตามไม่ได้
+       คนที่ยิงใบเดียวไม่ต้องมีชั้น Job มาคั่น — กดชื่อแล้วเห็นโซนเลยเหมือนเดิม */
     var jobKeys = Object.keys(r.jobs || {});
     if (jobKeys.length > 1) {
-      var jh = document.createElement('div');
-      jh.className = 'rep-line';
-      jh.style.fontWeight = '700';
-      jh.setAttribute('data-byjob', r.user);
-      var jhs = document.createElement('span');
-      jhs.textContent = 'แยกตาม Job';
-      jh.appendChild(jhs);
-      detail.appendChild(jh);
+      jobKeys.sort(function (a, b) { return r.jobs[b].pieces - r.jobs[a].pieces; })
+        .forEach(function (jc) {
+          var openJob = state.scannerJobOpen === (r.user + '|' + jc);
+          var row = document.createElement('div');
+          row.className = 'rep-line';
+          row.style.cursor = 'pointer';
+          row.setAttribute('data-jobpieces', jc);
+          var sp = document.createElement('span');
+          sp.textContent = (openJob ? '▾ ' : '▸ ') + jc;
+          var bb = document.createElement('b');
+          bb.textContent = fmtNum(r.jobs[jc].pieces) + ' ชิ้น';
+          row.appendChild(sp); row.appendChild(bb);
+          row.onclick = function (ev) {
+            /* ห้ามให้ทะลุไปโดน top.onclick ไม่งั้นการ์ดคนทั้งใบจะหุบทันทีที่กด Job */
+            ev.stopPropagation();
+            state.scannerJobOpen = openJob ? null : (r.user + '|' + jc);
+            renderScanners();
+          };
+          detail.appendChild(row);
 
-      jobKeys.sort(function (a, b) { return r.jobs[b] - r.jobs[a]; }).forEach(function (jc) {
-        var d = document.createElement('div');
-        d.className = 'rep-line';
-        d.setAttribute('data-jobpieces', jc);
-        var sp = document.createElement('span'); sp.textContent = jc;
-        var bb = document.createElement('b'); bb.textContent = fmtNum(r.jobs[jc]) + ' ชิ้น';
-        d.appendChild(sp); d.appendChild(bb);
-        detail.appendChild(d);
-      });
-
-      var zh = document.createElement('div');
-      zh.className = 'rep-line';
-      zh.style.fontWeight = '700';
-      zh.setAttribute('data-byzone', r.user);
-      var zhs = document.createElement('span');
-      zhs.textContent = 'แยกตามโซน';
-      zh.appendChild(zhs);
-      detail.appendChild(zh);
+          if (openJob) {
+            var zs = r.jobs[jc].zones || {};
+            Object.keys(zs).sort(function (a, b) { return zs[b] - zs[a]; }).forEach(function (z) {
+              var zd = document.createElement('div');
+              zd.className = 'rep-line';
+              zd.style.paddingLeft = '18px';
+              zd.setAttribute('data-jobzone', jc + '|' + z);
+              var zsp = document.createElement('span');
+              zsp.textContent = '↳ ' + zoneLabel(z);
+              var zb = document.createElement('b');
+              zb.textContent = fmtNum(zs[z]) + ' ชิ้น';
+              zd.appendChild(zsp); zd.appendChild(zb);
+              detail.appendChild(zd);
+            });
+          }
+        });
+    } else {
+      /* Job เดียว — ไม่มีอะไรให้ซ้อน โชว์โซนตรง ๆ เหมือนก่อน v2.14.3 */
+      Object.keys(r.zones).sort(function (a, b) { return r.zones[b] - r.zones[a]; })
+        .forEach(function (z) {
+          var d = document.createElement('div');
+          d.className = 'rep-line';
+          d.setAttribute('data-zone', z);
+          var zsp = document.createElement('span'); zsp.textContent = zoneLabel(z);
+          var zb = document.createElement('b'); zb.textContent = fmtNum(r.zones[z]) + ' ชิ้น';
+          d.appendChild(zsp); d.appendChild(zb);
+          detail.appendChild(d);
+        });
     }
 
-    Object.keys(r.zones).sort(function (a, b) { return r.zones[b] - r.zones[a]; })
-      .forEach(function (z) {
-        var d = document.createElement('div');
-        d.className = 'rep-line';
-        var s = document.createElement('span'); s.textContent = zoneLabel(z);
-        var b = document.createElement('b'); b.textContent = fmtNum(r.zones[z]) + ' ชิ้น';
-        d.appendChild(s); d.appendChild(b);
-        detail.appendChild(d);
-      });
     /* ⭐ v2.10.10 — ปุ่มล้างยอดอยู่ "ในส่วนที่กางออกมา" เท่านั้น
        ต้องกดชื่อให้การ์ดกางก่อน แล้วค่อยกดปุ่ม แล้วค่อยยืนยันในกล่องแดง = 3 จังหวะ
        เผลอนิ้วโดนแล้วลบถาวรไม่ได้ (แนวเดียวกับล็อกนำเข้ายอดระบบ v2.10.7)
@@ -13259,6 +13281,8 @@ function renderScanners() {
     card.appendChild(detail);
     top.onclick = function () {
       state.scannerOpen = state.scannerOpen === r.user ? null : r.user;
+      /* เปลี่ยนคนแล้วต้องล้าง Job ที่กางค้างไว้ ไม่งั้นกดคนใหม่แล้วมี Job ของคนเก่าค้างกางอยู่ */
+      state.scannerJobOpen = null;
       renderScanners();
     };
     host.appendChild(card);
