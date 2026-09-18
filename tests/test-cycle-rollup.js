@@ -678,8 +678,121 @@ function check(name, ok, got) {
   check('สลับมาแท็บนี้ = วาดครั้งเดียว ไม่วนซ้ำ', r11b.once === 1, r11b);
   check('สลับไปมา 5 ครั้ง = วาด 3 ครั้ง (เฉพาะตอนมาแท็บนี้)', r11b.total === 3, r11b);
 
+  /* ==========================================================
+     [12] ⭐ แยกตาม Job ในการ์ดผู้ยิง (v2.14.3)
+     ==========================================================
+
+     v2.14.2 ทำให้ยอดผู้ยิงรวมทุก Job แล้ว แต่พอรวมแล้วเกิดคำถามใหม่ทันที:
+     "คนนี้ 1,204 ชิ้น — มาจากใบไหนบ้าง?" ซึ่งเดิมไม่มีทางรู้จากจอเลย
+
+     fixture มีเคสนี้อยู่แล้ว: คนนับ R-STOCK-01 ยิงที่ใบตัวเอง 1,199
+     แล้วไปช่วยกรอกมือที่ใบ SHOW อีก 5 → ต้องเห็นสองบรรทัดแยกกัน
+     ส่วนอีกสองคนยิงใบเดียว ต้องไม่มีหัวข้อนี้โผล่มากวน */
+  console.log('\n[12] แยกตาม Job — โชว์เฉพาะคนที่ยิงข้ามใบ');
+  const r12 = await page.evaluate(async () => {
+    const readCard = function (user) {
+      const card = document.querySelector('[data-scanner="' + user + '"]');
+      if (!card) return null;
+      const jobRows = Array.prototype.map.call(
+        card.querySelectorAll('[data-jobpieces]'), function (e) {
+          return { job: e.getAttribute('data-jobpieces'),
+                   text: e.querySelector('b').textContent,
+                   n: Number(e.querySelector('b').textContent.replace(/[^0-9-]/g, '')) || 0 };
+        });
+      return {
+        jobHeader: !!card.querySelector('[data-byjob]'),
+        zoneHeader: !!card.querySelector('[data-byzone]'),
+        jobRows: jobRows,
+        jobSum: jobRows.reduce(function (a, b) { return a + b.n; }, 0),
+        big: Number(card.querySelector('[data-pieces]').getAttribute('data-pieces')),
+        zoneRows: card.querySelectorAll('.rep-line:not([data-jobpieces]):not([data-byjob]):not([data-byzone])').length,
+        name: card.querySelector('.m-name').textContent,
+        detailShown: card.querySelector('[data-zones]').style.display
+      };
+    };
+
+    window.__seed(['R-STOCK-01', 'R-STOCK-02', 'R-SHOW-01'], 'R-STOCK-01');
+    await ensureCycleData();
+    state.scannerOpen = 'คนนับ R-STOCK-01';
+    renderScanners();
+
+    const cross = readCard('คนนับ R-STOCK-01');   // ยิงข้ามสองใบ
+    const solo1 = readCard('คนนับ R-STOCK-02');   // ใบเดียว
+    const solo2 = readCard('คนนับ R-SHOW-01');    // ใบเดียว
+
+    /* รอบ Job เดียว — ไม่มี cycleData จึงไม่มีข้อมูลราย Job เลย */
+    window.__seed(['R-STOCK-01'], 'R-STOCK-01');
+    state.scanLog = [
+      { id: 's1', rec: { code: 'P1', delta: 1000, mode: 'scan', user: 'คนนับ R-STOCK-01', ts: 1001 } }
+    ];
+    await ensureCycleData();
+    state.scannerOpen = 'คนนับ R-STOCK-01';
+    renderScanners();
+    const single = readCard('คนนับ R-STOCK-01');
+
+    return { cross: cross, solo1: solo1, solo2: solo2, single: single };
+  });
+
+  check('⭐ คนที่ยิงข้ามใบ — มีหัวข้อ "แยกตาม Job"', r12.cross.jobHeader === true, r12.cross);
+  check('⭐ แยกออกมาเป็นสองบรรทัดตามใบที่ยิง', r12.cross.jobRows.length === 2, r12.cross.jobRows);
+  check('⭐ ผลรวมทุก Job = ยอดใหญ่ข้างชื่อ',
+        r12.cross.jobSum === r12.cross.big, { sum: r12.cross.jobSum, big: r12.cross.big });
+  check('ยอดแต่ละใบถูกต้อง (STOCK-01 = 1,199 · SHOW-01 = 5)',
+        JSON.stringify(r12.cross.jobRows.map(function (j) { return j.job + ':' + j.n; })) ===
+        JSON.stringify(['STOCK-01:1199', 'SHOW-01:5']), r12.cross.jobRows);
+  check('เรียงจากมากไปน้อย',
+        r12.cross.jobRows[0].n >= r12.cross.jobRows[1].n, r12.cross.jobRows);
+  check('ใช้รหัส Job ที่คนอ่านออก ไม่ใช่ id ภายใน',
+        r12.cross.jobRows.every(function (j) { return j.job.indexOf('R-') !== 0; }),
+        r12.cross.jobRows);
+  check('มีป้าย "แยกตามโซน" คั่นให้ของเดิมด้วย', r12.cross.zoneHeader === true, r12.cross);
+  check('รายโซนยังอยู่ครบเหมือนเดิม', r12.cross.zoneRows > 0, r12.cross.zoneRows);
+
+  console.log('\n[12b] คนที่ยิงใบเดียว — ต้องไม่มีหัวข้อนี้มากวน');
+  check('คนนับ R-STOCK-02 ไม่มีหัวข้อแยกตาม Job', r12.solo1.jobHeader === false, r12.solo1);
+  check('คนนับ R-SHOW-01 ไม่มีหัวข้อแยกตาม Job', r12.solo2.jobHeader === false, r12.solo2);
+  check('และไม่มีป้าย "แยกตามโซน" ด้วย (ไม่มีอะไรให้แยก)',
+        r12.solo1.zoneHeader === false && r12.solo2.zoneHeader === false,
+        { solo1: r12.solo1.zoneHeader, solo2: r12.solo2.zoneHeader });
+  check('แต่รายโซนยังโชว์ตามเดิม',
+        r12.solo1.zoneRows > 0 && r12.solo2.zoneRows > 0,
+        { solo1: r12.solo1.zoneRows, solo2: r12.solo2.zoneRows });
+  check('⭐ รอบที่มี Job เดียว — ไม่มีหัวข้อแยกตาม Job เลย',
+        r12.single.jobHeader === false && r12.single.jobRows.length === 0, r12.single);
+
+  console.log('\n[12c] ป้ายบอกว่าการ์ดกดขยายได้');
+  check('การ์ดที่กางอยู่ขึ้นลูกศร ▾', /▾/.test(r12.cross.name), r12.cross.name);
+  check('การ์ดที่พับอยู่ขึ้นลูกศร ▸', /▸/.test(r12.solo1.name), r12.solo1.name);
+  check('การ์ดที่กางอยู่โชว์รายละเอียดจริง', r12.cross.detailShown === 'block', r12.cross);
+  check('การ์ดที่พับอยู่ซ่อนรายละเอียด', r12.solo1.detailShown === 'none', r12.solo1);
+
+  console.log('\n[12d] กดชื่อแล้วต้องสลับกาง/พับได้');
+  const r12d = await page.evaluate(async () => {
+    window.__seed(['R-STOCK-01', 'R-STOCK-02', 'R-SHOW-01'], 'R-STOCK-01');
+    await ensureCycleData();
+    state.scannerOpen = null;
+    renderScanners();
+    const card = function () { return document.querySelector('[data-scanner="คนนับ R-STOCK-01"]'); };
+    const shown = function () { return card().querySelector('[data-zones]').style.display; };
+    const before = shown();
+    card().querySelector('.m-top').click();
+    const afterOpen = { display: shown(), state: state.scannerOpen,
+                        rows: card().querySelectorAll('[data-jobpieces]').length };
+    card().querySelector('.m-top').click();
+    return { before: before, afterOpen: afterOpen, afterClose: shown(), stateEnd: state.scannerOpen };
+  });
+  check('เริ่มต้นพับอยู่', r12d.before === 'none', r12d);
+  check('กดชื่อแล้วกาง + เห็นยอดราย Job', r12d.afterOpen.display === 'block' && r12d.afterOpen.rows === 2,
+        r12d.afterOpen);
+  check('กดซ้ำแล้วพับกลับ', r12d.afterClose === 'none' && r12d.stateEnd === null, r12d);
+
   console.log('\n--- console/page errors ---');
   console.log(errors.slice(0, 10).join('\n') || '(none)');
+  /* ของเดิมพิมพ์ทิ้งไว้เฉย ๆ ไม่ได้ assert — error ใน renderOverview จึงเงียบมาตั้งแต่ ส.ค. 69
+     จนข้อ [11] ไปสะกิดเจอ (แถวที่หลุดจาก DOM แล้วถูก insertBefore ซ้ำ)
+     ต่อจากนี้ error ในคอนโซลต้องทำให้เทสตกทันที ไม่ใช่แค่โผล่มาให้เลื่อนผ่าน */
+  check('ไม่มี error ในคอนโซลเลยสักข้อ', errors.length === 0, errors.slice(0, 3));
+
   console.log('\n==== ' + pass + ' passed, ' + fail + ' failed ====');
   await browser.close();
   process.exit(fail ? 1 : 0);

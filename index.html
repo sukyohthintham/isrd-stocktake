@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.14.2">
+<meta name="version" content="2.14.3">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.14.2</title>
+<title>ISRD Stocktake v2.14.3</title>
 
 <style>
 :root{
@@ -1768,7 +1768,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.14.2';
+var APP_VERSION = '2.14.3';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -11608,6 +11608,12 @@ function renderOverview() {
   var pending = ids.length;
   ids.forEach(function (cid) {
     loadCycleStats(cid).then(function (s) {
+      /* ⭐ v2.14.3 — ตารางอาจถูกวาดใหม่ไปแล้วระหว่างรอสถิติรายสาขา
+         (สลับแท็บ · เปลี่ยนตัวกรอง · ออกจากหน้า) แถวที่ถือไว้ใน closure จะกลายเป็นของเก่า
+         ที่หลุดจาก DOM แล้ว เขียนทับต่อไปก็ไม่มีใครเห็น และ insertBefore ตอนเรียงจะโยน
+         NotFoundError ทิ้งไว้ในคอนโซล ผลจริงคือการเรียงตาม "อัปเดตล่าสุด" เงียบ ๆ ไม่ทำงาน
+         แถวค้างเรียงตามลำดับที่โหลดมาแทน โดยไม่มีอะไรบอกผู้ใช้เลย */
+      if (totalRow.parentNode !== body) return;
       pending--;
       var tr = cells[cid];
       if (s && tr) {
@@ -12728,7 +12734,7 @@ function scannerStats(entries) {
     if (!real[key]) return;                 // แถวผี ไม่นับให้ใครทั้งนั้น
     var u = s.rec.user || 'ไม่ระบุ';
     var d = Number(s.rec.delta) || 0;
-    var e = byUser[u] || (byUser[u] = { user: u, pieces: 0, net: {}, last: 0, zones: {} });
+    var e = byUser[u] || (byUser[u] = { user: u, pieces: 0, net: {}, last: 0, zones: {}, jobs: {} });
     e.pieces += d;
     /* นับ SKU จาก "ยอดสุทธิของคนนั้นต่อ SKU" ไม่ใช่ "เคยยิงบวกไหม"
        ของเดิมนับทุกตัวที่เคยยิงบวก ตัวที่ยิงแล้วหักคืนจนเหลือ 0 จึงยังค้างอยู่ในจำนวน SKU
@@ -12737,11 +12743,14 @@ function scannerStats(entries) {
     if ((s.rec.ts || 0) > e.last) e.last = s.rec.ts;
     var zn = s.rec.zoneName || zoneName(s.rec.zone) || '(ไม่ระบุโซน)';
     e.zones[zn] = (e.zones[zn] || 0) + d;
+    /* อยู่หลังด่านตัดแถวผีข้างบน ยอดรายคนแยกตาม Job จึงรวมได้เท่ากับ e.pieces เสมอ
+       s.job มีเฉพาะตอนอ่านจาก cycleScannerEntries() — โหมด Job เดียวไม่มี ก็ไม่ต้องโชว์ */
+    if (s.job) e.jobs[s.job] = (e.jobs[s.job] || 0) + d;
   });
   return Object.keys(byUser).map(function (u) {
     var e = byUser[u];
     var skus = Object.keys(e.net).filter(function (k) { return e.net[k] !== 0; }).length;
-    return { user: u, pieces: e.pieces, skus: skus, last: e.last, zones: e.zones };
+    return { user: u, pieces: e.pieces, skus: skus, last: e.last, zones: e.zones, jobs: e.jobs };
   }).sort(function (a, b) { return b.pieces - a.pieces; });
 }
 
@@ -12752,8 +12761,12 @@ function cycleScannerEntries() {
   var jobs = (state.cycleData && state.cycleData.raw && state.cycleData.raw.jobs) || [];
   var out = [];
   jobs.forEach(function (j) {
+    /* ⭐ v2.14.3 — ติดรหัส Job ไปกับทุกแถว เพื่อแยกยอดรายคนตาม Job ได้ทีหลัง
+       ใช้ jobCode ที่คนอ่านออก ไม่ใช่ id ภายใน — ถอยไปใช้ id เฉพาะตอนหาในทะเบียนไม่เจอ
+       (รอบเก่าที่ roundIndex ยังโหลดไม่ครบ ยังต้องโชว์ได้ ไม่ใช่ขึ้นว่า undefined) */
+    var jc = (state.roundIndex[j.id] || {}).jobCode || j.id;
     Object.keys(j.scans || {}).forEach(function (sid) {
-      if (j.scans[sid]) out.push({ id: sid, rec: j.scans[sid] });
+      if (j.scans[sid]) out.push({ id: sid, rec: j.scans[sid], job: jc });
     });
   });
   return out;
@@ -13153,8 +13166,11 @@ function renderScanners() {
     var left = document.createElement('div');
     var nm = document.createElement('div');
     nm.className = 'm-name';
+    /* ลูกศรบอกว่ากดขยายได้ — ไม่มีอะไรบอกเลยจะไม่มีใครรู้ว่ามีรายละเอียดซ่อนอยู่
+       (แนวเดียวกับแถวผู้ใช้ในหน้า Master v2.12.1) */
     nm.textContent = (MEDALS[i] || (i + 1) + '.') + ' ' + r.user +
-      (r.user === state.counter ? ' (คุณ)' : '');
+      (r.user === state.counter ? ' (คุณ)' : '') +
+      (state.scannerOpen === r.user ? '  ▾' : '  ▸');
     var meta = document.createElement('div');
     meta.className = 'm-cat';
     meta.textContent = 'ยิงล่าสุด ' + (r.last ? fmtTime(r.last) : '-');
@@ -13180,6 +13196,41 @@ function renderScanners() {
     detail.setAttribute('data-zones', r.user);
     detail.style.display = state.scannerOpen === r.user ? 'block' : 'none';
     detail.style.marginTop = '10px';
+
+    /* ⭐ v2.14.3 — แยกตาม Job โชว์เฉพาะคนที่ยิงข้ามหลายใบ
+       คนที่ยิงใบเดียวเห็นหัวข้อนี้ก็ไม่ได้ข้อมูลเพิ่ม มีแต่ทำให้การ์ดยาวขึ้นเปล่า ๆ
+       พอมีสองหัวข้อแล้วต้องติดป้าย "แยกตามโซน" ให้ของเดิมด้วย ไม่งั้นอ่านไม่ออกว่าท่อนล่างคืออะไร */
+    var jobKeys = Object.keys(r.jobs || {});
+    if (jobKeys.length > 1) {
+      var jh = document.createElement('div');
+      jh.className = 'rep-line';
+      jh.style.fontWeight = '700';
+      jh.setAttribute('data-byjob', r.user);
+      var jhs = document.createElement('span');
+      jhs.textContent = 'แยกตาม Job';
+      jh.appendChild(jhs);
+      detail.appendChild(jh);
+
+      jobKeys.sort(function (a, b) { return r.jobs[b] - r.jobs[a]; }).forEach(function (jc) {
+        var d = document.createElement('div');
+        d.className = 'rep-line';
+        d.setAttribute('data-jobpieces', jc);
+        var sp = document.createElement('span'); sp.textContent = jc;
+        var bb = document.createElement('b'); bb.textContent = fmtNum(r.jobs[jc]) + ' ชิ้น';
+        d.appendChild(sp); d.appendChild(bb);
+        detail.appendChild(d);
+      });
+
+      var zh = document.createElement('div');
+      zh.className = 'rep-line';
+      zh.style.fontWeight = '700';
+      zh.setAttribute('data-byzone', r.user);
+      var zhs = document.createElement('span');
+      zhs.textContent = 'แยกตามโซน';
+      zh.appendChild(zhs);
+      detail.appendChild(zh);
+    }
+
     Object.keys(r.zones).sort(function (a, b) { return r.zones[b] - r.zones[a]; })
       .forEach(function (z) {
         var d = document.createElement('div');
