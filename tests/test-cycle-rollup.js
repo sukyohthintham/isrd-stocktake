@@ -538,6 +538,146 @@ function check(name, ok, got) {
   check('ยอดที่โชว์รายคนก็เป็นเลขสะอาดเหมือนกัน',
         /คนนับ R-STOCK-01 \(1,199 ชิ้น\)/.test(r9.line), r9.line);
 
+  /* ==========================================================
+     [10] ⭐ "ผู้ยิงในรอบนี้" บนหน้าสรุป ต้องรวมทุก Job ในรอบ (v2.14.2)
+     ==========================================================
+
+     บั๊กเดิม: renderScanners() อ่าน state.scanLog ตรง ๆ ซึ่งเป็นของ Job ใบที่เปิดอยู่ใบเดียว
+     รอบที่มีหลายใบจึงโชว์ยอดผู้ยิงน้อยกว่า "จำนวนจริง" ในตารางเทียบที่อยู่หน้าเดียวกัน
+     คนอ่านเห็นสองตัวเลขขัดกันในจอเดียว แล้วไม่รู้ว่าอันไหนเชื่อได้
+
+     ข้อ [8] พิสูจน์ไว้แล้วว่า scannerStats(cycleScannerEntries()) ให้ยอดถูก
+     แต่ไม่ได้พิสูจน์ว่า "จอ" เรียกตัวนั้นจริง — ช่องว่างนี้คือที่ที่บั๊กหลุดออกไป
+     ข้อนี้จึงวัดจาก DOM ที่วาดออกมาจริง ไม่ใช่เรียกฟังก์ชันคำนวณตรง ๆ */
+  console.log('\n[10] ผู้ยิงในรอบนี้ — ต้องรวมทุก Job ให้ตรงกับตารางเทียบ');
+  const r10 = await page.evaluate(async () => {
+    const readDom = function () {
+      const els = document.querySelectorAll('#scannerList [data-pieces]');
+      const rows = Array.prototype.map.call(els, function (e) {
+        return Number(e.getAttribute('data-pieces')) || 0;
+      });
+      return { rows: rows, sum: rows.reduce(function (a, b) { return a + b; }, 0),
+               chip: Number($('scannerChip').textContent.replace(/,/g, '')) || 0 };
+    };
+
+    /* --- รอบ 3 Job --- */
+    window.__seed(['R-STOCK-01', 'R-STOCK-02', 'R-SHOW-01'], 'R-STOCK-01');
+    state.scanLog = [
+      { id: 's1', rec: { code: 'P1', delta: 1000, mode: 'scan', user: 'คนนับ R-STOCK-01', ts: 1001 } },
+      { id: 's2', rec: { code: 'P2', delta: 199, mode: 'scan', user: 'คนนับ R-STOCK-01', ts: 1002 } }
+    ];
+    renderScanners();
+    const beforeRollup = readDom();          // ยังไม่มี cycleData = ต้องเป็นของใบเดียว
+
+    await ensureCycleData();
+    renderScanners();
+    const afterRollup = readDom();
+
+    const want = scannerStats(cycleScannerEntries());
+    const tableAct = state.cycleData.data.groups.total.actQty;
+
+    /* --- รอบ Job เดียว ต้องเหมือนเดิมเป๊ะ --- */
+    window.__seed(['R-STOCK-01'], 'R-STOCK-01');
+    state.scanLog = [
+      { id: 's1', rec: { code: 'P1', delta: 1000, mode: 'scan', user: 'คนนับ R-STOCK-01', ts: 1001 } },
+      { id: 's2', rec: { code: 'P2', delta: 199, mode: 'scan', user: 'คนนับ R-STOCK-01', ts: 1002 } }
+    ];
+    await ensureCycleData();
+    renderScanners();
+    const solo = readDom();
+    const soloWant = scannerStats();
+
+    return {
+      beforeRollup: beforeRollup, afterRollup: afterRollup,
+      wantSum: want.reduce(function (a, w) { return a + w.pieces; }, 0),
+      wantRows: want.length, tableAct: tableAct,
+      solo: solo, soloSum: soloWant.reduce(function (a, w) { return a + w.pieces; }, 0),
+      soloRows: soloWant.length
+    };
+  });
+  check('ก่อนมียอดรวมรอบ — โชว์ของใบที่เปิดอยู่ตามเดิม',
+        r10.beforeRollup.sum === 1199, r10.beforeRollup);
+  check('⭐ รอบหลายใบ — ยอดรวมผู้ยิงเท่า "จำนวนจริง" ในตารางเทียบ',
+        r10.afterRollup.sum === r10.tableAct, r10.afterRollup);
+  check('⭐ ตรงกับ scannerStats(cycleScannerEntries()) ที่ข้อ [8] พิสูจน์ไว้',
+        r10.afterRollup.sum === r10.wantSum, { dom: r10.afterRollup.sum, want: r10.wantSum });
+  check('จำนวนคนที่โชว์ก็รวมทุกใบด้วย',
+        r10.afterRollup.rows.length === r10.wantRows, r10.afterRollup);
+  check('ชิปบอกจำนวนคนตรงกับลิสต์',
+        r10.afterRollup.chip === r10.afterRollup.rows.length, r10.afterRollup);
+  check('⭐ รวมแล้วต้องมากกว่าของใบเดียว (พิสูจน์ว่าเปลี่ยนจริง)',
+        r10.afterRollup.sum > r10.beforeRollup.sum, r10);
+  check('⭐ รอบที่มี Job เดียว — เหมือนเดิมทุกอย่าง',
+        r10.solo.sum === r10.soloSum && r10.solo.rows.length === r10.soloRows,
+        { dom: r10.solo, want: { sum: r10.soloSum, rows: r10.soloRows } });
+
+  /* ==========================================================
+     [11] ⭐ สลับมาแท็บ "สรุปรอบนี้" แล้วต้องวาดตัวเลขทันที (v2.14.2)
+     ==========================================================
+
+     บั๊กเดิม: setSummaryTab() วาดใหม่เฉพาะตอนสลับไปแท็บ "ภาพรวมทุกสาขา"
+     สลับกลับมาแท็บนี้จะโชว์ตัวเลขค้างจากครั้งก่อน ต้องไปกดสลับราคาให้มันวาดใหม่เอง
+     คนใช้ไม่มีทางรู้ว่าเลขที่เห็นเป็นของเก่า ซึ่งอันตรายกว่าการไม่โชว์เลย */
+  console.log('\n[11] สลับแท็บกลับมา — ตัวเลขต้องสดทันที');
+  const r11 = await page.evaluate(() => {
+    /* อ่านทั้งจำนวน SKU และยอดชิ้น — เพิ่มของให้ SKU ที่ขาดอยู่อาจไม่เปลี่ยนบัคเก็ต
+       (ยังขาดอยู่เหมือนเดิม) แต่ยอดชิ้นต้องขยับเสมอ ถ้าวาดใหม่จริง */
+    const nums = function () {
+      return { match: $('cardMatchNum').textContent, matchPc: $('cardMatchPc').textContent,
+               short: $('cardShortNum').textContent, shortPc: $('cardShortPc').textContent,
+               over: $('cardOverNum').textContent, overPc: $('cardOverPc').textContent };
+    };
+    window.__seed(['R-STOCK-01'], 'R-STOCK-01');
+    state.summaryTab = 'job';
+    renderSummary();
+    const first = nums();
+
+    /* ข้อมูลเปลี่ยนระหว่างที่คนไปดูแท็บอื่น (เพื่อนยิงเพิ่ม / โหลดใหม่เข้ามา) */
+    state.counts.P1 = (state.counts.P1 || 0) + 7;
+    state.scanQty.P1 = state.counts.P1;
+
+    setSummaryTab('overview');
+    const onOverview = { jobShown: $('sumJob').style.display,
+                         ovShown: $('sumOverview').style.display };
+    setSummaryTab('job');
+    const back = nums();
+
+    /* วาดเองอีกทีเพื่อหา "คำตอบที่ถูก" มาเทียบ */
+    renderSummary();
+    const truth = nums();
+    return { first: first, back: back, truth: truth, onOverview: onOverview,
+             jobShownBack: $('sumJob').style.display };
+  });
+  check('สลับไปแท็บภาพรวม — ซ่อนกล่องสรุปรอบ', r11.onOverview.jobShown === 'none', r11.onOverview);
+  check('สลับกลับมา — โชว์กล่องสรุปรอบ', r11.jobShownBack === 'block', r11.jobShownBack);
+  check('⭐ ตัวเลขหลังสลับกลับตรงกับของจริง ไม่ค้างของเก่า',
+        JSON.stringify(r11.back) === JSON.stringify(r11.truth),
+        { หลังสลับกลับ: r11.back, ของจริง: r11.truth });
+  check('⭐ และต้องต่างจากตอนแรก (พิสูจน์ว่าวาดใหม่จริง ไม่ใช่บังเอิญเท่ากัน)',
+        JSON.stringify(r11.back) !== JSON.stringify(r11.first),
+        { ตอนแรก: r11.first, หลังสลับกลับ: r11.back });
+
+  const r11b = await page.evaluate(() => {
+    /* สลับไปมาหลายรอบต้องไม่พัง และไม่วนเรียกตัวเอง */
+    window.__seed(['R-STOCK-01'], 'R-STOCK-01');
+    state.summaryTab = 'job';
+    renderSummary();
+    let calls = 0;
+    const real = window.renderSummary;
+    window.renderSummary = function () { calls++; return real.apply(this, arguments); };
+    setSummaryTab('job');
+    const once = calls;
+    setSummaryTab('overview');
+    setSummaryTab('job');
+    setSummaryTab('overview');
+    setSummaryTab('job');
+    const total = calls;
+    window.renderSummary = real;
+    return { once: once, total: total };
+  });
+  check('สลับมาแท็บนี้ = วาดครั้งเดียว ไม่วนซ้ำ', r11b.once === 1, r11b);
+  check('สลับไปมา 5 ครั้ง = วาด 3 ครั้ง (เฉพาะตอนมาแท็บนี้)', r11b.total === 3, r11b);
+
   console.log('\n--- console/page errors ---');
   console.log(errors.slice(0, 10).join('\n') || '(none)');
   console.log('\n==== ' + pass + ' passed, ' + fail + ' failed ====');

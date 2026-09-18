@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.14.1">
+<meta name="version" content="2.14.2">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.14.1</title>
+<title>ISRD Stocktake v2.14.2</title>
 
 <style>
 :root{
@@ -1768,7 +1768,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.14.1';
+var APP_VERSION = '2.14.2';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -11651,6 +11651,9 @@ function setSummaryTab(tab) {
   $('sumOverview').style.display = tab === 'overview' ? 'block' : 'none';
   $('sumJob').style.display = tab === 'job' ? 'block' : 'none';
   if (tab === 'overview') renderOverview();
+  /* ⭐ v2.14.2 — วาดหน้าสรุปทันทีตอนสลับมาแท็บนี้
+     ของเดิมสลับกลับมาแล้วตัวเลขค้างจากครั้งก่อน ต้องไปกดสลับราคาให้มันวาดใหม่เอง */
+  else renderSummary();
 }
 
 function renderJobBar() {
@@ -12407,7 +12410,10 @@ function showPage(name) {
      ถ้าค้างที่แท็บฟอร์มไว้ คนที่เพิ่งสร้าง Job เสร็จจะกลับมาเจอฟอร์มเปล่าแล้วงงว่ารายการหาย */
   if (name === 'jobs') setJobView('list');
   if (name === 'jobs') renderJobs();
-  if (name === 'summary') { renderSummary(); setSummaryTab(state.summaryTab); }
+  /* setSummaryTab วาดให้เองแล้วทั้งสองแท็บ (v2.14.2) — เรียก renderSummary() ตรงนี้อีก
+     จะกลายเป็นวาดซ้ำรอบหนึ่งทุกครั้งที่เข้าหน้า รอบที่มีหลายพัน SKU จะสะดุดบนมือถือ
+     ทุกอย่างที่ renderSummary แตะอยู่ใน #sumJob ซึ่งถูกซ่อนตอนอยู่แท็บภาพรวมอยู่แล้ว */
+  if (name === 'summary') setSummaryTab(state.summaryTab);
   if (name === 'master') renderMaster();
   if (name === 'scan') renderScanPage();
   if (name === 'doc') { renderDoc(); refreshDocMeta(); }
@@ -13124,7 +13130,11 @@ function purgeUserScansChecked(targetUser) {
 var MEDALS = ['🥇', '🥈', '🥉'];
 
 function renderScanners() {
-  var rows = scannerStats();
+  /* ⭐ v2.14.2 — รวมทุก Job ในรอบให้ตรงกับตารางเทียบด้านบน
+     ของเดิมอ่านแค่ state.scanLog ซึ่งเป็นของ Job ใบที่เปิดอยู่ใบเดียว
+     รอบที่มีหลายใบจึงโชว์ยอดผู้ยิงน้อยกว่า "จำนวนจริง" ในตารางเดียวกัน
+     รอบที่มี Job เดียว cycleDataReady() เป็นเท็จ จึงถอยไปใช้ของเดิมเหมือนเดิมเป๊ะ */
+  var rows = cycleDataReady() ? scannerStats(cycleScannerEntries()) : scannerStats();
   $('scannerChip').textContent = fmtNum(rows.length);
   var host = $('scannerList');
   host.innerHTML = '';
