@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.16.0">
+<meta name="version" content="2.16.2">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.16.0</title>
+<title>ISRD Stocktake v2.16.2</title>
 
 <style>
 :root{
@@ -1449,6 +1449,7 @@ body.no-doc-images .doc .imgbox{display:none}
       <div class="tbl-title">Stock vs Display</div>
       <div id="sdBranchLine" style="font-weight:700"></div>
       <div id="sdAuditDate" class="muted"></div>
+      <div id="sdScopeInfo" class="muted"></div>
     </div>
     <button class="btn block" id="btnSdExport" style="margin-bottom:12px">⬇ ดาวน์โหลด Excel</button>
     <div class="stats" id="sdCards"></div>
@@ -1842,7 +1843,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.16.0';
+var APP_VERSION = '2.16.2';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -12029,6 +12030,17 @@ function stockDisplayReport() {
   SD_ORDER.forEach(function (kk) {
     pct[kk] = total ? Math.round(counts[kk] / total * 1000) / 10 : 0;
   });
+  /* ปัดทศนิยมทีละกลุ่มแล้วรวมกันมักไม่ได้ 100 พอดี (เช่น 42.9+14.3+28.6+14.3 = 100.1)
+     คนอ่านรายงานเห็นแล้วสะดุดทันทีว่าเลขไม่ครบร้อย — ยกเศษให้กลุ่มใหญ่สุดรับไป
+     กลุ่มใหญ่คลาดเคลื่อน 0.1 ไม่มีผลกับการตัดสินใจ แต่ผลรวมต้องอ่านแล้วไม่ค้างคาใจ */
+  if (total) {
+    var sum = SD_ORDER.reduce(function (a, kk) { return a + pct[kk]; }, 0);
+    var gap = Math.round((100 - sum) * 10) / 10;
+    if (gap) {
+      var big = SD_ORDER.slice().sort(function (a, b) { return counts[b] - counts[a]; })[0];
+      pct[big] = Math.round((pct[big] + gap) * 10) / 10;
+    }
+  }
   return {
     rows: rows, counts: counts, pct: pct, total: total,
     groups: Object.keys(byGroup).map(function (g) { return byGroup[g]; })
@@ -12063,6 +12075,32 @@ function renderStockDisplay() {
   var round = state.roundIndex[state.roundId] || { name: '-' };
   $('sdBranchLine').textContent = 'สาขา: ' + jobBranchLabel(round);
   $('sdAuditDate').textContent = 'วันที่ Audit: ' + thaiDate(Date.now());
+
+  /* รายงานนี้ตัดสินจาก "ของชิ้นเดียวกันอยู่ทั้งฝั่งโชว์และฝั่งสต็อกหรือไม่"
+     ซึ่งดูจาก Job เดียวไม่ได้เลยโดยธรรมชาติ — ใบ STOCK มีแต่ของฝั่ง S ล้วน
+     เปิดค้างที่ใบนั้นแล้ววาดเลย จะได้ "มีสต็อกไม่มีโชว์" เต็มจำนวน ส่วน both = 0 ทั้งที่ของจริงมีคู่
+     ต้องสั่งรวมยอดทั้งรอบก่อนเหมือนหน้าสรุป แล้ววาดทับเมื่อยอดรวมมาถึง */
+  var scope = cycleScope();
+  var rolledUp = cycleDataReady();
+  var info = $('sdScopeInfo');
+  if (info) {
+    if (!scope.multi) info.textContent = '';
+    else {
+      var nJobs = jobsInCycle(scope.cid).length;
+      info.textContent = rolledUp
+        ? ('ตัวเลขข้างล่างรวมทุก Job ในรอบ ' + scope.cid + ' แล้ว (' + fmtNum(nJobs) + ' ใบ)')
+        : ('รอบนี้มี ' + fmtNum(nJobs) + ' Job — กำลังรวมยอดทุกใบ ' +
+           'ตัวเลขที่เห็นตอนนี้ยังเป็นของใบนี้ใบเดียว ...');
+    }
+  }
+  if (scope.multi && !rolledUp) {
+    ensureCycleData().then(function () {
+      if (state.page === 'summary' && state.summaryTab === 'sd') renderStockDisplay();
+    }, function () {
+      if (info) info.textContent =
+        'รวมยอดทุก Job ไม่สำเร็จ — ตัวเลขข้างล่างเป็นของ Job นี้ใบเดียว ลองเปิดหน้านี้ใหม่อีกครั้ง';
+    });
+  }
 
   /* ---- การ์ด 4 ใบ พร้อม % ของจำนวน SKU ทั้งหมด ---- */
   var cards = $('sdCards');
@@ -12204,7 +12242,20 @@ function renderSdTable(rep) {
 }
 
 /* ไฟล์ Excel 4 ชีท — ใช้ buildXlsx ตัวเดียวกับที่เหลือทั้งโปรเจกต์ ไม่มีไลบรารีนอก */
+/* ไฟล์นี้ส่งให้หัวหน้า ผิดไม่ได้ — ต่างจากหน้าจอที่วาดของที่มีในมือไปก่อนได้
+   รอบใบเดียว (หรือรวมยอดไว้แล้ว) ทำงานทันทีแบบเดิม ไม่แตะเน็ต ไม่เปลี่ยนพฤติกรรมเดิม
+   รอบหลายใบที่ยังไม่รวม ต้องรอให้ครบก่อน ไม่งั้นได้ไฟล์ที่ both = 0 ทั้งใบ */
 function exportStockDisplayExcel() {
+  if (cycleScope().multi && !cycleDataReady()) {
+    toast('กำลังรวมยอดทุก Job ในรอบก่อนสร้างไฟล์ ...');
+    return ensureCycleData().then(buildStockDisplayExcel, function () {
+      toast('รวมยอดทุก Job ไม่สำเร็จ ยังสร้างไฟล์ไม่ได้ — ลองใหม่อีกครั้ง', true);
+    });
+  }
+  return buildStockDisplayExcel();
+}
+
+function buildStockDisplayExcel() {
   var rep = stockDisplayReport();
   var round = state.roundIndex[state.roundId] || {};
   var priceLabel = state.priceField === 'sellPrice' ? 'ราคาขาย' : 'ราคาต้นทุน';
@@ -12244,8 +12295,13 @@ function exportStockDisplayExcel() {
     { name: 'มีโชว์ไม่มีสต็อก', rows: s3, widths: [18, 34, 10, 12, 26] },
     { name: 'ทั้งหมด-จำแนก', rows: s4, widths: [18, 34, 10, 20, 12, 12, 12, 26] }
   ]);
+  /* วันที่ในชื่อไฟล์ใช้ตัวเลขล้วนแบบ พ.ศ. ปี-เดือน-วัน — เรียงในโฟลเดอร์แล้วได้ตามเวลาจริง
+     ห้ามเอา thaiDate() มาแทนอักษรไทยด้วยขีด จะได้ชื่อแบบ 18---------2569 ซึ่งอ่านไม่ออก */
+  var d = new Date();
+  var pad2 = function (v) { return (v < 10 ? '0' : '') + v; };
+  var stamp = (d.getFullYear() + 543) + pad2(d.getMonth() + 1) + pad2(d.getDate());
   var name = 'stock-no-display-' + (round.jobCode || state.roundId || 'job') + '-' +
-             thaiDate(Date.now()).replace(/[^0-9]/g, '-') + '.xlsx';
+             stamp + '.xlsx';
   var a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = name;
@@ -15999,6 +16055,138 @@ function renderUsers() {
    19. เริ่มทำงาน
    ============================================================ */
 
+/* ============================================================
+   ชุดข้อมูลตัวอย่างของโหมดทดสอบ (v2.16.1)
+   ============================================================
+
+   ทำไมต้องฝังไว้ในโค้ด ไม่ดึงจากโฟลเดอร์ sample-data:
+   ไฟล์ในโฟลเดอร์นั้นเป็น .xlsx ต้องอ่านด้วย fetch ซึ่งเบราว์เซอร์บล็อกเมื่อเปิดจาก file://
+   (ได้เฉพาะตอนรันผ่าน server) เปิดไฟล์ดับเบิลคลิกแล้วจะได้หน้าเปล่าทุกครั้ง
+
+   ชุดนี้จงใจเล็กแต่ครอบเคสที่ต้องลองจริง:
+     · 1 รอบ 2 Job (STOCK + SHOW) — ลองปรับยอด/เอาออกข้ามใบได้
+     · 7 SKU ครอบครบ 4 สถานะของรายงานโชว์/สต็อก
+     · มีทั้งของที่ยอดตรง ขาด และเกิน — หน้าสรุปจึงมีทั้งสามกลุ่มให้ดู
+     · NTAC001 เป็นแถวแบบเก่า ไม่มี stockType และโซนไม่ขึ้นต้นด้วย D/S
+       ไว้ลองว่าตัวถอยไปเดาทำงานถูก แล้วจบที่ "ยังไม่ระบุ" ไม่ใช่เดามั่ว
+
+   ลงครั้งเดียว — ปักธง settings/previewSeeded ไว้ ลบ Job ทิ้งเองแล้วจะไม่โผล่มาใหม่
+   อยากได้ใหม่พิมพ์ __seedPreview(true) ใน Console
+   ============================================================ */
+var PREVIEW_BRANCH = { code: 'POP08', name: 'สาขาทดสอบ (Preview)' };
+var PREVIEW_CID = 'CYC-PREVIEW';
+
+/* [รหัส, ชื่อ, หมวดหมู่, ราคาขาย, ราคาต้นทุน, ยอดระบบ] */
+var PREVIEW_PRODUCTS = [
+  ['NTBG001', 'กระเป๋าสะพายข้าง', 'กระเป๋า', 1200, 700, 8],
+  ['NTBG002', 'กระเป๋าใบเล็ก', 'กระเป๋า', 890, 500, 4],
+  ['NTOV001', 'เสื้อโค้ตยาว', 'เสื้อผ้า', 2500, 1400, 10],
+  ['NTOV002', 'เสื้อกันหนาว', 'เสื้อผ้า', 1800, 1000, 3],
+  ['NTSH001', 'รองเท้าผ้าใบ', 'รองเท้า', 1500, 850, 5],
+  ['SOSALE1', 'สินค้าลดราคา', 'เสื้อผ้า', 390, 200, 6],
+  ['NTAC001', 'เข็มขัดหนัง', 'เครื่องประดับ', 650, 350, 2]
+];
+
+/* [Job, รหัส, จำนวน, โซนที่เจอ, ประเภท ('' = แถวแบบเก่าไม่มี stockType)] */
+var PREVIEW_SCANS = [
+  /* มีทั้งโชว์และสต็อก — และกระจายสองใบ ใช้ลองปรับยอดข้ามใบ */
+  ['STOCK', 'NTBG001', 5, 'SB-1', 'stock'],
+  ['SHOW',  'NTBG001', 3, 'DA-1', 'display'],
+  /* มีแต่โชว์ ไม่มีสต็อก */
+  ['SHOW',  'NTBG002', 2, 'DA-2', 'display'],
+  /* มีแต่สต็อก และอยู่สองใบ — ตัวหลักของรายงาน มูลค่าสูงสุด */
+  ['STOCK', 'NTOV001', 6, 'SB-2', 'stock'],
+  ['SHOW',  'NTOV001', 2, 'SB-2', 'stock'],
+  /* มีแต่สต็อก และยิงเกินยอดระบบ (ระบบ 3 นับได้ 4) */
+  ['STOCK', 'NTOV002', 4, 'SB-1', 'stock'],
+  /* มีแต่สต็อก ยอดตรงพอดี */
+  ['STOCK', 'NTSH001', 5, 'SB-2', 'stock'],
+  /* มีทั้งสองฝั่ง + เป็นกลุ่ม SALE */
+  ['STOCK', 'SOSALE1', 2, 'SB-3', 'stock'],
+  ['SHOW',  'SOSALE1', 4, 'DA-3', 'display'],
+  /* แถวแบบเก่า: ไม่มี stockType และโซนไม่ใช่ D/S → ต้องจบที่ "ยังไม่ระบุ" */
+  ['STOCK', 'NTAC001', 2, 'A-3', '']
+];
+
+function seedPreviewData(force) {
+  if (!PREVIEW_MODE) return false;
+  var snap = db.localSnapshot() || {};
+  var seeded = snap.settings && snap.settings.previewSeeded;
+  var hasJobs = snap.roundIndex && Object.keys(snap.roundIndex).length;
+  if (!force && (seeded || hasJobs)) return false;
+
+  var now = Date.now();
+  var jobs = {
+    STOCK: { id: 'RP-STOCK', code: 'PRV-STOCK', type: 'STOCK' },
+    SHOW:  { id: 'RP-SHOW',  code: 'PRV-SHOW',  type: 'SHOW' }
+  };
+
+  db.update('branches', (function () {
+    var p = {};
+    p[PREVIEW_BRANCH.code] = { code: PREVIEW_BRANCH.code, name: PREVIEW_BRANCH.name,
+                               active: true, activeSource: 'auto', updatedAt: now };
+    return p;
+  })());
+
+  var prodPatch = {}, sysPatch = {};
+  PREVIEW_PRODUCTS.forEach(function (p) {
+    prodPatch[p[0]] = {
+      code: p[0], name: p[1], category: p[2], subCategory: '', tag: '', unit: 'ชิ้น',
+      barcode: '', sellPrice: p[3], costPrice: p[4],
+      type: 'product', typeSource: 'auto', needsReview: false, updatedAt: now
+    };
+    sysPatch[p[0]] = p[5];
+  });
+  db.update('products', prodPatch);
+
+  db.update('cycles/' + PREVIEW_CID, {
+    status: 'counting',
+    info: { branchCode: PREVIEW_BRANCH.code, branchName: PREVIEW_BRANCH.name,
+            ym: cycleYm(now), seq: 1, createdAt: now, createdBy: 'ชุดตัวอย่าง',
+            schema: CYCLE_SCHEMA },
+    systemQty: sysPatch
+  });
+
+  var roundPatch = {};
+  Object.keys(jobs).forEach(function (k) {
+    var j = jobs[k];
+    roundPatch[j.id] = {
+      locationSet: 'offline', storeType: j.type, cycleId: PREVIEW_CID,
+      jobCode: j.code, name: 'รอบทดสอบ ' + k,
+      branchCode: PREVIEW_BRANCH.code, branchName: PREVIEW_BRANCH.name,
+      branch: PREVIEW_BRANCH.name,
+      createdAt: now, createdBy: 'ชุดตัวอย่าง', status: 'counting'
+    };
+  });
+  db.update('roundIndex', roundPatch);
+
+  /* แถว scan แยกเขียนรายใบ — โครงเดียวกับที่ writeScan สร้างจริงทุกฟิลด์
+     ts ไล่ห่างกันทีละวินาที ประวัติจะได้เรียงอ่านรู้เรื่อง ไม่ใช่กองเวลาเดียวกันหมด */
+  var byJob = {};
+  PREVIEW_SCANS.forEach(function (row, i) {
+    var j = jobs[row[0]];
+    var rec = {
+      code: row[1], zone: 'no-zone', zoneName: NO_ZONE_NAME,
+      user: 'ชุดตัวอย่าง', ts: now - (PREVIEW_SCANS.length - i) * 1000,
+      delta: row[2], mode: 'scan', foundZone: row[3]
+    };
+    if (row[4]) rec.stockType = row[4];
+    (byJob[j.id] || (byJob[j.id] = {}))['scans/seed' + i] = rec;
+  });
+  Object.keys(byJob).forEach(function (rid) { db.update('rounds/' + rid, byJob[rid]); });
+
+  db.update('settings', { previewSeeded: now });
+  return true;
+}
+
+/* เรียกเองจาก Console ได้ — __seedPreview(true) เพื่อลงใหม่ทับของเดิม */
+window.__seedPreview = function (force) {
+  var ok = seedPreviewData(force !== false);
+  if (ok) toast('ลงชุดข้อมูลตัวอย่างแล้ว — รีเฟรชหน้าเพื่อดู');
+  else toast('มีข้อมูลอยู่แล้ว ใช้ __seedPreview(true) ถ้าจะลงทับ', true);
+  return ok;
+};
+
 /* แบนเนอร์ถาวรของโหมดทดสอบ — อยู่นอก #modeBanner ที่ถูกล้างทุกครั้งที่วาดหน้า Job
    ต้องเห็นตลอดเวลาไม่ว่าอยู่หน้าไหน ไม่งั้นคนลองของอยู่แล้วลืมว่าไม่ใช่ของจริง */
 function showPreviewBanner() {
@@ -16018,6 +16206,9 @@ function showPreviewBanner() {
 function init() {
   $('verText').textContent = APP_VERSION;
   showPreviewBanner();
+  /* ลงชุดตัวอย่างก่อนหน้าไหนเริ่มอ่าน — โหมดทดสอบเขียนลง localStorage แบบ sync
+     จึงพร้อมใช้ทันทีในบรรทัดถัดไป ไม่ต้องรอ promise */
+  seedPreviewData(false);
 
   $('modeBanner').innerHTML = '';
   if (!db.remote) {

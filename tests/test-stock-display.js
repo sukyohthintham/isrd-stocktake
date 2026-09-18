@@ -218,6 +218,39 @@ function check(name, ok, got) {
   check('บอกว่ากระจุกกลุ่มไหน (BG มากสุด)',
         r3.rep.groups[0].indexOf('BG:') === 0, r3.rep.groups);
 
+  /* 5 รายการหารลงตัว เลยไม่เจอเศษการปัด — ต้องลองชุดที่หารไม่ลง
+     3/7 + 1/7 + 2/7 + 1/7 ปัดทีละตัวได้ 42.9+14.3+28.6+14.3 = 100.1 ถ้าไม่ยกเศษ */
+  const r3pct = await page.evaluate(() => {
+    window.__seed([]);
+    state.products.NTOV005 = { code: 'NTOV005', name: 'ของเพิ่ม', type: 'product', costPrice: 1 };
+    state.products.NTBG006 = { code: 'NTBG006', name: 'ของเพิ่มสอง', type: 'product', costPrice: 1 };
+    state.systemQty.NTOV005 = 9; state.systemQty.NTBG006 = 9;
+    state.scanLog = [
+      { code: 'NTBG001', delta: 1, mode: 'scan', user: 'ท', ts: 1, stockType: 'stock' },
+      { code: 'SOSALE9', delta: 1, mode: 'scan', user: 'ท', ts: 2, stockType: 'stock' },
+      { code: 'NTOV005', delta: 1, mode: 'scan', user: 'ท', ts: 3, stockType: 'stock' },
+      { code: 'NTBG003', delta: 1, mode: 'scan', user: 'ท', ts: 4, stockType: 'display' },
+      { code: 'NTOV002', delta: 1, mode: 'scan', user: 'ท', ts: 5, stockType: 'stock' },
+      { code: 'NTOV002', delta: 1, mode: 'scan', user: 'ท', ts: 6, stockType: 'display' },
+      { code: 'NTBG006', delta: 1, mode: 'scan', user: 'ท', ts: 7, stockType: 'stock' },
+      { code: 'NTBG006', delta: 1, mode: 'scan', user: 'ท', ts: 8, stockType: 'display' },
+      { code: 'NTOV004', delta: 1, mode: 'scan', user: 'ท', ts: 9 }
+    ].map(function (r, i) { return { id: 'x' + i, rec: r }; });
+    state.counts = {}; state.scanQty = {}; state.appliedScanIds = Object.create(null);
+    buildScanIndex();
+    const rep = stockDisplayReport();
+    return { counts: rep.counts, pct: rep.pct, total: rep.total };
+  });
+  check('ชุดที่หารไม่ลงตัวจำแนกได้ 3/1/2/1', r3pct.total === 7 &&
+        r3pct.counts.stock_no_display === 3 && r3pct.counts.display_no_stock === 1 &&
+        r3pct.counts.both === 2 && r3pct.counts.uncategorized === 1, r3pct.counts);
+  check('⭐ ปัดแล้วยังรวมได้ 100 พอดี ไม่ใช่ 100.1',
+        Math.round((r3pct.pct.stock_no_display + r3pct.pct.display_no_stock +
+                    r3pct.pct.both + r3pct.pct.uncategorized) * 10) / 10 === 100, r3pct.pct);
+  check('⭐ เศษไปลงกลุ่มใหญ่สุด กลุ่มเล็กยังตรงตามจริง',
+        r3pct.pct.stock_no_display === 42.8 && r3pct.pct.display_no_stock === 14.3 &&
+        r3pct.pct.both === 28.6 && r3pct.pct.uncategorized === 14.3, r3pct.pct);
+
   /* ---------- [3b] หน้าจอ ---------- */
   console.log('\n[3b] แท็บรายงานบนหน้าสรุป');
   const r3b = await page.evaluate(() => {
@@ -341,7 +374,183 @@ function check(name, ok, got) {
         r4.widths.join(',') === '4,7,5,8', r4.widths);
   check('ชื่อไฟล์บอก Job', /^stock-no-display-STOCK-01-/.test(r4.fileName || ''), r4.fileName);
   check('นามสกุล .xlsx', /\.xlsx$/.test(r4.fileName || ''), r4.fileName);
+  /* เคยพลาดมาแล้ว: เอา thaiDate() มาแทนอักษรไทยด้วยขีด ได้ชื่อ 18---------2569
+     เทสเดิมดูแค่หัวกับนามสกุล เลยผ่านทั้งที่ชื่อเสีย — ต้องล็อกทั้งเส้น */
+  check('⭐ วันที่ในชื่อไฟล์เป็นตัวเลข 8 หลัก ไม่มีขีดรัว',
+        /^stock-no-display-STOCK-01-25\d{6}\.xlsx$/.test(r4.fileName || ''), r4.fileName);
   check('บอกผู้ใช้ว่าโหลดแล้วกี่รายการ', /2 รายการ/.test(r4.toast || ''), r4.toast);
+
+  /* ---------- [5] รอบหลายใบต้องรวมยอดทั้งรอบ ---------- */
+  console.log('\n[5] ⭐ รอบหลายใบ — ต้องรวมทั้งรอบ ไม่ใช่ใบที่เปิดอยู่');
+  await page.evaluate(() => {
+    /* ของจริง: ใบ STOCK มีแต่ของฝั่ง S ใบ SHOW มีแต่ของฝั่ง D
+       ดูใบเดียวจึงตอบไม่ได้เลยว่าอะไร "มีทั้งคู่" — ต้องรวมสองใบก่อน */
+    window.__SDJOBS = {
+      'R-SD-STOCK': [{ code: 'P1', delta: 10, stockType: 'stock' },
+                     { code: 'P2', delta: 5, stockType: 'stock' },
+                     { code: 'P4', delta: 3, stockType: 'stock' }],
+      'R-SD-SHOW':  [{ code: 'P1', delta: 4, stockType: 'display' },
+                     { code: 'P3', delta: 7, stockType: 'display' }]
+    };
+    window.__sdReads = [];
+    window.__sdFail = false;
+    const fake = function (path) {
+      window.__sdReads.push(path);
+      if (window.__sdFail) return Promise.reject(new Error('เน็ตล่ม'));
+      const m = /^rounds\/([^/]+)\/scans$/.exec(path);
+      if (m) {
+        const out = {};
+        (window.__SDJOBS[m[1]] || []).forEach(function (r, i) {
+          out['s' + i] = { code: r.code, delta: r.delta, mode: 'scan',
+                           user: 'ท', ts: 100 + i, stockType: r.stockType };
+        });
+        return Promise.resolve(out);
+      }
+      if (/systemQty$/.test(path)) return Promise.resolve({ P1: 14, P2: 5, P3: 7, P4: 3 });
+      return Promise.resolve(null);
+    };
+    window.db.get = fake; window.db.getQuiet = fake;
+
+    window.__seedCycle = function (openId) {
+      window.__seed([]);
+      state.page = 'summary'; state.summaryTab = 'sd';
+      state.products = {
+        P1: { code: 'P1', name: 'ของคู่', type: 'product', costPrice: 10 },
+        P2: { code: 'P2', name: 'ของสต็อกล้วน', type: 'product', costPrice: 10 },
+        P3: { code: 'P3', name: 'ของโชว์ล้วน', type: 'product', costPrice: 10 },
+        P4: { code: 'P4', name: 'ของสต็อกล้วนสอง', type: 'product', costPrice: 10 }
+      };
+      state.systemQty = { P1: 14, P2: 5, P3: 7, P4: 3 };
+      state.roundIndex = {
+        'R-SD-STOCK': { id: 'R-SD-STOCK', name: 'ใบสต็อก', branchCode: 'B1',
+                        jobCode: 'SD-STOCK', cycleId: 'CYC-SD', status: 'counting', createdAt: 1 },
+        'R-SD-SHOW': { id: 'R-SD-SHOW', name: 'ใบโชว์', branchCode: 'B1',
+                       jobCode: 'SD-SHOW', cycleId: 'CYC-SD', status: 'counting', createdAt: 2 }
+      };
+      state.roundId = openId; state.cycleId = 'CYC-SD';
+      /* state.scanLog = ของใบที่เปิดอยู่เท่านั้น ตรงตามที่แอปจริงถือ */
+      state.scanLog = (window.__SDJOBS[openId] || []).map(function (r, i) {
+        return { id: 'o' + i, rec: { code: r.code, delta: r.delta, mode: 'scan',
+                                     user: 'ท', ts: 100 + i, stockType: r.stockType } };
+      });
+      state.counts = {}; state.scanQty = {}; state.appliedScanIds = Object.create(null);
+      state.cycleData = null;
+      buildScanIndex();
+      window.__sdReads = []; window.__toasts = [];
+    };
+    window.__sdCards = function () {
+      const o = {};
+      Array.prototype.forEach.call(document.querySelectorAll('[data-sdcard]'), function (c) {
+        o[c.getAttribute('data-sdcard')] = Number(c.querySelector('[data-sdnum]').textContent);
+      });
+      return o;
+    };
+  });
+
+  const r5 = await page.evaluate(async () => {
+    window.__seedCycle('R-SD-STOCK');
+    const scope = cycleScope();
+    const before = stockDisplayReport().counts;          // อาการที่ผู้ใช้เจอ
+    renderStockDisplay();
+    const drawnFirst = window.__sdCards();
+    const infoBusy = document.getElementById('sdScopeInfo').textContent;
+    await new Promise(function (r) { setTimeout(r, 120); });   // รอรวมยอดเสร็จแล้ววาดทับ
+    return { multi: scope.multi, before: before, drawnFirst: drawnFirst,
+             infoBusy: infoBusy,
+             after: window.__sdCards(),
+             rolled: stockDisplayReport().counts,
+             infoDone: document.getElementById('sdScopeInfo').textContent,
+             reads: window.__sdReads.slice() };
+  });
+  check('รอบนี้เป็นรอบหลายใบจริง', r5.multi === true, r5.multi);
+  check('อาการเดิม: ดูใบเดียวได้ both = 0 · โชว์ไม่มีสต็อก = 0',
+        r5.before.stock_no_display === 3 && r5.before.both === 0 &&
+        r5.before.display_no_stock === 0, r5.before);
+  check('วาดของที่มีในมือก่อน จอไม่ว่างระหว่างรอ', r5.drawnFirst.stock_no_display === 3,
+        r5.drawnFirst);
+  check('บอกผู้ใช้ว่ากำลังรวม + เลขที่เห็นยังเป็นของใบเดียว',
+        /กำลังรวมยอดทุกใบ/.test(r5.infoBusy) && /ใบนี้ใบเดียว/.test(r5.infoBusy), r5.infoBusy);
+  check('⭐ ไปอ่าน scans ของใบอื่นในรอบด้วย',
+        r5.reads.indexOf('rounds/R-SD-SHOW/scans') >= 0, r5.reads);
+  check('⭐ วาดทับด้วยยอดรวมทั้งรอบ (both/สต็อกล้วน/โชว์ล้วน > 0 ทุกตัว)',
+        r5.after.both === 1 && r5.after.stock_no_display === 2 &&
+        r5.after.display_no_stock === 1 && r5.after.uncategorized === 0, r5.after);
+  check('ตัวเลขบนจอตรงกับ stockDisplayReport หลังรวม',
+        JSON.stringify(r5.after) === JSON.stringify({
+          stock_no_display: r5.rolled.stock_no_display,
+          display_no_stock: r5.rolled.display_no_stock,
+          both: r5.rolled.both, uncategorized: r5.rolled.uncategorized
+        }), { จอ: r5.after, รายงาน: r5.rolled });
+  check('รวมเสร็จแล้วบอกว่ารวมครบกี่ใบ',
+        /รวมทุก Job/.test(r5.infoDone) && /2 ใบ/.test(r5.infoDone), r5.infoDone);
+
+  /* วาดทับต้องเกิดเฉพาะตอนยังอยู่แท็บนี้ ไม่ใช่เด้งกลับมาทับหน้าที่ผู้ใช้เปลี่ยนไปแล้ว */
+  const r5b = await page.evaluate(async () => {
+    window.__seedCycle('R-SD-STOCK');
+    renderStockDisplay();
+    state.summaryTab = 'job';                 // ผู้ใช้สลับแท็บหนีระหว่างรอ
+    await new Promise(function (r) { setTimeout(r, 120); });
+    return { cards: window.__sdCards() };
+  });
+  check('⭐ สลับแท็บหนีระหว่างรอ = ไม่วาดทับข้ามหน้า', r5b.cards.stock_no_display === 3,
+        r5b.cards);
+
+  /* รวมไม่สำเร็จต้องบอกตรง ๆ ว่าเลขที่เห็นเป็นของใบเดียว ไม่ใช่ปล่อยให้เข้าใจผิด */
+  const r5c = await page.evaluate(async () => {
+    window.__seedCycle('R-SD-STOCK');
+    window.__sdFail = true;
+    renderStockDisplay();
+    await new Promise(function (r) { setTimeout(r, 120); });
+    window.__sdFail = false;
+    return { info: document.getElementById('sdScopeInfo').textContent,
+             cards: window.__sdCards() };
+  });
+  check('รวมไม่สำเร็จ = เตือนว่าเลขเป็นของใบเดียว ไม่ใช่จอค้าง',
+        /ไม่สำเร็จ/.test(r5c.info) && /Job นี้ใบเดียว/.test(r5c.info) &&
+        r5c.cards.stock_no_display === 3, r5c);
+
+  /* ไฟล์ Excel ที่ส่งหัวหน้าต้องรอยอดรวมเหมือนกัน ไม่ใช่ได้ไฟล์ both = 0 */
+  const r5d = await page.evaluate(async () => {
+    window.__seedCycle('R-SD-STOCK');
+    let sheets = null, fileName = null;
+    const realBuild = window.buildXlsx, realCreate = URL.createObjectURL;
+    const realClick = HTMLAnchorElement.prototype.click;
+    window.buildXlsx = function (x) { sheets = x; return realBuild(x); };
+    URL.createObjectURL = function () { return 'blob:fake'; };
+    URL.revokeObjectURL = function () {};
+    HTMLAnchorElement.prototype.click = function () { fileName = this.download; };
+    const ret = exportStockDisplayExcel();
+    const syncSheets = sheets;                 // ต้องยังไม่สร้างไฟล์ ณ จุดนี้
+    await ret;
+    window.buildXlsx = realBuild; URL.createObjectURL = realCreate;
+    HTMLAnchorElement.prototype.click = realClick;
+    return { thenable: !!(ret && typeof ret.then === 'function'), syncSheets: syncSheets,
+             s4: sheets ? sheets[3].rows.length - 1 : 0,
+             s3: sheets ? sheets[2].rows.slice(1).map(function (r) { return r[0]; }) : [],
+             fileName: fileName, toast: (window.__toasts[0] || {}).m };
+  });
+  check('รอบหลายใบ: Export รอรวมยอดก่อน ไม่สร้างไฟล์ทันที',
+        r5d.thenable === true && r5d.syncSheets === null, r5d);
+  check('บอกผู้ใช้ว่ากำลังรวมยอดก่อนสร้างไฟล์', /กำลังรวมยอดทุก Job/.test(r5d.toast || ''),
+        r5d.toast);
+  check('⭐ ไฟล์ได้ครบทั้งรอบ 4 SKU ไม่ใช่ 3 ของใบเดียว', r5d.s4 === 4, r5d.s4);
+  check('⭐ ชีท "มีโชว์ไม่มีสต็อก" มี P3 จากใบอื่น', r5d.s3.join(',') === 'P3', r5d.s3);
+  check('ยังได้ไฟล์ออกมาจริง', /\.xlsx$/.test(r5d.fileName || ''), r5d.fileName);
+
+  /* กฎเดิมตั้งแต่ v2.7.x — รอบใบเดียวต้องไม่ถูกลากไปรอ promise */
+  const r5e = await page.evaluate(() => {
+    window.__seed(window.__SCANS);
+    let fileName = null;
+    const realCreate = URL.createObjectURL, realClick = HTMLAnchorElement.prototype.click;
+    URL.createObjectURL = function () { return 'blob:fake'; };
+    URL.revokeObjectURL = function () {};
+    HTMLAnchorElement.prototype.click = function () { fileName = this.download; };
+    const ret = exportStockDisplayExcel();
+    URL.createObjectURL = realCreate; HTMLAnchorElement.prototype.click = realClick;
+    return { thenable: !!(ret && typeof ret.then === 'function'), fileName: fileName };
+  });
+  check('⭐ รอบใบเดียวยังทำงานทันทีแบบเดิม ไม่แตะเน็ต',
+        r5e.thenable === false && /\.xlsx$/.test(r5e.fileName || ''), r5e);
 
   console.log('\n--- console/page errors ---');
   console.log(errors.slice(0, 10).join('\n') || '(none)');
