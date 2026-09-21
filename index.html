@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.16.7">
+<meta name="version" content="2.16.8">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.16.7</title>
+<title>ISRD Stocktake v2.16.8</title>
 
 <style>
 :root{
@@ -1854,7 +1854,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.16.7';
+var APP_VERSION = '2.16.8';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -6930,6 +6930,8 @@ function applyConnStatus(ok, why) {
    ซึ่งอาจโหลดมาไม่ครบตอนเน็ตหลุด แล้วปล่อยให้ตัววาดไปโหลดใหม่เอง */
 function reloadCurrentPage() {
   if (!db.remote || !state.me) return;
+  /* ล้างเฉพาะในหน่วยความจำ ไม่แตะแคชในเครื่อง (v2.16.8) — ตรงนี้คือ "เน็ตกลับมาแล้วโหลดใหม่"
+     ไม่ใช่ "ข้อมูลเปลี่ยน" รอบที่ปิดแล้วจะได้ขึ้นจากเครื่องทันทีแทนที่จะไปต่อคิวอ่านใหม่ทั้ง 23 ใบ */
   state.cycleStats = {};      // สถิติระดับรอบ — หัวรอบนับจะได้ไม่ค้าง "กำลังรวมยอด"
   state.cycleData = null;     // ยอดรวมทุก Job ที่หน้าสรุปใช้
 
@@ -11463,7 +11465,7 @@ function handleImport(file) {
         state.importUnlocked = false;
         state.lastImport = { stat: result.stat, diff: diff };
         state.cycleData = null;      // ยอดรวมของ cycle เปลี่ยนแล้ว ต้องโหลดใหม่
-        delete state.cycleStats[state.cycleId];
+        dropCycleStats(state.cycleId);
         return Promise.all([refreshProducts(), refreshSystemQty()]).then(function () {
           renderStart();
           showImportReport();
@@ -11502,6 +11504,10 @@ function isStaleJob(job) {
 /* ⭐ v2.10.4 — ขึ้นเลขทุกครั้งที่รูปร่างหรือกติกาของสถิติใบนับเปลี่ยน
    แคชเก่าใน localStorage ที่คิดด้วยกติกาเดิมต้องถูกทิ้ง ไม่ใช่เอามาใช้ต่อจนเลขเพี้ยน */
 var JOB_STATS_V = 2;
+
+/* ⭐ v2.16.8 — เลขเวอร์ชันของแคช "สถิติรวมรอบ" กลไกเดียวกับ JOB_STATS_V ข้างบน
+   ขึ้นเลขนี้เมื่อไหร่ = ทิ้งแคชเก่าในเครื่องทุกใบ ไม่ใช่เอาของที่คิดด้วยกติกาเดิมมาใช้ต่อ */
+var CYCLE_STATS_V = 1;
 
 function computeJobStats(data, sysMap) {
   var scans = data || {};
@@ -11909,13 +11915,76 @@ function dropJobStats(id) {
   if (!id) return;
   delete state.jobStats[id];
   try { localStorage.removeItem('jobStats:' + id); } catch (e) {}
-  delete state.cycleStats[cycleOf(state.roundIndex[id])];
+  dropCycleStats(cycleOf(state.roundIndex[id]));
+}
+
+/* ============================================================
+   แคชสถิติรวมรอบลงเครื่อง — เฉพาะรอบที่ปิดแล้ว (v2.16.8)
+   ============================================================
+
+   อาการที่แก้: หน้า "ภาพรวมทุกสาขา" ตัวกรอง "ทั้งหมด" ค้าง "..." ทุกคอลัมน์หลังรีเฟรช
+   เพราะทั้ง 23 รอบสั่งอ่านยอดระบบพร้อมกัน แต่ช่องอ่านเบื้องหลังมีแค่ BG_MAX=2
+   รอบคลัง WH ก้อนใหญ่จ่มทั้งสองช่องค้างไว้ รอบที่เหลือจึงต่อคิวรอยาว
+   ยอดยิงรายใบ (jobStats) แคชลงเครื่องมาตั้งแต่ v2.10.4 แต่สถิติรวมรอบไม่เคยแคช
+   รีเฟรชทีจึงอ่านใหม่ทั้ง 23 รอบทุกครั้ง ทั้งที่ 20 กว่ารอบปิดไปแล้วและเลขไม่มีวันขยับ
+
+   แคชเฉพาะรอบ closed เท่านั้น — counting/reviewing ต้องอ่านสดเสมอ
+   เพราะคนกำลังยิงอยู่ ตัวเลขต้องขยับตามของจริง ไม่ใช่ค้างเลขเมื่อตอนเปิดแอป */
+function cycleStatsKey(cid) { return 'cycleStats:' + cid; }
+
+/* diffValue คิดจากราคาที่เลือกอยู่ (ขาย/ต้นทุน) ถ้าไม่ผูกไว้กับแคช
+   คนสลับปุ่มราคาแล้วรีเฟรช จะได้มูลค่าของราคาอีกชุดค้างถาวร */
+function cachedCycleStats(cid) {
+  if (cycleStatus(cid) !== 'closed') return null;
+  try {
+    var raw = localStorage.getItem(cycleStatsKey(cid));
+    if (!raw) return null;
+    var st = JSON.parse(raw);
+    if (st && st.cid === cid && st.v === CYCLE_STATS_V && st.price === state.priceField) {
+      state.cycleStats[cid] = st;
+      return st;
+    }
+    if (st) localStorage.removeItem(cycleStatsKey(cid));
+  } catch (e) {}
+  return null;
+}
+
+function saveCycleStats(cid, stat) {
+  if (!stat || cycleStatus(cid) !== 'closed') return;
+  /* ทะเบียนสินค้ายังมาไม่ถึง = countsAsRealRow กรองแถวด้วยข้อมูลไม่ครบ
+     เลขที่ได้ตอนนี้อาจผิด ห้ามเก็บลงเครื่องให้ค้างข้ามการเปิดแอป */
+  if (!state.products || !Object.keys(state.products).length) return;
+  try { localStorage.setItem(cycleStatsKey(cid), JSON.stringify(stat)); } catch (e) {}
+}
+
+/* ล้างทั้งในหน่วยความจำและในเครื่องพร้อมกันเสมอ — ลบแค่ในหน่วยความจำไม่พอ
+   รีเฟรชทีเดียวของเก่าก็กลับมาจากเครื่อง (เคสสำคัญสุด: รอบ closed ถูกเปิดใหม่) */
+function dropCycleStats(cid) {
+  if (!cid) return;
+  delete state.cycleStats[cid];
+  try { localStorage.removeItem(cycleStatsKey(cid)); } catch (e) {}
+}
+
+function dropAllCycleStats() {
+  state.cycleStats = {};
+  try {
+    var kill = [];
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (k && k.indexOf('cycleStats:') === 0) kill.push(k);
+    }
+    kill.forEach(function (k) { localStorage.removeItem(k); });
+  } catch (e) {}
 }
 
 /* สถิติระดับ "รอบนับ" — ยอดระบบก้อนเดียวเทียบกับยอดยิงรวมของทุก Job ในรอบ
    ใช้ loadJobStats ตัวเดิมเป็นฐาน ตัวเลขจึงตรงกับการ์ด Job เสมอและอ่านฐานซ้ำน้อยที่สุด */
 function loadCycleStats(cid) {
   if (state.cycleStats[cid]) return Promise.resolve(state.cycleStats[cid]);
+  /* ⭐ v2.16.8 — รอบปิดแล้วที่เคยคิดไว้ ขึ้นจากเครื่องได้เลย ไม่ต้องแตะเน็ต
+     ต้องอยู่ก่อน onceInflight ไม่ใช่ข้างใน ไม่งั้นยังไปจองช่องอ่านเบื้องหลังอยู่ดี */
+  var cached = cachedCycleStats(cid);
+  if (cached) return Promise.resolve(cached);
   /* ⭐ ทุกการ์ดในรอบเรียกตัวนี้พร้อมกันใน tick เดียว แคชด้านบนจึงยังว่างทุกใบ
      ต้องกันซ้ำด้วย "ใบที่กำลังบิน" ไม่ใช่แค่แคชผลลัพธ์ ไม่งั้นงานโตเป็นกำลังสอง */
   return onceInflight('cycle:' + cid, function () {
@@ -11959,6 +12028,8 @@ function loadCycleStats(cid) {
 
     var stat = {
       cid: cid,
+      v: CYCLE_STATS_V,
+      price: state.priceField,
       jobs: ids.length,
       skuTotal: Object.keys(sys).length,
       skuScanned: all.filter(function (k) { return (counts[k] || 0) !== 0; }).length,
@@ -11970,6 +12041,7 @@ function loadCycleStats(cid) {
       lastTs: lastTs
     };
     state.cycleStats[cid] = stat;
+    saveCycleStats(cid, stat);
     return stat;
   }).catch(function () { return null; });
   });
@@ -13046,7 +13118,7 @@ function changeJobStatus(next, extra) {
     /* สถานะรอบนับต้องตามสถานะ Job เสมอ — Database Rules ใช้ค่านี้ล็อกยอดระบบ (ข้อ F6)
        อัปเดตในเครื่องก่อน เพราะ deriveCycleStatus อ่านจาก state ไม่ได้รอสตรีมกลับมา */
     if (state.roundIndex[id]) state.roundIndex[id].status = next;
-    delete state.cycleStats[cycleOf(state.roundIndex[id])];
+    dropCycleStats(cycleOf(state.roundIndex[id]));
     return syncCycleStatus(cycleOf(state.roundIndex[id]));
   });
 }
@@ -13998,7 +14070,7 @@ function purgeUserScansChecked(targetUser) {
         /* เฟรมลบไม่ถูกส่งต่อโดย subscribeChildren (มันข้ามค่า null)
            ยอดในเครื่องจึงยังค้างอยู่ ต้องโหลดรอบใหม่ทั้งก้อน ไม่ใช่หวังให้สตรีมซ่อมเอง */
         state.cycleData = null;
-        state.cycleStats = {};
+        dropAllCycleStats();
         plan.jobs.forEach(function (j) { dropJobStats(j.id); });
         selectRound(state.roundId);
         return res.done.length > 0;
@@ -16936,7 +17008,7 @@ function startApp() {
     if (first) {
       migrateCyclesIfNeeded().then(function (report) {
         if (!report) return;
-        state.cycleStats = {};
+        dropAllCycleStats();
         showCycleMigrationReport(report);
         if (state.roundId) refreshSystemQty();
         if (state.page === 'jobs') renderJobs();
