@@ -653,6 +653,189 @@ function check(name, ok, got) {
         /นับเฉพาะสินค้า \(Product\)/.test(r6d.head) && /ไม่รวม Not Product/.test(r6d.head),
         r6d.head);
 
+  /* ---------- [7] ของที่ลบไปแล้ว (ยอดสุทธิ <= 0) ---------- */
+  console.log('\n[7] ⭐ ยอดสุทธิ 0 หรือติดลบ = ของที่ลบไปแล้ว ต้องไม่โผล่');
+  const r7 = await page.evaluate(() => {
+    window.__seed([
+      { code: 'POS1', delta: 5, mode: 'scan', user: 'ท', ts: 1, stockType: 'stock' },
+      /* ยิงแล้วลบทับจนติดลบ — ไม่มีฝั่งไหนเป็นบวก เคยไปกองใน "ยังไม่ระบุประเภท" */
+      { code: 'NEG1', delta: 3, mode: 'scan', user: 'ท', ts: 2 },
+      { code: 'NEG1', delta: -4, mode: 'scan', user: 'ท', ts: 3 },
+      /* ติดลบทั้งที่ติดประเภทมาด้วย — ต้องตัดเหมือนกัน */
+      { code: 'NEG2', delta: 2, mode: 'scan', user: 'ท', ts: 4, stockType: 'stock' },
+      { code: 'NEG2', delta: -5, mode: 'scan', user: 'ท', ts: 5, stockType: 'stock' },
+      /* หักคืนจนเหลือ 0 พอดี — กติกาเดิมตั้งแต่แรก ต้องยังตัดอยู่ */
+      { code: 'ZERO1', delta: 4, mode: 'scan', user: 'ท', ts: 6, stockType: 'stock' },
+      { code: 'ZERO1', delta: -4, mode: 'scan', user: 'ท', ts: 7, stockType: 'stock' }
+    ]);
+    state.products = {
+      POS1: { code: 'POS1', name: 'ของที่ยังอยู่', type: 'product', costPrice: 10 },
+      NEG1: { code: 'NEG1', name: 'ของที่ลบแล้ว', type: 'product', costPrice: 10 },
+      NEG2: { code: 'NEG2', name: 'ของที่ลบแล้วสอง', type: 'product', costPrice: 10 },
+      ZERO1: { code: 'ZERO1', name: 'ของที่หักคืนหมด', type: 'product', costPrice: 10 }
+    };
+    state.systemQty = { POS1: 5, NEG1: 0, NEG2: 0, ZERO1: 4 };
+    state.counts = {}; state.scanQty = {}; state.appliedScanIds = Object.create(null);
+    buildScanIndex();
+    const rep = stockDisplayReport();
+    let sheets = null;
+    const realBuild = window.buildXlsx, realCreate = URL.createObjectURL;
+    const realClick = HTMLAnchorElement.prototype.click;
+    window.buildXlsx = function (x) { sheets = x; return realBuild(x); };
+    URL.createObjectURL = function () { return 'blob:fake'; };
+    URL.revokeObjectURL = function () {};
+    HTMLAnchorElement.prototype.click = function () {};
+    exportStockDisplayExcel();
+    window.buildXlsx = realBuild; URL.createObjectURL = realCreate;
+    HTMLAnchorElement.prototype.click = realClick;
+    return { total: rep.total, counts: rep.counts,
+             codes: rep.rows.map(function (r) { return r.code; }).sort(),
+             net: (function () {                     // ยอดสุทธิจากแถวดิบ พิสูจน์ว่าฉากที่จัดไว้ติดลบจริง
+               const o = {};
+               state.scanLog.forEach(function (x) {
+                 o[x.rec.code] = (o[x.rec.code] || 0) + x.rec.delta;
+               });
+               return o;
+             })(),
+             dump: JSON.stringify(sheets) };
+  });
+  check('ยอดดิบติดลบจริงตามที่จัดฉากไว้',
+        r7.net.NEG1 === -1 && r7.net.NEG2 === -3 && r7.net.ZERO1 === 0, r7.net);
+  check('⭐ ของที่ลบไปแล้วไม่โผล่ในรายงาน', r7.codes.join(',') === 'POS1', r7.codes);
+  check('⭐ กอง "ยังไม่ระบุประเภท" ไม่มีของติดลบค้างอยู่',
+        r7.counts.uncategorized === 0 && r7.total === 1, r7.counts);
+  check('ของยอดบวกยังนับครบเหมือนเดิม', r7.counts.stock_no_display === 1, r7.counts);
+  check('⭐ ไฟล์ Excel ก็ไม่มีของที่ลบแล้วปน',
+        r7.dump.indexOf('NEG1') < 0 && r7.dump.indexOf('NEG2') < 0 &&
+        r7.dump.indexOf('ZERO1') < 0, r7.dump.slice(0, 160));
+
+  /* ---------- [8] กดการ์ดเพื่อกรองตาราง ---------- */
+  console.log('\n[8] ⭐ กดการ์ดแล้วตารางสลับกลุ่ม');
+  await page.evaluate(() => {
+    /* ราคาต่างกันทุกตัว และจงใจให้ "จำนวนมากสุด" กับ "มูลค่ามากสุด" เป็นคนละตัว
+       จะได้รู้ว่าปุ่มเรียงใช้เลขของกลุ่มที่กำลังดูจริง ไม่ใช่ไปหยิบยอดฝั่งสต็อกมาตลอด */
+    window.__seedView = function () {
+      window.__seed([
+        { code: 'S1', delta: 10, mode: 'scan', user: 'ท', ts: 1, stockType: 'stock' },
+        { code: 'S2', delta: 3, mode: 'scan', user: 'ท', ts: 2, stockType: 'stock' },
+        { code: 'D1', delta: 7, mode: 'scan', user: 'ท', ts: 3, stockType: 'display' },
+        { code: 'D2', delta: 2, mode: 'scan', user: 'ท', ts: 4, stockType: 'display' },
+        { code: 'B1', delta: 4, mode: 'scan', user: 'ท', ts: 5, stockType: 'stock' },
+        { code: 'B1', delta: 6, mode: 'scan', user: 'ท', ts: 6, stockType: 'display' },
+        { code: 'U1', delta: 9, mode: 'scan', user: 'ท', ts: 7 }
+      ]);
+      state.products = {
+        S1: { code: 'S1', name: 'สต็อกล้วนถูก', type: 'product', costPrice: 10 },
+        S2: { code: 'S2', name: 'สต็อกล้วนแพง', type: 'product', costPrice: 100 },
+        D1: { code: 'D1', name: 'โชว์ล้วนหนึ่ง', type: 'product', costPrice: 20 },
+        D2: { code: 'D2', name: 'โชว์ล้วนสอง', type: 'product', costPrice: 5 },
+        B1: { code: 'B1', name: 'มีทั้งสองฝั่ง', type: 'product', costPrice: 10 },
+        U1: { code: 'U1', name: 'ยังระบุไม่ได้', type: 'product', costPrice: 3 }
+      };
+      state.systemQty = { S1: 10, S2: 3, D1: 7, D2: 2, B1: 10, U1: 9 };
+      state.counts = {}; state.scanQty = {}; state.appliedScanIds = Object.create(null);
+      state.sdView = 'stock_no_display'; state.sdSort = 'value';
+      if ($('sdSearch')) $('sdSearch').value = '';
+      buildScanIndex();
+    };
+    window.__sdTable = function () {
+      return {
+        title: ($('sdTableTitle') || {}).textContent,
+        chip: ($('sdChip') || {}).textContent,
+        rows: Array.prototype.map.call(document.querySelectorAll('#sdBody [data-sdrow]'),
+          function (tr) {
+            const td = tr.querySelectorAll('td');
+            return td[0].textContent + ':' + td[3].textContent + ':' + td[5].textContent;
+          }),
+        active: Array.prototype.filter.call(document.querySelectorAll('[data-sdcard]'),
+          function (c) { return c.classList.contains('sd-active'); })
+          .map(function (c) { return c.getAttribute('data-sdcard'); }),
+        pressed: Array.prototype.filter.call(document.querySelectorAll('[data-sdcard]'),
+          function (c) { return c.getAttribute('aria-pressed') === 'true'; })
+          .map(function (c) { return c.getAttribute('data-sdcard'); })
+      };
+    };
+  });
+
+  const r8 = await page.evaluate(() => {
+    window.__seedView();
+    const rep = stockDisplayReport();
+    const out = {};
+    ['stock_no_display', 'display_no_stock', 'both', 'uncategorized'].forEach(function (v) {
+      state.sdView = v;
+      out[v] = sdVisibleRows(rep).map(function (r) {
+        return r.code + ':' + sdRowQty(r, v) + ':' + sdRowValue(r, v);
+      });
+    });
+    return out;
+  });
+  check('⭐ กลุ่มมีสต็อกไม่มีโชว์ — ใช้ยอดฝั่งสต็อก เรียงตามมูลค่า',
+        r8.stock_no_display.join(' | ') === 'S2:3:300 | S1:10:100', r8.stock_no_display);
+  check('⭐ กลุ่มมีโชว์ไม่มีสต็อก — ใช้ยอดฝั่งโชว์ ไม่ใช่ 0 ทั้งคอลัมน์',
+        r8.display_no_stock.join(' | ') === 'D1:7:140 | D2:2:10', r8.display_no_stock);
+  check('⭐ กลุ่มมีทั้งสองฝั่ง — ใช้ยอดรวมสองฝั่ง (4+6)',
+        r8.both.join(' | ') === 'B1:10:100', r8.both);
+  check('⭐ กลุ่มยังไม่ระบุ — ใช้ยอดดิบ ไม่งั้นตารางขึ้น 0 หมด',
+        r8.uncategorized.join(' | ') === 'U1:9:27', r8.uncategorized);
+
+  const r8b = await page.evaluate(() => {
+    window.__seedView();
+    const rep = stockDisplayReport();
+    state.sdView = 'display_no_stock';
+    state.sdSort = 'qty';
+    const byQty = sdVisibleRows(rep).map(function (r) { return r.code; });
+    state.sdSort = 'value';
+    const byValue = sdVisibleRows(rep).map(function (r) { return r.code; });
+    state.sdView = 'stock_no_display';
+    state.sdSort = 'qty';
+    const stockByQty = sdVisibleRows(rep).map(function (r) { return r.code; });
+    return { byQty: byQty, byValue: byValue, stockByQty: stockByQty };
+  });
+  check('เรียงตามจำนวนในกลุ่มโชว์ใช้ยอดโชว์ (7 มาก่อน 2)',
+        r8b.byQty.join(',') === 'D1,D2', r8b.byQty);
+  check('เรียงตามมูลค่าในกลุ่มโชว์ใช้ยอดโชว์ × ราคา (140 มาก่อน 10)',
+        r8b.byValue.join(',') === 'D1,D2', r8b.byValue);
+  check('เรียงตามจำนวนในกลุ่มสต็อกยังใช้ยอดสต็อกเหมือนเดิม (10 มาก่อน 3)',
+        r8b.stockByQty.join(',') === 'S1,S2', r8b.stockByQty);
+
+  const r8c = await page.evaluate(() => {
+    window.__seedView();
+    renderStockDisplay();
+    const start = window.__sdTable();
+    /* กดการ์ด "มีโชว์ ไม่มีสต็อก" เหมือนผู้ใช้กดจริง */
+    document.querySelector('[data-sdcard="display_no_stock"]').click();
+    const afterClick = window.__sdTable();
+    const viewState = state.sdView;
+    document.querySelector('[data-sdcard="uncategorized"]').click();
+    const afterSecond = window.__sdTable();
+    /* ค้นหาต้องยังทำงานภายในกลุ่มที่เลือกอยู่ */
+    document.querySelector('[data-sdcard="stock_no_display"]').click();
+    $('sdSearch').value = 'แพง';
+    renderSdTable();
+    const searched = window.__sdTable();
+    $('sdSearch').value = '';
+    return { start: start, afterClick: afterClick, viewState: viewState,
+             afterSecond: afterSecond, searched: searched,
+             tag: document.querySelector('[data-sdcard]').tagName };
+  });
+  check('เริ่มต้นอยู่กลุ่ม "มีสต็อก ไม่มีโชว์" เหมือนเดิม',
+        r8c.start.title === 'มีสต็อก ไม่มีโชว์' && r8c.start.chip === '2' &&
+        r8c.start.active.join(',') === 'stock_no_display', r8c.start);
+  check('⭐ กดการ์ดแล้วตารางสลับกลุ่มตาม',
+        r8c.viewState === 'display_no_stock' &&
+        r8c.afterClick.title === 'มีโชว์ ไม่มีสต็อก' && r8c.afterClick.chip === '2' &&
+        r8c.afterClick.rows.join(' | ') === 'D1:7:140.00 | D2:2:10.00', r8c.afterClick);
+  check('⭐ ไฮไลต์ย้ายไปการ์ดที่กด ใบเดียวเท่านั้น',
+        r8c.afterClick.active.join(',') === 'display_no_stock' &&
+        r8c.afterClick.pressed.join(',') === 'display_no_stock', r8c.afterClick);
+  check('กดใบ "ยังไม่ระบุประเภท" ก็ได้',
+        r8c.afterSecond.title === 'ยังไม่ระบุประเภท' &&
+        r8c.afterSecond.rows.join(' | ') === 'U1:9:27.00', r8c.afterSecond);
+  check('ค้นหายังกรองอยู่ในกลุ่มที่เลือก',
+        r8c.searched.rows.join(' | ') === 'S2:3:300.00' && r8c.searched.chip === '1',
+        r8c.searched);
+  check('การ์ดเป็น <button> จริง กดด้วยคีย์บอร์ดได้', r8c.tag === 'BUTTON', r8c.tag);
+
   console.log('\n--- console/page errors ---');
   console.log(errors.slice(0, 10).join('\n') || '(none)');
   check('ไม่มี error ในคอนโซลเลยสักข้อ', errors.length === 0, errors.slice(0, 3));

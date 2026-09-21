@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.16.4">
+<meta name="version" content="2.16.5">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.16.4</title>
+<title>ISRD Stocktake v2.16.5</title>
 
 <style>
 :root{
@@ -476,6 +476,9 @@ table.grid td.neg{color:var(--short);font-weight:700}
    ต้องรีเซ็ต font/สีเอง ไม่งั้นเบราว์เซอร์ยัดสไตล์ปุ่มของตัวเองมาทับ */
 .stat.tap{font:inherit;color:inherit;width:100%;cursor:pointer;border-color:var(--line)}
 .stat.tap:active{background:#f1f5f9}
+/* การ์ดใบที่กดอยู่ในรายงานโชว์/สต็อก — ใช้ outline ไม่ใช่ border เพราะ border ทำให้การ์ด
+   ขยับทีละ 1px เวลาสลับใบ แถวการ์ดทั้งแถวจะกระตุกทุกครั้งที่กด */
+.stat.sd-active{outline:2px solid var(--brand);outline-offset:2px}
 .stat .s-num.pos{color:var(--over)}
 .stat .s-num.neg{color:var(--short)}
 /* nowrap — ตัวเลขเงินกับเครื่องหมายบวกลบต้องอยู่บรรทัดเดียวกันเสมอ
@@ -1460,7 +1463,7 @@ body.no-doc-images .doc .imgbox{display:none}
       <div class="clist" id="sdGroups"></div>
     </div>
     <div class="card">
-      <h3>มีสต็อก ไม่มีโชว์ <span class="chip" id="sdChip">0</span></h3>
+      <h3><span id="sdTableTitle">มีสต็อก ไม่มีโชว์</span> <span class="chip" id="sdChip">0</span></h3>
       <input type="text" id="sdSearch" placeholder="🔍 ค้นหารหัส ชื่อ หรือกลุ่ม" autocomplete="off">
       <div class="filters" id="sdSortBtns" style="margin-top:8px">
         <button class="btn sm" data-sdsort="value">มูลค่ามาก→น้อย</button>
@@ -1471,7 +1474,7 @@ body.no-doc-images .doc .imgbox{display:none}
     <div class="tablewrap">
       <table class="grid" id="sdTable">
         <thead><tr><th>รหัส</th><th>ชื่อสินค้า</th><th>กลุ่ม</th>
-          <th>Stock (ชิ้น)</th><th>โซน</th><th>มูลค่า</th></tr></thead>
+          <th>จำนวน (ชิ้น)</th><th>โซน</th><th>มูลค่า</th></tr></thead>
         <tbody id="sdBody"></tbody>
       </table>
     </div>
@@ -1844,7 +1847,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.16.4';
+var APP_VERSION = '2.16.5';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -4004,6 +4007,7 @@ var state = {
   locationFilter: '',                       // กรองเฉพาะ Location ที่ขึ้นต้นด้วย...
   scanType: 'stock',                        // ประเภทของที่กำลังนับ: display | stock | asset
   sdSort: 'value',                          // การเรียงในตารางรายงานโชว์/สต็อก
+  sdView: 'stock_no_display',               // การ์ดใบที่กดอยู่ = สถานะที่ตารางล่างกำลังโชว์
   customStatuses: [],                       // ค่า status ที่แอดมินเพิ่มเอง
   customStoreTypes: [],                     // ประเภทคลังย่อยที่แอดมินเพิ่มเอง
   docScope: 'job',                          // เอกสาร: 'job' = เฉพาะ Job นี้ · 'cycle' = รวมทั้งสาขา
@@ -12001,8 +12005,10 @@ function stockDisplayReport() {
   Object.keys(per).forEach(function (k) {
     var e = per[k];
     var act = e.disp + e.stock + e.other;
-    /* ยิงแล้วหักคืนจนเหลือ 0 = ไม่มีของจริง ไม่ต้องรายงาน (กติกาเดียวกับแถวผี) */
-    if (act === 0) return;
+    /* ยิงแล้วหักคืนจนเหลือ 0 หรือติดลบ = ไม่มีของจริงแล้ว ไม่ต้องรายงาน
+       ติดลบเกิดจากแถวลบที่ยิงทับของที่นับไว้คนละใบ หรือรหัสที่แอดมินสั่งลบทิ้งไปแล้ว
+       เช็คแค่ === 0 ไม่พอ ของพวกนี้เคยหลุดไปกองใน "ยังไม่ระบุประเภท" เพราะไม่มีฝั่งไหนเป็นบวก */
+    if (act <= 0) return;
     var p = state.products[k] || {};
     /* รายงานนี้ถามว่า "ของขายตัวไหนมีในสต็อกแต่ไม่ได้เอาออกมาโชว์" — ถุง ป้าย อุปกรณ์ร้าน
        ไม่ได้เอาออกมาโชว์อยู่แล้วโดยธรรมชาติ ปนอยู่ก็มีแต่ทำให้กอง "ยังไม่ระบุประเภท" บวม
@@ -12060,9 +12066,24 @@ var SD_TONE = {
   stock_no_display: 'neg', display_no_stock: 'pos', both: '', uncategorized: 'muted'
 };
 
+/* จำนวนที่ "มีความหมาย" ของแถวขึ้นกับว่ากำลังดูสถานะไหน
+   กลุ่มมีแต่สต็อกสนใจยอดฝั่งสต็อก · กลุ่มมีแต่โชว์สนใจยอดฝั่งโชว์ · มีทั้งคู่ดูยอดรวม
+   ส่วนกลุ่มที่ยังระบุไม่ได้ ไม่มีฝั่งไหนเป็นบวกเลย ต้องใช้ยอดดิบไม่งั้นตารางขึ้น 0 ทั้งคอลัมน์
+   แยกเป็นฟังก์ชันเพราะทั้งตอนวาดและตอนเรียงต้องใช้เลขเดียวกัน เขียนสองที่แล้วจะเพี้ยนกัน */
+function sdRowQty(r, view) {
+  if (view === 'display_no_stock') return r.dispQty;
+  if (view === 'stock_no_display') return r.stockQty;
+  if (view === 'both') return r.dispQty + r.stockQty;
+  return r.otherQty || r.act;
+}
+function sdRowValue(r, view) { return Math.round(sdRowQty(r, view) * (r.price || 0)); }
+
+function sdView() { return state.sdView || 'stock_no_display'; }
+
 function sdVisibleRows(rep) {
   var q = normText(($('sdSearch') || {}).value || '');
-  var rows = rep.rows.filter(function (r) { return r.status === 'stock_no_display'; });
+  var view = sdView();
+  var rows = rep.rows.filter(function (r) { return r.status === view; });
   if (q) {
     rows = rows.filter(function (r) {
       return normText(r.code + ' ' + r.name + ' ' + r.group).indexOf(q) >= 0;
@@ -12070,9 +12091,9 @@ function sdVisibleRows(rep) {
   }
   var by = state.sdSort;
   return rows.sort(function (a, b) {
-    if (by === 'qty') return b.stockQty - a.stockQty;
+    if (by === 'qty') return sdRowQty(b, view) - sdRowQty(a, view);
     if (by === 'code') return String(a.code).localeCompare(String(b.code), 'th');
-    return b.value - a.value;
+    return sdRowValue(b, view) - sdRowValue(a, view);
   });
 }
 
@@ -12108,13 +12129,20 @@ function renderStockDisplay() {
     });
   }
 
-  /* ---- การ์ด 4 ใบ พร้อม % ของจำนวน SKU ทั้งหมด ---- */
+  /* ---- การ์ด 4 ใบ พร้อม % ของจำนวน SKU ทั้งหมด ----
+     กดการ์ดแล้วตารางล่างสลับไปโชว์กลุ่มนั้น — เดิมดูได้แต่กลุ่มเดียว อีกสามกลุ่มต้อง export ไปเปิด Excel
+     ทำเป็น <button> จริงเหมือนการ์ด ตรง/ขาด/เกิน ในหน้าสรุป จะได้กดด้วยคีย์บอร์ดได้ด้วย */
   var cards = $('sdCards');
   cards.innerHTML = '';
+  var view = sdView();
   SD_ORDER.forEach(function (k) {
-    var b = document.createElement('div');
-    b.className = 'stat';
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'stat tap' + (k === view ? ' sd-active' : '');
     b.setAttribute('data-sdcard', k);
+    b.setAttribute('aria-pressed', k === view ? 'true' : 'false');
+    b.title = 'ดูรายการกลุ่ม "' + SD_STATUS[k] + '" ในตารางข้างล่าง';
+    b.onclick = function () { state.sdView = k; renderStockDisplay(); };
     var num = document.createElement('div');
     num.className = 's-num ' + (SD_TONE[k] || '');
     num.setAttribute('data-sdnum', k);
@@ -12220,7 +12248,10 @@ function renderSdTable(rep) {
   document.querySelectorAll('[data-sdsort]').forEach(function (b) {
     b.className = 'btn sm ' + (b.getAttribute('data-sdsort') === state.sdSort ? '' : 'grey');
   });
+  var view = sdView();
   var rows = sdVisibleRows(rep);
+  /* หัวตารางต้องบอกว่ากำลังดูกลุ่มไหน ไม่งั้นกดการ์ดแล้วตัวเลขเปลี่ยนแต่ไม่รู้ว่าเปลี่ยนเป็นอะไร */
+  if ($('sdTableTitle')) $('sdTableTitle').textContent = SD_STATUS[view];
   $('sdChip').textContent = fmtNum(rows.length);
   var body = $('sdBody');
   body.innerHTML = '';
@@ -12236,7 +12267,8 @@ function renderSdTable(rep) {
     var tr = document.createElement('tr');
     tr.setAttribute('data-sdrow', r.code);
     [[r.code, ''], [r.name, ''], [r.group, ''],
-     [fmtNum(r.stockQty), 'num'], [r.zones, ''], [fmtMoney(r.value), 'num']
+     [fmtNum(sdRowQty(r, view)), 'num'], [r.zones, ''],
+     [fmtMoney(sdRowValue(r, view)), 'num']
     ].forEach(function (c) {
       var td = document.createElement('td');
       if (c[1] === 'num') td.style.textAlign = 'right';
