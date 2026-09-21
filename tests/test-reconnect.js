@@ -174,13 +174,22 @@ const HARNESS = `
   check('ตั้งนัดตัดสินออฟไลน์ไว้ที่ grace 6 วิ', r1.delays.indexOf(6000) >= 0, r1.delays);
   check('นับได้ว่ามีสายตายค้างอยู่ 1 สาย', r1.info.dead === 1, r1.info);
   check('นัดเปิดสายใหม่ทันที ไม่รอ grace', r1.info.retryPending === true, r1.info);
-  check('รอบแรกถอยเวลา 2 วิ', r1.info.retryDelay === 2000 && r1.delays.indexOf(2000) >= 0, r1);
+  check('รอบแรกถอยเวลา 2 วิ (ตัวฐาน)', r1.info.retryDelay === 2000, r1.info);
+  /* ⭐ v2.16.6 — ตัวฐานคูณสองตรง ๆ เหมือนเดิม แต่เวลาที่ตั้งนัดจริงถูกสุ่มกระจาย ±25%
+     คนนับทั้งคลังอยู่ใต้ AP ตัวเดียวกัน ถ้าไม่สุ่มจะยิงกลับพร้อมกันเป็นชุดจนโดน rate limit */
+  check('⭐ เวลาที่ตั้งนัดจริงถูกสุ่มรอบตัวฐาน (1.5-2.5 วิ)',
+        r1.info.retryWait >= 1500 && r1.info.retryWait <= 2500 &&
+        r1.delays.indexOf(r1.info.retryWait) >= 0,
+        { wait: r1.info.retryWait, delays: r1.delays });
+  check('⭐ ตั้งนัดสองจังหวะ: 6 วิบอกกำลังต่อใหม่ · 18 วิจึงประกาศออฟไลน์',
+        r1.delays.indexOf(6000) >= 0 && r1.delays.indexOf(18000) >= 0, r1.delays);
 
   /* ---------- [2]+[4] นัดครบเวลา → สร้างสายใหม่จริง + ถอยเวลาเพิ่ม ---------- */
   console.log('\n[2] ถอยเวลาเพิ่มทีละเท่า และสร้างสายใหม่จริงทุกรอบ');
   const r2 = await page.evaluate(() => {
     const steps = [];
-    let expect = 2000;
+    /* ต้องสั่งนัดด้วยเวลาที่ตั้งจริง (retryWait) ไม่ใช่ตัวฐาน เพราะ jitter ทำให้ไม่เท่ากันแล้ว */
+    let expect = db.connInfo().retryWait;
     for (let i = 0; i < 6; i++) {
       window.__hookTimers();
       const before = window.__es.length;
@@ -191,8 +200,9 @@ const HARNESS = `
       window.__esKill(fresh);
       const info = db.connInfo();
       window.__unhookTimers();
-      steps.push({ ran: expect, made: made, next: info.retryDelay, pending: info.retryPending });
-      expect = info.retryDelay;
+      steps.push({ ran: expect, made: made, next: info.retryDelay, wait: info.retryWait,
+                   pending: info.retryPending });
+      expect = info.retryWait;
     }
     return steps;
   });
@@ -200,6 +210,16 @@ const HARNESS = `
   check('เวลาถอยเดิน 4→8→16→30→30→30',
         r2.map(s => s.next).join(',') === '4000,8000,16000,30000,30000,30000', r2.map(s => s.next));
   check('เพดานไม่เกิน 30 วิ', r2.every(s => s.next <= 30000), r2.map(s => s.next));
+  check('⭐ เวลาที่ตั้งจริงอยู่ในกรอบ ±25% ของตัวฐานทุกรอบ',
+        r2.every(s => s.wait >= s.next * 0.75 && s.wait <= s.next * 1.25),
+        r2.map(s => s.next + '→' + s.wait));
+  /* กรอบ ±25% อย่างเดียวจับไม่ได้ว่ามีการสุ่มจริง — ไม่สุ่มเลย (wait = ตัวฐาน) ก็ผ่านกรอบ
+     6 รอบแล้วตรงกับตัวฐานเป๊ะทุกรอบ = ไม่ได้สุ่ม (โอกาสบังเอิญแทบเป็นศูนย์) */
+  check('⭐ สุ่มจริง ไม่ได้ใช้ตัวฐานตรง ๆ ทุกรอบ',
+        r2.some(s => s.wait !== s.next), r2.map(s => s.next + '→' + s.wait));
+  check('⭐ ไม่ยอมแพ้ — ชนเพดานแล้วยังนัดต่อไม่หยุด',
+        r2[r2.length - 1].pending === true && r2[r2.length - 1].next === 30000,
+        r2[r2.length - 1]);
   check('ยังมีนัดรออยู่ตลอดที่ยังต่อไม่ได้', r2.every(s => s.pending === true), r2.map(s => s.pending));
 
   /* ---------- [2b] ต่อได้แล้วต้องหยุด ---------- */
@@ -223,8 +243,13 @@ const HARNESS = `
     window.__esLive().forEach(function (es) { window.__esOpen(es); });
     const liveBefore = window.__esLive().length;
     window.__hookTimers();
+    /* ล้างนัดค้างจากบล็อกก่อน — สายถูกเปิดคืนตอนยังไม่ hook นัดเก่าจึงค้างในลิสต์
+       ไม่ล้างแล้วจะนับนัดของบล็อก [2] มารวมด้วย */
+    window.__resetTimers();
     window.__esLive().forEach(function (es) { window.__esKill(es); });   /* ตายพร้อมกันทุกสาย */
-    const delays = window.__timerDelays().filter(function (m) { return m === 2000; });
+    /* jitter ทำให้จับด้วยเลข 2000 ตรง ๆ ไม่ได้แล้ว — คัดนัดของแถบสถานะ (6/18 วิ) ออก
+       ที่เหลือคือนัดเปิดสายใหม่ ซึ่งต้องมีใบเดียวต่อให้ทุกสายร้องพร้อมกัน */
+    const delays = window.__timerDelays().filter(function (m) { return m !== 6000 && m !== 18000; });
     const info = db.connInfo();
     window.__unhookTimers();
     return { liveBefore: liveBefore, scheduled: delays.length, info: info };
@@ -237,7 +262,7 @@ const HARNESS = `
   console.log('\n[5] สายหนึ่งตายแต่อีกสายยังส่งข้อมูล — นัดของสายที่ตายต้องไม่ถูกยกเลิก');
   const r5 = await page.evaluate(() => {
     window.__hookTimers();
-    window.__runTimer(2000);                       /* เปิดใหม่ทุกสายที่ตาย */
+    window.__runTimer(db.connInfo().retryWait);    /* เปิดใหม่ทุกสายที่ตาย */
     window.__unhookTimers();
     const live = window.__esLive();
     live.forEach(function (es) { window.__esOpen(es); });   /* ทุกสายกลับมาดี */
@@ -260,7 +285,7 @@ const HARNESS = `
   console.log('\n[9] สายแค่สะดุด (ยัง CONNECTING) ต้องไม่เด้งออฟไลน์ทันที');
   const r9 = await page.evaluate(() => {
     /* เคลียร์สภาพก่อน: เปิดทุกสายให้ดีหมด */
-    window.__hookTimers(); window.__runTimer(db.connInfo().retryDelay); window.__unhookTimers();
+    window.__hookTimers(); window.__runTimer(db.connInfo().retryWait); window.__unhookTimers();
     window.__esLive().forEach(function (es) { window.__esOpen(es); });
     window.__status.length = 0;
 
@@ -275,22 +300,52 @@ const HARNESS = `
   });
   check('ยังไม่ประกาศออฟไลน์ทันที', r9.statusNow.length === 0, r9.statusNow);
   check('ตั้ง grace 6 วิไว้เหมือนเดิม', r9.delays.indexOf(6000) >= 0, r9.delays);
+  check('⭐ และมีนัด 18 วิไว้ตัดสินออฟไลน์จริง', r9.delays.indexOf(18000) >= 0, r9.delays);
   /* ⭐ v2.9.5 — ลองเปิดสายใหม่ตั้งแต่ยังอยู่ใน grace ไม่ต้องรอให้ครบ 6 วิก่อน
      ยิ่งเปิดใหม่ได้เร็ว โอกาสที่ banner จะไม่ต้องเด้งเลยยิ่งสูง */
   check('นัดเปิดสายใหม่ทันทีแม้ยังอยู่ใน grace',
         r9.info.retryPending === true && r9.info.retryDelay === 2000, r9.info);
 
-  console.log('\n[9b] เลย grace แล้วยังไม่กลับ → ประกาศออฟไลน์ + นัดเปิดใหม่');
+  console.log('\n[9b] ⭐ เลย 6 วิ = กำลังต่อใหม่ · เลย 18 วิจึงเป็นออฟไลน์');
   const r9b = await page.evaluate(() => {
+    /* ต่อสายสถานะกลับเข้าหน้าจอด้วย — บล็อก [1] แทนที่ตัวรับด้วยตัวบันทึกล้วน
+       ถ้าไม่ต่อกลับ แถบจะไม่ขยับ แล้วเทสจะวัดแค่ callback ไม่ได้วัดของที่คนเห็นจริง */
+    db.onStatus(function (ok, why) {
+      window.__status.push({ ok: ok, why: why });
+      applyConnStatus(ok, why);
+    });
+    state.connection = 'online';
     window.__hookTimers();
-    window.__runTimer(6000);                        /* grace ครบ */
+    window.__runTimer(6000);                        /* จังหวะแรกครบ */
+    const soft = window.__status.slice();
+    const softInfo = db.connInfo();
+    const softBar = { conn: $('connBar').getAttribute('data-conn'),
+                      cls: $('connBar').className, text: $('connText').textContent };
+    window.__runTimer(18000);                       /* จังหวะสองครบ */
+    const hard = window.__status.slice();
     const info = db.connInfo();
-    const st = window.__status.slice();
+    const hardBar = { conn: $('connBar').getAttribute('data-conn'),
+                      text: $('connText').textContent };
     window.__unhookTimers();
-    return { info: info, st: st };
+    db.onStatus(function (ok, why) { window.__status.push({ ok: ok, why: why }); });
+    return { soft: soft, softInfo: softInfo, softBar: softBar,
+             hard: hard, hardBar: hardBar, info: info };
   });
-  check('ประกาศออฟไลน์หลัง grace',
-        r9b.st.length >= 1 && r9b.st.every(s => s.ok === false && s.why === 'stream'), r9b.st);
+  check('⭐ ครบ 6 วิบอกว่ากำลังต่อใหม่ ยังไม่ใช่ออฟไลน์',
+        r9b.soft.length === 1 && r9b.soft[0].ok === false &&
+        r9b.soft[0].why === 'reconnecting', r9b.soft);
+  check('⭐ แถบขึ้นโทนไม่ตกใจ + ยังบอกว่าคิวอยู่ครบ',
+        r9b.softBar.conn === 'reconnecting' && /retry/.test(r9b.softBar.cls) &&
+        /กำลังเชื่อมต่อใหม่/.test(r9b.softBar.text) &&
+        /เก็บคิวในเครื่อง/.test(r9b.softBar.text) &&
+        !/ออฟไลน์/.test(r9b.softBar.text), r9b.softBar);
+  check('ระหว่างนั้นยังนัดเปิดสายใหม่อยู่ ไม่ได้หยุดลองต่อ',
+        r9b.softInfo.retryPending === true, r9b.softInfo);
+  check('⭐ ครบ 18 วิจึงประกาศออฟไลน์จริง',
+        r9b.hard.length === 2 && r9b.hard[1].ok === false && r9b.hard[1].why === 'stream',
+        r9b.hard);
+  check('⭐ แถบเปลี่ยนเป็นออฟไลน์เต็มตัว',
+        r9b.hardBar.conn === 'offline' && /ออฟไลน์/.test(r9b.hardBar.text), r9b.hardBar);
   check('และยังมีนัดเปิดสายใหม่ค้างอยู่ ไม่ใช่ตั้งออฟไลน์แล้วจบ', r9b.info.retryPending === true, r9b.info);
 
   /* ---------- [9c] ต้นเหตุที่ v2.9.5 แก้ ---------- */
@@ -468,6 +523,89 @@ const HARNESS = `
              first: (raw[0] || {}).path, patchKeys: Object.keys((raw[0] || {}).patch || {}) };
   });
   check('หาคีย์คิวในเครื่องเจอ (ไม่งั้นเทสข้อนี้ไม่มีความหมาย)', r8.before === 2, r8);
+
+  /* ---------- [13] แถบสถานะ 3 ระดับ ---------- */
+  console.log('\n[13] ⭐ แถบสถานะ 3 ระดับ ไม่ใช่ 2');
+  const rConn = await page.evaluate(() => {
+    window.__seedApp();
+    const read = function () {
+      const b = $('connBar'), f = $('btnReconnect');
+      return { conn: b.getAttribute('data-conn'), cls: b.className,
+               text: $('connText').textContent,
+               fix: getComputedStyle(f).display !== 'none' };
+    };
+    const out = {};
+    ['online', 'reconnecting', 'offline'].forEach(function (v) {
+      state.connection = v; renderConnection(); out[v] = read();
+    });
+    return out;
+  });
+  check('ออนไลน์ = ไม่มีปุ่มกู้ให้รก',
+        rConn.online.conn === 'online' && rConn.online.fix === false, rConn.online);
+  check('⭐ กำลังต่อใหม่ = คนละคลาสกับออฟไลน์ ไม่ใช่หน้าตาเดียวกัน',
+        rConn.reconnecting.conn === 'reconnecting' && /retry/.test(rConn.reconnecting.cls) &&
+        !/\boff\b/.test(rConn.reconnecting.cls), rConn.reconnecting);
+  check('⭐ ระหว่างต่อใหม่ห้ามพูดคำว่า "ออฟไลน์"',
+        !/ออฟไลน์/.test(rConn.reconnecting.text) &&
+        /กำลังเชื่อมต่อใหม่/.test(rConn.reconnecting.text), rConn.reconnecting.text);
+  check('แต่ยังให้ปุ่มกู้กดได้เลยถ้าคนไม่อยากรอ', rConn.reconnecting.fix === true, rConn.reconnecting);
+  check('ออฟไลน์เต็มตัวยังบอกจำนวนคิวเหมือนเดิม',
+        rConn.offline.conn === 'offline' && /เก็บคิวในเครื่อง/.test(rConn.offline.text) &&
+        rConn.offline.fix === true, rConn.offline);
+
+  console.log('\n[13b] สาเหตุที่ไม่ใช่เน็ตสะดุด ต้องขึ้นออฟไลน์ทันที');
+  const rConnB = await page.evaluate(() => {
+    const out = {};
+    ['auth', 'stream', 'reconnecting'].forEach(function (why) {
+      state.connection = 'online';
+      applyConnStatus(false, why);
+      out[why] = state.connection;
+    });
+    state.connection = 'offline';
+    applyConnStatus(true, '');
+    out.back = state.connection;
+    return out;
+  });
+  check('token ใช้ไม่ได้ = ออฟไลน์ทันที ไม่ต้องรอครบเวลา', rConnB.auth === 'offline', rConnB);
+  check('หมดเวลาแล้วสายยังไม่กลับ = ออฟไลน์', rConnB.stream === 'offline', rConnB);
+  check('⭐ ยังลองต่ออยู่ = ไม่ใช่ออฟไลน์', rConnB.reconnecting === 'reconnecting', rConnB);
+  check('สายกลับมาเมื่อไหร่ก็กลับเป็นออนไลน์', rConnB.back === 'online', rConnB);
+
+  /* ---------- [14] สัญญาณที่ต้องลองต่อใหม่ ---------- */
+  console.log('\n[14] ⭐ สัญญาณที่ต้องลองต่อใหม่อัตโนมัติ');
+  const rTrig = await page.evaluate(async () => {
+    window.__seedApp();
+    const seen = [];
+    const real = db.reconnect;
+    /* นับว่าถูกเรียกกี่ครั้ง แต่ยังให้ของจริงทำงาน พื้นเวลา 1.5 วิจะได้ยังคุมอยู่ */
+    db.reconnect = function () { const r = real.apply(db, arguments); seen.push(r); return r; };
+    const fire = async function (make) {
+      seen.length = 0;
+      make();
+      await new Promise(function (r) { setTimeout(r, 60); });
+      return seen.slice();
+    };
+    /* บล็อกก่อนหน้าอาจเพิ่งเรียก reconnect ไป พื้นเวลา 1.5 วิจะกินผลของครั้งแรก
+       รอให้พ้นก่อน เทสจะได้วัดพฤติกรรมจริง ไม่ใช่วัดจังหวะที่บังเอิญ */
+    await new Promise(function (r) { setTimeout(r, 1600); });
+    const focus = await fire(function () { window.dispatchEvent(new Event('focus')); });
+    /* ยิงซ้ำทันที — พื้นเวลา 1.5 วิต้องกันไม่ให้รื้อสายรอบสอง */
+    const focusAgain = await fire(function () { window.dispatchEvent(new Event('focus')); });
+    const online = await fire(function () { window.dispatchEvent(new Event('online')); });
+    const visible = await fire(function () {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    db.reconnect = real;
+    return { focus: focus, focusAgain: focusAgain, online: online, visible: visible,
+             hidden: document.hidden };
+  });
+  check('⭐ คลิกกลับมาที่หน้าต่าง (focus) = ลองต่อใหม่จริง',
+        rTrig.focus.length === 1 && rTrig.focus[0] === true, rTrig.focus);
+  check('⭐ ยิงซ้ำติด ๆ ไม่รื้อสายซ้ำ (พื้นเวลา 1.5 วิ)',
+        rTrig.focusAgain.length === 1 && rTrig.focusAgain[0] === false, rTrig.focusAgain);
+  check('เน็ตเครื่องกลับมา (online) = ลองต่อใหม่', rTrig.online.length === 1, rTrig.online);
+  check('สลับแท็บกลับมา (visibilitychange) = ลองต่อใหม่',
+        rTrig.hidden === false && rTrig.visible.length === 1, rTrig.visible);
   check('re-fetch แล้วคิวยังอยู่ครบ', r8.after === 2 && r8.rows === 2, r8);
   check('เนื้อในคิวไม่ถูกแตะ', r8.first === 'rounds/R1/scans' && r8.patchKeys[0] === 's1', r8);
 

@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.16.5">
+<meta name="version" content="2.16.6">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.16.5</title>
+<title>ISRD Stocktake v2.16.6</title>
 
 <style>
 :root{
@@ -59,6 +59,13 @@ h3{font-size:17px}
 .topbar .t-conn .dot{width:9px;height:9px;border-radius:50%;background:#4ade80;flex:0 0 auto}
 .topbar .t-conn.off{background:rgba(251,191,36,.32)}
 .topbar .t-conn.off .dot{background:#fbbf24}
+/* ⭐ v2.16.6 — สถานะกลาง "กำลังเชื่อมต่อใหม่" ต้องดูไม่เท่ากับออฟไลน์
+   ใช้พื้นอ่อนกว่า .off แล้วให้จุดกะพริบแทน — สื่อว่า "กำลังทำอยู่" ไม่ใช่ "พังแล้ว"
+   คนที่ตั้งค่าเครื่องว่าไม่เอาภาพเคลื่อนไหวต้องไม่โดนจุดกะพริบใส่ */
+.topbar .t-conn.retry{background:rgba(255,255,255,.3)}
+.topbar .t-conn.retry .dot{background:#fde68a;animation:connPulse 1.2s ease-in-out infinite}
+@keyframes connPulse{0%,100%{opacity:1}50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){.topbar .t-conn.retry .dot{animation:none}}
 .wrap{padding:16px;max-width:760px;margin:0 auto}
 .page{display:none}
 .page.active{display:block}
@@ -1847,7 +1854,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.16.5';
+var APP_VERSION = '2.16.6';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -2251,10 +2258,21 @@ var db = (function () {
 
   /* สาย SSE reconnect เองเป็นระยะ (idle/เน็ตสะดุด) — es.onerror ยิงทุกครั้งแม้แค่กำลังต่อใหม่
      ถ้า setStatus(false) ทันทีทุกครั้ง banner จะเด้ง "ออฟไลน์" พร่ำเพรื่อทั้งที่ต่อกลับได้ใน 2-3 วิ
-     หน่วงไว้: ปิดจริง (readyState CLOSED) = ออฟไลน์ทันที · แค่ reconnect = รอ 6 วิ ถ้ายังไม่กลับค่อยประกาศ */
-  var streamOffTimer = null;
+     หน่วงไว้เป็นสองจังหวะ (ดูค่าคงที่ข้างล่าง) แทนที่จะตัดสินว่าออฟไลน์ในจังหวะเดียว */
+  /* ⭐ v2.16.6 — แยกเป็นสองจังหวะแทนจังหวะเดียว
+     6 วิ = "กำลังเชื่อมต่อใหม่" (โทนไม่ตกใจ) · 18 วิ = "ออฟไลน์" ของจริง
+     ของเดิมมีจังหวะเดียวคือ 6 วิแล้วเด้งแดงเลย ซึ่งสั้นกว่าเวลาที่ SSE ใช้ต่อกลับจริง
+     ตอนมือถือสลับ 4G/Wi-Fi หรือ AP ในคลังสลับตัว คนนับจึงเห็น "ออฟไลน์" ทั้งที่อีก 3 วิก็กลับมา
+     จนเลิกเชื่อแถบนี้ไปเลย พอออฟไลน์จริงก็ไม่มีใครสังเกต — ป้ายที่เตือนพร่ำเพรื่อเท่ากับไม่มีป้าย
+     ทั้งสองนัดตั้งพร้อมกันครั้งเดียว ไม่ใช่ตั้งต่อกันเป็นทอด เพราะ streamOk ต้องล้างได้หมดในจังหวะเดียว */
+  var STREAM_SOFT_MS = 6000, STREAM_HARD_MS = 18000;
+  var streamOffTimer = null, streamSoftTimer = null;
+  function clearStreamTimers() {
+    if (streamSoftTimer !== null) { clearTimeout(streamSoftTimer); streamSoftTimer = null; }
+    if (streamOffTimer !== null) { clearTimeout(streamOffTimer); streamOffTimer = null; }
+  }
   function streamOk() {
-    if (streamOffTimer) { clearTimeout(streamOffTimer); streamOffTimer = null; }
+    clearStreamTimers();
     cancelReopen();                 // ต่อได้แล้ว เลิกนัดเปิดสายใหม่ และรีเซ็ตเวลาถอย
     setStatus(true);
   }
@@ -2265,14 +2283,20 @@ var db = (function () {
        "ออฟไลน์" ทั้งที่ข้อมูลยังไหลจากสายอื่นอยู่ = อาการที่เจอ "ไม่ถึง 10 วิ ก็ออฟไลน์"
        คืนหลักการ v2.7.9: "ออฟไลน์" = ไปไม่ถึงจริงเท่านั้น →
          · สายสะดุด/ปิด ให้ "นัดเปิดใหม่ทันที" เสมอ (คง auto-reopen ของ v2.9.4 ไว้)
-         · แต่ประกาศออฟไลน์ต่อเมื่อครบ grace 6 วิ แล้ว "ยังไม่มีสายไหนกลับมาเลย"
-         · ถ้ามีเฟรม/สายเปิดได้ใน 6 วิ streamOk() จะยกเลิกนัดนี้เอง = ไม่เด้งพร่ำเพรื่อ */
+         · แต่ประกาศออฟไลน์ต่อเมื่อพยายามมานานแล้ว "ยังไม่มีสายไหนกลับมาเลย"
+         · ถ้ามีเฟรม/สายเปิดได้ระหว่างนั้น streamOk() จะยกเลิกนัดนี้เอง = ไม่เด้งพร่ำเพรื่อ
+       v2.16.6 ต่อยอด: จังหวะแรก (6 วิ) บอกแค่ "กำลังต่อใหม่" ยังไม่ใช่คำว่าออฟไลน์ */
     scheduleReopen();                          // ตายจริงหรือแค่สะดุด ก็ลองเปิดใหม่ทันทีเสมอ
-    if (streamOffTimer) return;                // มีนัดตัดสินออฟไลน์ค้างอยู่แล้ว
+    /* เทียบกับ null ตรง ๆ — id ของ timer เป็น 0 ได้ ถ้าเช็คแบบจริง/เท็จจะนัดซ้อนกันรัว */
+    if (streamSoftTimer !== null || streamOffTimer !== null) return;   // มีนัดค้างอยู่แล้ว
+    streamSoftTimer = setTimeout(function () {
+      streamSoftTimer = null;
+      setStatus(false, 'reconnecting');        // ยังไม่ยอมแพ้ — แค่บอกว่ากำลังต่อใหม่อยู่
+    }, STREAM_SOFT_MS);
     streamOffTimer = setTimeout(function () {
       streamOffTimer = null;
-      setStatus(false, 'stream');              // ครบ grace แล้วยังไม่มีสายไหนกลับมา = ไปไม่ถึงจริง
-    }, 6000);
+      setStatus(false, 'stream');              // พยายามมานานแล้วยังไม่มีสายไหนกลับ = ไปไม่ถึงจริง
+    }, STREAM_HARD_MS);
   }
 
   /* 401/403 = token หมดอายุหรือถูกเพิกถอน ต่ออายุแล้วลองใหม่ครั้งเดียว
@@ -2464,7 +2488,9 @@ var db = (function () {
   }
   function closeStreams() {
     clearReopenTimer();             // ออกจากระบบแล้ว ห้ามมีนัดค้างไว้เปิดสายคืนทีหลัง
+    clearStreamTimers();            // และห้ามมีนัดตัดสินออฟไลน์ค้างไปเด้งทีหลังด้วย
     retryDelay = 0;
+    retryWait = 0;
     liveStreams.slice().forEach(function (entry) { entry.stop(); });
     liveStreams.length = 0;
     remoteCache = {};
@@ -2474,8 +2500,19 @@ var db = (function () {
      ถอยเวลาเพิ่มทีละเท่า 2 → 4 → 8 → 16 → 30 วิ (เพดาน 30) แล้วหยุดทันทีที่ต่อได้
      ต้องถอยเวลา ไม่ใช่ยิงรัวทุกวินาที เพราะตอนเน็ตยังไม่กลับการยิงรัวมีแต่กินแบตเครื่องคนนับ
      และเสี่ยงโดน Firebase กันด้วย rate limit ซึ่งจะยิ่งทำให้กลับมาช้ากว่าเดิม */
-  var RETRY_MIN = 2000, RETRY_MAX = 30000;
-  var retryTimer = null, retryDelay = 0, lastReconnect = 0;
+  var RETRY_MIN = 2000, RETRY_MAX = 30000, RETRY_JITTER = 0.25;
+  var retryTimer = null, retryDelay = 0, retryWait = 0, lastReconnect = 0;
+
+  /* ⭐ v2.16.6 — สุ่มกระจายเวลารอ ±25% ก่อนตั้งนัดจริง
+     คนนับ 15+ เครื่องอยู่ใต้ AP ตัวเดียวกัน พอ AP สะดุดทุกเครื่องเริ่มนับถอยเวลาพร้อมกันเป๊ะ
+     แล้วยิงกลับพร้อมกันเป็นชุด ๆ ทุก 2/4/8 วิ = จังหวะเดียวกับที่ Firebase มองว่าเป็นการถล่ม
+     โดนกันด้วย rate limit เมื่อไหร่ ทั้งคลังจะกลับมาช้ากว่าเดิม ไม่ใช่เร็วขึ้น
+     สุ่มเฉพาะ "เวลาที่ตั้งนัดจริง" — ตัวฐาน (retryDelay) ยังคูณสองตรง ๆ ตามเดิม
+     จะได้ยังอ่านออกว่าถอยมาถึงรอบไหนแล้ว และเพดาน 30 วิยังบังคับได้เหมือนเดิม */
+  function jitterMs(ms) {
+    var spread = ms * RETRY_JITTER;
+    return Math.max(500, Math.round(ms - spread + Math.random() * spread * 2));
+  }
 
   function anyDeadStream() {
     return liveStreams.some(function (e) { return e.dead && e.dead(); });
@@ -2497,7 +2534,8 @@ var db = (function () {
     if (retryTimer !== null) return;     // นัดไว้แล้ว รอบเดียวพอ แม้ทุกสายจะร้องพร้อมกัน
     if (!liveStreams.length) return;     // ยังไม่มีสายให้เปิด (ยังไม่ได้ล็อกอิน) ไม่ต้องนัด
     retryDelay = retryDelay ? Math.min(retryDelay * 2, RETRY_MAX) : RETRY_MIN;
-    retryTimer = setTimeout(function () { retryTimer = null; reopenStale(); }, retryDelay);
+    retryWait = jitterMs(retryDelay);
+    retryTimer = setTimeout(function () { retryTimer = null; reopenStale(); }, retryWait);
   }
   /* เลิกนัดเฉพาะตอนที่ไม่มีสายไหนตายค้างอยู่จริง ๆ
      ถ้าสายหนึ่งตายแต่อีกสายยังส่งข้อมูลอยู่ streamOk ของสายที่ดีจะมายกเลิกนัดของสายที่ตาย
@@ -2506,6 +2544,7 @@ var db = (function () {
     if (anyDeadStream()) return;
     clearReopenTimer();
     retryDelay = 0;
+    retryWait = 0;
   }
 
   function remoteSubscribe(path, cb) {
@@ -2604,6 +2643,7 @@ var db = (function () {
       lastReconnect = now;
       clearReopenTimer();
       retryDelay = 0;
+      retryWait = 0;
       reopenStreams();
       return true;
     },
@@ -2614,8 +2654,10 @@ var db = (function () {
       return {
         streams: liveStreams.length,
         dead: liveStreams.filter(function (e) { return e.dead && e.dead(); }).length,
-        retryDelay: retryDelay,
-        retryPending: retryTimer !== null
+        retryDelay: retryDelay,          // ตัวฐาน คูณสองไปเรื่อย ๆ จนชนเพดาน
+        retryWait: retryWait,            // เวลาที่ตั้งนัดจริงรอบนี้ (ฐาน ± jitter)
+        retryPending: retryTimer !== null,
+        reconnecting: streamSoftTimer !== null || streamOffTimer !== null
       };
     },
 
@@ -6823,10 +6865,20 @@ function renderConnection() {
     showFix(false);
     return;
   }
+  /* ⭐ v2.16.6 — ยังไม่ยอมแพ้ ระหว่างนี้ห้ามพูดว่า "ออฟไลน์"
+     คิวยังเก็บในเครื่องเหมือนเดิมทุกประการ ปุ่มกู้ก็ยังอยู่ — ต่างกันแค่คำพูดกับสี
+     บอกจำนวนคิวไปด้วยตั้งแต่จังหวะนี้ คนยิงจะได้รู้ว่าของที่ยิงไปยังอยู่ครบ ไม่ได้หายไปไหน */
+  if (state.connection === 'reconnecting') {
+    bar.className = 't-conn retry';
+    bar.setAttribute('data-conn', 'reconnecting');
+    text.textContent = '🟡 กำลังเชื่อมต่อใหม่... — เก็บคิวในเครื่อง ' + fmtNum(pending) + ' รายการ';
+    showFix(true);
+    return;
+  }
   if (state.connection === 'offline') {
     bar.className = 't-conn off';
     bar.setAttribute('data-conn', 'offline');
-    text.textContent = 'ออฟไลน์ — เก็บคิวในเครื่อง ' + fmtNum(pending) + ' รายการ';
+    text.textContent = '🔴 ออฟไลน์ — เก็บคิวในเครื่อง ' + fmtNum(pending) + ' รายการ';
     showFix(true);
     return;
   }
@@ -6845,6 +6897,21 @@ function renderConnection() {
   text.textContent = pending
     ? 'ต่อฐานกลางแล้ว — กำลังส่ง ' + fmtNum(pending) + ' รายการ'
     : 'ต่อฐานกลางแล้ว';
+}
+
+/* แปลสถานะจากชั้น db มาเป็นสถานะบนจอ — แยกเป็นฟังก์ชันชื่อ ไม่ฝังใน init()
+   เพราะเป็นกติกาที่ต้องตรวจได้ตรง ๆ ว่าสาเหตุไหนแปลเป็นอะไร
+   why = 'reconnecting' คือจังหวะกลาง ยังลองต่ออยู่ ยังไม่ถือว่าออฟไลน์
+   สาเหตุอื่น ('stream' หลังหมดเวลา · 'auth' ต่ออายุ token ไม่ผ่าน) = ออฟไลน์จริงทันที
+   auth พังไม่ใช่เน็ตสะดุด รอต่อไปก็ไม่หายเอง ต้องบอกทันทีไม่ต้องให้รอครบเวลา */
+function applyConnStatus(ok, why) {
+  var next = ok ? 'online' : (why === 'reconnecting' ? 'reconnecting' : 'offline');
+  if (state.connection === next) return;
+  state.connection = next;
+  renderConnection();
+  /* ⭐ v2.9.4 — กลับมาออนไลน์ต้อง "อ่านกลับลงมา" ด้วย ไม่ใช่ส่งคิวขึ้นไปอย่างเดียว
+     ไม่งั้นตัวเลขบนจอค้างเป็น "..." ต่อไปทั้งที่สายกลับมาแล้ว */
+  if (ok) { flushQueue(); scheduleRecover(); }
 }
 
 /* ============================================================
@@ -16757,15 +16824,7 @@ function init() {
 
 
   /* ---- คิวเขียนข้อมูล + สถานะการเชื่อมต่อ ---- */
-  db.onStatus(function (ok) {
-    var next = ok ? 'online' : 'offline';
-    if (state.connection === next) return;
-    state.connection = next;
-    renderConnection();
-    /* ⭐ v2.9.4 — กลับมาออนไลน์ต้อง "อ่านกลับลงมา" ด้วย ไม่ใช่ส่งคิวขึ้นไปอย่างเดียว
-       ไม่งั้นตัวเลขบนจอค้างเป็น "..." ต่อไปทั้งที่สายกลับมาแล้ว */
-    if (ok) { flushQueue(); scheduleRecover(); }
-  });
+  db.onStatus(applyConnStatus);
   window.addEventListener('online', function () {
     state.connection = 'unknown';
     flushQueue();
@@ -16785,6 +16844,13 @@ function init() {
   });
   window.addEventListener('pageshow', function (e) {
     if (e && e.persisted && db.reconnect()) scheduleRecover();   // กลับจาก bfcache = สายเดิมตายหมด
+  });
+  /* ⭐ v2.16.6 — คลิกกลับมาที่หน้าต่างก็ถือเป็นสัญญาณว่าคนกลับมาใช้งานแล้ว
+     บนเดสก์ท็อปที่เปิดหลายหน้าต่างซ้อนกัน การสลับหน้าต่างไม่ทำให้ document.hidden เปลี่ยน
+     visibilitychange จึงไม่ยิง แล้วสายที่ตายตอนเครื่อง sleep จะค้างจนกว่าจะถึงรอบถอยเวลาถัดไป
+     db.reconnect() มีพื้นเวลา 1.5 วิของตัวเอง สลับหน้าต่างถี่ ๆ จึงไม่รื้อสายซ้ำ */
+  window.addEventListener('focus', function () {
+    if (db.reconnect()) scheduleRecover();
   });
   $('btnReconnect').onclick = manualReconnect;
 

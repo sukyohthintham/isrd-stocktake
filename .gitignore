@@ -14,3 +14,5 @@ Thumbs.db
 desktop.ini
 .DS_Store
 sample-data/
+# ไฟล์ตั้งค่าเครื่องของ Claude Code — ไม่ขึ้น GitHub
+.claude/
