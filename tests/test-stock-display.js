@@ -552,6 +552,107 @@ function check(name, ok, got) {
   check('⭐ รอบใบเดียวยังทำงานทันทีแบบเดิม ไม่แตะเน็ต',
         r5e.thenable === false && /\.xlsx$/.test(r5e.fileName || ''), r5e);
 
+  /* ---------- [6] นับเฉพาะสินค้า (Product) ---------- */
+  console.log('\n[6] ⭐ ตัด Not Product ออกจากรายงาน');
+  await page.evaluate(() => {
+    /* ของที่ต้องนับ 4 ตัว · ของที่ต้องตัด 4 ตัว — จงใจวาง Not Product ให้ตกคนละกลุ่ม
+       ถ้าตัวกรองหลุด จะเห็นทันทีว่ากลุ่มไหนบวม ไม่ใช่เห็นแค่ยอดรวมเพี้ยน */
+    window.__seedType = function () {
+      window.__seed([
+        { code: 'P_OK', delta: 5, mode: 'scan', user: 'ท', ts: 1, stockType: 'stock' },
+        { code: 'P_BOTH', delta: 2, mode: 'scan', user: 'ท', ts: 2, stockType: 'stock' },
+        { code: 'P_BOTH', delta: 3, mode: 'scan', user: 'ท', ts: 3, stockType: 'display' },
+        { code: 'P_INACT', delta: 4, mode: 'scan', user: 'ท', ts: 4, stockType: 'display' },
+        { code: 'NOMASTER', delta: 1, mode: 'scan', user: 'ท', ts: 5, stockType: 'stock' },
+        { code: 'NP_S', delta: 9, mode: 'scan', user: 'ท', ts: 6, stockType: 'stock' },
+        { code: 'NP_D', delta: 9, mode: 'scan', user: 'ท', ts: 7, stockType: 'display' },
+        { code: 'NP_B', delta: 9, mode: 'scan', user: 'ท', ts: 8, stockType: 'stock' },
+        { code: 'NP_B', delta: 9, mode: 'scan', user: 'ท', ts: 9, stockType: 'display' },
+        { code: 'NP_U', delta: 9, mode: 'scan', user: 'ท', ts: 10 }
+      ]);
+      state.products = {
+        P_OK: { code: 'P_OK', name: 'สินค้าปกติ', type: 'product', costPrice: 10 },
+        P_BOTH: { code: 'P_BOTH', name: 'สินค้ามีทั้งสองฝั่ง', type: 'product', costPrice: 10 },
+        /* ปิดใช้งานแล้วแต่ยังนับเจอของจริง — ห้ามตัด ต้องตามเก็บให้ครบเหมือนเดิม */
+        P_INACT: { code: 'P_INACT', name: 'สินค้าปิดใช้งาน', type: 'inactive', costPrice: 10 },
+        NP_S: { code: 'NP_S', name: 'ถุงกระดาษ', type: 'notProduct', costPrice: 1 },
+        NP_D: { code: 'NP_D', name: 'ป้ายราคา', type: 'notProduct', costPrice: 1 },
+        NP_B: { code: 'NP_B', name: 'ชั้นวางของ', type: 'notProduct', costPrice: 1 },
+        NP_U: { code: 'NP_U', name: 'ของเบ็ดเตล็ด', type: 'notProduct', costPrice: 1 }
+        /* NOMASTER จงใจไม่ใส่ในทะเบียน — ของที่ยังไม่มีใน Master ต้องไม่ถูกตัด */
+      };
+      state.systemQty = { P_OK: 5, P_BOTH: 5, P_INACT: 4, NP_S: 9, NP_D: 9, NP_B: 18, NP_U: 9 };
+      state.counts = {}; state.scanQty = {}; state.appliedScanIds = Object.create(null);
+      buildScanIndex();
+    };
+  });
+
+  const r6 = await page.evaluate(() => {
+    window.__seedType();
+    const rep = stockDisplayReport();
+    return { counts: rep.counts, total: rep.total,
+             codes: rep.rows.map(function (r) { return r.code; }).sort(),
+             groups: rep.groups.map(function (g) { return g.group; }) };
+  });
+  check('⭐ Not Product ไม่โผล่ในรายงานเลยสักตัว',
+        r6.codes.join(',').indexOf('NP_') < 0, r6.codes);
+  check('⭐ สินค้าจริงยังนับครบเหมือนเดิม',
+        r6.codes.join(',') === 'NOMASTER,P_BOTH,P_INACT,P_OK', r6.codes);
+  check('⭐ ตัดแล้วยอดแต่ละกลุ่มถูกต้อง',
+        r6.total === 4 && r6.counts.stock_no_display === 2 &&
+        r6.counts.display_no_stock === 1 && r6.counts.both === 1, r6.counts);
+  check('⭐ กอง "ยังไม่ระบุประเภท" ยุบเหลือ 0 (เดิมเป็น Not Product ซะส่วนใหญ่)',
+        r6.counts.uncategorized === 0, r6.counts);
+  check('ของที่ปิดใช้งานแล้วไม่ถูกตัดไปด้วย', r6.codes.indexOf('P_INACT') >= 0, r6.codes);
+  check('ของที่ยังไม่มีในทะเบียน Master ไม่ถูกตัดไปด้วย',
+        r6.codes.indexOf('NOMASTER') >= 0, r6.codes);
+  check('แถบกระจุกกลุ่มไหนก็ไม่มี Not Product ปน',
+        r6.groups.join(',').indexOf('NP_') < 0, r6.groups);
+
+  /* ตัดจาก p.type เท่านั้น ห้ามไปเดาจากรหัสหรือชื่อ — สลับ type แล้วต้องกลับมานับ */
+  const r6b = await page.evaluate(() => {
+    window.__seedType();
+    state.products.NP_S.type = 'product';
+    const rep = stockDisplayReport();
+    return { codes: rep.rows.map(function (r) { return r.code; }).sort(), total: rep.total };
+  });
+  check('⭐ ตัดจาก type ไม่ใช่เดาจากรหัส (เปลี่ยนเป็น product แล้วต้องกลับมานับ)',
+        r6b.codes.indexOf('NP_S') >= 0 && r6b.total === 5, r6b);
+
+  /* ไฟล์ที่ส่งหัวหน้าต้องสะอาดเหมือนบนจอ ทุกชีท */
+  const r6c = await page.evaluate(() => {
+    window.__seedType();
+    let sheets = null;
+    const realBuild = window.buildXlsx, realCreate = URL.createObjectURL;
+    const realClick = HTMLAnchorElement.prototype.click;
+    window.buildXlsx = function (x) { sheets = x; return realBuild(x); };
+    URL.createObjectURL = function () { return 'blob:fake'; };
+    URL.revokeObjectURL = function () {};
+    HTMLAnchorElement.prototype.click = function () {};
+    exportStockDisplayExcel();
+    window.buildXlsx = realBuild; URL.createObjectURL = realCreate;
+    HTMLAnchorElement.prototype.click = realClick;
+    return {
+      dump: JSON.stringify(sheets),
+      s4count: sheets[3].rows.length - 1,
+      skuSum: sheets[0].rows.filter(function (r) { return r.length === 4 && r[0] !== 'สถานะ'; })
+        .reduce(function (a, r) { return a + r[1]; }, 0)
+    };
+  });
+  check('⭐ ไม่มี Not Product ในไฟล์ Excel เลยสักช่อง ทั้ง 4 ชีท',
+        r6c.dump.indexOf('NP_') < 0 && r6c.dump.indexOf('ถุงกระดาษ') < 0 &&
+        r6c.dump.indexOf('ชั้นวางของ') < 0, r6c.dump.slice(0, 200));
+  check('ชีท "ทั้งหมด-จำแนก" เหลือ 4 แถว', r6c.s4count === 4, r6c.s4count);
+  check('ชีทสรุปรวมจำนวน SKU ได้ 4 ตรงกับบนจอ', r6c.skuSum === 4, r6c.skuSum);
+
+  /* ข้อความกำกับ — ไม่งั้นคนอ่านไปเทียบกับหน้าสรุปแล้วนึกว่ายอดหาย */
+  const r6d = await page.evaluate(() => {
+    return { head: document.getElementById('sdShareHead').textContent };
+  });
+  check('⭐ บอกบนหัวรายงานว่านับเฉพาะสินค้า',
+        /นับเฉพาะสินค้า \(Product\)/.test(r6d.head) && /ไม่รวม Not Product/.test(r6d.head),
+        r6d.head);
+
   console.log('\n--- console/page errors ---');
   console.log(errors.slice(0, 10).join('\n') || '(none)');
   check('ไม่มี error ในคอนโซลเลยสักข้อ', errors.length === 0, errors.slice(0, 3));
