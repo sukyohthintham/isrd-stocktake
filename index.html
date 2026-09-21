@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.16.6">
+<meta name="version" content="2.16.7">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.16.6</title>
+<title>ISRD Stocktake v2.16.7</title>
 
 <style>
 :root{
@@ -1854,7 +1854,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.16.6';
+var APP_VERSION = '2.16.7';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -16848,9 +16848,17 @@ function init() {
   /* ⭐ v2.16.6 — คลิกกลับมาที่หน้าต่างก็ถือเป็นสัญญาณว่าคนกลับมาใช้งานแล้ว
      บนเดสก์ท็อปที่เปิดหลายหน้าต่างซ้อนกัน การสลับหน้าต่างไม่ทำให้ document.hidden เปลี่ยน
      visibilitychange จึงไม่ยิง แล้วสายที่ตายตอนเครื่อง sleep จะค้างจนกว่าจะถึงรอบถอยเวลาถัดไป
-     db.reconnect() มีพื้นเวลา 1.5 วิของตัวเอง สลับหน้าต่างถี่ ๆ จึงไม่รื้อสายซ้ำ */
+     db.reconnect() มีพื้นเวลา 1.5 วิของตัวเอง สลับหน้าต่างถี่ ๆ จึงไม่รื้อสายซ้ำ
+
+     ⚠️ v2.16.7 — ต้องเช็คว่ามีสายตายจริงก่อน ห้ามกู้ทุกครั้งที่ได้ focus
+     ต่างจาก visibilitychange/pageshow ตรงที่ focus ยิงบ่อยมากในการใช้งานปกติ
+     (สลับไป Excel แล้วคลิกกลับ, สลับหน้าต่างเบราว์เซอร์, กลับจากหน้าต่างพิมพ์)
+     ทุกครั้งที่ปล่อยผ่าน scheduleRecover จะล้าง state.cycleStats ทั้งก้อน
+     แล้วหน้า "ภาพรวมทุกสาขา" ต้องไล่โหลดสถิติใหม่ทีละรอบครบ 23 ใบ ทั้งที่สายยังดีอยู่ทุกเส้น
+     ตัวเลขที่เคยขึ้นทันทีจากแคชเลยกลายเป็นค่อย ๆ ไหลขึ้นทีละสาขา (regression ของ v2.16.6)
+     สายยังดี = ไม่มีอะไรต้องกู้ ปล่อยแคชไว้ · สายตายจริงค่อยทำงานตามเจตนาเดิม */
   window.addEventListener('focus', function () {
-    if (db.reconnect()) scheduleRecover();
+    if (db.connInfo().dead > 0 && db.reconnect()) scheduleRecover();
   });
   $('btnReconnect').onclick = manualReconnect;
 

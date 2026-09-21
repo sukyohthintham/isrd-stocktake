@@ -523,6 +523,8 @@ const HARNESS = `
              first: (raw[0] || {}).path, patchKeys: Object.keys((raw[0] || {}).patch || {}) };
   });
   check('หาคีย์คิวในเครื่องเจอ (ไม่งั้นเทสข้อนี้ไม่มีความหมาย)', r8.before === 2, r8);
+  check('re-fetch แล้วคิวยังอยู่ครบ', r8.after === 2 && r8.rows === 2, r8);
+  check('เนื้อในคิวไม่ถูกแตะ', r8.first === 'rounds/R1/scans' && r8.patchKeys[0] === 's1', r8);
 
   /* ---------- [13] แถบสถานะ 3 ระดับ ---------- */
   console.log('\n[13] ⭐ แถบสถานะ 3 ระดับ ไม่ใช่ 2');
@@ -575,39 +577,75 @@ const HARNESS = `
   console.log('\n[14] ⭐ สัญญาณที่ต้องลองต่อใหม่อัตโนมัติ');
   const rTrig = await page.evaluate(async () => {
     window.__seedApp();
-    const seen = [];
-    const real = db.reconnect;
+    /* ตั้งสายใหม่ให้รู้สภาพแน่ชัด ไม่เอาของค้างจากบล็อกก่อน */
+    db.closeAll();
+    window.__es.length = 0;
+    db.subscribe('cycles', function () {});
+    db.subscribe('roundIndex', function () {});
+    window.__esLive().forEach(function (es) { window.__esOpen(es); });
+
+    const seen = [], recovered = [];
+    const realReconnect = db.reconnect, realRecover = window.scheduleRecover;
     /* นับว่าถูกเรียกกี่ครั้ง แต่ยังให้ของจริงทำงาน พื้นเวลา 1.5 วิจะได้ยังคุมอยู่ */
-    db.reconnect = function () { const r = real.apply(db, arguments); seen.push(r); return r; };
+    db.reconnect = function () {
+      const r = realReconnect.apply(db, arguments); seen.push(r); return r;
+    };
+    /* ห้ามให้ตัวจริงทำงาน — มันล้าง state.cycleStats ซึ่งคือต้นเหตุที่กำลังเทสอยู่นี่เอง */
+    window.scheduleRecover = function () { recovered.push(1); };
+
     const fire = async function (make) {
-      seen.length = 0;
+      seen.length = 0; recovered.length = 0;
       make();
       await new Promise(function (r) { setTimeout(r, 60); });
-      return seen.slice();
+      return { calls: seen.slice(), recover: recovered.length, dead: db.connInfo().dead };
     };
     /* บล็อกก่อนหน้าอาจเพิ่งเรียก reconnect ไป พื้นเวลา 1.5 วิจะกินผลของครั้งแรก
        รอให้พ้นก่อน เทสจะได้วัดพฤติกรรมจริง ไม่ใช่วัดจังหวะที่บังเอิญ */
     await new Promise(function (r) { setTimeout(r, 1600); });
-    const focus = await fire(function () { window.dispatchEvent(new Event('focus')); });
-    /* ยิงซ้ำทันที — พื้นเวลา 1.5 วิต้องกันไม่ให้รื้อสายรอบสอง */
-    const focusAgain = await fire(function () { window.dispatchEvent(new Event('focus')); });
-    const online = await fire(function () { window.dispatchEvent(new Event('online')); });
-    const visible = await fire(function () {
+
+    /* สายดีอยู่ทุกเส้น — focus ต้องเงียบสนิท */
+    const healthy = await fire(function () { window.dispatchEvent(new Event('focus')); });
+    /* อีเวนต์อื่นไม่ได้ถูกแตะ ต้องยังทำงานแม้สายจะดีอยู่ (ของเดิมตั้งแต่ v2.9.4/9.5) */
+    const onlineHealthy = await fire(function () { window.dispatchEvent(new Event('online')); });
+    const visibleHealthy = await fire(function () {
       document.dispatchEvent(new Event('visibilitychange'));
     });
-    db.reconnect = real;
-    return { focus: focus, focusAgain: focusAgain, online: online, visible: visible,
+
+    /* คราวนี้ให้สายตายจริง — focus ต้องกู้ให้ตามเจตนาเดิมของ v2.16.6 */
+    await new Promise(function (r) { setTimeout(r, 1600); });
+    window.__esKill(window.__esLive()[0]);
+    const deadNow = db.connInfo().dead;
+    const onDead = await fire(function () { window.dispatchEvent(new Event('focus')); });
+    /* กู้แล้วสายถูกเปิดใหม่ ไม่มีใบไหนตายค้าง — focus รอบถัดไปต้องเงียบอีก
+       ไม่ใช่ไล่กู้ซ้ำทุกครั้งที่คนสลับหน้าต่างกลับมา */
+    const afterFix = await fire(function () { window.dispatchEvent(new Event('focus')); });
+
+    db.reconnect = realReconnect;
+    window.scheduleRecover = realRecover;
+    return { healthy: healthy, onlineHealthy: onlineHealthy, visibleHealthy: visibleHealthy,
+             deadNow: deadNow, onDead: onDead, afterFix: afterFix,
              hidden: document.hidden };
   });
-  check('⭐ คลิกกลับมาที่หน้าต่าง (focus) = ลองต่อใหม่จริง',
-        rTrig.focus.length === 1 && rTrig.focus[0] === true, rTrig.focus);
-  check('⭐ ยิงซ้ำติด ๆ ไม่รื้อสายซ้ำ (พื้นเวลา 1.5 วิ)',
-        rTrig.focusAgain.length === 1 && rTrig.focusAgain[0] === false, rTrig.focusAgain);
-  check('เน็ตเครื่องกลับมา (online) = ลองต่อใหม่', rTrig.online.length === 1, rTrig.online);
-  check('สลับแท็บกลับมา (visibilitychange) = ลองต่อใหม่',
-        rTrig.hidden === false && rTrig.visible.length === 1, rTrig.visible);
-  check('re-fetch แล้วคิวยังอยู่ครบ', r8.after === 2 && r8.rows === 2, r8);
-  check('เนื้อในคิวไม่ถูกแตะ', r8.first === 'rounds/R1/scans' && r8.patchKeys[0] === 's1', r8);
+  check('ฉากตั้งต้น: สายดีทุกเส้น', rTrig.healthy.dead === 0, rTrig.healthy);
+  /* ⚠️ v2.16.7 — regression ของ v2.16.6: focus ยิงบ่อยมากในการใช้งานปกติ
+     ปล่อยให้กู้ทุกครั้ง = ล้าง state.cycleStats ทิ้งแล้วหน้าภาพรวมต้องไล่โหลดใหม่ 23 รอบ */
+  check('⭐ สายดีอยู่ → focus ต้องไม่เรียก reconnect เลย',
+        rTrig.healthy.calls.length === 0, rTrig.healthy);
+  check('⭐ สายดีอยู่ → focus ต้องไม่ล้างแคชหน้าภาพรวม',
+        rTrig.healthy.recover === 0, rTrig.healthy);
+  check('อีเวนต์ online ไม่ถูกแตะ ยังทำงานแม้สายดี',
+        rTrig.onlineHealthy.calls.length === 1 && rTrig.onlineHealthy.recover === 1,
+        rTrig.onlineHealthy);
+  check('อีเวนต์ visibilitychange ไม่ถูกแตะ ยังทำงานแม้สายดี',
+        rTrig.hidden === false && rTrig.visibleHealthy.calls.length === 1,
+        rTrig.visibleHealthy);
+  check('ฉากที่สอง: มีสายตายค้างจริง', rTrig.deadNow > 0, rTrig.deadNow);
+  check('⭐ มีสายตาย → focus ยังกู้ให้ตามเจตนาเดิม',
+        rTrig.onDead.calls.length === 1 && rTrig.onDead.calls[0] === true &&
+        rTrig.onDead.recover === 1, rTrig.onDead);
+  check('⭐ กู้เสร็จแล้ว focus รอบถัดไปเงียบ ไม่ไล่กู้ซ้ำ',
+        rTrig.afterFix.dead === 0 && rTrig.afterFix.calls.length === 0 &&
+        rTrig.afterFix.recover === 0, rTrig.afterFix);
 
   /* ---------- [11] โหมดทดสอบ (ไม่ต่อฐาน) ต้องไม่พัง ---------- */
   console.log('\n[11] ของที่ไม่เกี่ยวต้องไม่พัง');
