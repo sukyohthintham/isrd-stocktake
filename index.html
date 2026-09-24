@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.20.1">
+<meta name="version" content="2.21.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.20.1</title>
+<title>ISRD Stocktake v2.21.0</title>
 
 <style>
 :root{
@@ -1913,7 +1913,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.20.1';
+var APP_VERSION = '2.21.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -9832,7 +9832,7 @@ function buildSummaryExcel(data) {
 
   /* คอลัมน์หมายเหตุ (v2.7.4) — ไฟล์ของหน้าเอกสารมีมาตั้งแต่เดิม ไฟล์นี้เพิ่งได้
      ทั้งสองไฟล์อ่านจาก reasons/{key} ก้อนเดียวกัน ตัวเลขกับข้อความจึงตรงกันเสมอ */
-  var s2 = [['รหัสสินค้า', 'ชื่อสินค้า', 'Location', 'โซนที่เก็บ', 'Status', 'หน่วย', 'ประเภท',
+  var s2 = [['รหัสสินค้า', 'ชื่อสินค้า', 'Location', 'โซนที่เก็บ', 'ประเภทที่นับ', 'Status', 'หน่วย', 'ประเภท',
              'จำนวนระบบ', 'จำนวนจริง', 'ผลต่าง',
              'จากการยิง', 'จากการกรอกมือ', priceLabel, 'มูลค่าระบบ', 'มูลค่าจริง',
              'หมายเหตุ']];
@@ -9847,6 +9847,11 @@ function buildSummaryExcel(data) {
      เก็บ "จำนวนต่อโซน" ไว้ด้วย (รวม delta ดังนั้นแถวหักลบก็หักถูกโซน)
      เพื่อบอกได้ว่าโซนไหนนับได้กี่ชิ้น ไม่ใช่บอกแค่ว่าเคยเจอที่โซนไหนบ้าง */
   var fzMap = {};   // key -> { ชื่อโซน -> จำนวนสุทธิ }
+  /* ⭐ v2.21.0 — ประเภทของที่นับ (โชว์/สต็อก/Asset) กติกาเดียวกับโซนทุกบรรทัด
+     rec.stockType ติดไปกับทุกแถวยิงตั้งแต่ v2.16.0 แล้ว จึงรวมยอดได้เลยไม่ต้องยิงเน็ตเพิ่ม
+     รอบเดียว SKU เดียวอยู่ได้ทั้งชั้นโชว์และชั้นสต็อก ไฟล์ต้องบอกให้ครบว่าฝั่งละเท่าไหร่
+     แถวก่อน v2.16.0 ไม่มีฟิลด์นี้ → ลงถังชื่อ '' แล้วแสดงเป็น "(ไม่ระบุ)" ไม่ใช่ทิ้งยอดหาย */
+  var stMap = {};   // key -> { stockType -> จำนวนสุทธิ }
   (function () {
     function add(rec) {
       if (!rec) return;
@@ -9854,6 +9859,10 @@ function buildSummaryExcel(data) {
       var z = (rec.foundZone && String(rec.foundZone).trim()) || zoneNameForKey(k);
       var m = fzMap[k] || (fzMap[k] = {});
       m[z] = (m[z] || 0) + (Number(rec.delta) || 0);
+
+      var st = (rec.stockType && String(rec.stockType).trim()) || '';
+      var sm = stMap[k] || (stMap[k] = {});
+      sm[st] = (sm[st] || 0) + (Number(rec.delta) || 0);
     }
     if (xScope.multi && cycleCacheFresh() && state.cycleData && state.cycleData.raw &&
         state.cycleData.raw.jobs) {
@@ -9875,8 +9884,26 @@ function buildSummaryExcel(data) {
       .map(function (z) { return z + ' (' + m[z] + ')'; }).join(', ');
   }
 
+  /* ⭐ v2.21.0 — "โชว์ (3), สต็อก (2)" · กติกาเดียวกับ fzZones เป๊ะ
+     เรียงคงที่ โชว์ → สต็อก → Asset ไม่เรียงตามตัวอักษร คนเปิดไฟล์หลายใบจะได้เทียบคอลัมน์กันได้
+     ประเภทที่สุทธิเหลือ 0 ไม่โชว์ — ยิงแล้วหักคืนจนหมด ไม่ใช่ของที่มีอยู่จริงในฝั่งนั้น
+     ชื่อภาษาไทยใช้ SCAN_TYPE_LABEL ตัวเดียวกับที่พรีวิวนำเข้า Excel ใช้ ห้ามตั้งตารางซ้ำ
+     ค่าแปลกที่ไม่รู้จัก (เผื่ออนาคตเพิ่มประเภท) ต่อท้ายตามตัวอักษร แล้วปิดท้ายด้วย (ไม่ระบุ)
+     — ยอมให้คอลัมน์ยาวขึ้น ดีกว่าปล่อยให้ยอดบางก้อนหายไปจากไฟล์เงียบ ๆ */
+  function stTypes(k) {
+    var m = stMap[k]; if (!m) return '';
+    var fixed = ['display', 'stock', 'asset'];
+    var extra = Object.keys(m).filter(function (t) {
+      return t !== '' && fixed.indexOf(t) < 0;
+    }).sort();
+    return fixed.concat(extra, ['']).filter(function (t) { return m[t] > 0; })
+      .map(function (t) { return (SCAN_TYPE_LABEL[t] || t || '(ไม่ระบุ)') + ' (' + m[t] + ')'; })
+      .join(', ');
+  }
+
   data.rows.forEach(function (r) {
-    s2.push([r.code, r.name, r.location || '', fzZones(r.key), r.status || DEFAULT_STATUS, r.unit,
+    s2.push([r.code, r.name, r.location || '', fzZones(r.key), stTypes(r.key),
+             r.status || DEFAULT_STATUS, r.unit,
              r.type === 'notProduct' ? 'Not Product' : 'Product',
              r.sys, r.act, r.diff, r.scanQty, r.manualQty, r.price,
              Math.round(r.sys * r.price * 100) / 100, Math.round(r.act * r.price * 100) / 100,
@@ -9925,7 +9952,9 @@ function buildSummaryExcel(data) {
 
   var blob = buildXlsx([
     { name: 'สรุป', rows: s1, widths: [16, 12, 12, 13, 10, 10, 10, 14, 14, 14, 14, 14] },
-    { name: 'รายสินค้า', rows: s2, widths: [18, 34, 16, 22, 18, 10, 12, 12, 12, 10, 11, 14, 12, 14, 14, 30] },
+    /* v2.21.0 — แทรกความกว้างของ "ประเภทที่นับ" (16) เป็นตัวที่ 5 ต่อจากโซนที่เก็บ
+       จำนวนช่องต้องเท่าจำนวนคอลัมน์เสมอ ไม่งั้นความกว้างเลื่อนไปทั้งแถว */
+    { name: 'รายสินค้า', rows: s2, widths: [18, 34, 16, 22, 16, 18, 10, 12, 12, 12, 10, 11, 14, 12, 14, 14, 30] },
     { name: 'ประวัติการนับ', rows: s3,
       widths: histAll ? [22, 16, 18, 36, 16, 14, 10, 13, 22, 24]
                       : [22, 18, 36, 16, 14, 10, 13, 22, 24] },
