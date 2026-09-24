@@ -1009,6 +1009,12 @@ function check(name, ok, got) {
       docBlocks: document.querySelectorAll('#donutGroups .donut-block').length,
       texts: texts,
       fig: fig,
+      /* ข้อความที่ "ควรจะเป็น" ต้องมาจาก fmtPercent ตัวจริงของแอป ไม่ใช่ประกอบเองในเทส
+         ไม่งั้นทุกครั้งที่รูปแบบ % เปลี่ยน (v2.24.0 เป็น 2 ตำแหน่ง) ข้อนี้จะตกทั้งที่จอถูก
+         หน้าที่ของข้อนี้คือ "จอตรงกับเอกสาร" ไม่ใช่ "% มีกี่ตำแหน่ง" */
+      figFmt: fig.map(function (f) {
+        return { pieces: fmtPercent(f.pieces), sku: fmtPercent(f.sku) };
+      }),
       branch: $('sumBranchLine').textContent,
       date: $('sumAuditDate').textContent,
       title: document.querySelector('#sumShareHead .tbl-title').textContent
@@ -1018,10 +1024,9 @@ function check(name, ok, got) {
   check('⭐ วาดครบทุกกลุ่มเท่าที่หน้าเอกสารวาด (สองกล่องอยู่แยกกันได้)',
         r14.blocks === r14.docBlocks, { sumDonut: r14.blocks, docGroups: r14.docBlocks });
   check('⭐ ตัวเลขบนโดนัทตรงกับ donutFigures() ที่หน้าเอกสารใช้',
-        r14.fig.every(function (f) {
-          const want = function (v) { return v === null || v === undefined ? '–' : v + '%'; };
-          return r14.texts.indexOf(want(f.pieces)) >= 0 && r14.texts.indexOf(want(f.sku)) >= 0;
-        }), { texts: r14.texts, fig: r14.fig });
+        r14.figFmt.every(function (f) {
+          return r14.texts.indexOf(f.pieces) >= 0 && r14.texts.indexOf(f.sku) >= 0;
+        }), { texts: r14.texts, figFmt: r14.figFmt });
   check('มีกราฟทั้ง Product และ Not Product',
         r14.fig.map(function (f) { return f.key; }).join(',') === 'product,notProduct',
         r14.fig.map(function (f) { return f.key; }));

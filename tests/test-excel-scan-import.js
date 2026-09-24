@@ -551,8 +551,12 @@ function check(name, ok, got) {
   check('มีบรรทัดอธิบายเหนือหัวตาราง บอกทั้งค่าที่ใส่ได้และผลตอนเว้นว่าง',
         /โชว์/.test(r14.addNote) && /สต็อก/.test(r14.addNote) && /Asset/.test(r14.addNote) &&
         /เว้นว่าง/.test(r14.addNote) && /SA-1/.test(r14.addNote), r14.addNote);
-  check('ชีต "ลบ" ยังเป็น 2 ช่องเหมือนเดิม (การลบอิงรหัส + จำนวน)',
-        JSON.stringify(r14.delHead) === JSON.stringify(['รหัสสินค้า', 'จำนวน']), r14.delHead);
+  /* v2.19.0 ชีต "ลบ" มีแค่ รหัส + จำนวน · v2.23.0 ได้ช่อง ประเภท/โซน เท่าชีตเพิ่ม
+     เพราะการลบก็ต้องบอกได้ว่าเอาออกจากชั้นไหน ไม่งั้นยอดไปหักผิดฝั่ง
+     (เคสเต็ม ๆ อยู่ที่ tests/test-scan-import-remove.js ข้อ [12]-[15]) */
+  check('ชีต "ลบ" มีหัวตาราง 4 ช่องเท่าชีตเพิ่ม (v2.23.0)',
+        JSON.stringify(r14.delHead) ===
+        JSON.stringify(['รหัสสินค้า', 'จำนวน', 'ประเภท', 'โซน']), r14.delHead);
   check('อ่าน Template ที่ปล่อยออกไปกลับเข้ามาได้ และจับช่องถูกทุกช่อง',
         r14.item.key === 'A1' && r14.item.qty === 2 &&
         r14.item.stockType === 'display' && r14.item.foundZone === 'DA-1', r14.item);

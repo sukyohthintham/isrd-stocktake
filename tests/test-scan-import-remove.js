@@ -143,10 +143,15 @@ function check(name, ok, got) {
   check('ชีตเพิ่มอธิบายว่าประเภท/โซนเว้นว่างได้',
         /เว้นว่าง/.test(tpl.addNote) && /ประเภท/.test(tpl.addNote) && /โซน/.test(tpl.addNote),
         tpl.addNote);
-  check('ชีตลบมีหัวเดียวกัน', tpl.removeRows.some(function (r) { return r === 'รหัสสินค้า|จำนวน'; }),
+  /* v2.23.0 — ชีตลบได้ช่อง ประเภท/โซน เท่าชีตเพิ่ม หัวตารางจึงเป็น 4 ช่องเหมือนกันทั้งสองชีต */
+  check('ชีตลบมีหัวเดียวกับชีตเพิ่ม (4 ช่อง)',
+        tpl.removeRows.some(function (r) { return r === 'รหัสสินค้า|จำนวน|ประเภท|โซน'; }),
         tpl.removeRows);
   check('ชีตลบอธิบายว่าเว้นว่าง = เอาออกทั้งหมด',
         tpl.removeRows.some(function (r) { return /เว้นช่องจำนวนว่าง/.test(r); }), tpl.removeRows);
+  check('ชีตลบอธิบายเรื่องประเภท/โซนด้วย',
+        tpl.removeRows.some(function (r) { return /ประเภท\/โซน/.test(r) && /เว้นว่าง/.test(r); }),
+        tpl.removeRows);
   check('บอกผู้ใช้ว่ามีสองชีตในไฟล์เดียว', /สองชีต|ชีต "เพิ่ม" กับชีต "ลบ"/.test(tpl.toast || ''),
         tpl.toast);
 
@@ -375,6 +380,131 @@ function check(name, ok, got) {
   check('เขียนลงที่เดียวคือ rounds/R1', r11.paths.join(',') === 'rounds/R1', r11.paths);
   check('รหัสที่ไม่มีใน Master เข้าเป็น unknown ฝั่งเพิ่มเหมือนเดิม',
         r11.unknownRec.join(',') === 'ZZZ9:4', r11.unknownRec);
+
+  /* ============================================================
+     v2.23.0 — ชีต "ลบ" ระบุ ประเภท/โซน รายแถวได้เท่าชีต "เพิ่ม"
+     ============================================================
+     ของเดิมแถวลบทุกแถวได้ประเภท/โซนตามค่าบนจอ (ค่าเดียวทั้งไฟล์)
+     ยิงโชว์ไว้แล้วสั่งลบ ยอดจะไปหักฝั่งสต็อกถ้าบังเอิญปุ่มบนจอค้างอยู่ที่สต็อก
+     → คอลัมน์ "ประเภทที่นับ" ในไฟล์รายงาน (v2.21/2.22) หักผิดฝั่งโดยไม่มีใครรู้ */
+
+  /* ---------- [12] ประเภท/โซนรายแถวฝั่งลบ ---------- */
+  console.log('\n[12] แถวลบต้องได้ประเภท/โซนของตัวเองจากไฟล์');
+  const r12 = await page.evaluate(async () => {
+    window.__seed('counter', true, { A1: 10, B2: 4 });
+    /* ตั้งค่าบนจอให้ต่างจากไฟล์ทุกช่อง — ถ้ายังใช้ค่าจอ เทสจะจับได้ทันที */
+    state.scanType = 'asset';
+    setZoneFilter('ZZ-99');
+    window.__writes = [];
+    const file = window.__book([
+      { name: 'เพิ่ม', rows: [['รหัสสินค้า', 'จำนวน', 'ประเภท', 'โซน']] },
+      { name: 'ลบ', rows: [
+        ['รหัสสินค้า', 'จำนวน', 'ประเภท', 'โซน'],
+        ['A1', 3, 'โชว์', 'DA-1'],
+        ['A1', 2, 'สต็อก', 'SA-1'],
+        ['B2', 1, '', '']                       // เว้นว่าง → ถอยไปใช้ค่าบนจอ
+      ] }
+    ], 'rem-type.xlsx');
+    await handleScanImport(file);
+    return window.__scanRecs().map(function (r) {
+      return { code: r.code, delta: r.delta, stockType: r.stockType,
+               foundZone: r.foundZone, zone: r.zone, zoneName: r.zoneName };
+    });
+  });
+  check('เขียน 3 แถวลบ แยกตามประเภท/โซนที่ไฟล์ระบุ', r12.length === 3, r12);
+  check('ลบโชว์ DA-1 3 ชิ้น (delta ติดลบ)',
+        r12[0].delta === -3 && r12[0].stockType === 'display' &&
+        r12[0].foundZone === 'DA-1', r12[0]);
+  check('ลบสต็อก SA-1 2 ชิ้น — SKU เดียวกันแยกสองแถวได้',
+        r12[1].delta === -2 && r12[1].stockType === 'stock' &&
+        r12[1].foundZone === 'SA-1', r12[1]);
+  check('ช่องว่าง = ถอยไปใช้ค่าบนจอ (asset · ZZ-99) เหมือนเดิม',
+        r12[2].code === 'B2' && r12[2].delta === -1 &&
+        r12[2].stockType === 'asset' && r12[2].foundZone === 'ZZ-99', r12[2]);
+  check('⭐ zone / zoneName ยังมาจาก Location ของสินค้า ไม่ใช่โซนในไฟล์',
+        r12.every(function (r) { return r.zone === 'no-zone' && r.zoneName === '(ไม่ระบุโซน)'; }),
+        r12.map(function (r) { return r.zone; }));
+
+  /* ---------- [13] เพดานหักต้องแชร์กันข้ามกลุ่มของ SKU เดียว ---------- */
+  console.log('\n[13] ⭐ SKU เดียวแยกหลายแถว ต้องหักรวมไม่เกินที่นับไว้');
+  const r13 = await page.evaluate(async () => {
+    /* นับไว้ 2 ชิ้น แต่สั่งลบสองแถว ๆ ละ 2 = อยากลบ 4 ต้องได้จริงแค่ 2 */
+    window.__seed('counter', true, { A1: 2 });
+    state.scanType = 'stock';
+    setZoneFilter('');
+    window.__writes = [];
+    const file = window.__book([
+      { name: 'เพิ่ม', rows: [['รหัสสินค้า', 'จำนวน']] },
+      { name: 'ลบ', rows: [
+        ['รหัสสินค้า', 'จำนวน', 'ประเภท', 'โซน'],
+        ['A1', 2, 'สต็อก', ''],
+        ['A1', 1, 'โชว์', '']
+      ] }
+    ], 'rem-cap.xlsx');
+    await handleScanImport(file);
+    const recs = window.__scanRecs();
+    return {
+      recs: recs.map(function (r) { return { delta: r.delta, stockType: r.stockType }; }),
+      total: recs.reduce(function (s, r) { return s + r.delta; }, 0),
+      body: (window.__asks[0] || {}).b || ''
+    };
+  });
+  check('หักรวมได้ไม่เกินที่ Job นี้นับไว้ (2 ชิ้น) ไม่ทำให้ยอดติดลบ',
+        r13.total === -2, r13);
+  check('แถวแรกหักเต็ม 2 · แถวที่สองถูกกันไว้ทั้งแถว',
+        r13.recs.length === 1 && r13.recs[0].delta === -2 &&
+        r13.recs[0].stockType === 'stock', r13.recs);
+  check('กล่องยืนยันรายงานว่ามีรายการที่ลบไม่ได้',
+        /ลบไม่ได้ 1 รายการ/.test(r13.body), r13.body.slice(0, 300));
+
+  /* ---------- [14] ลบแล้วยอดต้องหักถูกฝั่ง ---------- */
+  console.log('\n[14] ยิงโชว์ 5 แล้วลบโชว์ 2 → ต้องเหลือโชว์ 3 ไม่ใช่ไปหักสต็อก');
+  const r14 = await page.evaluate(async () => {
+    window.__seed('counter', true, {});
+    state.scanType = 'display';
+    setZoneFilter('');
+    writeScan('A1', 5, 'scan', null);           // ยิงของโชว์ไว้ 5
+    state.scanType = 'stock';                   // ปุ่มบนจอค้างไว้ที่สต็อก (จงใจ)
+    window.__writes = [];
+    const file = window.__book([
+      { name: 'เพิ่ม', rows: [['รหัสสินค้า', 'จำนวน']] },
+      { name: 'ลบ', rows: [['รหัสสินค้า', 'จำนวน', 'ประเภท', 'โซน'], ['A1', 2, 'โชว์', '']] }
+    ], 'rem-side.xlsx');
+    await handleScanImport(file);
+    /* รวมยอดสุทธิต่อประเภทจาก scanLog แบบเดียวกับที่ไฟล์รายงานทำ */
+    const tally = {};
+    state.scanLog.forEach(function (s) {
+      const t = (s.rec.stockType || '');
+      tally[t] = (tally[t] || 0) + (Number(s.rec.delta) || 0);
+    });
+    return { tally: tally, counts: state.counts.A1,
+             lastRec: window.__scanRecs()[0] };
+  });
+  check('ยอดสุทธิฝั่งโชว์เหลือ 3 (5 − 2)', r14.tally.display === 3, r14.tally);
+  check('ฝั่งสต็อกไม่ถูกแตะเลย (ไม่มีถังสต็อก)',
+        r14.tally.stock === undefined, r14.tally);
+  check('ยอดรวมของ SKU ยังถูกต้อง (3 ชิ้น)', r14.counts === 3, r14.counts);
+  check('แถวที่เขียนติดประเภทโชว์ ไม่ใช่สต็อกตามปุ่มบนจอ',
+        r14.lastRec.stockType === 'display' && r14.lastRec.delta === -2, r14.lastRec);
+
+  /* ---------- [15] ไฟล์ลบแบบ 2 คอลัมน์เดิม ---------- */
+  console.log('\n[15] ไฟล์ลบแบบ 2 คอลัมน์ (ของเดิม) ต้องไม่กระทบ');
+  const r15 = await page.evaluate(async () => {
+    window.__seed('counter', true, { A1: 10, B2: 4 });
+    state.scanType = 'stock';
+    setZoneFilter('SB-7');
+    window.__writes = [];
+    await handleScanImport(window.__addRemove([], [['A1', 3], ['B2', null]], 'old-rem.xlsx'));
+    return window.__scanRecs().map(function (r) {
+      return { code: r.code, delta: r.delta, stockType: r.stockType, foundZone: r.foundZone };
+    });
+  });
+  check('ไม่มีคอลัมน์ประเภท/โซน → ใช้ค่าบนจอทุกแถวเหมือนก่อน v2.23.0',
+        r15.length === 2 &&
+        r15.every(function (r) { return r.stockType === 'stock' && r.foundZone === 'SB-7'; }),
+        r15);
+  check('เว้นช่องจำนวนว่าง = เอาออกทั้งหมดเท่าที่นับไว้ (B2 = 4) ยังทำงานเหมือนเดิม',
+        r15[0].delta === -3 && r15[1].delta === -4, r15);
 
   console.log('\n--- console/page errors ---');
   check('ไม่มี error ในคอนโซล', errors.length === 0, errors.slice(0, 3));

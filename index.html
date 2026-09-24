@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.22.0">
+<meta name="version" content="2.24.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.22.0</title>
+<title>ISRD Stocktake v2.24.0</title>
 
 <style>
 :root{
@@ -1913,7 +1913,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.22.0';
+var APP_VERSION = '2.24.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -4327,9 +4327,14 @@ function fmtMoney(n) {
   if (Object.is(n, -0)) n = 0;
   return Number(n).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
+/* ⭐ v2.24.0 — %Success โชว์ทศนิยม 2 ตำแหน่งคงที่ทุกที่ (จอ · เอกสารพิมพ์ · โดนัท)
+   ของเดิมปัดเหลือ 1 ตำแหน่ง ซึ่งหยาบเกินสำหรับรอบใหญ่: 99.94% กับ 99.85% กลายเป็น
+   99.9% เท่ากันทั้งคู่ ทั้งที่ห่างกันหลายสิบชิ้น คนกระทบยอดแยกสองรอบไม่ออก
+   บังคับ minimum ด้วย ไม่ใช่แค่ maximum — 100 ต้องเป็น "100.00%" ให้คอลัมน์เรียงจุดทศนิยม
+   ตรงกันเหมือนคอลัมน์เงิน (596,586.00) ไม่ใช่กระโดดไปมาตามจำนวนหลักของแต่ละแถว */
 function fmtPercent(n) {
   if (n === null || !isFinite(n)) return '–';
-  return n.toLocaleString('th-TH', { maximumFractionDigits: 1 }) + '%';
+  return n.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%';
 }
 
 /* ชื่อโซนสำหรับของที่ไม่มี Location — ตรงกับค่าที่ writeScan ใช้มาแต่เดิม
@@ -7725,9 +7730,13 @@ function downloadScanImportTemplate() {
       rows: [['ประเภท = โชว์ / สต็อก / Asset (เว้นว่าง = ใช้ปุ่มที่กดไว้บนจอ) · ' +
               'โซน = รหัสชั้นที่ไปเก็บจริง เช่น SA-1 (เว้นว่าง = ใช้ช่องโซนบนจอ)'],
              ['รหัสสินค้า', 'จำนวน', 'ประเภท', 'โซน']] },
-    { name: SCAN_SHEET_REMOVE, widths: [24, 14],
-      rows: [['เว้นช่องจำนวนว่าง = เอาออกทั้งหมดเท่าที่ Job นี้นับไว้'],
-             ['รหัสสินค้า', 'จำนวน']] }
+    /* ⭐ v2.23.0 — ชีต "ลบ" ได้ช่อง ประเภท/โซน เท่าชีต "เพิ่ม"
+       ของเดิมยอดที่ลบลงประเภท/โซนตามค่าบนจอ (ค่าเดียวทั้งไฟล์) ลบข้ามประเภทเมื่อไหร่
+       คอลัมน์ "ประเภทที่นับ" ในไฟล์รายงาน (v2.21/2.22) จะหักผิดฝั่งทันที */
+    { name: SCAN_SHEET_REMOVE, widths: [24, 14, 16, 14],
+      rows: [['เว้นช่องจำนวนว่าง = เอาออกทั้งหมดเท่าที่ Job นี้นับไว้ · ' +
+              'ประเภท/โซน = ระบุให้ตรงชั้นที่จะเอาออก (เว้นว่าง = ใช้ค่าบนจอ)'],
+             ['รหัสสินค้า', 'จำนวน', 'ประเภท', 'โซน']] }
   ]);
   var a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -7765,15 +7774,30 @@ function emptyScanStat() {
    ของที่ Job นี้ไม่ได้นับเลยจึงไม่ใช่ error แต่เป็นรายการที่ต้องรายงานให้คนเห็นก่อนยืนยัน */
 function planScanRemoval(items) {
   var plan = { items: [], pieces: 0, blocked: [], capped: [] };
+  /* ⭐ v2.23.0 — เพดานหักต้องแชร์กันข้ามกลุ่มของ SKU เดียวกัน
+     ตั้งแต่ v2.19.0 ไฟล์แยกแถวตาม ประเภท/โซน แล้ว SKU เดียวจึงมาได้หลายแถว
+     ถ้าแต่ละแถวไปอ่าน state.counts ใหม่ทุกครั้ง จะได้เพดานเต็มทุกแถว
+     นับไว้ 2 ชิ้นแต่สั่งลบ 2 แถว ๆ ละ 2 = หักจริง 4 → ยอดใบนี้ติดลบ ซึ่งกู้ยาก
+     จึงหักจากโควตาก้อนเดียวกันทีละแถว แถวที่เหลือไม่พอจะถูก cap หรือ blocked ตามจริง */
+  var remain = {};
   (items || []).forEach(function (it) {
-    var cur = Number(state.counts[it.key]) || 0;
+    if (remain[it.key] === undefined) remain[it.key] = Number(state.counts[it.key]) || 0;
+    var cur = remain[it.key];
     if (cur <= 0) { plan.blocked.push(it); return; }
-    var want = (it.qty === null) ? cur : it.qty;   // null = ทั้งหมดเท่าที่นับไว้
+    var want = (it.qty === null) ? cur : it.qty;   // null = ทั้งหมดเท่าที่เหลือให้หัก
     if (want > cur) { plan.capped.push({ code: it.code, asked: it.qty, cur: cur }); want = cur; }
-    plan.items.push({ key: it.key, code: it.code, qty: want, all: it.qty === null });
+    remain[it.key] = cur - want;
+    /* ประเภท/โซนจากไฟล์ต้องทะลุไปถึง writeScan ไม่งั้นแถวลบจะไปลงฝั่งตามค่าบนจอ */
+    plan.items.push({ key: it.key, code: it.code, qty: want, all: it.qty === null,
+                      stockType: it.stockType, foundZone: it.foundZone });
     plan.pieces += want;
   });
-  plan.skus = plan.items.length;
+  /* นับ SKU จากรหัสไม่ซ้ำ ไม่ใช่จำนวนแถว — SKU ที่แยกเป็นลบโชว์ + ลบสต็อก ยังเป็นสินค้าตัวเดียว
+     (กติกาเดียวกับ stat.skus ฝั่งเพิ่มตั้งแต่ v2.19.0) */
+  var seen = Object.create(null);
+  plan.items.forEach(function (it) { seen[it.key] = 1; });
+  plan.skus = Object.keys(seen).length;
+  plan.groups = plan.items.length;
   return plan;
 }
 
@@ -7897,9 +7921,15 @@ function handleScanImport(file) {
           if (extra) writeScan(it.key, it.qty, 'scan', addReason, extra);
           else writeScan(it.key, it.qty, 'scan', addReason);
         });
-        /* ลบ = เขียนแถวใหม่ delta ติดลบ ไม่ได้ลบแถวเดิม ตามกฎบ้าน "ห้ามลบยอดที่นับไปแล้ว" */
+        /* ลบ = เขียนแถวใหม่ delta ติดลบ ไม่ได้ลบแถวเดิม ตามกฎบ้าน "ห้ามลบยอดที่นับไปแล้ว"
+           ⭐ v2.23.0 — ส่ง extra เหมือนฝั่งเพิ่มเป๊ะ เพื่อให้แถวหักลงถูกประเภท/โซน
+           ยิงโชว์ 5 แล้วสั่งลบโชว์ 2 ต้องเหลือโชว์ 3 ไม่ใช่ไปหักฝั่งสต็อกตามปุ่มบนจอ */
         plan.items.forEach(function (it) {
-          writeScan(it.key, -it.qty, 'scan', remReason);
+          var extra = null;
+          if (it.stockType) (extra = extra || {}).stockType = it.stockType;
+          if (it.foundZone) (extra = extra || {}).foundZone = it.foundZone;
+          if (extra) writeScan(it.key, -it.qty, 'scan', remReason, extra);
+          else writeScan(it.key, -it.qty, 'scan', remReason);
         });
 
         renderScanTotals();
@@ -7919,7 +7949,7 @@ function handleScanImport(file) {
       ask('ไฟล์นี้ยังขาดคอลัมน์' + where,
           'ไฟล์ต้องมีหัวตาราง: ' + (err.missing || []).join(' และ ') + '\n\n' +
           'บังคับแค่ 2 คอลัมน์: รหัสสินค้า กับ จำนวน\n' +
-          'ชีต "' + SCAN_SHEET_ADD + '" ใส่ "ประเภท" กับ "โซน" เพิ่มได้ ไม่ใส่ก็ได้ ' +
+          'ทั้งสองชีตใส่ "ประเภท" กับ "โซน" เพิ่มได้ ไม่ใส่ก็ได้ ' +
           '(ไม่ใส่ = ใช้ค่าจากปุ่มและช่องโซนบนจอ)\n' +
           'ชีต "' + SCAN_SHEET_REMOVE + '" เว้นช่องจำนวนว่างได้ แต่หัวตารางต้องมีครบ\n' +
           'กดปุ่ม "ดาวน์โหลด Template" เพื่อเอาไฟล์ตัวอย่างไปกรอก',
@@ -9835,8 +9865,8 @@ function buildSummaryExcel(data) {
     s1.push([
       GROUP_LABEL[name], g.sysQty, g.actQty, g.actQty - g.sysQty,
       g.skuMatch, g.skuShort, g.skuOver,
-      pctPiecesOf(g) === null ? '' : Math.round(pctPiecesOf(g) * 10) / 10,
-      pctSkuOf(g) === null ? '' : Math.round(pctSkuOf(g) * 10) / 10,
+      pctPiecesOf(g) === null ? '' : Math.round(pctPiecesOf(g) * 100) / 100,
+      pctSkuOf(g) === null ? '' : Math.round(pctSkuOf(g) * 100) / 100,
       Math.round(g.sysValue * 100) / 100, Math.round(g.actValue * 100) / 100,
       Math.round((g.actValue - g.sysValue) * 100) / 100
     ]);
@@ -11057,9 +11087,9 @@ function exportDocExcel() {
     var pc = pctPiecesOf(g), sku = pctSkuOf(g);
     s1.push([GROUP_LABEL[name],
              g.sysQty, g.actQty, g.pcMatch, g.pcShort, g.pcOver, g.actQty - g.sysQty,
-             pc === null ? '' : Math.round(pc * 10) / 10,
+             pc === null ? '' : Math.round(pc * 100) / 100,
              g.skuMatch, g.skuShort, g.skuOver, g.skuTotal,
-             sku === null ? '' : Math.round(sku * 10) / 10,
+             sku === null ? '' : Math.round(sku * 100) / 100,
              Math.round(g.sysValue * 100) / 100, Math.round(g.actValue * 100) / 100,
              Math.round((g.actValue - g.sysValue) * 100) / 100]);
   });
@@ -11071,8 +11101,8 @@ function exportDocExcel() {
   s1.push(['กลุ่ม', '%Success (ชิ้น)', '%Success (SKU)', 'SKU ที่ตรง', 'SKU ทั้งหมด']);
   donutFigures(data).forEach(function (f) {
     s1.push([f.label,
-             f.pieces === null ? '' : Math.round(f.pieces * 10) / 10,
-             f.sku === null ? '' : Math.round(f.sku * 10) / 10,
+             f.pieces === null ? '' : Math.round(f.pieces * 100) / 100,
+             f.sku === null ? '' : Math.round(f.sku * 100) / 100,
              f.skuMatch, f.skuTotal]);
   });
 
@@ -13846,8 +13876,8 @@ function exportJobsExcel(ids, cycleLabel) {
       summary.push([
         cid, jobBranchLabel(job0), c.jobs.length, JOB_STATUS_TEXT[cycleStatus(cid)],
         g.skuTotal, scanned, g.actQty,
-        pctPiecesOf(g) === null ? '' : Math.round(pctPiecesOf(g) * 10) / 10,
-        pctSkuOf(g) === null ? '' : Math.round(pctSkuOf(g) * 10) / 10,
+        pctPiecesOf(g) === null ? '' : Math.round(pctPiecesOf(g) * 100) / 100,
+        pctSkuOf(g) === null ? '' : Math.round(pctSkuOf(g) * 100) / 100,
         Math.round(g.sysValue * 100) / 100, Math.round(g.actValue * 100) / 100,
         Math.round((g.actValue - g.sysValue) * 100) / 100
       ]);
