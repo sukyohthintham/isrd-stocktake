@@ -324,6 +324,214 @@ function check(name, ok, got) {
   check('เขียนลงที่เดียวคือ rounds/R1',
         JSON.stringify(r9.paths) === JSON.stringify(['rounds/R1']), r9.paths);
 
+  /* ============================================================
+     v2.19.0 — ระบุประเภท (โชว์/สต็อก/Asset) และโซน ได้รายแถว
+     ============================================================
+     ของเดิมทุกแถวได้ stockType = ปุ่มบนจอ และ foundZone = ช่องโซนบนจอ ณ ตอนกดนำเข้า
+     (ค่าเดียวทั้งไฟล์) ไฟล์ที่ปนของโชว์กับของสต็อกจึงถูกจัดประเภทเดียวกันหมด */
+
+  /* ---------- 10. อ่านคอลัมน์ประเภท/โซน ---------- */
+  console.log('\n[10] อ่านคอลัมน์ "ประเภท" และ "โซน" รายแถว');
+  const r10 = await page.evaluate(async () => {
+    window.__seed('counter');
+    const rows = [
+      ['รหัสสินค้า', 'จำนวน', 'ประเภท', 'โซน'],
+      ['A1', 3, 'โชว์', 'DA-1'],
+      ['B2', 5, 'สต็อก', 'sb-2'],          // ตัวพิมพ์เล็ก → ต้องถูก uppercase
+      ['C3', 2, 'Asset', '  SC-3  '],      // มีช่องว่างหน้าหลัง → ต้องถูก trim
+      ['A1', 4, 'stock', 'SA-9'],          // รหัสเดิมแต่คนละประเภท → ห้ามยุบรวม
+      ['ZZZ9', 1, 'show', 'DB-4']          // ไม่มีใน Master → ยังต้องติดธง unknown
+    ];
+    const parsed = await parseXlsx(await window.__file(rows).arrayBuffer());
+    const res = parseScanImportFile(parsed);
+    return {
+      items: res.items.map(function (i) {
+        return { key: i.key, qty: i.qty, known: i.known,
+                 stockType: i.stockType, foundZone: i.foundZone };
+      }),
+      skus: res.stat.skus, groups: res.stat.groups,
+      dup: res.stat.dupCodes, pieces: res.stat.pieces,
+      badType: res.stat.badType.length,
+      unknown: res.stat.unknownItems.map(function (i) { return i.code; })
+    };
+  });
+  check('แปลงคำไทย "โชว์" → display', r10.items[0].stockType === 'display', r10.items[0]);
+  check('แปลงคำไทย "สต็อก" → stock', r10.items[1].stockType === 'stock', r10.items[1]);
+  check('แปลง "Asset" ไม่สนตัวพิมพ์ → asset', r10.items[2].stockType === 'asset', r10.items[2]);
+  check('แปลงคำอังกฤษ "stock" / "show" ได้ด้วย',
+        r10.items[3].stockType === 'stock' && r10.items[4].stockType === 'display', r10.items);
+  check('โซนถูก uppercase และ trim', r10.items[1].foundZone === 'SB-2' &&
+        r10.items[2].foundZone === 'SC-3', r10.items);
+  check('⭐ รหัสเดียวกันคนละประเภท = คนละแถว ไม่ยุบรวม (A1 โชว์ 3 · A1 สต็อก 4)',
+        r10.items.filter(function (i) { return i.key === 'A1'; }).length === 2 &&
+        r10.items[0].qty === 3 && r10.items[3].qty === 4, r10.items);
+  check('ไม่นับเป็น "รหัสซ้ำ" เพราะคนละประเภทคือคนละของจริง ๆ', r10.dup === 0, r10.dup);
+  check('นับ SKU จากรหัสไม่ซ้ำ (4 SKU) แต่แยกเป็น 5 กลุ่ม',
+        r10.skus === 4 && r10.groups === 5, r10);
+  check('ยอดรวมยังครบ 15 ชิ้น', r10.pieces === 15, r10.pieces);
+  check('รหัสที่ไม่มีใน Master ยังถูกตรวจเจอ',
+        JSON.stringify(r10.unknown) === JSON.stringify(['ZZZ9']), r10.unknown);
+  check('ไม่มีแถวไหนที่ประเภทอ่านไม่ออก', r10.badType === 0, r10.badType);
+
+  /* ---------- 11. ค่ารายแถวต้องไปถึงเรคอร์ดที่เขียนจริง ---------- */
+  console.log('\n[11] แถวที่เขียนลงฐานต้องได้ประเภท/โซนของตัวเอง');
+  const r11 = await page.evaluate(async () => {
+    window.__seed('counter');
+    /* ตั้งค่าบนจอให้ "ต่างจากไฟล์" ทุกช่อง — ถ้าโค้ดยังใช้ค่าจอ เทสจะจับได้ทันที */
+    state.scanType = 'asset';
+    setZoneFilter('ZZ-99');
+    window.__writes = [];
+    const rows = [
+      ['รหัสสินค้า', 'จำนวน', 'ประเภท', 'โซน'],
+      ['A1', 3, 'โชว์', 'DA-1'],
+      ['A1', 4, 'สต็อก', 'SA-9'],
+      ['B2', 5, '', ''],                   // เว้นว่างทั้งคู่ → ต้องถอยไปใช้ค่าจอ
+      ['ZZZ9', 1, 'โชว์', 'DB-4']          // unknown + ระบุประเภท/โซน
+    ];
+    await handleScanImport(window.__file(rows, 'mix.xlsx'));
+    return window.__scanRecs().map(function (r) {
+      return { code: r.code, delta: r.delta, stockType: r.stockType, foundZone: r.foundZone,
+               zone: r.zone, zoneName: r.zoneName, unknown: r.unknown, raw: r.raw };
+    });
+  });
+  check('เขียน 4 แถว แยกตามประเภท/โซนที่ไฟล์ระบุ', r11.length === 4, r11);
+  check('A1 โชว์ DA-1 · 3 ชิ้น',
+        r11[0].code === 'A1' && r11[0].delta === 3 &&
+        r11[0].stockType === 'display' && r11[0].foundZone === 'DA-1', r11[0]);
+  check('A1 สต็อก SA-9 · 4 ชิ้น — SKU เดียวกันแต่ลงคนละประเภทได้จริง',
+        r11[1].code === 'A1' && r11[1].delta === 4 &&
+        r11[1].stockType === 'stock' && r11[1].foundZone === 'SA-9', r11[1]);
+  check('ช่องว่าง = ถอยไปใช้ค่าจอ (asset · ZZ-99) เหมือนเดิมทุกประการ',
+        r11[2].code === 'B2' && r11[2].stockType === 'asset' &&
+        r11[2].foundZone === 'ZZ-99', r11[2]);
+  check('แถว unknown ยังมีธง unknown + raw ครบ และได้ประเภท/โซนจากไฟล์ด้วย',
+        r11[3].unknown === true && r11[3].raw === 'ZZZ9' &&
+        r11[3].stockType === 'display' && r11[3].foundZone === 'DB-4', r11[3]);
+  check('⭐ zone / zoneName ยังมาจาก Location ของสินค้าเหมือนเดิม ไม่ใช่โซนในไฟล์',
+        r11.every(function (r) { return r.zone === 'no-zone' && r.zoneName === '(ไม่ระบุโซน)'; }),
+        r11.map(function (r) { return { zone: r.zone, zoneName: r.zoneName }; }));
+
+  /* ---------- 12. ไฟล์เก่า 2 คอลัมน์ ต้องทำงานเหมือนเดิมเป๊ะ ---------- */
+  console.log('\n[12] ไฟล์เก่าแบบ 2 คอลัมน์ — ต้องไม่กระทบ');
+  const r12 = await page.evaluate(async () => {
+    window.__seed('counter');
+    state.scanType = 'stock';
+    setZoneFilter('SB-7');
+    window.__writes = [];
+    const rows = [
+      ['รหัสสินค้า', 'จำนวน'],
+      ['A1', 10],
+      ['A1', 3],                            // รหัสซ้ำ → ยังต้องยุบรวมเป็น 13 เหมือนเดิม
+      ['B2', 5]
+    ];
+    const parsed = await parseXlsx(await window.__file(rows).arrayBuffer());
+    const res = parseScanImportFile(parsed);
+    await handleScanImport(window.__file(rows, 'old.xlsx'));
+    return {
+      groups: res.stat.groups, skus: res.stat.skus, dup: res.stat.dupCodes,
+      noType: res.items.every(function (i) {
+        return i.stockType === undefined && i.foundZone === undefined;
+      }),
+      a1qty: res.items.filter(function (i) { return i.key === 'A1'; })[0].qty,
+      recs: window.__scanRecs().map(function (r) {
+        return { code: r.code, delta: r.delta, stockType: r.stockType, foundZone: r.foundZone };
+      })
+    };
+  });
+  check('ไม่มีคอลัมน์ = ทุกแถวได้ stockType/foundZone เป็น undefined',
+        r12.noType === true, r12);
+  check('รหัสซ้ำยังยุบรวมเป็นแถวเดียว (A1 = 13)',
+        r12.a1qty === 13 && r12.dup === 1 && r12.groups === 2 && r12.skus === 2, r12);
+  check('เขียนจริงแล้วได้ค่าจากจอทุกแถวเหมือนก่อน v2.19.0',
+        r12.recs.length === 2 &&
+        r12.recs.every(function (r) { return r.stockType === 'stock' && r.foundZone === 'SB-7'; }),
+        r12.recs);
+
+  /* ---------- 13. ประเภทที่อ่านไม่ออก ---------- */
+  console.log('\n[13] ช่องประเภทกรอกมั่ว — ถอยไปใช้ค่าจอ แล้วต้องบอกคนก่อนยืนยัน');
+  const r13 = await page.evaluate(async () => {
+    window.__seed('counter');
+    state.scanType = 'stock';
+    setZoneFilter('');
+    window.__writes = [];
+    const rows = [
+      ['รหัสสินค้า', 'จำนวน', 'ประเภท', 'โซน'],
+      ['A1', 2, 'ของโชว์หน้าร้านชั้นบน', 'DA-1'],   // ข้อความยาวที่เทียบไม่ตรง
+      ['B2', 3, 'xyz', ''],
+      ['C3', 1, 'โชว์', '']
+    ];
+    const parsed = await parseXlsx(await window.__file(rows).arrayBuffer());
+    const res = parseScanImportFile(parsed);
+    await handleScanImport(window.__file(rows, 'bad.xlsx'));
+    return {
+      badType: res.stat.badType.length,
+      /* undefined กลายเป็น null ตอนข้ามฝั่งมา Node — แปลงเป็นข้อความก่อน จะได้เทียบตรงไปตรงมา */
+      types: res.items.map(function (i) { return i.stockType === undefined ? 'UNDEF' : i.stockType; }),
+      zones: res.items.map(function (i) { return i.foundZone === undefined ? 'UNDEF' : i.foundZone; }),
+      askBody: (window.__asks[0] || {}).b || '',
+      recs: window.__scanRecs().map(function (r) {
+        return { code: r.code, stockType: r.stockType, foundZone: r.foundZone };
+      })
+    };
+  });
+  check('ประเภทที่อ่านไม่ออก = undefined ไม่เดาให้',
+        r13.types[0] === 'UNDEF' && r13.types[1] === 'UNDEF' &&
+        r13.types[2] === 'display', r13.types);
+  check('โซนยังใช้ได้ถึงแม้ประเภทจะอ่านไม่ออก (คนละช่องกัน)',
+        r13.zones[0] === 'DA-1', r13.zones);
+  check('นับแถวที่ประเภทอ่านไม่ออกไว้ 2 แถว', r13.badType === 2, r13.badType);
+  check('กล่องยืนยันบอกว่ามี 2 แถวที่อ่านไม่ออก และจะใช้ค่าจากปุ่มบนจอ',
+        /อ่านไม่ออก 2 แถว/.test(r13.askBody) && /ปุ่มบนจอ/.test(r13.askBody) &&
+        /โชว์ \/ สต็อก \/ Asset/.test(r13.askBody), r13.askBody.slice(0, 400));
+  check('แถวที่อ่านไม่ออกยังนำเข้าได้ปกติ ใช้ประเภทจากจอ',
+        r13.recs.length === 3 && r13.recs[0].stockType === 'stock' &&
+        r13.recs[2].stockType === 'display', r13.recs);
+
+  /* ---------- 14. Template มีสองช่องใหม่ ---------- */
+  console.log('\n[14] Template — ชีต "เพิ่ม" มีประเภท/โซน · ชีต "ลบ" คงเดิม');
+  const r14 = await page.evaluate(async () => {
+    window.__seed('counter');
+    let blob = null;
+    const realCreate = URL.createObjectURL;
+    /* ปิดการกดลิงก์ดาวน์โหลดไว้ด้วย ไม่งั้นเบราว์เซอร์จะพยายามโหลด blob ปลอมแล้วขึ้น error
+       ในคอนโซล ซึ่งจะไปตกข้อ "ไม่มี error ในคอนโซล" ท้ายไฟล์ */
+    const realClick = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function () {};
+    URL.createObjectURL = function (b) { blob = b; return 'blob:stub'; };
+    downloadScanImportTemplate();
+    URL.createObjectURL = realCreate;
+    HTMLAnchorElement.prototype.click = realClick;
+    const sheets = await parseXlsxSheets(await blob.arrayBuffer());
+    const byName = {};
+    sheets.forEach(function (s) { byName[s.name] = s.rows; });
+    const addRows = byName['เพิ่ม'] || [];
+    const delRows = byName['ลบ'] || [];
+    const addHead = addRows[findHeaderRow(addRows)] || [];
+    const delHead = delRows[findHeaderRow(delRows)] || [];
+    /* ต้องอ่านไฟล์ที่ตัวเองปล่อยออกไปกลับเข้ามาได้ ไม่ใช่แค่หน้าตาถูก */
+    const reparsed = (function () {
+      try { return parseScanImportFile({ rows: addRows.concat([['A1', 2, 'โชว์', 'DA-1']]) }); }
+      catch (e) { return { error: e.message }; }
+    })();
+    return {
+      addHead: addHead.map(function (c) { return String(c == null ? '' : c).trim(); }),
+      delHead: delHead.map(function (c) { return String(c == null ? '' : c).trim(); }),
+      addNote: String(addRows[0] && addRows[0][0] || ''),
+      item: (reparsed.items || [])[0] || reparsed
+    };
+  });
+  check('ชีต "เพิ่ม" หัวตาราง 4 ช่อง: รหัสสินค้า · จำนวน · ประเภท · โซน',
+        JSON.stringify(r14.addHead) ===
+        JSON.stringify(['รหัสสินค้า', 'จำนวน', 'ประเภท', 'โซน']), r14.addHead);
+  check('มีบรรทัดอธิบายเหนือหัวตาราง บอกทั้งค่าที่ใส่ได้และผลตอนเว้นว่าง',
+        /โชว์/.test(r14.addNote) && /สต็อก/.test(r14.addNote) && /Asset/.test(r14.addNote) &&
+        /เว้นว่าง/.test(r14.addNote) && /SA-1/.test(r14.addNote), r14.addNote);
+  check('ชีต "ลบ" ยังเป็น 2 ช่องเหมือนเดิม (การลบอิงรหัส + จำนวน)',
+        JSON.stringify(r14.delHead) === JSON.stringify(['รหัสสินค้า', 'จำนวน']), r14.delHead);
+  check('อ่าน Template ที่ปล่อยออกไปกลับเข้ามาได้ และจับช่องถูกทุกช่อง',
+        r14.item.key === 'A1' && r14.item.qty === 2 &&
+        r14.item.stockType === 'display' && r14.item.foundZone === 'DA-1', r14.item);
+
   console.log('\n--- console/page errors ---');
   console.log(errors.slice(0, 10).join('\n') || '(none)');
   /* ⭐ ดัก error ไว้แล้วต้องตรวจด้วย ไม่ใช่พิมพ์ทิ้งไว้ให้เลื่อนผ่าน

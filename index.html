@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.18.1">
+<meta name="version" content="2.19.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.18.1</title>
+<title>ISRD Stocktake v2.19.0</title>
 
 <style>
 :root{
@@ -1913,7 +1913,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.18.1';
+var APP_VERSION = '2.19.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -7453,8 +7453,28 @@ function saveManual() {
 var SCAN_IMPORT_COLUMNS = {
   code: COLUMN_ALIASES.code,
   qty: ['จำนวน', 'จำนวนที่นับได้', 'จำนวนนับ', 'ยอดนับ', 'นับได้',
-        'qty', 'quantity', 'count', 'counted']
+        'qty', 'quantity', 'count', 'counted'],
+  /* ⭐ v2.19.0 — สองช่องนี้ไม่บังคับ ไฟล์เก่าที่มีแค่ รหัส+จำนวน ยังอ่านได้เหมือนเดิมทุกบรรทัด
+     ตั้งใจไม่รับ alias 'location' ให้คอลัมน์โซน — ไฟล์ที่คนเอา Master Location มากรอกยอด
+     มีหัว "Location" ซึ่งเป็นผังคลัง ไม่ใช่ชั้นที่ไปเก็บจริง รับไปจะลงผิดช่องเงียบ ๆ */
+  stockType: ['ประเภท', 'ชนิด', 'type', 'stocktype'],
+  zone: ['โซน', 'โซนที่เก็บ', 'zone']
 };
+
+/* ข้อความในช่อง "ประเภท" → ค่าที่ระบบใช้จริง — คนกรอกในไฟล์เขียนไม่เหมือนกันแน่ ๆ
+   normText ตัดช่องว่างและทำเป็นตัวพิมพ์เล็กให้แล้ว จึงเทียบตรง ๆ ได้
+   อ่านไม่ออก = คืน undefined ไปใช้ค่าจากปุ่มบนจอตามเดิม ไม่เดาให้
+   เดาผิดหนึ่งครั้ง = ยอดทั้งกองไปลงผิดประเภทโดยไม่มีใครรู้ ซึ่งแย่กว่าการถอยไปใช้ค่าจอ */
+var SCAN_TYPE_WORDS = {
+  'โชว์': 'display', 'โชว': 'display', 'show': 'display', 'display': 'display', 'd': 'display',
+  'สต็อก': 'stock', 'สต๊อก': 'stock', 'สตอก': 'stock', 'stock': 'stock', 's': 'stock',
+  'asset': 'asset', 'แอสเซท': 'asset', 'a': 'asset'
+};
+function scanTypeFromText(v) {
+  var hit = SCAN_TYPE_WORDS[normText(v)];
+  /* กันพลาดอีกชั้น เผื่อวันหนึ่งมีคนเติมคำใหม่ลงตารางข้างบนแล้วพิมพ์ค่าผิด */
+  return (hit && SCAN_TYPES.indexOf(hit) >= 0) ? hit : undefined;
+}
 
 /* คืนผลการอ่านล้วน ๆ ไม่เขียนอะไรทั้งสิ้น — คนเรียกเอาไปโชว์พรีวิวก่อนตัดสินใจ
    รหัสซ้ำในไฟล์ถูกยุบเป็นแถวเดียวแล้วบวกจำนวนกัน (คนละล็อตของตัวเดียวกัน)
@@ -7490,7 +7510,7 @@ function parseScanImportFile(parsed, opts) {
   if (!state.scanIndex) buildScanIndex();
 
   var byKey = {}, order = [];
-  var stat = { rows: 0, pieces: 0, noCode: [], badQty: [], dupCodes: 0 };
+  var stat = { rows: 0, pieces: 0, noCode: [], badQty: [], dupCodes: 0, badType: [] };
 
   for (var r = headerRow + 1; r <= lastReal; r++) {
     var row = rows[r] || [];
@@ -7514,28 +7534,57 @@ function parseScanImportFile(parsed, opts) {
       qty = cell.value;
     }
 
+    /* ⭐ v2.19.0 — ประเภท/โซน ระบุได้รายแถว · ไม่มีคอลัมน์หรือเว้นว่าง = undefined
+       แล้วไปใช้ค่าจากปุ่ม/ช่องบนจอตอนเขียนเหมือนเดิม (ดู handleScanImport) */
+    var stockType, foundZone;
+    if (idx.stockType !== undefined) {
+      var rawType = cellText(row[idx.stockType]);
+      stockType = scanTypeFromText(rawType);
+      /* กรอกมาแต่อ่านไม่ออก ต้องนับไว้รายงานให้เห็นก่อนยืนยัน
+         ไม่งั้นแถวนั้นถอยไปใช้ค่าจอเงียบ ๆ แล้วคนคิดว่าไฟล์ระบุให้แล้ว */
+      if (rawType && !stockType) stat.badType.push(num);
+    }
+    if (idx.zone !== undefined) foundZone = cellText(row[idx.zone]).toUpperCase() || undefined;
+
     var known = state.scanIndex.get(code.toUpperCase());
     var key = known || safeKey(code);
-    if (!byKey[key]) {
-      byKey[key] = { key: key, code: code, qty: 0, known: !!known, rows: [] };
-      order.push(key);
+    /* ยุบแถวซ้ำต้องแยกตามประเภทและโซนด้วย ไม่ใช่แค่รหัส
+       SKU เดียวกันวางทั้งชั้นโชว์และชั้นสต็อกเป็นเรื่องปกติของหน้าร้าน
+       ถ้ายุบด้วยรหัสอย่างเดียว อันหลังจะกลืนอันแรกแล้วยอดไปลงประเภทเดียวกันหมด
+       ซึ่งคือบั๊กที่ v2.19.0 ตั้งใจแก้พอดี · \u0000 กันรหัสที่มีอักขระคั่นปนมาเอง */
+    var gkey = key + '\u0000' + (stockType || '') + '\u0000' + (foundZone || '');
+    if (!byKey[gkey]) {
+      byKey[gkey] = { key: key, code: code, qty: 0, known: !!known, rows: [],
+                      stockType: stockType, foundZone: foundZone };
+      order.push(gkey);
     } else {
       stat.dupCodes++;
     }
     /* null ("ทั้งหมด") ชนะเสมอเมื่อปนกับตัวเลขในรหัสเดียวกัน
        เพราะบวกเลขอื่นเข้าไปก็ไม่ทำให้มากกว่า "ทั้งหมดที่นับไว้" ได้อยู่ดี */
-    if (qty === null || byKey[key].qty === null) byKey[key].qty = null;
-    else byKey[key].qty += qty;
-    byKey[key].rows.push(num);
+    if (qty === null || byKey[gkey].qty === null) byKey[gkey].qty = null;
+    else byKey[gkey].qty += qty;
+    byKey[gkey].rows.push(num);
     stat.rows++;
     stat.pieces += (qty === null ? 0 : qty);
   }
 
   var items = order.map(function (k) { return byKey[k]; });
-  stat.skus = items.length;
+  /* นับ "จำนวน SKU" จากรหัสไม่ซ้ำ ไม่ใช่จำนวนกลุ่ม — SKU ที่แยกเป็นโชว์+สต็อก
+     ยังเป็นสินค้าตัวเดียว ถ้านับเป็น 2 ตัวเลขในกล่องยืนยันจะบอกความจริงคนละเรื่อง */
+  var seenKeys = Object.create(null);
+  items.forEach(function (it) { seenKeys[it.key] = 1; });
+  stat.skus = Object.keys(seenKeys).length;
+  stat.groups = items.length;
   stat.allRows = items.filter(function (it) { return it.qty === null; }).length;
   stat.skipped = stat.noCode.length + stat.badQty.length;
-  stat.unknownItems = items.filter(function (it) { return !it.known; });
+  /* รหัสเดียวที่แยกหลายกลุ่มต้องเตือนครั้งเดียว ไม่ใช่โผล่ซ้ำตามจำนวนกลุ่ม */
+  var seenUnknown = Object.create(null);
+  stat.unknownItems = items.filter(function (it) {
+    if (it.known || seenUnknown[it.key]) return false;
+    seenUnknown[it.key] = 1;
+    return true;
+  });
   return { items: items, stat: stat };
 }
 
@@ -7597,8 +7646,13 @@ function downloadScanImportTemplate() {
      ชีต "ลบ" มีบรรทัดอธิบายอยู่เหนือหัวตาราง findHeaderRow ข้ามให้เองอยู่แล้ว
      เขียนไว้ในไฟล์ดีกว่าเขียนแต่ในแอป เพราะคนกรอกเปิดแต่ Excel ไม่ได้เปิดแอปค้างไว้ */
   var blob = buildXlsx([
-    { name: SCAN_SHEET_ADD, widths: [24, 14],
-      rows: [['รหัสสินค้า', 'จำนวน']] },
+    /* ⭐ v2.19.0 — ชีต "เพิ่ม" มีช่อง ประเภท/โซน ให้ระบุรายแถว
+       เขียนคำอธิบายไว้เหนือหัวตาราง (findHeaderRow ข้ามให้เอง) เพราะคนกรอกเปิดแต่ Excel
+       สองช่องนี้เว้นว่างได้ ไฟล์ที่ทีมกรอกค้างไว้แบบ 2 คอลัมน์จึงยังอัปได้เหมือนเดิม */
+    { name: SCAN_SHEET_ADD, widths: [24, 14, 16, 14],
+      rows: [['ประเภท = โชว์ / สต็อก / Asset (เว้นว่าง = ใช้ปุ่มที่กดไว้บนจอ) · ' +
+              'โซน = รหัสชั้นที่ไปเก็บจริง เช่น SA-1 (เว้นว่าง = ใช้ช่องโซนบนจอ)'],
+             ['รหัสสินค้า', 'จำนวน', 'ประเภท', 'โซน']] },
     { name: SCAN_SHEET_REMOVE, widths: [24, 14],
       rows: [['เว้นช่องจำนวนว่าง = เอาออกทั้งหมดเท่าที่ Job นี้นับไว้'],
              ['รหัสสินค้า', 'จำนวน']] }
@@ -7612,18 +7666,25 @@ function downloadScanImportTemplate() {
   toast('ดาวน์โหลด Template แล้ว — มีชีต "เพิ่ม" กับชีต "ลบ" อยู่ในไฟล์เดียวกัน');
 }
 
-/* รายการตัวอย่างในพรีวิว — ยาวเกินก็ตัด ไม่งั้นกล่องยืนยันยาวจนกดปุ่มไม่เจอ */
+/* ⭐ v2.19.0 — ชื่อประเภทเป็นภาษาคน ใช้ในพรีวิวก่อนยืนยันนำเข้า
+   ต้องตรงกับป้ายบนปุ่มหน้ายิง ไม่งั้นคนอ่านจะไม่แน่ใจว่าหมายถึงปุ่มไหน */
+var SCAN_TYPE_LABEL = { display: 'โชว์', stock: 'สต็อก', asset: 'Asset' };
+
+/* รายการตัวอย่างในพรีวิว — ยาวเกินก็ตัด ไม่งั้นกล่องยืนยันยาวจนกดปุ่มไม่เจอ
+   ติดประเภท/โซนที่ไฟล์ระบุมาไว้ท้ายบรรทัดด้วย คนอนุมัติจะได้เห็นว่ารหัสเดียวกัน
+   ถูกแยกเป็นคนละแถวเพราะคนละชั้น ไม่ใช่นึกว่าระบบนับซ้ำ */
 function scanImportSample(items, max) {
   var head = items.slice(0, max).map(function (it) {
-    return '· ' + it.code + ' × ' + fmtNum(it.qty);
+    var tag = [SCAN_TYPE_LABEL[it.stockType], it.foundZone].filter(Boolean).join(' · ');
+    return '· ' + it.code + ' × ' + fmtNum(it.qty) + (tag ? '  [' + tag + ']' : '');
   }).join('\n');
   return head + (items.length > max ? '\n· ... อีก ' + fmtNum(items.length - max) + ' รายการ' : '');
 }
 
 /* สถิติเปล่า — ใช้แทนชีตที่ไม่มีหรือปล่อยว่างไว้ จะได้ไม่ต้องเช็ค null ทุกบรรทัดข้างล่าง */
 function emptyScanStat() {
-  return { rows: 0, pieces: 0, skus: 0, skipped: 0, dupCodes: 0, allRows: 0,
-           noCode: [], badQty: [], unknownItems: [] };
+  return { rows: 0, pieces: 0, skus: 0, groups: 0, skipped: 0, dupCodes: 0, allRows: 0,
+           noCode: [], badQty: [], badType: [], unknownItems: [] };
 }
 
 /* แปลงรายการในชีต "ลบ" เป็นแผนที่หักได้จริง — กติกาเดียวกับ removeOverScan เป๊ะ
@@ -7707,6 +7768,14 @@ function handleScanImport(file) {
       (add.stat.skipped || rem.stat.skipped
         ? 'ข้าม ' + fmtNum(add.stat.skipped + rem.stat.skipped) + ' แถวที่กรอกไม่ครบ\n'
         : '') +
+      /* ⭐ v2.19.0 — กรอกประเภทมาแต่อ่านไม่ออก ต้องบอกก่อนยืนยัน ไม่ใช่ถอยไปใช้ค่าจอเงียบ ๆ
+         แถวพวกนี้ยังนำเข้าได้ปกติ แค่ประเภทไม่ได้มาจากไฟล์ */
+      (add.stat.badType && add.stat.badType.length
+        ? '\n⚠ ช่อง "ประเภท" อ่านไม่ออก ' + fmtNum(add.stat.badType.length) + ' แถว — ' +
+          'แถวพวกนี้จะใช้ประเภทตามปุ่มบนจอ (' +
+          (SCAN_TYPE_LABEL[state.scanType] || state.scanType) + ') · ' +
+          'ในไฟล์ให้พิมพ์ว่า โชว์ / สต็อก / Asset\n'
+        : '') +
       (rem.stat.allRows
         ? '\nชีต "' + SCAN_SHEET_REMOVE + '" เว้นช่องจำนวนว่างไว้ ' + fmtNum(rem.stat.allRows) +
           ' รายการ — ถือว่าเอาออกทั้งหมดเท่าที่ Job นี้นับไว้\n'
@@ -7741,8 +7810,20 @@ function handleScanImport(file) {
         var remReason = 'นำเข้าลบ Excel: ' + file.name + ' ' + stamp;
 
         add.items.forEach(function (it) {
-          if (it.known) writeScan(it.key, it.qty, 'scan', addReason);
-          else writeScan(it.key, it.qty, 'scan', addReason, { unknown: true, raw: it.code });
+          /* ⭐ v2.19.0 — ค่ารายแถวจากไฟล์ทับค่าจากจอ เฉพาะช่องที่กรอกมาจริง
+             ช่องที่เว้นว่าง = ไม่ใส่ลง extra เลย แล้ว writeScan เติมจาก state ให้เหมือนเดิม
+             (writeScan ตั้ง stockType/foundZone จาก state ก่อน แล้วค่อย merge extra ทับ)
+             รวมธง unknown เข้า extra ก้อนเดียวกัน ห้ามแยกเป็นสองก้อนแล้วเขียนทับกันเอง */
+          var extra = null;
+          if (it.stockType) (extra = extra || {}).stockType = it.stockType;
+          if (it.foundZone) (extra = extra || {}).foundZone = it.foundZone;
+          if (!it.known) {
+            extra = extra || {};
+            extra.unknown = true;
+            extra.raw = it.code;
+          }
+          if (extra) writeScan(it.key, it.qty, 'scan', addReason, extra);
+          else writeScan(it.key, it.qty, 'scan', addReason);
         });
         /* ลบ = เขียนแถวใหม่ delta ติดลบ ไม่ได้ลบแถวเดิม ตามกฎบ้าน "ห้ามลบยอดที่นับไปแล้ว" */
         plan.items.forEach(function (it) {
@@ -7765,7 +7846,9 @@ function handleScanImport(file) {
     if (code === 'MISSING_COLUMNS') {
       ask('ไฟล์นี้ยังขาดคอลัมน์' + where,
           'ไฟล์ต้องมีหัวตาราง: ' + (err.missing || []).join(' และ ') + '\n\n' +
-          'ต้องการแค่ 2 คอลัมน์: รหัสสินค้า กับ จำนวน\n' +
+          'บังคับแค่ 2 คอลัมน์: รหัสสินค้า กับ จำนวน\n' +
+          'ชีต "' + SCAN_SHEET_ADD + '" ใส่ "ประเภท" กับ "โซน" เพิ่มได้ ไม่ใส่ก็ได้ ' +
+          '(ไม่ใส่ = ใช้ค่าจากปุ่มและช่องโซนบนจอ)\n' +
           'ชีต "' + SCAN_SHEET_REMOVE + '" เว้นช่องจำนวนว่างได้ แต่หัวตารางต้องมีครบ\n' +
           'กดปุ่ม "ดาวน์โหลด Template" เพื่อเอาไฟล์ตัวอย่างไปกรอก',
           'ปิด', { hideCancel: true });

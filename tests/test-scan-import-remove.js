@@ -129,13 +129,20 @@ function check(name, ok, got) {
     const sheets = await parseXlsxSheets(await captured.arrayBuffer());
     return {
       names: sheets.map(function (s) { return s.name; }),
-      addHead: sheets[0].rows[0],
+      /* v2.19.0 — ชีต "เพิ่ม" มีบรรทัดอธิบายอยู่เหนือหัวตารางแล้ว (เหมือนชีต "ลบ")
+         จึงต้องหาแถวหัวด้วย findHeaderRow ตัวเดียวกับที่ตัวอ่านไฟล์ใช้ ไม่ใช่ชี้ rows[0] ตรง ๆ */
+      addHead: sheets[0].rows[findHeaderRow(sheets[0].rows)],
+      addNote: String((sheets[0].rows[0] || [])[0] || ''),
       removeRows: sheets[1].rows.map(function (r) { return r.join('|'); }),
       toast: (window.__toasts[0] || {}).m
     };
   });
   check('มี 2 ชีตชื่อ เพิ่ม / ลบ', tpl.names.join(',') === 'เพิ่ม,ลบ', tpl.names);
-  check('ชีตเพิ่มมีหัว รหัสสินค้า | จำนวน', tpl.addHead.join('|') === 'รหัสสินค้า|จำนวน', tpl.addHead);
+  check('ชีตเพิ่มมีหัว รหัสสินค้า | จำนวน | ประเภท | โซน (v2.19.0)',
+        tpl.addHead.join('|') === 'รหัสสินค้า|จำนวน|ประเภท|โซน', tpl.addHead);
+  check('ชีตเพิ่มอธิบายว่าประเภท/โซนเว้นว่างได้',
+        /เว้นว่าง/.test(tpl.addNote) && /ประเภท/.test(tpl.addNote) && /โซน/.test(tpl.addNote),
+        tpl.addNote);
   check('ชีตลบมีหัวเดียวกัน', tpl.removeRows.some(function (r) { return r === 'รหัสสินค้า|จำนวน'; }),
         tpl.removeRows);
   check('ชีตลบอธิบายว่าเว้นว่าง = เอาออกทั้งหมด',
