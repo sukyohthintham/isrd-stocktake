@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.20.0">
+<meta name="version" content="2.20.1">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.20.0</title>
+<title>ISRD Stocktake v2.20.1</title>
 
 <style>
 :root{
@@ -1913,7 +1913,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.20.0';
+var APP_VERSION = '2.20.1';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -6311,6 +6311,29 @@ function foundZoneTotals() {
   return out;
 }
 
+/* ⭐ v2.20.1 — ความคืบหน้าของ "ชั้นหน้าร้าน" หนึ่งชั้น คิดสดจาก scanLog ของ Job ที่เปิดอยู่
+   ต้องคิดจาก foundZone (ชั้นที่ไปเก็บจริง) ไม่ใช่ Location คลัง — คนละผังกันคนละเรื่องกัน
+   ชิ้น = ผลรวม delta สุทธิ (ยกเลิกการยิงหักออกให้เอง) · รายการ = SKU ที่ยังเหลือยอดในชั้นนี้
+   แยก rows ออกมาด้วย เพราะ "ยิงแล้วยกเลิกจนหมด" กับ "ยังไม่เคยยิงเลย" ยอดเป็น 0 เท่ากัน
+   แต่ต้องพูดคนละแบบ ไม่งั้นจะไปบอกว่ายังไม่ได้ยิงทั้งที่เขายิงแล้วยกเลิกเอง */
+function foundZoneProgress(zone) {
+  var z = String(zone == null ? '' : zone).trim().toUpperCase();
+  var rows = 0, pieces = 0, byKey = {};
+  if (!z) return { rows: 0, pieces: 0, skus: 0 };
+  state.scanLog.forEach(function (s) {
+    var rec = s && s.rec;
+    if (!rec) return;
+    if (String(rec.foundZone || '').trim().toUpperCase() !== z) return;
+    var d = Number(rec.delta) || 0;
+    rows++;
+    pieces += d;
+    var k = safeKey(rec.code);
+    byKey[k] = (byKey[k] || 0) + d;
+  });
+  var skus = Object.keys(byKey).filter(function (k) { return byKey[k] !== 0; }).length;
+  return { rows: rows, pieces: pieces, skus: skus };
+}
+
 /* โซนที่ "เก็บ/นับจริง" ต่อ SKU = ค่าที่พิมพ์ในช่อง "เก็บทีละโซน" ตอนยิง (อาจมีหลายค่า) */
 function foundZoneText(key) {
   var m = state.foundZones[key];
@@ -6929,6 +6952,22 @@ function renderLocFilter() {
       : 'รอบนี้ยังไม่มีข้อมูล Location — นำเข้าที่แท็บ Master';
     return;
   }
+
+  /* ⭐ v2.20.1 — งานหน้าร้าน: บรรทัดนี้ต้องบอกความคืบหน้าของชั้นที่กำลังเก็บอยู่
+     ไม่ใช่ผลค้นหาจากผัง Location คลัง ซึ่งรหัสหน้าร้าน (SA-2) ไม่มีทางตรงอยู่แล้ว
+     ของเดิมจึงขึ้น "ไม่พบสินค้าที่ Location ขึ้นต้นด้วย SA-2" ทุกครั้งที่เลือกชั้น
+     เด็กอ่านแล้วนึกว่าตัวเองเลือกโซนผิด ทั้งที่ยิงเข้าปกติทุกชิ้น
+     ต้อง return ตรงนี้ ห้ามให้ไหลไปนับจาก Location ต่อ — v2.20.0 ซ่อนผังคลังในโหมดนี้ไปแล้ว
+     ถ้าบางครั้งรหัสไปพ้องกับ Location แล้วโผล่ตัวเลขคลังมา จะกลายเป็นกติกาที่อธิบายไม่ได้ */
+  if (isShopZoneMode()) {
+    var pg = foundZoneProgress(term);
+    info.textContent = pg.rows
+      ? ('โซน ' + term + ' · ยิงแล้ว ' + fmtNum(pg.pieces) + ' ชิ้น · ' +
+         fmtNum(pg.skus) + ' รายการ')
+      : ('โซน ' + term + ' · ยังไม่ได้ยิงในโซนนี้');
+    return;
+  }
+
   var total = 0, done = 0, pieces = 0;
   Object.keys(state.systemQty).forEach(function (k) {
     var l = locationOf(k);
@@ -7035,6 +7074,12 @@ function renderScanTotals() {
       allEl.appendChild(tot);
     }
   }
+
+  /* ⭐ v2.20.1 — โหมดหน้าร้าน บรรทัดใต้ช่องโซนคิดจากยอดที่ยิงไปแล้ว จึงต้องขยับตามทุกครั้ง
+     (รวมตอนที่คนอื่นยิงเข้ามาทางสาย SSE ซึ่งก็วิ่งผ่านฟังก์ชันนี้เหมือนกัน)
+     เรียกเฉพาะโหมดนี้เท่านั้น — โหมดคลัง renderLocFilter ไล่ทั้ง systemQty หมื่นห้าพันตัว
+     ถ้าเรียกทุกการยิงจะกลายเป็นการสแกนทั้งคลังทุกครั้งที่ยิงหนึ่งชิ้น */
+  if (isShopZoneMode()) renderLocFilter();
 
   var lab = $('scanTotalLab');
   if (!lab) return;

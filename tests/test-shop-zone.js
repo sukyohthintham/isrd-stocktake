@@ -714,6 +714,80 @@ function check(name, ok, got) {
         r12.noFilter.badges.some(function (t) { return t.indexOf('หยิบ D1-2-2') >= 0; }) &&
         r12.noFilter.refShown === false, r12.noFilter);
 
+  /* ---------- 13. บรรทัดใต้ช่องโซน (v2.20.1) ----------
+     ของเดิมค้นจากผัง Location คลัง → โหมดหน้าร้านขึ้น "ไม่พบสินค้าที่ Location
+     ขึ้นต้นด้วย SA-2" ทุกครั้ง เด็กนึกว่าเลือกโซนผิดทั้งที่ยิงเข้าปกติ */
+  console.log('\n[13] บรรทัดใต้ช่องโซน — หน้าร้านบอกความคืบหน้า · คลังบอกเหมือนเดิม');
+  const r13 = await page.evaluate(() => {
+    const out = {};
+    const info = function () { return $('locFilterInfo').textContent; };
+
+    /* ยังไม่ยิงอะไรในโซนนี้ */
+    window.__seed('STOCK');
+    state.page = 'scan';
+    setZoneFilter('SA-2');
+    out.empty = info();
+
+    /* ยิง A1 สองชิ้น + A2 หนึ่งชิ้น ในโซน SA-2 */
+    writeScan('A1', 1, 'scan', null);
+    writeScan('A1', 1, 'scan', null);
+    writeScan('A2', 1, 'scan', null);
+    renderLocFilter();
+    out.counted = info();
+
+    /* ยิงแล้วต้องขยับเองโดยไม่ต้องเรียก renderLocFilter ซ้ำ (renderScanTotals เรียกให้) */
+    writeScan('A1', 1, 'scan', null);
+    renderScanTotals();
+    out.live = info();
+
+    /* ของโซนอื่นต้องไม่ปนเข้ามา */
+    setZoneFilter('SB-3');
+    writeScan('A3', 5, 'scan', null);
+    renderLocFilter();
+    out.otherZone = info();
+    setZoneFilter('SA-2');
+    renderLocFilter();
+    out.backToSA2 = info();
+
+    /* ยิงแล้วยกเลิกจนหมด — ต้องไม่กลับไปพูดว่า "ยังไม่ได้ยิง" */
+    window.__seed('STOCK');
+    state.page = 'scan';
+    setZoneFilter('SA-2');
+    writeScan('A1', 1, 'scan', null);
+    writeScan('A1', -1, 'scan', 'ยกเลิก');
+    renderLocFilter();
+    out.undone = info();
+
+    /* โหมดคลัง — ข้อความเดิมทุกตัวอักษร */
+    window.__seed('STOCK');
+    state.page = 'scan';
+    setZoneFilter('D');                       // ตรงกับ Location หยิบ D1-2-2 ของ A1
+    out.whHit = info();
+    setZoneFilter('B4');                      // ไม่มีของที่ Location ขึ้นต้นด้วย B4
+    out.whMiss = info();
+    setZoneFilter('');
+    out.blank = info();
+    return out;
+  });
+  check('โซนหน้าร้านที่ยังไม่ได้ยิง → บอกตรง ๆ ว่ายังไม่ได้ยิง ไม่ใช่ "ไม่พบ Location"',
+        r13.empty === 'โซน SA-2 · ยังไม่ได้ยิงในโซนนี้', r13.empty);
+  check('ยิงแล้ว → โชว์ยอดชิ้นและจำนวนรายการของโซนนั้น',
+        r13.counted === 'โซน SA-2 · ยิงแล้ว 3 ชิ้น · 2 รายการ', r13.counted);
+  check('ยิงเพิ่มแล้วบรรทัดขยับเองทันที (ไม่ต้องออกจากหน้าแล้วเข้าใหม่)',
+        r13.live === 'โซน SA-2 · ยิงแล้ว 4 ชิ้น · 2 รายการ', r13.live);
+  check('ของโซนอื่นไม่ปนเข้ามา (SB-3 เห็นแต่ของตัวเอง)',
+        r13.otherZone === 'โซน SB-3 · ยิงแล้ว 5 ชิ้น · 1 รายการ', r13.otherZone);
+  check('กลับมาโซนเดิมยอดยังเป็นของโซนนั้น',
+        r13.backToSA2 === 'โซน SA-2 · ยิงแล้ว 4 ชิ้น · 2 รายการ', r13.backToSA2);
+  check('ยิงแล้วยกเลิกจนหมด → ยอด 0 แต่ไม่พูดว่า "ยังไม่ได้ยิง"',
+        r13.undone === 'โซน SA-2 · ยิงแล้ว 0 ชิ้น · 0 รายการ', r13.undone);
+  check('⭐ โหมดคลังที่มีของ → ข้อความเดิมทุกตัวอักษร',
+        /^โซน "D": ยิงแล้ว \d+ \/ \d+ SKU · /.test(r13.whHit), r13.whHit);
+  check('⭐ โหมดคลังที่ไม่มีของ → ยังขึ้น "ไม่พบสินค้าที่ Location..." เหมือนเดิม',
+        r13.whMiss === 'ไม่พบสินค้าที่ Location ขึ้นต้นด้วย "B4" ในชุด offline', r13.whMiss);
+  check('ไม่เลือกโซน → ข้อความเดิม',
+        /ปล่อยว่าง = นับทั้งรอบ|ยังไม่มีข้อมูล Location/.test(r13.blank), r13.blank);
+
   console.log('\n--- console/page errors ---');
   console.log(errors.slice(0, 10).join('\n') || '(none)');
   check('ไม่มี error ในคอนโซลเลยสักข้อ', errors.length === 0, errors.slice(0, 3));
