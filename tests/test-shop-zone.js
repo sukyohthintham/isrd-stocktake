@@ -117,8 +117,11 @@ function check(name, ok, got) {
   check('โซนจาก Location ของสินค้าตัวนี้ยังเป็น D (ของเดิมไม่ขยับ)', r1.fromLoc === 'D', r1.fromLoc);
   check('ป้ายตัวใหญ่โชว์ SA-1 ไม่ใช่ D', r1.letter === 'SA-1', r1.letter);
   check('ป้ายใต้ตัวใหญ่เปลี่ยนเป็น "โซนที่กำลังเก็บ"', r1.lab === 'โซนที่กำลังเก็บ', r1.lab);
-  check('มีบรรทัดอ้างอิงโซนคลังตัวเล็กใต้ป้าย',
-        r1.refShown === true && r1.refText === 'อ้างอิงคลัง: D', r1);
+  /* v2.17.0 เคยโชว์บรรทัด "อ้างอิงคลัง: D" ตรงนี้
+     v2.20.0 ซ่อนเมื่อเป็นโซนแบบหน้าร้าน (SA-1) เพราะเด็กหน้าร้านไม่ได้ใช้ผังคลัง
+     เคสตัวกรองแบบคลังที่ยังต้องโชว์อยู่ ไปคุมที่ข้อ [12] */
+  check('โซนแบบหน้าร้าน = ไม่มีบรรทัดอ้างอิงโซนคลัง (v2.20.0)',
+        r1.refShown === false && r1.refText === '', r1);
   check('รหัส 4 ตัวได้ขนาดกลาง ไม่ถูกย่อเหลือ 14px', r1.letterClass === 'long mid', r1.letterClass);
   check('ป้ายยอดบอกโซนที่พิมพ์', r1.totalLab === 'ชิ้นที่ยิงแล้วในโซน SA-1', r1.totalLab);
   check('ยอดใหญ่นับชิ้นที่ยิงในโซนที่พิมพ์ (3 ชิ้น)', r1.big === '3', r1.big);
@@ -148,7 +151,7 @@ function check(name, ok, got) {
         r2.zones.indexOf('D') < 0 && r2.zones.indexOf('H') < 0, r2.zones);
   check('ยอดใหญ่ตามโซนที่กำลังเก็บ (SB-2 = 2)', r2.big === '2', r2.big);
   check('ป้ายยอดตาม SB-2', r2.totalLab === 'ชิ้นที่ยิงแล้วในโซน SB-2', r2.totalLab);
-  check('อ้างอิงคลังตามของชิ้นล่าสุด (A2 → H)', r2.refText === 'อ้างอิงคลัง: H', r2.refText);
+  check('ยังเป็นโซนหน้าร้าน (SB-2) → ไม่มีบรรทัดอ้างอิงโซนคลัง', r2.refText === '', r2.refText);
   /* ชั้นสะสมของเดิมต้องไม่ถูกแตะ ไม่งั้นรายงาน/Excel ที่อ่านผังคลังจะเพี้ยนตาม */
   check('state.zoneTotals ยังสะสมด้วยผังคลังเหมือนเดิม (D 3 · H 2)',
         JSON.stringify(r2.zoneTotals) === JSON.stringify({ D: 3, H: 2 }), r2.zoneTotals);
@@ -637,6 +640,79 @@ function check(name, ok, got) {
   check('ช่องโซนยังรับค่าและ uppercase ตามเดิม', r11.zone === 'SB-2', r11.zone);
   check('ไม่มีสกรอลล์แนวนอนบนจอ 390px', r11.noSideScroll === true, r11.noSideScroll);
   await page.setViewport({ width: 1280, height: 900 });
+
+  /* ---------- 12. งานหน้าร้านไม่เห็น Location คลัง WH (v2.20.0) ----------
+     เด็กหน้าร้านเลือกโซน SA-2 แล้วการ์ดขึ้น "หยิบ D1-2-2" = ชั้นที่หน้าร้านไม่มีอยู่จริง
+     เขาจะเดินไปหาแล้วไม่เจอ · งานคลังยังต้องเห็นครบเหมือนเดิมทุกกรณี */
+  console.log('\n[12] โหมดหน้าร้าน ซ่อน Location คลัง · โหมดคลังเห็นครบ');
+  const r12 = await page.evaluate(() => {
+    const out = {};
+    /* ตัวแยกโหมดต้องตัดสินจากรหัสที่เลือกอย่างเดียว ไม่ใช่จากชนิด Job */
+    window.__seed('STOCK');
+    out.modes = {};
+    [['SA-2', true], ['DB-10', true], ['sa-2', true],     // รหัสผังหน้าร้าน (ตัวพิมพ์เล็กก็ต้องเข้า)
+     ['ZZ-9', true],                                      // รหัสนอกผังแต่รูปแบบเดียวกัน = หน้าร้าน
+     ['A', false], ['B4', false],                         // ตัวกรองแบบคลัง
+     ['I1-3-3', false],                                   // Location คลังเต็ม ๆ ไม่ใช่รหัสชั้นหน้าร้าน
+     ['', false]].forEach(function (p) {
+      state.locationFilter = p[0];
+      out.modes[p[0] || '(ว่าง)'] = { got: isShopZoneMode(), want: p[1] };
+    });
+
+    /* ผังที่ตั้งเอง: รหัสที่ไม่เข้ารูปแบบ แต่อยู่ในผังจริง ต้องนับเป็นหน้าร้านด้วย */
+    state.customShopZones = ['SHELF1'];
+    state.locationFilter = 'SHELF1';
+    out.customInPlan = isShopZoneMode();
+    state.locationFilter = 'SHELF2';
+    out.customNotInPlan = isShopZoneMode();
+    state.customShopZones = [];
+
+    /* การ์ดสินค้า — A1 มี Location D1-2-2 · A3 ไม่มี Location เลย */
+    const badgeText = function () {
+      return Array.prototype.map.call($('slBadges').querySelectorAll('.badge'),
+                                      function (b) { return b.textContent; });
+    };
+    const shot = function (zone, key) {
+      window.__seed('STOCK');
+      state.page = 'scan';
+      setZoneFilter(zone);
+      writeScan(key, 1, 'scan', null);
+      showScanHit(key);
+      window.__draw();
+      return { badges: badgeText(), ref: $('zoneLockRef').textContent,
+               refShown: getComputedStyle($('zoneLockRef')).display !== 'none' };
+    };
+    out.shopHasLoc = shot('SA-2', 'A1');       // หน้าร้าน + สินค้ามี Location
+    out.shopNoLoc = shot('SA-2', 'A3');        // หน้าร้าน + สินค้าไม่มี Location
+    out.whFilter = shot('B4', 'A1');           // ตัวกรองแบบคลัง
+    out.noFilter = shot('', 'A1');             // ไม่เลือกอะไรเลย
+    return out;
+  });
+  const modeOk = Object.keys(r12.modes).every(function (k) {
+    return r12.modes[k].got === r12.modes[k].want;
+  });
+  check('isShopZoneMode() แยกโหมดถูกทุกรูปแบบรหัส', modeOk === true, r12.modes);
+  check('รหัสในผังที่ตั้งเองนับเป็นหน้าร้านด้วย แม้รูปแบบไม่เข้า regex',
+        r12.customInPlan === true && r12.customNotInPlan === false, r12);
+  check('⭐ โหมดหน้าร้าน: การ์ดไม่มีป้าย หยิบ / เติม',
+        !r12.shopHasLoc.badges.some(function (t) { return /หยิบ|เติม/.test(t); }),
+        r12.shopHasLoc.badges);
+  check('โหมดหน้าร้าน: สินค้าที่ไม่มี Location ก็ไม่ขึ้น "ไม่มี Location" (ซ่อนทั้งก้อน)',
+        !r12.shopNoLoc.badges.some(function (t) { return /Location/.test(t); }),
+        r12.shopNoLoc.badges);
+  check('โหมดหน้าร้าน: ป้ายอื่นบนการ์ดยังอยู่ครบ ไม่ได้ซ่อนมั่ว',
+        r12.shopHasLoc.badges.length > 0, r12.shopHasLoc.badges);
+  check('โหมดหน้าร้าน: ไม่มีบรรทัด "อ้างอิงคลัง"',
+        r12.shopHasLoc.refShown === false && r12.shopHasLoc.ref === '', r12.shopHasLoc);
+  check('⭐ ตัวกรองแบบคลัง (B4): การ์ดยังมี หยิบ D1-2-2 + เติม ครบเหมือนเดิม',
+        r12.whFilter.badges.some(function (t) { return t.indexOf('หยิบ D1-2-2') >= 0; }) &&
+        r12.whFilter.badges.some(function (t) { return /เติม/.test(t); }),
+        r12.whFilter.badges);
+  check('ตัวกรองแบบคลัง: บรรทัดอ้างอิงคลังยังโชว์เหมือน v2.17.0',
+        r12.whFilter.refShown === true && r12.whFilter.ref === 'อ้างอิงคลัง: D', r12.whFilter);
+  check('ไม่เลือกโซนเลย: การ์ดมี Location ครบ และไม่มีบรรทัดอ้างอิง (เหมือนเดิม)',
+        r12.noFilter.badges.some(function (t) { return t.indexOf('หยิบ D1-2-2') >= 0; }) &&
+        r12.noFilter.refShown === false, r12.noFilter);
 
   console.log('\n--- console/page errors ---');
   console.log(errors.slice(0, 10).join('\n') || '(none)');

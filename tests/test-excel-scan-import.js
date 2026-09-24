@@ -373,6 +373,31 @@ function check(name, ok, got) {
         JSON.stringify(r10.unknown) === JSON.stringify(['ZZZ9']), r10.unknown);
   check('ไม่มีแถวไหนที่ประเภทอ่านไม่ออก', r10.badType === 0, r10.badType);
 
+  /* ---------- 10b. คำที่ทีมหน้างานใช้กันเอง ---------- */
+  console.log('\n[10b] คำเรียกอื่นที่ต้องอ่านออก');
+  const r10b = await page.evaluate(() => {
+    window.__seed('counter');
+    const out = {};
+    /* ตรงกับป้ายชนิด Job ที่ทีมเห็นอยู่แล้ว — "โชว์หน้าร้าน" / "สต๊อกหลังร้าน" */
+    ['หน้าร้าน', 'หลังร้าน', ' หน้าร้าน ', 'โชว์', 'สต๊อก', 'สต็อก',
+     'Show', 'STOCK', 'd', 'S', 'a'].forEach(function (w) {
+      const got = scanTypeFromText(w);
+      out[w] = got === undefined ? 'UNDEF' : got;
+    });
+    /* คำที่ไม่ได้อยู่ในตาราง ต้องยังคืน undefined ไม่เดาให้ */
+    out.__unknown = scanTypeFromText('ชั้นวางหน้าร้านแถวที่สาม') === undefined;
+    return out;
+  });
+  check('"หน้าร้าน" → display', r10b['หน้าร้าน'] === 'display', r10b);
+  check('"หลังร้าน" → stock', r10b['หลังร้าน'] === 'stock', r10b);
+  check('มีช่องว่างหน้าหลังก็ยังอ่านออก', r10b[' หน้าร้าน '] === 'display', r10b);
+  check('คำเดิมทั้งหมดยังอ่านออกเหมือนเดิม',
+        r10b['โชว์'] === 'display' && r10b['สต๊อก'] === 'stock' && r10b['สต็อก'] === 'stock' &&
+        r10b['Show'] === 'display' && r10b['STOCK'] === 'stock' &&
+        r10b['d'] === 'display' && r10b['S'] === 'stock' && r10b['a'] === 'asset', r10b);
+  check('ข้อความยาวที่มีคำว่า "หน้าร้าน" ปนอยู่ ยังไม่เดาให้ (เทียบทั้งช่อง ไม่ใช่หาคำ)',
+        r10b.__unknown === true, r10b.__unknown);
+
   /* ---------- 11. ค่ารายแถวต้องไปถึงเรคอร์ดที่เขียนจริง ---------- */
   console.log('\n[11] แถวที่เขียนลงฐานต้องได้ประเภท/โซนของตัวเอง');
   const r11 = await page.evaluate(async () => {

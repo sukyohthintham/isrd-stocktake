@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.19.0">
+<meta name="version" content="2.20.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.19.0</title>
+<title>ISRD Stocktake v2.20.0</title>
 
 <style>
 :root{
@@ -1913,7 +1913,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.19.0';
+var APP_VERSION = '2.20.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -6282,6 +6282,20 @@ function activeZone() {
   return typed || String(state.lastZoneName || '').trim();
 }
 
+/* ⭐ v2.20.0 — ตอนนี้กำลังทำ "งานหน้าร้าน" อยู่หรือเปล่า
+   แอปไม่มีธงแยก shop/WH ที่ทะเบียนสาขา จึงใช้ "รหัสโซนที่เลือกไว้" เป็นตัวแยกแทน
+   รหัสแบบผังหน้าร้าน (SA-2 · DB-10) = ยืนอยู่หน้าร้าน → Location คลัง WH ไม่มีประโยชน์กับเขา
+   ซ้ำร้ายกว่านั้นคือทำให้สับสน: เด็กเห็น "หยิบ D1-2-2" แล้วออกไปเดินหาชั้น D ที่ไม่มีอยู่จริง
+   ตัวกรองแบบคลัง (A · B4) หรือไม่เลือกอะไรเลย = งานคลัง เห็น Location ครบเหมือนเดิมทุกกรณี
+
+   เทียบสองชั้น: รูปแบบรหัส (รับโซนที่พิมพ์เองนอกผัง) + ผังที่ตั้งไว้จริง (รับรหัสที่ผังใช้แบบอื่น)
+   ⚠ ชั้นแสดงผลล้วน ๆ ไม่แตะสิ่งที่บันทึกลงฐานแม้แต่ฟิลด์เดียว */
+function isShopZoneMode() {
+  var t = String(state.locationFilter || '').trim().toUpperCase();
+  if (!t) return false;
+  return SHOP_ZONE_RE.test(t) || shopZonesAll().indexOf(t) >= 0;
+}
+
 /* ยอดชิ้นแยกตาม "โซนที่เก็บจริง" (foundZone) ของ Job ที่เปิดอยู่ — ชั้นแสดงผลล้วน ๆ
    คิดสดจาก scanLog ทุกครั้งที่วาด แทนที่จะไปสะสมคู่กับ state.zoneTotals
    เพราะ zoneTotals เป็นฐานของงานคลัง WH ทั้งหมด แตะเมื่อไหร่กระทบทั้งระบบ
@@ -6748,12 +6762,18 @@ function showScanHit(key) {
   var badges = $('slBadges');
   badges.innerHTML = '';
   var loc = locationOf(key);
-  /* โชว์ หยิบ + เติม เป็นคู่เสมอ (ตัวที่ไม่มีขึ้น "—") — คนนับเห็นครบทั้งจุดหยิบและจุดเติม */
-  if (loc && (loc.pick || loc.refill)) {
-    badges.appendChild(makeBadge('📍 หยิบ ' + (loc.pick || '—'), 'loc locbig'));
-    badges.appendChild(makeBadge('📦 เติม ' + (loc.refill || '—'), 'loc locbig'));
-  } else {
-    badges.appendChild(makeBadge('📍 ไม่มี Location', 'grey'));
+  /* โชว์ หยิบ + เติม เป็นคู่เสมอ (ตัวที่ไม่มีขึ้น "—") — คนนับเห็นครบทั้งจุดหยิบและจุดเติม
+     ⭐ v2.20.0 — ยกเว้นตอนทำงานหน้าร้าน (เลือกโซนแบบ SA-2) ซึ่งซ่อนทั้งก้อน
+     รวม "ไม่มี Location" ด้วย เพราะมันคือคำตอบของคำถามเดียวกัน (ของอยู่ตรงไหนในคลัง)
+     ถ้าซ่อนแค่สองอันแรก เด็กหน้าร้านจะเห็นบางชิ้นขึ้น "ไม่มี Location" บางชิ้นเงียบ
+     แล้วเดาว่าจอเสีย — ซ่อนก็ซ่อนให้หมด จะได้เป็นกติกาเดียวที่อธิบายได้ */
+  if (!isShopZoneMode()) {
+    if (loc && (loc.pick || loc.refill)) {
+      badges.appendChild(makeBadge('📍 หยิบ ' + (loc.pick || '—'), 'loc locbig'));
+      badges.appendChild(makeBadge('📦 เติม ' + (loc.refill || '—'), 'loc locbig'));
+    } else {
+      badges.appendChild(makeBadge('📍 ไม่มี Location', 'grey'));
+    }
   }
 
   /* ของเลิกขายไม่ควรเหลืออยู่บนชั้นแล้ว เจอเมื่อไหร่ต้องสะดุดตาทันที
@@ -7241,10 +7261,13 @@ function renderZoneLock() {
   if (lab) lab.textContent = typed ? 'โซนที่กำลังเก็บ' : 'โซนของชิ้นนี้ (จาก Location หยิบ)';
 
   /* บรรทัดอ้างอิงโซนคลัง — โผล่เฉพาะตอนพิมพ์โซนเองและมีของที่ยิงไปแล้วให้อ้างอิงจริง
-     ยังไม่ได้ยิงอะไร = ไม่มีโซนคลังให้บอก อย่าโชว์บรรทัดเปล่าให้แถบสูงขึ้นเฉย ๆ */
+     ยังไม่ได้ยิงอะไร = ไม่มีโซนคลังให้บอก อย่าโชว์บรรทัดเปล่าให้แถบสูงขึ้นเฉย ๆ
+     ⭐ v2.20.0 — งานหน้าร้าน (เลือกโซนแบบ SA-2) ซ่อนบรรทัดนี้ด้วย
+     เป็นข้อมูลคลัง WH ชุดเดียวกับ Location บนการ์ด ซ่อนที่เดียวไม่ซ่อนอีกที่ = ยังสับสนอยู่ดี
+     ตัวกรองแบบคลัง (A · B4) ยังเห็นเหมือน v2.17.0 ทุกประการ */
   var ref = $('zoneLockRef');
   if (ref) {
-    var showRef = !!(typed && fromLoc);
+    var showRef = !!(typed && fromLoc && !isShopZoneMode());
     ref.textContent = showRef
       ? ('อ้างอิงคลัง: ' + (fromLoc === NO_ZONE_NAME ? 'ไม่ระบุ' : fromLoc)) : '';
     ref.style.display = showRef ? '' : 'none';
@@ -7468,7 +7491,11 @@ var SCAN_IMPORT_COLUMNS = {
 var SCAN_TYPE_WORDS = {
   'โชว์': 'display', 'โชว': 'display', 'show': 'display', 'display': 'display', 'd': 'display',
   'สต็อก': 'stock', 'สต๊อก': 'stock', 'สตอก': 'stock', 'stock': 'stock', 's': 'stock',
-  'asset': 'asset', 'แอสเซท': 'asset', 'a': 'asset'
+  'asset': 'asset', 'แอสเซท': 'asset', 'a': 'asset',
+  /* คำที่ทีมหน้างานใช้กันเองเวลากรอกไฟล์ — ตรงกับป้ายชนิด Job ที่เขาเห็นอยู่แล้ว
+     ("Show (สินค้าโชว์หน้าร้าน)" · "Stock (สต๊อกหลังร้าน)") */
+  'หน้าร้าน': 'display',
+  'หลังร้าน': 'stock'
 };
 function scanTypeFromText(v) {
   var hit = SCAN_TYPE_WORDS[normText(v)];
