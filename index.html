@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.16.8">
+<meta name="version" content="2.17.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.16.8</title>
+<title>ISRD Stocktake v2.17.0</title>
 
 <style>
 :root{
@@ -238,9 +238,15 @@ select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,va
 }
 .zone-lock b{font-size:28px;font-weight:800;color:#6b21a8}
 .zone-lock b.long{font-size:14px;max-width:110px;word-break:break-word;text-align:center}
+/* ⭐ v2.17.0 — รหัสโซนหน้าร้านที่คนนับพิมพ์เอง ยาว 4-5 ตัว (SA-1 · DI-10) เลยติด .long ไปด้วย
+   แต่ 14px เล็กเกินกว่าจะอ่านตอนถือมือถือห่างช่วงแขน ซึ่งเป็นเหตุผลทั้งหมดของป้ายนี้
+   ผูกกับ .mid ที่ติดเฉพาะตอน "พิมพ์โซนเอง" เท่านั้น — งานคลัง WH จึงยังได้ขนาดเดิมเป๊ะ */
+.zone-lock b.long.mid{font-size:20px;max-width:120px}
 /* ป้ายยาวกว่าตัวอักษรมาก ต้องยอมให้ตกบรรทัดได้ ไม่งั้นแถบบานจนดันปุ่ม "เปลี่ยน" ตกจอ */
 .zone-lock i{font-size:10px;font-weight:700;font-style:normal;color:#7e22ce;
   max-width:104px;text-align:center;line-height:1.25;margin-top:2px}
+/* บรรทัดอ้างอิงโซนคลัง — ไว้ให้ดูได้ตอนสงสัย ไม่ใช่ตัวที่ต้องอ่านตอนเดินเก็บ จึงจางและเล็กกว่า */
+.zone-lock i.ref{font-size:9px;font-weight:600;color:#a78bfa;margin-top:1px}
 
 .banner.bad{background:var(--short-bg);color:#7f1d1d;border-color:#fca5a5}
 .hint{font-size:13px;color:var(--warn);margin-top:6px;font-weight:600}
@@ -1015,7 +1021,7 @@ body.no-doc-images .doc .imgbox{display:none}
 <!-- ============ PAGE 2 : SCAN ============ -->
 <section class="page" id="pageScan">
   <div class="banner info" style="display:flex;justify-content:space-between;gap:10px;align-items:center">
-    <span class="zone-lock" id="zoneLock"><b id="zoneLockLetter">–</b><i>โซนของชิ้นนี้ (จาก Location หยิบ)</i></span>
+    <span class="zone-lock" id="zoneLock"><b id="zoneLockLetter">–</b><i id="zoneLockLab">โซนของชิ้นนี้ (จาก Location หยิบ)</i><i class="ref" id="zoneLockRef" style="display:none"></i></span>
     <span id="sessionText" style="flex:1 1 auto;min-width:0"></span>
     <button class="btn sm grey" id="btnChangeSession" style="flex:0 0 auto">เปลี่ยน</button>
   </div>
@@ -1131,7 +1137,10 @@ body.no-doc-images .doc .imgbox{display:none}
     <label class="fld" style="margin-bottom:12px">
       <span>เก็บทีละโซน — แสดงเฉพาะ Location ที่ขึ้นต้นด้วย</span>
       <input type="text" id="locFilter" placeholder="เช่น A หรือ B4" autocomplete="off"
-             autocapitalize="characters" spellcheck="false">
+             autocapitalize="characters" spellcheck="false" list="locZones">
+      <!-- ⭐ v2.17.0 — ตัวช่วยเลือกรหัสโซนหน้าร้าน เติมรายการด้วย renderZoneDatalist()
+           เป็นแค่ "ตัวช่วยพิมพ์" ไม่ได้บังคับ — รหัสนอกลิสต์ยังพิมพ์แล้วใช้ได้ตามปกติ -->
+      <datalist id="locZones"></datalist>
     </label>
     <div class="muted" id="locFilterInfo" style="margin-bottom:12px"></div>
    </div>
@@ -1854,7 +1863,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.16.8';
+var APP_VERSION = '2.17.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -3337,6 +3346,29 @@ function storeTypeOf(job) {
 function storeTypeLabel(key) {
   var hit = storeTypeList().filter(function (t) { return t.key === key; })[0];
   return hit ? hit.label : key;
+}
+
+/* ⭐ v2.17.0 — ผังโซนหน้าร้าน 180 รหัส ไว้เป็นตัวช่วยพิมพ์ในช่อง "เก็บทีละโซน"
+   D = ชั้นโชว์ 90 รหัส (DA-1..DI-10) · S = ชั้นสต๊อก 90 รหัส (SA-1..SI-10)
+   A-I คือแถว · 1-10 คือช่องในแถว — สร้างจากสูตรไม่ฝังรายการ 180 บรรทัด
+   เพิ่มแถวหรือขยายช่องทีหลังจึงแก้ที่ลูปนี้ที่เดียว ไม่ต้องไล่แก้ทีละรหัส */
+var SHOP_ZONES = (function () {
+  var out = [];
+  ['D', 'S'].forEach(function (t) {
+    'ABCDEFGHI'.split('').forEach(function (a) {
+      for (var n = 1; n <= 10; n++) out.push(t + a + '-' + n);
+    });
+  });
+  return out;
+})();
+
+/* งานโชว์เห็นแต่รหัส D · งานสต๊อกเห็นแต่รหัส S — ลิสต์สั้นลงครึ่งหนึ่ง เลือกเร็วขึ้นและยิงผิดฝั่งยาก
+   ประเภทที่ตั้งเองภายหลัง (customStoreTypes) ไม่รู้ว่าใช้ผังไหน จึงให้เห็นทั้ง 180 ดีกว่าบังคับผิด */
+function shopZonesFor(job) {
+  var t = storeTypeOf(job);
+  if (t === 'SHOW') return SHOP_ZONES.filter(function (z) { return z.charAt(0) === 'D'; });
+  if (t === 'STOCK') return SHOP_ZONES.filter(function (z) { return z.charAt(0) === 'S'; });
+  return SHOP_ZONES.slice();
 }
 
 /* ---------- รอบนับของสาขา (cycle) ----------
@@ -5053,6 +5085,12 @@ function setZoneFilter(letter) {
   }
   renderLocFilter();
   renderStart();
+  /* ⭐ v2.17.0 — ช่องนี้กลายเป็นตัวกำหนดโซนที่หน้ายิงแสดงด้วย พิมพ์แล้วป้ายต้องเปลี่ยนทันที
+     วาดเฉพาะตอนอยู่หน้ายิง — อยู่หน้าเริ่มนับก็ยังไม่มีใครเห็น ไม่ต้องเสียแรงคิดยอดใหม่ */
+  if (state.page === 'scan') {
+    renderZoneLock();
+    renderScanTotals();
+  }
 }
 
 function writeScan(key, delta, mode, reason, extra) {
@@ -5063,7 +5101,13 @@ function writeScan(key, delta, mode, reason, extra) {
      และ Firebase ตัดคีย์ที่เป็น undefined ทิ้ง ของที่ไม่มี Location จึงตกเป็น 'no-zone'
      (ค่าเดิมที่ใช้มาแต่ไหนแต่ไร) แทนที่จะปล่อยว่างแล้วโดนฐานปฏิเสธทั้งแถว
      ไม่สร้างเรคอร์ดใน zones/ เพราะ Rules ให้ scanner เขียน scans ได้แต่เขียน zones ไม่ได้
-     ถ้ารวมสองอย่างใน update ก้อนเดียว (atomic) บัญชี scanner จะยิงไม่ได้เลยทั้งแถว */
+     ถ้ารวมสองอย่างใน update ก้อนเดียว (atomic) บัญชี scanner จะยิงไม่ได้เลยทั้งแถว
+
+     ⚠ v2.17.0 — ห้ามเปลี่ยนมาใช้ activeZone() ตรงนี้เด็ดขาด
+     activeZone() เป็นของ "ชั้นจอ" ไว้ให้คนหน้าร้านเห็นชั้นที่ตัวเองยืนอยู่เท่านั้น
+     zone/zoneName คือผังคลังที่รายงานสรุป · หน้าโชว-สต็อก · Excel อ้างอิงกันทั้งระบบ
+     สลับเมื่อไหร่ ตัวเลขทุกใบขยับพร้อมกันโดยไม่มีใครรู้ว่ามาจากไหน
+     (guard: tests/test-shop-zone.js ข้อ [3]) */
   var zn = zoneNameForKey(key);
   var rec = {
     code: product.code || key,
@@ -6161,6 +6205,34 @@ function zoneNameForKey(key) {
   return zonePrefixOf((locationOf(key) || {}).pick) || NO_ZONE_NAME;
 }
 
+/* ⭐ v2.17.0 — โซนที่หน้ายิง "กำลังเก็บอยู่" ตอนนี้ — ใช้กับการแสดงผลบนหน้ายิงเท่านั้น
+   งานหน้าร้าน (Show/Stock) เด็กเก็บของที่ชั้นจริงแล้วพิมพ์รหัสชั้นเอง เช่น SA-1
+   แต่ zoneNameForKey() คิดจาก Location หยิบ ซึ่งเป็นโลเคชันคลัง WH (D1-2-2 → D) คนละผังกัน
+   ของเดิมจึงกลายเป็น "พิมพ์ SA-1 แล้วจอขึ้น D" คนนับไม่เข้าใจว่าตัวเองพิมพ์ผิดตรงไหน
+   พิมพ์โซนเอง = จอยึดโซนที่พิมพ์ · ไม่พิมพ์ (เด็กคลัง WH) = ยึดโซนจาก Location เหมือนเดิมทุกกรณี
+
+   ⚠ ห้ามเอาไปเขียนลงฐาน — rec.zone / rec.zoneName ต้องมาจาก zoneNameForKey() เสมอ
+   ไม่งั้นรายงานสรุปกับ Excel จะกลายเป็นคนละผังกับของเดิมทั้งระบบ (ดูคอมเมนต์ใน writeScan) */
+function activeZone() {
+  var typed = String(state.locationFilter || '').trim().toUpperCase();
+  return typed || String(state.lastZoneName || '').trim();
+}
+
+/* ยอดชิ้นแยกตาม "โซนที่เก็บจริง" (foundZone) ของ Job ที่เปิดอยู่ — ชั้นแสดงผลล้วน ๆ
+   คิดสดจาก scanLog ทุกครั้งที่วาด แทนที่จะไปสะสมคู่กับ state.zoneTotals
+   เพราะ zoneTotals เป็นฐานของงานคลัง WH ทั้งหมด แตะเมื่อไหร่กระทบทั้งระบบ
+   แถวที่ยิงไว้ตอนยังไม่ได้พิมพ์โซนไม่มี foundZone → ลงกลุ่ม "ไม่ระบุโซน" ไม่ปล่อยให้ยอดหาย */
+function foundZoneTotals() {
+  var out = {};
+  state.scanLog.forEach(function (s) {
+    var rec = s && s.rec;
+    if (!rec) return;
+    var z = String(rec.foundZone || '').trim().toUpperCase() || NO_ZONE_NAME;
+    out[z] = (out[z] || 0) + (Number(rec.delta) || 0);
+  });
+  return out;
+}
+
 /* โซนที่ "เก็บ/นับจริง" ต่อ SKU = ค่าที่พิมพ์ในช่อง "เก็บทีละโซน" ตอนยิง (อาจมีหลายค่า) */
 function foundZoneText(key) {
   var m = state.foundZones[key];
@@ -6732,6 +6804,20 @@ function renderLivePanel() {
   });
 }
 
+/* ⭐ v2.17.0 — เติมรหัสโซนหน้าร้านลง <datalist> ของช่อง "เก็บทีละโซน"
+   วาดใหม่ทุกครั้งที่เปิดหน้ายิง เพราะชนิดงาน (โชว์/สต็อก) เปลี่ยนตาม Job ที่เลือก
+   เป็นตัวช่วยพิมพ์อย่างเดียว ไม่ได้จำกัดค่าที่กรอกได้ — สาขาที่ใช้ผังอื่นยังพิมพ์รหัสตัวเองได้ */
+function renderZoneDatalist() {
+  var dl = $('locZones');
+  if (!dl) return;
+  dl.innerHTML = '';
+  shopZonesFor(state.roundIndex[state.roundId] || null).forEach(function (z) {
+    var o = document.createElement('option');
+    o.value = z;
+    dl.appendChild(o);
+  });
+}
+
 /* ตัวกรอง Location — ให้คนนับไล่เก็บทีละโซนโดยรู้ว่าเหลืออีกกี่ตัวในโซนนั้น */
 function renderLocFilter() {
   var term = String(state.locationFilter || '').trim().toUpperCase();
@@ -6799,13 +6885,18 @@ function renderScanDiffCards() {
 }
 
 function renderScanTotals() {
-  var nm = String(state.lastZoneName || '').trim();
-  $('scanTotal').textContent = fmtNum(nm ? (state.zoneTotals[nm] || 0) : 0);
+  /* ⭐ v2.17.0 — พิมพ์โซนเอง = ทั้งบล็อกนี้ยึด "โซนที่พิมพ์" แทนโซนจาก Location
+     ไม่พิมพ์ = nm/totals เท่ากับของเดิมทุกตัว งานคลัง WH จึงเห็นเหมือน v2.16.8 เป๊ะ
+     ทำเป็นชั้นแสดงผลแยก ห้ามไปแก้ที่จุดสะสม state.zoneTotals — นั่นคือฐานของทุกอย่าง */
+  var typed = String(state.locationFilter || '').trim().toUpperCase();
+  var nm = activeZone();
+  var totals = typed ? foundZoneTotals() : state.zoneTotals;
+  $('scanTotal').textContent = fmtNum(nm ? (totals[nm] || 0) : 0);
   renderScanDiffCards();
   /* วาดซ้ำทุกครั้งที่ยอดขยับ — ช่องหมายเหตุต้องล็อกตามทันทีถ้ารอบถูกปิดระหว่างเปิดหน้าค้างไว้ */
   renderScanRemark();
 
-  /* ยอดรวมทุกโซน — บวกจาก state.zoneTotals ตรง ๆ เพราะเป็น net delta อยู่แล้ว
+  /* ยอดรวมทุกโซน — บวกจาก totals ตรง ๆ เพราะเป็น net delta อยู่แล้ว
      (ยกเลิกการยิงหักออกให้เอง) ไม่คิดจาก state.counts หรือ scanQty แยก
      ซึ่งเป็นคนละฐาน แล้วตัวเลขสองที่จะไม่ตรงกันเวลามีการกรอกมือปน
      ต้องอยู่ก่อน guard ของ lab ข้างล่าง ไม่งั้นถ้าวันหนึ่ง lab หายไป บรรทัดนี้จะเงียบตาม */
@@ -6813,14 +6904,15 @@ function renderScanTotals() {
   if (allEl) {
     allEl.innerHTML = '';
     var all = 0, zones = [];
-    for (var zk in state.zoneTotals) {
-      var q = Number(state.zoneTotals[zk]) || 0;
+    for (var zk in totals) {
+      var q = Number(totals[zk]) || 0;
       all += q;                                  // ยอดรวมนับทุกโซน รวมตัวที่ยอดหักจนติดลบ
       if (q > 0) zones.push({ name: zk, qty: q });   // แต่โชว์เฉพาะโซนที่ยังมีของ
     }
     zones.sort(function (a, b) { return String(a.name).localeCompare(String(b.name), 'th'); });
 
     /* วาดด้วย DOM ไม่ใช่ต่อ string ใส่ innerHTML — ชื่อโซนมาจาก Location ในไฟล์ที่คนอัปโหลด
+       (หรือรหัสที่คนนับพิมพ์เองตั้งแต่ v2.17.0 ซึ่งยิ่งเป็นข้อความอิสระเต็มที่)
        ถ้าวันหนึ่งมีอักขระ < > ปนมา การต่อ string จะกลายเป็นช่องโหว่ทันที
        ไม่มีโซนไหนเหลือของ = ไม่ต่ออะไรเลย บรรทัดว่างและยุบหายไปเอง (ซ่อนเหมือน v2.6.5)
        ห้าม return ตรงนี้ ไม่งั้นป้ายชื่อโซนข้างล่างจะไม่ถูกอัปเดตตอนเริ่มรอบใหม่ */
@@ -7051,12 +7143,32 @@ function undoLastScan() {
 function renderZoneLock() {
   var box = $('zoneLock');
   if (!box) return;
-  var nm = String(state.lastZoneName || '').trim();
+  /* ⭐ v2.17.0 — พิมพ์รหัสโซนเอง = ป้ายตัวใหญ่ต้องเป็นรหัสที่พิมพ์ ไม่ใช่โซนคลังของสินค้า
+     เด็กหน้าร้านยืนอยู่ที่ชั้น SA-1 จริง ๆ พิมพ์ SA-1 ไว้แล้ว จอขึ้น D จึงไม่มีความหมายกับเขา
+     โซนคลังยังอยู่ แต่ย้ายไปเป็นบรรทัดอ้างอิงตัวเล็กข้างล่างแทน */
+  var typed = String(state.locationFilter || '').trim().toUpperCase();
+  var fromLoc = String(state.lastZoneName || '').trim();
+  var nm = typed || fromLoc;                          // = activeZone() แต่ต้องรู้ที่มาด้วย จึงแยกตัวแปร
   var letter = $('zoneLockLetter');
   var show = nm === NO_ZONE_NAME ? 'ไม่ระบุ' : (nm || '–');
   letter.textContent = show;
-  /* ชื่อโซนยาวเกินกล่องตัวใหญ่ ย่อฟอนต์แทนที่จะปล่อยให้ล้นออกนอกแถบ */
-  letter.className = show.length > 3 ? 'long' : '';
+  /* ชื่อโซนยาวเกินกล่องตัวใหญ่ ย่อฟอนต์แทนที่จะปล่อยให้ล้นออกนอกแถบ
+     .mid ติดเฉพาะรหัสที่พิมพ์เอง — งานคลังที่ไม่พิมพ์โซนจึงได้ขนาดเดิมทุกกรณี */
+  letter.className = show.length > 3 ? (typed ? 'long mid' : 'long') : '';
+
+  var lab = $('zoneLockLab');
+  if (lab) lab.textContent = typed ? 'โซนที่กำลังเก็บ' : 'โซนของชิ้นนี้ (จาก Location หยิบ)';
+
+  /* บรรทัดอ้างอิงโซนคลัง — โผล่เฉพาะตอนพิมพ์โซนเองและมีของที่ยิงไปแล้วให้อ้างอิงจริง
+     ยังไม่ได้ยิงอะไร = ไม่มีโซนคลังให้บอก อย่าโชว์บรรทัดเปล่าให้แถบสูงขึ้นเฉย ๆ */
+  var ref = $('zoneLockRef');
+  if (ref) {
+    var showRef = !!(typed && fromLoc);
+    ref.textContent = showRef
+      ? ('อ้างอิงคลัง: ' + (fromLoc === NO_ZONE_NAME ? 'ไม่ระบุ' : fromLoc)) : '';
+    ref.style.display = showRef ? '' : 'none';
+  }
+
   box.setAttribute('title', nm ? zoneLabel(nm) : 'ยังไม่ได้ยิงอะไรในรอบนี้');
 }
 
@@ -7070,6 +7182,7 @@ function renderScanPage() {
   renderScanTotals();
   renderSyncBar();
   renderLivePanel();
+  renderZoneDatalist();            // ชนิดงานอยู่ที่ Job ใบนี้ เปลี่ยนใบแล้วรายการโซนต้องตามใบใหม่
   renderLocFilter();
   focusScan();
 }
