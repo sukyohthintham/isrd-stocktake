@@ -68,6 +68,9 @@ function check(name, ok, got) {
       state.appliedScanIds = Object.create(null);
       state.lastZoneName = '';
       state.locationFilter = '';
+      state.scanType = 'stock';          // ค่าเริ่มต้นเดียวกับ loadScanType
+      state.customShopZones = [];        // ยังไม่เคยตั้งผังเอง = ใช้ built-in
+      state.masterTab = 'shopzones';
       if ($('locFilter')) $('locFilter').value = '';
     };
 
@@ -216,34 +219,49 @@ function check(name, ok, got) {
         r4.noLoc.zone === 'no-zone' && r4.noLoc.zoneName === '(ไม่ระบุโซน)' &&
         r4.noLoc.foundZone === 'SA-1', r4.noLoc);
 
-  /* ---------- 5. ผังโซนหน้าร้าน 180 รหัส ---------- */
-  console.log('\n[5] SHOP_ZONES — 180 รหัส กรองตามชนิดงาน');
+  /* ---------- 5. ผังโซนหน้าร้าน 180 รหัส + กรองตามปุ่มประเภท (v2.18.0) ---------- */
+  console.log('\n[5] SHOP_ZONES — 180 รหัส กรองตาม "ปุ่มประเภท" ไม่ใช่ชนิด Job');
   const r5 = await page.evaluate(() => {
-    const show = shopZonesFor({ storeType: 'SHOW' });
-    const stock = shopZonesFor({ storeType: 'STOCK' });
-    const other = shopZonesFor({ storeType: 'SHOWCASE' });
-    return {
+    const out = {
       total: SHOP_ZONES.length,
       uniq: Object.keys(SHOP_ZONES.reduce(function (m, z) { m[z] = 1; return m; }, {})).length,
       first: SHOP_ZONES[0], last: SHOP_ZONES[SHOP_ZONES.length - 1],
       hasSA1: SHOP_ZONES.indexOf('SA-1') >= 0,
-      hasDI10: SHOP_ZONES.indexOf('DI-10') >= 0,
-      showN: show.length, showAllD: show.every(function (z) { return z.charAt(0) === 'D'; }),
-      stockN: stock.length, stockAllS: stock.every(function (z) { return z.charAt(0) === 'S'; }),
-      otherN: other.length,
-      noJobN: shopZonesFor(null).length          // ไม่มี Job = ถือเป็น STOCK ตาม storeTypeOf
+      hasDI10: SHOP_ZONES.indexOf('DI-10') >= 0
     };
+    const grab = function (type) {
+      window.__seed('STOCK');
+      state.scanType = type;
+      const a = shopZonesFor();
+      return { n: a.length, first: a[0],
+               allD: a.every(function (z) { return z.charAt(0) === 'D'; }),
+               allS: a.every(function (z) { return z.charAt(0) === 'S'; }) };
+    };
+    out.display = grab('display');
+    out.stock = grab('stock');
+    out.asset = grab('asset');
+
+    /* บั๊ก v2.17.0: Job เป็น STOCK แต่กดปุ่มโชว์ → ต้องได้ D ไม่ใช่ S
+       (ของเดิมกรองด้วย storeTypeOf(job) จึงได้ S ตลอดไม่ว่ากดปุ่มไหน) */
+    window.__seed('STOCK');
+    state.scanType = 'display';
+    const d = shopZonesFor();
+    out.jobStockButDisplay = { first: d[0], allD: d.every(function (z) { return z.charAt(0) === 'D'; }) };
+    return out;
   });
   check('มี 180 รหัส ไม่ซ้ำกันเลย', r5.total === 180 && r5.uniq === 180, r5);
   check('เริ่ม DA-1 จบ SI-10', r5.first === 'DA-1' && r5.last === 'SI-10', r5);
   check('มีทั้ง SA-1 และ DI-10 ครบ', r5.hasSA1 && r5.hasDI10, r5);
-  check('งานโชว์ (SHOW) เห็นเฉพาะรหัส D 90 รหัส', r5.showN === 90 && r5.showAllD, r5);
-  check('งานสต็อก (STOCK) เห็นเฉพาะรหัส S 90 รหัส', r5.stockN === 90 && r5.stockAllS, r5);
-  check('ชนิดงานที่ตั้งเอง = เห็นทั้ง 180 ไม่บังคับผังผิด', r5.otherN === 180, r5.otherN);
-  check('ไม่มี Job ถือเป็น STOCK ตาม storeTypeOf เดิม', r5.noJobN === 90, r5.noJobN);
+  check('ปุ่ม 🖼 โชว์ → เฉพาะรหัส D 90 รหัส',
+        r5.display.n === 90 && r5.display.allD && r5.display.first === 'DA-1', r5.display);
+  check('ปุ่ม 📦 สต็อก → เฉพาะรหัส S 90 รหัส',
+        r5.stock.n === 90 && r5.stock.allS && r5.stock.first === 'SA-1', r5.stock);
+  check('ปุ่ม 🔧 Asset → เห็นทั้ง 180 ไม่บังคับฝั่ง', r5.asset.n === 180, r5.asset);
+  check('Job ชนิด STOCK แต่กดปุ่มโชว์ → ได้ D (นี่คือบั๊ก v2.17.0 ที่แก้)',
+        r5.jobStockButDisplay.allD && r5.jobStockButDisplay.first === 'DA-1', r5.jobStockButDisplay);
 
   /* ---------- 6. datalist บนช่อง "เก็บทีละโซน" ---------- */
-  console.log('\n[6] datalist เป็นตัวช่วย ไม่ใช่ตัวบังคับ');
+  console.log('\n[6] datalist ตามปุ่มประเภท และเป็นตัวช่วย ไม่ใช่ตัวบังคับ');
   const r6 = await page.evaluate(() => {
     const out = {};
     const opts = function () {
@@ -252,21 +270,34 @@ function check(name, ok, got) {
     };
     out.listAttr = $('locFilter').getAttribute('list');
 
-    window.__seed('SHOW');
-    renderZoneDatalist();
+    /* กดปุ่มจริงผ่าน setScanType — ต้องอัปเดตลิสต์ให้ทันทีโดยไม่ต้องออกจากหน้า */
+    window.__seed('STOCK');
+    renderScanPage();
+    out.startN = opts().length; out.startFirst = opts()[0];
+
+    setScanType('display');
     const a = opts();
     out.showN = a.length; out.showFirst = a[0];
     out.showAllD = a.every(function (z) { return z.charAt(0) === 'D'; });
 
-    window.__seed('STOCK');
-    renderZoneDatalist();
+    setScanType('stock');
     const b = opts();
     out.stockN = b.length; out.stockFirst = b[0];
     out.stockAllS = b.every(function (z) { return z.charAt(0) === 'S'; });
 
+    setScanType('asset');
+    out.assetN = opts().length;
+
     /* วาดซ้ำต้องไม่สะสมของเก่า */
+    setScanType('stock');
     renderZoneDatalist();
     out.redrawN = opts().length;
+
+    /* อยู่หน้าอื่นแล้วกดปุ่มต้องไม่พัง (ไม่มีใครเห็น แต่ห้าม error) */
+    state.page = 'jobs';
+    setScanType('display');
+    out.offPageN = opts().length;
+    state.page = 'scan';
 
     /* รหัสนอกลิสต์ต้องพิมพ์แล้วใช้ได้ตามปกติ — datalist ห้ามกลายเป็นตัวจำกัดค่า */
     $('locFilter').value = 'zz-9';
@@ -280,11 +311,15 @@ function check(name, ok, got) {
     return out;
   });
   check('ช่องกรอกผูกกับ datalist แล้ว', r6.listAttr === 'locZones', r6.listAttr);
-  check('งานโชว์ → ลิสต์ 90 รหัส D เริ่มที่ DA-1',
+  check('เปิดหน้ายิงมาเป็นสต็อก → ลิสต์รหัส S',
+        r6.startN === 90 && r6.startFirst === 'SA-1', r6);
+  check('กดปุ่มโชว์ → ลิสต์เปลี่ยนเป็น 90 รหัส D ทันที',
         r6.showN === 90 && r6.showFirst === 'DA-1' && r6.showAllD, r6);
-  check('งานสต็อก → ลิสต์ 90 รหัส S เริ่มที่ SA-1',
+  check('กดปุ่มสต็อก → กลับเป็น 90 รหัส S',
         r6.stockN === 90 && r6.stockFirst === 'SA-1' && r6.stockAllS, r6);
+  check('กดปุ่ม Asset → เห็นทั้ง 180', r6.assetN === 180, r6.assetN);
   check('วาดซ้ำไม่สะสม option เก่า', r6.redrawN === 90, r6.redrawN);
+  check('กดปุ่มตอนไม่ได้อยู่หน้ายิง = ไม่วาดใหม่ ไม่ error', r6.offPageN === 90, r6.offPageN);
   check('รหัสนอกลิสต์ยังใช้ได้ และถูก uppercase ตามกติกาเดิม',
         r6.freeFilter === 'ZZ-9' && r6.freeActive === 'ZZ-9', r6);
   check('รหัสนอกลิสต์ขึ้นป้ายและบันทึกเป็น foundZone ได้ปกติ',
@@ -304,6 +339,203 @@ function check(name, ok, got) {
   check('แถวที่ไม่มี foundZone ลงกลุ่ม "ไม่ระบุโซน" ยอดรวมยังครบ 3',
         r7.all === '(ไม่ระบุโซน) 2 · SA-1 1 · รวม 3', r7.all);
   check('ยอดใหญ่ยังเป็นของโซนที่กำลังเก็บ (SA-1 = 1)', r7.big === '1', r7.big);
+
+  /* ---------- 8. ตั้งผังโซนเอง (v2.18.0) ---------- */
+  console.log('\n[8] จัดการผังโซนเอง — settings/shopZones');
+  const r8 = await page.evaluate(() => {
+    const out = {};
+    /* ดัก db.update ไว้ดูว่าเขียนอะไรไปที่ไหน — ห้ามแตะโหนดอื่นนอกจาก settings */
+    const writes = [];
+    window.db.update = function (path, patch) {
+      writes.push({ path: path, patch: JSON.parse(JSON.stringify(patch)) });
+      return Promise.resolve();
+    };
+    const toasts = [];
+    window.toast = function (m, bad) { toasts.push({ m: m, bad: !!bad }); };
+
+    window.__seed('STOCK');
+    out.emptyUsesBuiltin = shopZonesAll().length;
+    state.customShopZones = ['SA-1', 'SB-2'];
+    out.customWins = shopZonesAll().slice();
+    state.customShopZones = [];
+
+    return saveShopZones('sa-1\n  db-10  \n\nSA-1\nSC-3\n')
+      .then(function () {
+        out.okWrites = writes.slice();
+        out.okState = (state.customShopZones || []).slice();
+        out.okToast = toasts[toasts.length - 1];
+        writes.length = 0;
+
+        /* รหัสผิดแบบ = ไม่บันทึกทั้งชุด ของเดิมต้องอยู่ครบ */
+        return saveShopZones('SA-1\nโซนหน้าร้าน\nSB-2');
+      })
+      .then(function () {
+        out.badWrites = writes.slice();
+        out.badState = (state.customShopZones || []).slice();
+        out.badToast = toasts[toasts.length - 1];
+        writes.length = 0;
+
+        return saveShopZones('   \n\n  ');       // ว่างล้วน
+      })
+      .then(function () {
+        out.blankWrites = writes.slice();
+        out.blankToast = toasts[toasts.length - 1];
+        writes.length = 0;
+
+        /* ไม่มีสิทธิ์ editMaster = เขียนไม่ได้เลย (ชั้นฟังก์ชัน ไม่ใช่แค่ซ่อนปุ่ม) */
+        state.me = { uid: 'u9', name: 'เด็กยิง', role: 'scanner', branches: [] };
+        return saveShopZones('SZ-9');
+      })
+      .then(function () {
+        out.noPermWrites = writes.slice();
+        out.noPermState = (state.customShopZones || []).slice();
+        return out;
+      });
+  });
+  check('ยังไม่เคยตั้งผัง → ใช้ built-in 180 รหัส', r8.emptyUsesBuiltin === 180, r8.emptyUsesBuiltin);
+  check('ตั้งผังเองแล้ว → ใช้ผังนั้นแทน',
+        JSON.stringify(r8.customWins) === JSON.stringify(['SA-1', 'SB-2']), r8.customWins);
+  check('บันทึกลง settings/shopZones โหนดเดียว ไม่แตะที่อื่น',
+        r8.okWrites.length === 1 && r8.okWrites[0].path === 'settings' &&
+        Object.keys(r8.okWrites[0].patch).join() === 'shopZones', r8.okWrites);
+  check('trim + uppercase + ตัดบรรทัดว่าง + กันซ้ำ (เหลือ 3 รหัส)',
+        JSON.stringify(r8.okState) === JSON.stringify(['SA-1', 'DB-10', 'SC-3']), r8.okState);
+  check('บอกด้วยว่าตัดรหัสซ้ำออกกี่ตัว',
+        /บันทึกผังโซน 3 รหัส/.test(r8.okToast.m) && /ซ้ำ/.test(r8.okToast.m), r8.okToast);
+  check('รหัสผิดแบบ → ไม่เขียนฐานเลย ผังเดิมอยู่ครบ',
+        r8.badWrites.length === 0 &&
+        JSON.stringify(r8.badState) === JSON.stringify(['SA-1', 'DB-10', 'SC-3']), r8);
+  check('บอกเป็นภาษาคนว่ารหัสไหนผิด และยังไม่ได้บันทึก',
+        r8.badToast.bad === true && /ยังไม่บันทึก/.test(r8.badToast.m) &&
+        /โซนหน้าร้าน/.test(r8.badToast.m), r8.badToast);
+  check('ผังว่างล้วน → ไม่เขียนฐาน และบอกว่าต้องมีอย่างน้อย 1 รหัส',
+        r8.blankWrites.length === 0 && r8.blankToast.bad === true, r8);
+  check('ไม่มีสิทธิ์ editMaster → เขียนไม่ได้ (ล็อกชั้นฟังก์ชัน)',
+        r8.noPermWrites.length === 0 &&
+        JSON.stringify(r8.noPermState) === JSON.stringify(['SA-1', 'DB-10', 'SC-3']), r8);
+
+  /* ---------- 9. ผังที่ตั้งเองต้องไหลไปถึง datalist ---------- */
+  console.log('\n[9] ผังที่ตั้งเอง → datalist บนหน้ายิง');
+  const r9 = await page.evaluate(() => {
+    const out = {};
+    const opts = function () {
+      return Array.prototype.map.call($('locZones').querySelectorAll('option'),
+                                     function (o) { return o.value; });
+    };
+    window.__seed('STOCK');
+    state.customShopZones = ['SA-1', 'SB-2', 'DA-1', 'ZZ-9'];
+
+    state.scanType = 'stock';  renderZoneDatalist(); out.stock = opts();
+    state.scanType = 'display'; renderZoneDatalist(); out.display = opts();
+    state.scanType = 'asset';  renderZoneDatalist(); out.asset = opts();
+
+    /* หน้าจัดการ: กล่องข้อความต้อง seed ด้วยผังที่ใช้อยู่ + นับแยก D/S ให้ถูก */
+    state.page = 'master'; state.masterTab = 'shopzones';
+    renderShopZones();
+    out.boxCustom = $('shopZoneBox').value;
+    out.statCustom = $('shopZoneStatus').textContent;
+    out.canEdit = { save: $('btnSaveShopZones').style.display,
+                    reset: $('btnResetShopZones').style.display,
+                    ro: $('shopZoneBox').readOnly };
+
+    /* ยังไม่เคยตั้ง → seed ด้วย built-in 180 ให้แก้ต่อได้เลย */
+    state.customShopZones = [];
+    renderShopZones();
+    out.boxLines = $('shopZoneBox').value.split('\n').length;
+    out.boxFirst = $('shopZoneBox').value.split('\n')[0];
+    out.statBuiltin = $('shopZoneStatus').textContent;
+
+    /* คนไม่มีสิทธิ์: เห็นรายการได้ แต่แก้ไม่ได้ และไม่มีปุ่มให้กด */
+    state.me = { uid: 'u9', name: 'เด็กยิง', role: 'scanner', branches: [] };
+    renderShopZones();
+    out.locked = { save: $('btnSaveShopZones').style.display,
+                   reset: $('btnResetShopZones').style.display,
+                   ro: $('shopZoneBox').readOnly,
+                   lines: $('shopZoneBox').value.split('\n').length };
+    return out;
+  });
+  check('ผังที่ตั้งเอง + ปุ่มสต็อก → เห็นเฉพาะ S ของผังนั้น',
+        JSON.stringify(r9.stock) === JSON.stringify(['SA-1', 'SB-2']), r9.stock);
+  check('ปุ่มโชว์ → เห็นเฉพาะ D ของผังนั้น',
+        JSON.stringify(r9.display) === JSON.stringify(['DA-1']), r9.display);
+  check('ปุ่ม Asset → เห็นทั้งผัง รวมรหัสที่ไม่ใช่ D/S',
+        JSON.stringify(r9.asset) === JSON.stringify(['SA-1', 'SB-2', 'DA-1', 'ZZ-9']), r9.asset);
+  check('กล่องข้อความโชว์ผังที่ใช้อยู่ บรรทัดละรหัส',
+        r9.boxCustom === 'SA-1\nSB-2\nDA-1\nZZ-9', r9.boxCustom);
+  check('บอกจำนวน + แยก D / S / อื่น และบอกว่าเป็นผังที่ตั้งเอง',
+        /ใช้อยู่ 4 รหัส/.test(r9.statCustom) && /โชว์ \(D\) 1/.test(r9.statCustom) &&
+        /สต็อก \(S\) 2/.test(r9.statCustom) && /อื่น 1/.test(r9.statCustom) &&
+        /ตั้งเอง/.test(r9.statCustom), r9.statCustom);
+  check('admin แก้ได้ ปุ่มครบ', r9.canEdit.save === '' && r9.canEdit.reset === '' &&
+        r9.canEdit.ro === false, r9.canEdit);
+  check('ยังไม่เคยตั้งผัง → กล่อง seed ด้วย built-in 180 รหัส',
+        r9.boxLines === 180 && r9.boxFirst === 'DA-1', r9);
+  check('และบอกว่าเป็นผังเริ่มต้นของระบบ', /ผังเริ่มต้น/.test(r9.statBuiltin), r9.statBuiltin);
+  check('คนไม่มีสิทธิ์: อ่านได้ แก้ไม่ได้ ไม่มีปุ่ม',
+        r9.locked.ro === true && r9.locked.save === 'none' &&
+        r9.locked.reset === 'none' && r9.locked.lines === 180, r9.locked);
+
+  /* ---------- 10. ลำดับบนหน้ายิง: เลือกก่อน ยิงทีหลัง (v2.18.0) ---------- */
+  console.log('\n[10] ปุ่มประเภท + ช่องโซน ต้องอยู่เหนือช่องยิง');
+  await page.setViewport({ width: 390, height: 844 });
+  const r10 = await page.evaluate(() => {
+    window.__seed('STOCK');
+    state.page = 'scan';
+    document.querySelectorAll('.page').forEach(function (p) { p.classList.remove('active'); });
+    $('pageScan').classList.add('active');
+    renderScanPage();
+
+    const stage = $('scanStage');
+    const ids = Array.prototype.map.call(stage.children, function (c) { return c.id || ''; });
+    const order = function (id) { return ids.indexOf(id); };
+    const top = function (id) { return $(id).getBoundingClientRect().top; };
+
+    /* กดปุ่มแล้วยังทำงานครบ: toggle + ผังเปลี่ยน + โฟกัสกลับไปที่ช่องยิง */
+    setScanType('display');
+    const onBtn = stage.querySelector('[data-scantype="display"]');
+    const out = {
+      ids: ids,
+      typeBeforeInput: order('scanTypeBtns') >= 0 && order('scanTypeBtns') < order('scanInput'),
+      locInStage: !!stage.querySelector('#locFilter'),
+      locBeforeInput: $('locFilter').compareDocumentPosition($('scanInput')) &
+                      Node.DOCUMENT_POSITION_FOLLOWING ? true : false,
+      infoBeforeInput: order('locFilterInfo') >= 0 && order('locFilterInfo') < order('scanInput'),
+      totalFirst: order('scanTotal') === 0,
+      typeAfterTotals: order('scanTypeBtns') > order('scanTotalAll'),
+      /* บนจอจริงต้องอยู่สูงกว่าช่องยิงด้วย ไม่ใช่แค่ลำดับใน DOM */
+      typeAboveOnScreen: top('scanTypeBtns') < top('scanInput'),
+      locAboveOnScreen: top('locFilter') < top('scanInput'),
+      toggled: onBtn.classList.contains('on'),
+      pressed: onBtn.getAttribute('aria-pressed'),
+      scanType: state.scanType,
+      dlFirst: ($('locZones').querySelector('option') || {}).value,
+      focused: document.activeElement === $('scanInput'),
+      noOverflow: stage.scrollWidth <= stage.clientWidth + 1
+    };
+    /* ยิงจริงหลังย้าย DOM — ต้องยังบันทึกได้เหมือนเดิม */
+    setZoneFilter('SA-1');
+    const rec = writeScan('A1', 1, 'scan', null).rec;
+    out.rec = { zone: rec.zone, zoneName: rec.zoneName,
+                foundZone: rec.foundZone, stockType: rec.stockType };
+    return out;
+  });
+  check('ปุ่มประเภทอยู่ใน scanStage และอยู่ก่อนช่องยิง', r10.typeBeforeInput === true, r10.ids);
+  check('ช่องโซนย้ายเข้ามาใน scanStage แล้ว', r10.locInStage === true, r10.ids);
+  check('ช่องโซนอยู่ก่อนช่องยิงใน DOM', r10.locBeforeInput === true, r10.ids);
+  check('บรรทัดสรุปโซนตามมาด้วย ยังอยู่ก่อนช่องยิง', r10.infoBeforeInput === true, r10.ids);
+  check('ยอดใหญ่ยังอยู่บนสุด แล้วค่อยถึงปุ่มประเภท',
+        r10.totalFirst && r10.typeAfterTotals, r10.ids);
+  check('บนจอ 390px จริง ทั้งสองอย่างอยู่เหนือช่องยิง',
+        r10.typeAboveOnScreen && r10.locAboveOnScreen, r10);
+  check('กดปุ่มยังทำงานครบ (ติด on + aria-pressed + state เปลี่ยน)',
+        r10.toggled === true && r10.pressed === 'true' && r10.scanType === 'display', r10);
+  check('กดปุ่มแล้วผังโซนเปลี่ยนตามทันที', r10.dlFirst === 'DA-1', r10.dlFirst);
+  check('โฟกัสยังกลับไปที่ช่องยิงเสมอ', r10.focused === true, r10.focused);
+  check('ไม่ล้นขอบกล่องยิงบนจอ 390px', r10.noOverflow === true, r10.noOverflow);
+  check('ย้าย DOM แล้วยังยิงบันทึกได้ครบทุกฟิลด์เหมือนเดิม',
+        r10.rec.zone === 'D' && r10.rec.zoneName === 'D' &&
+        r10.rec.foundZone === 'SA-1' && r10.rec.stockType === 'display', r10.rec);
+  await page.setViewport({ width: 1280, height: 900 });
 
   console.log('\n--- console/page errors ---');
   console.log(errors.slice(0, 10).join('\n') || '(none)');

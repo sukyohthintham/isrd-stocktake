@@ -233,16 +233,22 @@ function check(name, ok, got) {
     const order = Array.prototype.map.call(stage.children, function (c) { return c.id || c.className; });
     const cs = getComputedStyle(document.getElementById('scanTotalAll'));
     return {
-      order: order.slice(0, 4),
+      /* v2.18.0 — ปุ่มประเภท + ช่องโซน แทรกเข้ามาระหว่างยอดกับช่องยิงแล้ว
+         ข้อนี้คุม "ลำดับสัมพัทธ์" ไม่ใช่ตำแหน่งติดกัน จะได้ไม่ตกทุกครั้งที่มีของแทรก */
+      order: order,
+      idxTotal: order.indexOf('scanTotal'),
+      idxLab: order.indexOf('scanTotalLab'),
+      idxAll: order.indexOf('scanTotalAll'),
+      idxInput: order.indexOf('scanInput'),
       inStage: !!stage.querySelector('#scanTotalAll'),
       size: cs.fontSize, align: cs.textAlign,
       smallerThanLab: parseFloat(cs.fontSize) <
         parseFloat(getComputedStyle(document.getElementById('scanTotalLab')).fontSize)
     };
   });
-  check('อยู่ใต้ป้ายโซน ก่อนช่องยิง',
-        JSON.stringify(r8.order) === JSON.stringify(
-          ['scanTotal', 'scanTotalLab', 'scanTotalAll', 'scanInput']), r8.order);
+  check('เรียง ยอดใหญ่ → ป้ายโซน → แจกแจงโซน และทั้งหมดอยู่ก่อนช่องยิง',
+        r8.idxTotal === 0 && r8.idxLab === 1 && r8.idxAll === 2 &&
+        r8.idxInput > r8.idxAll, r8.order);
   check('อยู่ในกล่องยิง (scanStage)', r8.inStage === true, r8.inStage);
   check('ตัวเล็กกว่าป้ายโซน ไม่แย่งสายตาตัวเลขใหญ่',
         r8.smallerThanLab === true && r8.size === '12px', r8);

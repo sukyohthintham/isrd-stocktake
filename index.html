@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.17.0">
+<meta name="version" content="2.18.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.17.0</title>
+<title>ISRD Stocktake v2.18.0</title>
 
 <style>
 :root{
@@ -1034,6 +1034,32 @@ body.no-doc-images .doc .imgbox{display:none}
       <!-- ยอดรวมทุกโซน — ตัวเลขใหญ่ยังเป็นยอดของโซนล่าสุดตามเจตนา v2.1.9
            บรรทัดนี้ให้เห็นความคืบหน้าทั้งรอบโดยไม่ต้องเปลี่ยนความหมายตัวเลขใหญ่ -->
       <div class="scan-total-all" id="scanTotalAll"></div>
+
+      <!-- ⭐ v2.18.0 — "เลือกก่อน ยิงทีหลัง" ประเภทของกับโซนย้ายขึ้นมาอยู่เหนือช่องยิง
+           เดิมสองอย่างนี้อยู่ล่างสุดใต้ปุ่ม Export ซึ่งเป็นลำดับที่กลับหัว:
+           คนต้องเลื่อนลงไปตั้งค่าก่อน แล้วเลื่อนกลับขึ้นมายิง — หรือลืมตั้งไปเลย
+           ย้ายตำแหน่ง DOM ล้วน ๆ id / handler / การทำงานเดิมคงไว้ทุกตัว
+
+           v2.16.0 — ประเภทของที่กำลังนับ ติดไปกับทุกแถวที่ยิง
+           เดิมต้องแยก Job คนละใบ (SHOW / STOCK / STOCKASSET) เพื่อให้รู้ว่าของอยู่ฝั่งไหน
+           ทำให้สาขาหนึ่งมีสามใบ ยอดกระจาย ต้องไล่เปิดทีละใบ
+           ตอนนี้ใบเดียวพอ แล้วแยกด้วยปุ่มนี้แทน -->
+      <div class="scantype" id="scanTypeBtns">
+        <button type="button" data-scantype="display">🖼 โชว์</button>
+        <button type="button" data-scantype="stock">📦 สต็อก</button>
+        <button type="button" data-scantype="asset">🔧 Asset</button>
+      </div>
+
+      <label class="fld" style="margin-bottom:8px">
+        <span>เก็บทีละโซน — แสดงเฉพาะ Location ที่ขึ้นต้นด้วย</span>
+        <input type="text" id="locFilter" placeholder="เช่น A หรือ B4" autocomplete="off"
+               autocapitalize="characters" spellcheck="false" list="locZones">
+        <!-- ⭐ v2.17.0 — ตัวช่วยเลือกรหัสโซนหน้าร้าน เติมรายการด้วย renderZoneDatalist()
+             เป็นแค่ "ตัวช่วยพิมพ์" ไม่ได้บังคับ — รหัสนอกลิสต์ยังพิมพ์แล้วใช้ได้ตามปกติ -->
+        <datalist id="locZones"></datalist>
+      </label>
+      <div class="muted" id="locFilterInfo" style="margin-bottom:12px"></div>
+
       <input type="text" id="scanInput" inputmode="none" autocomplete="off"
              autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="ยิงบาร์โค้ดได้เลย">
 
@@ -1123,26 +1149,6 @@ body.no-doc-images .doc .imgbox{display:none}
     <button class="btn ghost sm block" id="btnScanImportTpl"
             style="display:none;margin-bottom:12px">⬇ ดาวน์โหลด Template (รหัส + จำนวน)</button>
     <input type="file" id="scanImportFile" accept=".xlsx,.csv" style="display:none">
-
-    <!-- ⭐ v2.16.0 — ประเภทของที่กำลังนับ ติดไปกับทุกแถวที่ยิง
-         เดิมต้องแยก Job คนละใบ (SHOW / STOCK / STOCKASSET) เพื่อให้รู้ว่าของอยู่ฝั่งไหน
-         ทำให้สาขาหนึ่งมีสามใบ ยอดกระจาย ต้องไล่เปิดทีละใบ
-         ตอนนี้ใบเดียวพอ แล้วแยกด้วยปุ่มนี้แทน -->
-    <div class="scantype" id="scanTypeBtns">
-      <button type="button" data-scantype="display">🖼 โชว์</button>
-      <button type="button" data-scantype="stock">📦 สต็อก</button>
-      <button type="button" data-scantype="asset">🔧 Asset</button>
-    </div>
-
-    <label class="fld" style="margin-bottom:12px">
-      <span>เก็บทีละโซน — แสดงเฉพาะ Location ที่ขึ้นต้นด้วย</span>
-      <input type="text" id="locFilter" placeholder="เช่น A หรือ B4" autocomplete="off"
-             autocapitalize="characters" spellcheck="false" list="locZones">
-      <!-- ⭐ v2.17.0 — ตัวช่วยเลือกรหัสโซนหน้าร้าน เติมรายการด้วย renderZoneDatalist()
-           เป็นแค่ "ตัวช่วยพิมพ์" ไม่ได้บังคับ — รหัสนอกลิสต์ยังพิมพ์แล้วใช้ได้ตามปกติ -->
-      <datalist id="locZones"></datalist>
-    </label>
-    <div class="muted" id="locFilterInfo" style="margin-bottom:12px"></div>
    </div>
 
    <!-- คอลัมน์ขวา: เห็นเฉพาะจอกว้าง (>=1024px) — ดูรายการที่ยิงไปแล้วทั้งรอบ -->
@@ -1226,6 +1232,7 @@ body.no-doc-images .doc .imgbox{display:none}
       <button class="btn sm" data-mtab="products">สินค้า</button>
       <button class="btn sm grey" data-mtab="branches">คลังสินค้า/สาขา</button>
       <button class="btn sm grey" data-mtab="locations">Location</button>
+      <button class="btn sm grey" data-mtab="shopzones">โซนหน้าร้าน</button>
       <button class="btn sm grey" data-mtab="newcodes" id="tabNewcodes" style="display:none">บาร์โค้ดใหม่</button>
       <button class="btn sm grey" data-mtab="users" id="tabUsers" style="display:none">ผู้ใช้</button>
     </div>
@@ -1354,6 +1361,33 @@ body.no-doc-images .doc .imgbox{display:none}
       <div class="muted" id="locCount"></div>
     </div>
     <div class="clist" id="locList"></div>
+  </div>
+
+  <!-- ⭐ v2.18.0 — ผังโซนหน้าร้าน ตั้งเองได้ ไม่ต้องรอแก้โค้ด
+       อยู่ถัดจากแท็บ Location เพราะเป็นเรื่องเดียวกัน: ที่เก็บของ
+       ต่างกันที่ Location = ผังคลัง (มาจากไฟล์) · โซนหน้าร้าน = ชั้นที่เด็กเดินเก็บจริง -->
+  <div id="masterShopZones" style="display:none">
+    <div class="card">
+      <h3>ผังโซนหน้าร้าน</h3>
+      <div class="muted" id="shopZoneStatus" style="margin-bottom:12px"></div>
+      <label class="fld" style="margin-bottom:10px">
+        <span>รหัสโซน — บรรทัดละ 1 รหัส</span>
+        <textarea id="shopZoneBox" rows="12" spellcheck="false" autocapitalize="characters"
+                  autocomplete="off" style="font-size:15px;line-height:1.6"></textarea>
+      </label>
+      <button class="btn block" id="btnSaveShopZones">💾 บันทึกผังโซน</button>
+      <button class="btn grey block sm" id="btnResetShopZones" style="margin-top:10px">↩ คืนค่าเริ่มต้น 180 รหัส</button>
+      <p class="muted" style="margin:12px 0 0">
+        รหัสในกล่องนี้คือรายการที่ขึ้นให้เลือกในช่อง <b>"เก็บทีละโซน"</b> บนหน้ายิง<br>
+        ขึ้นต้นด้วย <b>D</b> = ชั้นโชว์ · ขึ้นต้นด้วย <b>S</b> = ชั้นสต็อก —
+        หน้ายิงกรองให้ตาม<b>ปุ่มประเภท</b>ที่กดอยู่ (🖼 โชว์ / 📦 สต็อก) ส่วน 🔧 Asset เห็นทุกรหัส<br>
+        รูปแบบรหัส: ตัวอักษร/ตัวเลข + ขีด + ตัวเลข เช่น <b>SA-1</b> · <b>DB-10</b> ·
+        บรรทัดว่างข้ามให้ · รหัสซ้ำตัดให้เหลือตัวเดียว<br>
+        เพิ่ม/แก้/ลบ = แก้ข้อความในกล่องนี้แล้วกดบันทึก · ผังนี้ใช้ร่วมกันทุกสาขา<br>
+        <b>ไม่บังคับ</b> — รหัสที่ไม่มีในผังยังพิมพ์เองบนหน้ายิงได้ตามปกติ
+        และการแก้ผังนี้<b>ไม่กระทบยอดที่นับไปแล้ว</b>หรือรายงานใด ๆ
+      </p>
+    </div>
   </div>
 
   <div id="masterNewcodes" style="display:none">
@@ -1863,7 +1897,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.17.0';
+var APP_VERSION = '2.18.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -3362,13 +3396,23 @@ var SHOP_ZONES = (function () {
   return out;
 })();
 
-/* งานโชว์เห็นแต่รหัส D · งานสต๊อกเห็นแต่รหัส S — ลิสต์สั้นลงครึ่งหนึ่ง เลือกเร็วขึ้นและยิงผิดฝั่งยาก
-   ประเภทที่ตั้งเองภายหลัง (customStoreTypes) ไม่รู้ว่าใช้ผังไหน จึงให้เห็นทั้ง 180 ดีกว่าบังคับผิด */
-function shopZonesFor(job) {
-  var t = storeTypeOf(job);
-  if (t === 'SHOW') return SHOP_ZONES.filter(function (z) { return z.charAt(0) === 'D'; });
-  if (t === 'STOCK') return SHOP_ZONES.filter(function (z) { return z.charAt(0) === 'S'; });
-  return SHOP_ZONES.slice();
+/* ⭐ v2.18.0 — ผังที่ใช้จริง = ที่สาขาตั้งเองไว้ที่ settings/shopZones ถ้ามี
+   ยังไม่เคยตั้ง = ใช้ 180 รหัส built-in ไปก่อน ของเดิมจึงใช้ได้ทันทีไม่ต้องตั้งค่าก่อน */
+function shopZonesAll() {
+  var custom = state.customShopZones || [];
+  return custom.length ? custom : SHOP_ZONES;
+}
+
+/* ⭐ v2.18.0 — กรองตาม "ปุ่มประเภทของที่กำลังนับ" ไม่ใช่ชนิดของ Job
+   v2.17.0 กรองด้วย storeTypeOf(job) ซึ่งผิดกับวิธีทำงานจริง: หน้างานเปิด Job ใบเดียว
+   แล้วสลับปุ่ม โชว์/สต็อก/Asset เอา ชนิด Job จึงเป็น STOCK ค้างอยู่ตลอด
+   คนยิงของโชว์เลยเห็นแต่รหัส S ทั้งที่ต้องการ D — ต้องผูกกับปุ่มที่เขากดจริง
+   Asset ไม่มีผังของตัวเอง จึงให้เห็นทั้งหมดดีกว่าบังคับผิดฝั่ง */
+function shopZonesFor() {
+  var all = shopZonesAll();
+  if (state.scanType === 'display') return all.filter(function (z) { return z.charAt(0) === 'D'; });
+  if (state.scanType === 'stock') return all.filter(function (z) { return z.charAt(0) === 'S'; });
+  return all.slice();
 }
 
 /* ---------- รอบนับของสาขา (cycle) ----------
@@ -4084,6 +4128,7 @@ var state = {
   sdView: 'stock_no_display',               // การ์ดใบที่กดอยู่ = สถานะที่ตารางล่างกำลังโชว์
   customStatuses: [],                       // ค่า status ที่แอดมินเพิ่มเอง
   customStoreTypes: [],                     // ประเภทคลังย่อยที่แอดมินเพิ่มเอง
+  customShopZones: [],                      // ⭐ v2.18.0 ผังโซนหน้าร้านที่ตั้งเอง (ว่าง = ใช้ built-in)
   docScope: 'job',                          // เอกสาร: 'job' = เฉพาะ Job นี้ · 'cycle' = รวมทั้งสาขา
   docScopeTouched: false,                   // ผู้ใช้กดสลับปุ่มขอบเขตเองหรือยัง
   stat: null,                               // ⭐ v2.10.0 ยอดสรุปของรอบที่เปิดอยู่ (pieces/skus/lastAt/lastBy)
@@ -5059,6 +5104,9 @@ function setScanType(v) {
   state.scanType = v;
   try { localStorage.setItem(scanTypeKey(), v); } catch (e) {}
   renderScanType();
+  /* ⭐ v2.18.0 — ผังโซนผูกกับปุ่มนี้ กดโชว์แล้วรายการต้องเป็นรหัส D ทันที
+     ไม่ใช่ต้องออกจากหน้าแล้วเข้าใหม่ถึงจะเปลี่ยน */
+  if (state.page === 'scan') renderZoneDatalist();
   focusScan();
 }
 
@@ -6805,13 +6853,13 @@ function renderLivePanel() {
 }
 
 /* ⭐ v2.17.0 — เติมรหัสโซนหน้าร้านลง <datalist> ของช่อง "เก็บทีละโซน"
-   วาดใหม่ทุกครั้งที่เปิดหน้ายิง เพราะชนิดงาน (โชว์/สต็อก) เปลี่ยนตาม Job ที่เลือก
+   v2.18.0: วาดใหม่ทุกครั้งที่เปิดหน้ายิง "และทุกครั้งที่กดปุ่มประเภท" เพราะผังผูกกับปุ่มนั้น
    เป็นตัวช่วยพิมพ์อย่างเดียว ไม่ได้จำกัดค่าที่กรอกได้ — สาขาที่ใช้ผังอื่นยังพิมพ์รหัสตัวเองได้ */
 function renderZoneDatalist() {
   var dl = $('locZones');
   if (!dl) return;
   dl.innerHTML = '';
-  shopZonesFor(state.roundIndex[state.roundId] || null).forEach(function (z) {
+  shopZonesFor().forEach(function (z) {
     var o = document.createElement('option');
     o.value = z;
     dl.appendChild(o);
@@ -8119,6 +8167,7 @@ function renderMaster() {
   $('masterProducts').style.display = tab === 'products' ? 'block' : 'none';
   $('masterBranches').style.display = tab === 'branches' ? 'block' : 'none';
   $('masterLocations').style.display = tab === 'locations' ? 'block' : 'none';
+  $('masterShopZones').style.display = tab === 'shopzones' ? 'block' : 'none';
   $('masterNewcodes').style.display = tab === 'newcodes' ? 'block' : 'none';
   $('masterUsers').style.display = tab === 'users' ? 'block' : 'none';
   /* ออกจากแท็บไหน ให้ปิดป็อปอัปของแท็บนั้นก่อน กัน panel แบบ fixed ค้างลอยอยู่ */
@@ -8126,6 +8175,7 @@ function renderMaster() {
   if (tab !== 'locations') setSearchPop($('locList'), false);
   if (tab === 'branches') { renderBranchMaster(); return; }
   if (tab === 'locations') { renderLocationMaster(); return; }
+  if (tab === 'shopzones') { renderShopZones(); return; }
   if (tab === 'newcodes') { renderNewCodes(); return; }
   if (tab === 'users') { refreshUsers().then(renderUsers); return; }
 
@@ -14691,6 +14741,80 @@ function addStoreType(key, label) {
   }).catch(function () { toast('บันทึกไม่สำเร็จ', true); });
 }
 
+/* ---------- ผังโซนหน้าร้าน (v2.18.0) ----------
+   เก็บที่ settings/shopZones — โหนด settings มีกฎเดิมอยู่แล้ว (admin หรือ perms/editMaster เขียน
+   ทุกคนอ่าน) จึงไม่ต้องแตะ Database Rules · แพทเทิร์นเดียวกับ storeTypes / productStatuses ทุกบรรทัด
+
+   ทำไมต้องให้ตั้งเอง: ผัง built-in 180 รหัสเป็นแค่ค่าตั้งต้น สาขาจริงมีชั้นไม่เท่ากัน
+   ถ้าไม่ให้แก้ คนจะต้องรอให้เราแก้โค้ดแล้ว deploy ใหม่ทุกครั้งที่ย้ายชั้น             */
+
+/* รหัสโซนต้องเป็นแบบ ตัวอักษร/ตัวเลข + ขีด + ตัวเลข (SA-1 · DB-10 · A1-2)
+   บังคับแบบไว้ กันคนเผลอวางชื่อสินค้าหรือข้อความทั้งบรรทัดลงมาแล้วกลายเป็น "โซน" */
+var SHOP_ZONE_RE = /^[A-Z0-9]+-[0-9]+$/;
+
+function refreshShopZones() {
+  return db.get('settings/shopZones').then(function (data) {
+    var arr = Array.isArray(data) ? data
+      : (data ? Object.keys(data).map(function (k) { return data[k]; }) : []);
+    state.customShopZones = arr
+      .map(function (z) { return String(z == null ? '' : z).trim().toUpperCase(); })
+      .filter(Boolean);
+    if (state.page === 'master') renderShopZones();
+    renderZoneDatalist();                  // หน้ายิงอาจเปิดค้างอยู่ ต้องได้ผังใหม่ทันที
+  }).catch(function () { /* ปล่อยให้ใช้ค่าเดิม */ });
+}
+
+/* รับทั้งกล่องเป็นข้อความก้อนเดียว (บรรทัดละรหัส) — เพิ่ม/แก้/ลบ คือการแก้กล่องนี้ทั้งชุด
+   ตั้งใจไม่ทำปุ่มลบรายตัว เพราะมีเป็นร้อยรหัส การแก้ทีละบรรทัดในกล่องเร็วกว่ามาก */
+function saveShopZones(text) {
+  if (!requirePerm('editMaster', 'แก้ผังโซนหน้าร้านไม่ได้')) return Promise.resolve();
+  var seen = Object.create(null), next = [], bad = [], dup = 0;
+  String(text == null ? '' : text).split('\n').forEach(function (line) {
+    var v = line.trim().toUpperCase();
+    if (!v) return;                                      // บรรทัดว่างข้ามเฉย ๆ ไม่ใช่ความผิด
+    if (!SHOP_ZONE_RE.test(v)) { if (bad.indexOf(v) < 0) bad.push(v); return; }
+    if (seen[v]) { dup++; return; }                      // ซ้ำ = เก็บตัวแรกไว้ตัวเดียว
+    seen[v] = 1;
+    next.push(v);
+  });
+  /* เจอรหัสผิดแบบ = ไม่บันทึกทั้งชุด แล้วบอกว่าบรรทัดไหนผิด
+     ถ้าข้ามให้เงียบ ๆ คนจะเข้าใจว่าบันทึกครบแล้ว ทั้งที่รหัสนั้นหายไปจากผัง */
+  if (bad.length) {
+    toast('ยังไม่บันทึก — รหัสนี้ผิดแบบ: ' + bad.slice(0, 3).join(' · ') +
+          (bad.length > 3 ? ' และอีก ' + fmtNum(bad.length - 3) + ' รหัส' : '') +
+          ' · ต้องเป็นแบบ SA-1 (ตัวอักษร/ตัวเลข ขีด ตัวเลข)', true);
+    return Promise.resolve();
+  }
+  if (!next.length) { toast('ต้องมีอย่างน้อย 1 รหัส — ปล่อยว่างไม่ได้', true); return Promise.resolve(); }
+
+  return db.update('settings', { shopZones: next }).then(function () {
+    state.customShopZones = next;
+    renderShopZones();
+    renderZoneDatalist();
+    toast('บันทึกผังโซน ' + fmtNum(next.length) + ' รหัสแล้ว' +
+          (dup ? ' (ตัดรหัสซ้ำออก ' + fmtNum(dup) + ')' : ''));
+  }).catch(function () { toast('บันทึกไม่สำเร็จ', true); });
+}
+
+function renderShopZones() {
+  var box = $('shopZoneBox');
+  if (!box) return;
+  var can = hasPerm('editMaster');
+  var all = shopZonesAll();
+  /* กำลังพิมพ์ค้างอยู่ห้ามวาดทับ ไม่งั้นแก้ไปครึ่งทางแล้วโดนรีเฟรชของคนอื่นลบทิ้ง */
+  if (document.activeElement !== box) box.value = all.join('\n');
+  box.readOnly = !can;
+  $('btnSaveShopZones').style.display = can ? '' : 'none';
+  $('btnResetShopZones').style.display = can ? '' : 'none';
+
+  var d = all.filter(function (z) { return z.charAt(0) === 'D'; }).length;
+  var s = all.filter(function (z) { return z.charAt(0) === 'S'; }).length;
+  $('shopZoneStatus').textContent =
+    'ใช้อยู่ ' + fmtNum(all.length) + ' รหัส · โชว์ (D) ' + fmtNum(d) +
+    ' · สต็อก (S) ' + fmtNum(s) + ' · อื่น ' + fmtNum(all.length - d - s) +
+    ((state.customShopZones || []).length ? ' — ผังที่ตั้งเองไว้' : ' — ผังเริ่มต้นของระบบ ยังไม่เคยตั้งเอง');
+}
+
 function refreshCompany() {
   return db.get('settings/company').then(function (data) {
     if (!data) return;
@@ -16755,6 +16879,20 @@ function init() {
     b.onclick = function () { state.masterTab = b.getAttribute('data-mtab'); renderMaster(); };
   });
 
+  /* ---- ผังโซนหน้าร้าน (v2.18.0) ---- */
+  $('btnSaveShopZones').onclick = function () {
+    saveShopZones($('shopZoneBox').value);
+  };
+  $('btnResetShopZones').onclick = function () {
+    if (!requirePerm('editMaster', 'แก้ผังโซนหน้าร้านไม่ได้')) return;
+    ask('คืนค่าผังโซนเริ่มต้น?',
+        'ผังที่ตั้งไว้เองจะถูกเขียนทับด้วยชุดเริ่มต้น ' + fmtNum(SHOP_ZONES.length) +
+        ' รหัส (DA-1..DI-10 และ SA-1..SI-10) · ยอดที่นับไปแล้วไม่กระทบ',
+        'คืนค่าเริ่มต้น', { danger: true }).then(function (ok) {
+      if (ok) saveShopZones(SHOP_ZONES.join('\n'));
+    });
+  };
+
   /* ---- ทะเบียนสาขา ---- */
   $('btnImportBranch').onclick = function () {
     if (!requirePerm('editLocation', 'นำเข้าทะเบียนสาขาไม่ได้')) return;
@@ -17093,6 +17231,7 @@ function startApp() {
   refreshLocations();
   refreshStatuses();
   refreshStoreTypes();
+  refreshShopZones();
   if (isAdmin()) refreshUsers().then(renderUsers);
 
   /* ระเบียนรอบนับต้องมาก่อน roundIndex — cycleStatus และ Rules อ่านจากตรงนี้ */
