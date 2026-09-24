@@ -537,6 +537,107 @@ function check(name, ok, got) {
         r10.rec.foundZone === 'SA-1' && r10.rec.stockType === 'display', r10.rec);
   await page.setViewport({ width: 1280, height: 900 });
 
+  /* ---------- 11. จอเตี้ยสุดที่ต้องรองรับ: iPhone SE 390x667 (v2.18.1) ----------
+     v2.18.0 ดันช่องยิงลงไป ~190px การ์ดสินค้าหลังยิงเลยตกใต้ขอบจอ คนยิงไม่เห็นผล
+     ข้อนี้คุมทั้งการบีบระยะขอบและ revealScanCard() ที่เลื่อนการ์ดเข้ามา */
+  console.log('\n[11] จอ 390x667 — ยิงแล้วต้องเห็นการ์ดสินค้ากับยอดนับ');
+  await page.setViewport({ width: 390, height: 667 });
+  const r11a = await page.evaluate(() => {
+    /* เสียง/สั่น/เสียงพูด ไม่เกี่ยวกับเลย์เอาต์ ปิดไว้ไม่ให้ headless โวยใส่คอนโซล */
+    window.beep = function () {}; window.beepNewCode = function () {};
+    window.beepForeign = function () {}; window.beepSpecial = function () {};
+    window.speak = function () {}; window.vibrate = function () {};
+
+    window.__seed('STOCK');
+    state.page = 'scan';
+    state.products.A1.barcode = '111';
+    state.scanIndex = null;                 // ให้สร้าง index ใหม่จาก products ที่เพิ่งใส่บาร์โค้ด
+    document.querySelectorAll('.page').forEach(function (p) { p.classList.remove('active'); });
+    $('pageScan').classList.add('active');
+    setZoneFilter('SA-1');
+    renderScanPage();
+
+    /* ความสูงของบล็อกเลือก (ปุ่มประเภท → ช่องยิง) คือสิ่งที่ v2.18.1 ไปบีบ
+       วัดเป็นตัวเลขไว้เลย ไม่งั้นใครเผลอต่อข้อความ label ยาว ๆ กลับมาจะไม่มีอะไรร้อง */
+    const gap = function () {
+      return Math.round($('scanInput').getBoundingClientRect().top -
+                        $('scanTypeBtns').getBoundingClientRect().top);
+    };
+    const out = {
+      labelSpanH: Math.round($('locFilter').closest('label')
+                    .querySelector('span').getBoundingClientRect().height),
+      labelText: $('locFilter').closest('label').querySelector('span').textContent,
+      gapWithInfo: gap(),
+      infoText: $('locFilterInfo').textContent
+    };
+    /* บรรทัดสรุปตอนว่างต้องไม่กินที่เลย (ไม่มีทั้งความสูงและ margin ค้าง) */
+    $('locFilterInfo').textContent = '';
+    out.emptyDisplay = getComputedStyle($('locFilterInfo')).display;
+    out.gapEmptyInfo = gap();
+    renderLocFilter();                      // คืนข้อความเดิมก่อนไปวัดขั้นถัดไป
+
+    /* ยิงผ่านทางเดียวกับเครื่องยิงจริง — Enter ในช่อง #scanInput */
+    $('scanInput').focus();
+    $('scanInput').value = '111';
+    $('scanInput').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    return out;
+  });
+  check('ป้ายช่องโซนเหลือบรรทัดเดียว ไม่ตกบรรทัด',
+        r11a.labelSpanH < 30, { h: r11a.labelSpanH, text: r11a.labelText });
+  /* v2.18.0 วัดได้ 196px · v2.18.1 บีบเหลือ 182px — ตั้งเพดาน 185 ให้เหลือช่องหายใจ 3px
+     ใครถอยระยะขอบกลับไปเป็นค่าเดิมข้อนี้จะร้องทันที */
+  check('บล็อกเลือก (ปุ่มประเภท → ช่องยิง) ไม่เกิน 185px บนจอ 390px',
+        r11a.gapWithInfo <= 185, r11a);
+  check('บรรทัดสรุปโซนตอนว่างไม่กินพื้นที่เลย',
+        r11a.emptyDisplay === 'none' && r11a.gapEmptyInfo < r11a.gapWithInfo - 20, r11a);
+  await new Promise(r => setTimeout(r, 900));      // รอ smooth scroll ให้นิ่งก่อนวัด
+  const r11 = await page.evaluate(() => {
+    const r = function (id) {
+      const b = $(id).getBoundingClientRect();
+      return { top: Math.round(b.top), bot: Math.round(b.bottom) };
+    };
+    const navTop = Math.round(document.querySelector('.nav').getBoundingClientRect().top);
+    const barBot = Math.round(document.querySelector('.topbar').getBoundingClientRect().bottom);
+    const out = {
+      vh: window.innerHeight, navTop: navTop, barBot: barBot,
+      last: r('scanLast'), input: r('scanInput'),
+      sysBox: r('slSysBox'), qty: r('slQty'),
+      focused: document.activeElement === $('scanInput'),
+      qtyText: $('slQty').textContent,
+      noSideScroll: document.documentElement.scrollWidth <= 390
+    };
+    /* ยิงตัวถัดไปต่อได้ทันทีโดยไม่ต้องแตะอะไร — โฟกัสต้องยังอยู่ที่ช่องยิง */
+    $('scanInput').value = '111';
+    $('scanInput').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    out.qtyAfter2 = $('slQty').textContent;
+    out.counts = state.counts.A1;
+
+    /* ปุ่มประเภท/ช่องโซน/datalist ยังทำงานครบหลังบีบระยะ */
+    setScanType('display');
+    out.dlFirst = ($('locZones').querySelector('option') || {}).value;
+    out.typeOn = $('scanTypeBtns').querySelector('[data-scantype="display"]').classList.contains('on');
+    $('locFilter').value = 'sb-2';
+    $('locFilter').dispatchEvent(new Event('input'));
+    out.zone = state.locationFilter;
+    return out;
+  });
+  check('การ์ดสินค้าโผล่เข้ามาในจอแล้ว (ไม่ได้อยู่ใต้ขอบล่าง)',
+        r11.last.top < r11.vh && r11.last.top < r11.navTop, r11);
+  check('ยอดระบบเห็นได้ ไม่ถูกแถบเมนูล่างบัง',
+        r11.sysBox.bot <= r11.navTop, { sysBox: r11.sysBox, navTop: r11.navTop });
+  check('ยอดที่ยิงสะสมเห็นได้ ไม่ถูกแถบเมนูล่างบัง',
+        r11.qty.bot <= r11.navTop, { qty: r11.qty, navTop: r11.navTop });
+  check('ช่องยิงยังอยู่ในจอ อ่านออก (ไม่จมใต้แถบบน ไม่ตกใต้แถบล่าง)',
+        r11.input.bot > r11.barBot + 20 && r11.input.top < r11.navTop, r11);
+  check('โฟกัสยังอยู่ที่ช่องยิง ยิงตัวถัดไปได้ทันที', r11.focused === true, r11.focused);
+  check('ยิงซ้ำแล้วยอดเดินต่อจริง (1 → 2)',
+        r11.qtyText === '1' && r11.qtyAfter2 === '2' && r11.counts === 2, r11);
+  check('ปุ่มประเภทยังทำงาน + ผังโซนเปลี่ยนตาม',
+        r11.typeOn === true && r11.dlFirst === 'DA-1', r11);
+  check('ช่องโซนยังรับค่าและ uppercase ตามเดิม', r11.zone === 'SB-2', r11.zone);
+  check('ไม่มีสกรอลล์แนวนอนบนจอ 390px', r11.noSideScroll === true, r11.noSideScroll);
+  await page.setViewport({ width: 1280, height: 900 });
+
   console.log('\n--- console/page errors ---');
   console.log(errors.slice(0, 10).join('\n') || '(none)');
   check('ไม่มี error ในคอนโซลเลยสักข้อ', errors.length === 0, errors.slice(0, 3));

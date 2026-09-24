@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.18.0">
+<meta name="version" content="2.18.1">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.18.0</title>
+<title>ISRD Stocktake v2.18.1</title>
 
 <style>
 :root{
@@ -415,10 +415,21 @@ kbd{
 .zone-pill.active{background:var(--brand-light);color:var(--brand);font-weight:800}
 .zone-pill.total{background:none;font-weight:800;color:#334155}
 #scanInput{
-  font-size:20px;text-align:center;letter-spacing:1px;min-height:64px;margin-top:14px;
+  font-size:20px;text-align:center;letter-spacing:1px;min-height:64px;margin-top:10px;
   border-color:var(--brand);
 }
+/* ⭐ v2.18.1 — บรรทัดสรุปโซนตอนยังไม่มีข้อความ ต้องไม่กินที่เลย
+   ของเดิมกล่องเปล่ายังสูงหนึ่งบรรทัด + margin ค้างไว้ = เสียแนวตั้งฟรี ๆ ~33px
+   ซึ่งบนจอ 390x667 เท่ากับการ์ดสินค้าหลังยิงถูกดันตกขอบล่าง */
+#locFilterInfo{margin-bottom:8px}
+#locFilterInfo:empty{display:none}
 .scan-last{display:flex;gap:12px;align-items:center;margin-top:14px;min-height:74px}
+/* ⭐ v2.18.1 — เผื่อที่ให้แถบเมนูล่างตอน revealScanCard() เลื่อนการ์ดเข้ามา
+   scrollIntoView ไม่รู้จักแถบ .nav ที่ position:fixed ทับอยู่ ถ้าไม่เผื่อไว้
+   มันจะเลื่อนแค่ให้การ์ด "อยู่ในจอ" แล้วท่อน ยอดระบบ / ยิงสะสม ไปนอนใต้แถบเมนูพอดี
+   ซึ่งเป็นสองตัวเลขที่คนนับต้องเห็นที่สุดหลังยิง · 72 = ความสูงแถบ 67 + เว้นหายใจอีกนิด
+   env() ต่อท้ายเพื่อให้เครื่องที่มีขอบล่าง (home indicator) ได้ระยะเพิ่มตามจริง */
+#scanLast{scroll-margin-bottom:calc(72px + env(safe-area-inset-bottom))}
 /* ---------- รูปสินค้า (โหลดแบบ lazy ไม่มีรูปก็เป็นกรอบเทา ไม่ใช่รูปแตก) ---------- */
 .imgbox{
   background:var(--line-soft);border-radius:8px;overflow:hidden;flex:0 0 auto;
@@ -727,7 +738,9 @@ body.no-doc-images .doc .imgbox{display:none}
 #sumDonut .donut-cell{width:auto;flex:0 0 auto}
 /* ⭐ v2.16.0 — ปุ่มเลือกประเภทตอนยิง ต้องกดโดนง่ายด้วยมือใส่ถุงมือ
    ตัวที่เลือกอยู่ต้องต่างชัดแบบเห็นแวบเดียว เพราะกดผิดแล้วยอดไปลงผิดประเภททั้งกอง */
-.scantype{display:flex;gap:8px;margin-bottom:12px}
+/* v2.18.1 — ระยะล่างบีบจาก 12 เหลือ 8 บล็อกนี้อยู่เหนือช่องยิงแล้วตั้งแต่ v2.18.0
+   ทุก px ที่กินตรงนี้คือ px ที่การ์ดสินค้าหลังยิงถูกดันตกขอบจอมือถือ */
+.scantype{display:flex;gap:8px;margin-bottom:8px}
 .scantype button{
   flex:1 1 0;min-height:46px;font:inherit;font-size:15px;font-weight:700;cursor:pointer;
   border-radius:10px;border:2px solid var(--line);background:#fff;color:var(--muted);
@@ -1050,15 +1063,18 @@ body.no-doc-images .doc .imgbox{display:none}
         <button type="button" data-scantype="asset">🔧 Asset</button>
       </div>
 
-      <label class="fld" style="margin-bottom:8px">
-        <span>เก็บทีละโซน — แสดงเฉพาะ Location ที่ขึ้นต้นด้วย</span>
-        <input type="text" id="locFilter" placeholder="เช่น A หรือ B4" autocomplete="off"
+      <!-- ⭐ v2.18.1 — ป้ายเหลือบรรทัดเดียว ประหยัดแนวตั้งให้การ์ดสินค้าขึ้นมาอยู่ในจอ
+           ความหมาย "กรองตาม Location ที่ขึ้นต้นด้วย" ย้ายไปอยู่ในตัวอย่างของ placeholder
+           (SA-1 = รหัสชั้นหน้าร้าน · A = ตัวอักษรนำของ Location คลัง) และบรรทัดสรุปใต้ช่อง -->
+      <label class="fld" style="margin-bottom:6px">
+        <span>โซนที่เก็บ (เลือกหรือพิมพ์)</span>
+        <input type="text" id="locFilter" placeholder="เช่น SA-1 หรือ A" autocomplete="off"
                autocapitalize="characters" spellcheck="false" list="locZones">
         <!-- ⭐ v2.17.0 — ตัวช่วยเลือกรหัสโซนหน้าร้าน เติมรายการด้วย renderZoneDatalist()
              เป็นแค่ "ตัวช่วยพิมพ์" ไม่ได้บังคับ — รหัสนอกลิสต์ยังพิมพ์แล้วใช้ได้ตามปกติ -->
         <datalist id="locZones"></datalist>
       </label>
-      <div class="muted" id="locFilterInfo" style="margin-bottom:12px"></div>
+      <div class="muted" id="locFilterInfo"></div>
 
       <input type="text" id="scanInput" inputmode="none" autocomplete="off"
              autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="ยิงบาร์โค้ดได้เลย">
@@ -1897,7 +1913,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.18.0';
+var APP_VERSION = '2.18.1';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -6505,6 +6521,21 @@ function focusScan() {
   if (el && document.activeElement !== el) el.focus();
 }
 
+/* ⭐ v2.18.1 — เลื่อนการ์ดสินค้าเข้ามาในจอหลังยิง
+   ตั้งแต่ v2.18.0 ปุ่มประเภทกับช่องโซนอยู่เหนือช่องยิง การ์ดจึงเริ่มต่ำลง
+   บีบระยะขอบช่วยได้ระดับหนึ่ง แต่การ์ดสูง ~450px ซึ่งสูงกว่าพื้นที่ที่เหลือในจอ 667px อยู่ดี
+   ไม่แย่งโฟกัส — เครื่องยิงพิมพ์เข้าช่อง #scanInput ที่โฟกัสอยู่แล้ว การเลื่อนจอไม่ย้ายโฟกัส
+   ยิงตัวถัดไปได้ทันทีระหว่างที่ยังเลื่อนอยู่ (block:'nearest' = เลื่อนน้อยที่สุดเท่าที่จำเป็น) */
+function revealScanCard() {
+  var card = $('scanLast');
+  if (!card || !card.scrollIntoView) return;
+  try {
+    card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  } catch (e) {
+    card.scrollIntoView(false);        // เบราว์เซอร์เก่าที่ยังไม่รับ options object
+  }
+}
+
 function handleScanValue(raw) {
   var value = String(raw || '').trim();
   if (!value) return;
@@ -6534,6 +6565,7 @@ function handleScanValue(raw) {
     speak('บาร์โค้ดแปลก');
     vibrate([40, 50, 40]);
     showScanNewCode(value, newKey);
+    revealScanCard();
     pushRecent(value, 1, newRec.rec.ts);
     renderScanTotals();
     renderLivePanel();
@@ -6557,6 +6589,7 @@ function handleScanValue(raw) {
   vibrate(foreign ? [60, 50, 60] : (special ? [30, 40, 30, 40, 30] : 40));
 
   showScanHit(key);
+  revealScanCard();
   pushRecent(state.products[key].name, 1, written.rec.ts);
   renderScanTotals();
   renderLivePanel();
