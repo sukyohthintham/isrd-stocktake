@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.21.0">
+<meta name="version" content="2.22.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.21.0</title>
+<title>ISRD Stocktake v2.22.0</title>
 
 <style>
 :root{
@@ -1913,7 +1913,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.21.0';
+var APP_VERSION = '2.22.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -9804,6 +9804,26 @@ function exportExcel() {
   });
 }
 
+/* ⭐ v2.22.0 — รวมป้ายประเภทที่นับจาก map {stockType -> จำนวนสุทธิ} → "โชว์ (3), สต็อก (2)"
+   ใช้ร่วมกันสองไฟล์: รายงานสรุป (buildSummaryExcel) และไฟล์รวมหลาย Job (exportJobsExcel)
+   กติกาต้องเป็นก้อนเดียว — ถ้าแยกสองก๊อปปี้ วันหนึ่งสองไฟล์จะบอกคนละแบบกับข้อมูลชุดเดียวกัน
+
+   เรียงคงที่ โชว์ → สต็อก → Asset ไม่เรียงตามตัวอักษร คนเปิดไฟล์หลายใบจะได้เทียบคอลัมน์กันได้
+   ประเภทที่สุทธิเหลือ 0 ไม่โชว์ — ยิงแล้วหักคืนจนหมด ไม่ใช่ของที่มีอยู่จริงในฝั่งนั้น
+   ชื่อภาษาไทยใช้ SCAN_TYPE_LABEL ตัวเดียวกับที่พรีวิวนำเข้า Excel ใช้ ห้ามตั้งตารางซ้ำ
+   ค่าแปลกที่ไม่รู้จัก (เผื่ออนาคตเพิ่มประเภท) ต่อท้ายตามตัวอักษร แล้วปิดท้ายด้วย (ไม่ระบุ)
+   — ยอมให้คอลัมน์ยาวขึ้น ดีกว่าปล่อยให้ยอดบางก้อนหายไปจากไฟล์เงียบ ๆ */
+function fmtStockTypeTally(m) {
+  if (!m) return '';
+  var fixed = ['display', 'stock', 'asset'];
+  var extra = Object.keys(m).filter(function (t) {
+    return t !== '' && fixed.indexOf(t) < 0;
+  }).sort();
+  return fixed.concat(extra, ['']).filter(function (t) { return m[t] > 0; })
+    .map(function (t) { return (SCAN_TYPE_LABEL[t] || t || '(ไม่ระบุ)') + ' (' + m[t] + ')'; })
+    .join(', ');
+}
+
 function buildSummaryExcel(data) {
   var round = state.roundIndex[state.roundId] || { name: 'stocktake' };
   var priceLabel = state.priceField === 'costPrice' ? 'ราคาต้นทุน' : 'ราคาขาย';
@@ -9885,21 +9905,8 @@ function buildSummaryExcel(data) {
   }
 
   /* ⭐ v2.21.0 — "โชว์ (3), สต็อก (2)" · กติกาเดียวกับ fzZones เป๊ะ
-     เรียงคงที่ โชว์ → สต็อก → Asset ไม่เรียงตามตัวอักษร คนเปิดไฟล์หลายใบจะได้เทียบคอลัมน์กันได้
-     ประเภทที่สุทธิเหลือ 0 ไม่โชว์ — ยิงแล้วหักคืนจนหมด ไม่ใช่ของที่มีอยู่จริงในฝั่งนั้น
-     ชื่อภาษาไทยใช้ SCAN_TYPE_LABEL ตัวเดียวกับที่พรีวิวนำเข้า Excel ใช้ ห้ามตั้งตารางซ้ำ
-     ค่าแปลกที่ไม่รู้จัก (เผื่ออนาคตเพิ่มประเภท) ต่อท้ายตามตัวอักษร แล้วปิดท้ายด้วย (ไม่ระบุ)
-     — ยอมให้คอลัมน์ยาวขึ้น ดีกว่าปล่อยให้ยอดบางก้อนหายไปจากไฟล์เงียบ ๆ */
-  function stTypes(k) {
-    var m = stMap[k]; if (!m) return '';
-    var fixed = ['display', 'stock', 'asset'];
-    var extra = Object.keys(m).filter(function (t) {
-      return t !== '' && fixed.indexOf(t) < 0;
-    }).sort();
-    return fixed.concat(extra, ['']).filter(function (t) { return m[t] > 0; })
-      .map(function (t) { return (SCAN_TYPE_LABEL[t] || t || '(ไม่ระบุ)') + ' (' + m[t] + ')'; })
-      .join(', ');
-  }
+     v2.22.0 ย้ายตรรกะไปไว้ที่ fmtStockTypeTally() เพราะไฟล์รวมหลาย Job ต้องใช้กติกาเดียวกัน */
+  function stTypes(k) { return fmtStockTypeTally(stMap[k]); }
 
   data.rows.forEach(function (r) {
     s2.push([r.code, r.name, r.location || '', fzZones(r.key), stTypes(r.key),
@@ -13788,7 +13795,10 @@ function refreshNav() {
    ชีทสรุปรวมอยู่บนสุด แล้วตามด้วยชีทของแต่ละ Job
    ใช้ตัวเขียน xlsx ของโปรเจกต์เอง — ไม่มี SheetJS ในไฟล์นี้ ไม่เคยมี
    ============================================================ */
-var EXPORT_JOB_HEAD = ['รหัสสินค้า', 'ชื่อสินค้า', 'Location', 'โซนที่เก็บ', 'Status', 'ประเภท',
+/* v2.22.0 — "ประเภทที่นับ" แทรกต่อจาก "โซนที่เก็บ" ให้ตำแหน่งตรงกับไฟล์รายงานสรุป (v2.21.0)
+   จงใจต่างกันตรงนี้: ช่องโซนในไฟล์นี้เป็นชื่อโซนล้วน ๆ ไม่มีจำนวน (ของเดิม ไม่แก้)
+   ส่วนช่องประเภทมีจำนวนในวงเล็บ เพื่อให้อ่านคู่กับไฟล์รายงานสรุปได้โดยไม่ต้องแปลงในหัว */
+var EXPORT_JOB_HEAD = ['รหัสสินค้า', 'ชื่อสินค้า', 'Location', 'โซนที่เก็บ', 'ประเภทที่นับ', 'Status', 'ประเภท',
                        'ยอดระบบ', 'ยิงจริง', 'ผลต่าง', 'ราคา', 'มูลค่าระบบ', 'มูลค่าจริง', 'สถานะการนับ'];
 
 function exportJobsExcel(ids, cycleLabel) {
@@ -13802,11 +13812,20 @@ function exportJobsExcel(ids, cycleLabel) {
     var byCycle = {};
     parts.forEach(function (p) {
       var cid = cycleOf(state.roundIndex[p.id]);
-      var c = byCycle[cid] || (byCycle[cid] = { cid: cid, sys: p.sys, counts: {}, foundZones: {}, jobs: [] });
+      var c = byCycle[cid] || (byCycle[cid] = { cid: cid, sys: p.sys, counts: {},
+                                                foundZones: {}, stockTypes: {}, jobs: [] });
       Object.keys(p.counts).forEach(function (k) { c.counts[k] = (c.counts[k] || 0) + p.counts[k]; });
       Object.keys(p.foundZones || {}).forEach(function (k) {
         var _t = c.foundZones[k] || (c.foundZones[k] = {});
         Object.keys(p.foundZones[k]).forEach(function (z) { _t[z] = 1; });
+      });
+      /* ⭐ v2.22.0 — รวมประเภทข้ามใบในรอบเดียวกัน ต้อง "บวกจำนวน" ไม่ใช่ตั้งธงแบบโซน
+         SKU เดียวยิงใบโชว์ 3 ใบสต็อก 2 ต้องออกมาเป็น โชว์ (3), สต็อก (2) ไม่ใช่นับใบเดียว */
+      Object.keys(p.stockTypes || {}).forEach(function (k) {
+        var _s = c.stockTypes[k] || (c.stockTypes[k] = {});
+        Object.keys(p.stockTypes[k]).forEach(function (t) {
+          _s[t] = (_s[t] || 0) + p.stockTypes[k][t];
+        });
       });
       c.jobs.push(p);
     });
@@ -13840,7 +13859,10 @@ function exportJobsExcel(ids, cycleLabel) {
 
       var rows = [EXPORT_JOB_HEAD.slice()];
       d.rows.forEach(function (r) {
-        rows.push([r.code, r.name, r.location || '', (c.foundZones[r.key] ? Object.keys(c.foundZones[r.key]).sort().join(', ') : ''), r.status || DEFAULT_STATUS,
+        rows.push([r.code, r.name, r.location || '',
+                   (c.foundZones[r.key] ? Object.keys(c.foundZones[r.key]).sort().join(', ') : ''),
+                   fmtStockTypeTally(c.stockTypes[r.key]),
+                   r.status || DEFAULT_STATUS,
                    r.type === 'notProduct' ? 'Not Product' : 'Product',
                    r.sys, r.act, r.diff, r.price,
                    Math.round(r.sys * r.price * 100) / 100,
@@ -13849,8 +13871,10 @@ function exportJobsExcel(ids, cycleLabel) {
                             : (!r.inRound ? 'ไม่ใช่ของสาขานี้'
                                           : (r.diff === 0 ? 'ตรง' : (r.diff < 0 ? 'ขาด' : 'เกิน')))]);
       });
+      /* v2.22.0 — แทรกความกว้างของ "ประเภทที่นับ" (18) เป็นตัวที่ 5 ต่อจากโซนที่เก็บ (8)
+         จำนวนช่องต้องเท่าจำนวนคอลัมน์เสมอ ไม่งั้นความกว้างเลื่อนไปทั้งแถว */
       sheets.push({ name: sheetNameFor(cid, sheets.length),
-                    rows: rows, widths: [18, 34, 16, 8, 18, 12, 11, 10, 10, 11, 14, 14, 16] });
+                    rows: rows, widths: [18, 34, 16, 8, 18, 18, 12, 11, 10, 10, 11, 14, 14, 16] });
     });
 
     summary.push([]);
@@ -13922,6 +13946,10 @@ function loadJobsRaw(ids) {
     ]).then(function (res) {
       var counts = {};
       var foundZones = {};
+      /* ⭐ v2.22.0 — ประเภทที่นับต่อ SKU ของใบนี้ (โชว์/สต็อก/Asset -> จำนวนสุทธิ)
+         เก็บ "จำนวน" ไม่ใช่แค่ธง 1 แบบ foundZones เพราะไฟล์ต้องบอกว่าฝั่งละกี่ชิ้น
+         (และแถวหักลบต้องหักถูกฝั่ง) · แถวก่อน v2.16.0 ไม่มีฟิลด์นี้ → ลงถังชื่อ '' */
+      var stockTypes = {};
       var scans = res[1] || {};
       Object.keys(scans).forEach(function (sid) {
         var rec = scans[sid];
@@ -13929,8 +13957,13 @@ function loadJobsRaw(ids) {
         var k = safeKey(rec.code);
         counts[k] = (counts[k] || 0) + (Number(rec.delta) || 0);
         if (rec.foundZone) (foundZones[k] || (foundZones[k] = {}))[rec.foundZone] = 1;
+
+        var st = (rec.stockType && String(rec.stockType).trim()) || '';
+        var sm = stockTypes[k] || (stockTypes[k] = {});
+        sm[st] = (sm[st] || 0) + (Number(rec.delta) || 0);
       });
-      return { id: id, sys: res[0] || {}, counts: counts, foundZones: foundZones };
+      return { id: id, sys: res[0] || {}, counts: counts,
+               foundZones: foundZones, stockTypes: stockTypes };
     });
   }));
 }

@@ -202,14 +202,32 @@ function check(name, ok, got) {
   check('ค่าคอลัมน์อื่นในไฟล์จริงไม่เลื่อนตำแหน่ง',
         r5.a1[0] === 'A1' && r5.a1[1] === 'สินค้า A' && r5.a1[5] === 'Normal', r5.a1);
 
-  /* ---------- 6. export อื่นต้องไม่ถูกแตะ ---------- */
-  console.log('\n[6] export ใบอื่นต้องไม่ขยับ');
+  /* ---------- 6. export อื่นต้องไม่ถูกแตะ ----------
+     v2.22.0 เพิ่มคอลัมน์เดียวกันนี้ให้ไฟล์รวมหลาย Job ด้วย (คุมที่ test-export-jobs-scantype.js)
+     เหลือไฟล์รายงานโชว์-สต็อกที่ยังต้องไม่ขยับ — ไฟล์นั้นแยกคอลัมน์โชว์/Stock อยู่แล้วทั้งใบ
+     ใส่คอลัมน์รวมเข้าไปอีกจะซ้ำซ้อนและทำให้คนอ่านสับสนว่าต้องเชื่อช่องไหน */
+  console.log('\n[6] ไฟล์รายงานโชว์-สต็อกต้องไม่ขยับ');
   const r6 = await page.evaluate(() => {
-    return { jobHead: EXPORT_JOB_HEAD.slice(0, 6), jobLen: EXPORT_JOB_HEAD.length };
+    window.__seed();
+    let heads = null;
+    const real = window.buildXlsx;
+    const realClick = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function () {};
+    window.buildXlsx = function (sheets) {
+      heads = sheets.map(function (s) { return (s.rows[0] || []).slice(); });
+      return real(sheets);
+    };
+    buildStockDisplayExcel();
+    window.buildXlsx = real;
+    HTMLAnchorElement.prototype.click = realClick;
+    return { heads: heads };
   });
-  check('EXPORT_JOB_HEAD (ไฟล์รายใบ) ยังเป็นของเดิม ไม่มี "ประเภทที่นับ" แทรก',
-        r6.jobHead.indexOf('ประเภทที่นับ') < 0 &&
-        r6.jobHead[3] === 'โซนที่เก็บ' && r6.jobHead[4] === 'Status', r6);
+  check('ไม่มีคอลัมน์ "ประเภทที่นับ" แทรกเข้าไปในไฟล์โชว์-สต็อก',
+        r6.heads.every(function (h) { return h.indexOf('ประเภทที่นับ') < 0; }), r6.heads);
+  check('หัวตารางของไฟล์นั้นยังเป็นชุดเดิม (รหัส · ชื่อ · กลุ่ม · Stock · โซน)',
+        r6.heads.some(function (h) {
+          return h[0] === 'รหัสสินค้า' && h[2] === 'กลุ่ม' && h[4] === 'โซน';
+        }), r6.heads);
 
   console.log('\n--- console/page errors ---');
   console.log(errors.slice(0, 10).join('\n') || '(none)');
