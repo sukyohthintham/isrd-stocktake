@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.24.0">
+<meta name="version" content="2.24.1">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.24.0</title>
+<title>ISRD Stocktake v2.24.1</title>
 
 <style>
 :root{
@@ -1913,7 +1913,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.24.0';
+var APP_VERSION = '2.24.1';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -8547,7 +8547,17 @@ function renderMaster() {
       : (p.type === 'notProduct' ? 'เปลี่ยนเป็น Product' : 'เปลี่ยนเป็น Not Product');
     typeBtn.onclick = function () {
       var next = (inactive || p.type === 'notProduct') ? 'product' : 'notProduct';
-      saveProductEdit(key, 'type', next).then(function () { toast('เปลี่ยน ' + p.code + ' เป็น ' + next); });
+      /* v2.24.1 — กดแล้วต้อง re-render การ์ดทันที เหมือนช่อง note/status
+         ไม่งั้น badge ค้างเป็น Product คนนึกว่าไม่เปลี่ยนแล้วกดซ้ำ → สลับกลับเอง */
+      if (typeBtn.disabled) return;      // กัน double-click ระหว่างรอเขียนลงฐาน
+      typeBtn.disabled = true;
+      saveProductEdit(key, 'type', next).then(function () {
+        toast('เปลี่ยน ' + p.code + ' เป็น ' + (next === 'notProduct' ? 'Not Product' : 'Product'));
+        renderMaster();
+      }, function (e) {
+        typeBtn.disabled = false;        // save ไม่สำเร็จ คืนปุ่มให้กดใหม่ได้
+        toast('เปลี่ยนประเภทไม่สำเร็จ ' + p.code + ' — ลองใหม่', true);
+      });
     };
     typeLab.appendChild(typeBtn);
 
