@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.24.1">
+<meta name="version" content="2.25.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.24.1</title>
+<title>ISRD Stocktake v2.25.0</title>
 
 <style>
 :root{
@@ -1913,7 +1913,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.24.1';
+var APP_VERSION = '2.25.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -11934,7 +11934,7 @@ var JOB_STATS_V = 2;
 
 /* ⭐ v2.16.8 — เลขเวอร์ชันของแคช "สถิติรวมรอบ" กลไกเดียวกับ JOB_STATS_V ข้างบน
    ขึ้นเลขนี้เมื่อไหร่ = ทิ้งแคชเก่าในเครื่องทุกใบ ไม่ใช่เอาของที่คิดด้วยกติกาเดิมมาใช้ต่อ */
-var CYCLE_STATS_V = 1;
+var CYCLE_STATS_V = 2;
 
 function computeJobStats(data, sysMap) {
   var scans = data || {};
@@ -12453,6 +12453,14 @@ function loadCycleStats(cid) {
       actValue += a * price;
     });
 
+    /* Product-only (ไม่รวม Not Product) — หน้าภาพรวมโชว์เป็นตัวหลักให้ตรงกับโดนัทไส้ใน */
+    var isNotProd = function (k) { var pp = state.products[k]; return !!(pp && pp.type === 'notProduct'); };
+    var pAll = all.filter(function (k) { return !isNotProd(k); });
+    var pMatch = pAll.filter(function (k) { return (Number(sys[k]) || 0) === (counts[k] || 0); }).length;
+    var pSysQty = 0, pActQty = 0;
+    pAll.forEach(function (k) { pSysQty += Number(sys[k]) || 0; pActQty += counts[k] || 0; });
+    var pSkuTotalV = Object.keys(sys).filter(function (k) { return !isNotProd(k); }).length;
+
     var stat = {
       cid: cid,
       v: CYCLE_STATS_V,
@@ -12464,6 +12472,11 @@ function loadCycleStats(cid) {
       sysQty: sysQty,
       success: all.length ? (match / all.length) * 100 : null,
       pctPieces: sysQty > 0 ? ((sysQty - Math.abs(actQty - sysQty)) / sysQty) * 100 : null,
+      pSuccess: pAll.length ? (pMatch / pAll.length) * 100 : null,
+      pPctPieces: pSysQty > 0 ? ((pSysQty - Math.abs(pActQty - pSysQty)) / pSysQty) * 100 : null,
+      pSkuScanned: pAll.filter(function (k) { return (counts[k] || 0) !== 0; }).length,
+      pSkuTotal: pSkuTotalV,
+      pPieces: pAll.reduce(function (acc, k) { return acc + (counts[k] || 0); }, 0),
       diffValue: actValue - sysValue,
       lastTs: lastTs
     };
@@ -12915,6 +12928,19 @@ function buildStockDisplayExcel() {
   toast('ดาวน์โหลดไฟล์แล้ว · ' + fmtNum(rep.counts.stock_no_display) + ' รายการที่มีสต็อกไม่มีโชว์');
 }
 
+/* เซลล์ %Success หน้าภาพรวม — โชว์ Product เป็นตัวหลัก (ตรงกับโดนัทไส้ใน) + รวมทั้งหมดเป็นตัวรอง */
+function ovPctCell(td, primary, total) {
+  td.textContent = '';
+  var a = document.createElement('div');
+  a.textContent = fmtPercent(primary);
+  td.appendChild(a);
+  var b = document.createElement('div');
+  b.className = 'muted';
+  b.style.fontSize = '11px';
+  b.textContent = 'รวม ' + fmtPercent(total);
+  td.appendChild(b);
+}
+
 function renderOverview() {
   document.querySelectorAll('[data-ostatus]').forEach(function (b) {
     b.className = 'btn sm ' + (b.getAttribute('data-ostatus') === state.overviewStatus ? '' : 'grey');
@@ -12979,8 +13005,8 @@ function renderOverview() {
         var tds = tr.querySelectorAll('[data-ovcol]');
         tds[0].textContent = fmtNum(s.skuScanned) + ' / ' + fmtNum(s.skuTotal);
         tds[1].textContent = fmtNum(s.pieces);
-        tds[2].textContent = fmtPercent(s.pctPieces);
-        tds[3].textContent = fmtPercent(s.success);
+        ovPctCell(tds[2], s.pPctPieces, s.pctPieces);
+        ovPctCell(tds[3], s.pSuccess, s.success);
         tds[4].textContent = fmtMoney(s.diffValue);
         tds[4].className = s.diffValue > 0 ? 'pos' : (s.diffValue < 0 ? 'neg' : '');
         tds[4].style.textAlign = 'right';

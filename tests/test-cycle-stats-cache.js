@@ -95,7 +95,7 @@ function check(name, ok, got) {
   check('คิดสถิติได้ครบ', r1.stat && r1.stat.cid === 'CYC1' && r1.stat.jobs === 1 &&
         r1.stat.sysQty === 15 && r1.stat.pieces === 14, r1.stat);
   check('⭐ เก็บลงเครื่องแล้ว', !!r1.saved && r1.saved.cid === 'CYC1', r1.saved);
-  check('⭐ แนบเลขเวอร์ชันแคชไปด้วย', r1.saved && r1.saved.v === 1, r1.saved);
+  check('⭐ แนบเลขเวอร์ชันแคชไปด้วย', r1.saved && r1.saved.v === 2, r1.saved);
   check('⭐ แนบราคาที่ใช้คิดไปด้วย (มูลค่าผูกกับราคาที่เลือก)',
         r1.saved && r1.saved.price === 'costPrice', r1.saved);
 
