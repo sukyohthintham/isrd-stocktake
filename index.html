@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.27.2">
+<meta name="version" content="2.27.3">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.27.2</title>
+<title>ISRD Stocktake v2.27.3</title>
 
 <style>
 :root{
@@ -1546,7 +1546,7 @@ body.no-doc-images .doc .imgbox{display:none}
   <!-- ⭐ v2.27.0 — มอนิเตอร์สดวันนับ: ดูสาขาที่กำลังนับ + รายคน แบบอัปเดตเอง (read-only) -->
   <div id="sumLive" style="display:none">
     <div class="card">
-      <h3>📡 มอนิเตอร์สด <span class="chip" id="liveChip">0</span></h3>
+      <h3>📡 มอนิเตอร์สด <span class="chip" id="liveMonChip">0</span></h3>
       <div class="muted" style="font-size:13px;margin-bottom:8px">
         เฉพาะสาขาที่กำลังนับ · อัปเดตเองทุก 5 นาที (อ่านเบา ๆ ทีละสาขา) · กดแถวดูรายคน · กด 🔄 รีเฟรชเดี๋ยวนี้ได้ตลอด<br>
         🟢 เพิ่งยิง · 🟡 เงียบ 3–15 นาที · 🔴 เงียบเกิน 15 นาที หรือยังไม่เริ่ม
@@ -1556,7 +1556,7 @@ body.no-doc-images .doc .imgbox{display:none}
         <button class="btn sm" id="btnLiveAuto">⏸ หยุดอัปเดตเอง</button>
         <span class="muted" id="liveUpdated" style="margin-left:auto;font-size:12px"></span>
       </div>
-      <div id="liveBody"></div>
+      <div id="liveMonBody"></div>
     </div>
   </div>
 
@@ -1962,7 +1962,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.27.2';
+var APP_VERSION = '2.27.3';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -13254,9 +13254,9 @@ function toggleLiveBranch(cid) {
 }
 
 function renderLive() {
-  var host = $('liveBody'); if (!host) return;
+  var host = $('liveMonBody'); if (!host) return;   // ⭐ v2.27.3 — id เฉพาะ (เดิม liveBody ชนกับหน้ายิง)
   var rows = state.liveData || [];
-  if ($('liveChip')) $('liveChip').textContent = fmtNum(rows.length);
+  if ($('liveMonChip')) $('liveMonChip').textContent = fmtNum(rows.length);
   if ($('liveUpdated')) $('liveUpdated').textContent = state.liveLastAt ? 'อัปเดตล่าสุด ' + agoText(state.liveLastAt) : '';
 
   host.innerHTML = '';

@@ -140,9 +140,9 @@ const HARNESS = `
   const r = await page.evaluate(async () => {
     setSummaryTab('live');
     await new Promise(x => setTimeout(x, 300));
-    const host = document.getElementById('liveBody');
+    const host = document.getElementById('liveMonBody');   // ⭐ v2.27.3 — id เฉพาะของมอนิเตอร์ (เดิม liveBody ชนหน้ายิง)
     const branchRows = host.querySelectorAll('tbody > tr').length;
-    const chip = document.getElementById('liveChip').textContent;
+    const chip = document.getElementById('liveMonChip').textContent;
     // กาง LKB-01 (มี 2 คน) — ใส่ detail ที่โหลดไว้แล้วตรง ๆ เพื่อทดสอบการวาด
     const cid = state.liveData.find(x => x.code === 'LKB-01').cid;
     state.liveDetail[cid] = { pieces: 10, at: Date.now(), users: [
@@ -240,6 +240,18 @@ const HARNESS = `
     return { g0, g1 };
   });
   check('[M] กำลังโหลดอยู่ → refreshLive ไม่ bump gen (ไม่เริ่มรอบซ้อน)', M.g0 === M.g1, M);
+
+  /* ---------- [N] ⭐ กัน id ซ้ำกลับมา: การ์ดมอนิเตอร์ต้องใช้ id เฉพาะ ---------- */
+  console.log('\n[N] ⭐ id การ์ดมอนิเตอร์ต้องไม่ซ้ำกับหน้ายิง (บั๊กเดิม: liveChip/liveBody ชนกัน)');
+  const N = await page.evaluate(() => {
+    const monChipN = document.querySelectorAll('[id="liveMonChip"]').length;
+    const monBodyN = document.querySelectorAll('[id="liveMonBody"]').length;
+    const inSumLive = !!(document.getElementById('liveMonChip') && document.getElementById('liveMonChip').closest('#sumLive'));
+    return { monChipN, monBodyN, inSumLive };
+  });
+  check('[N] liveMonChip มีชิ้นเดียว (ไม่ซ้ำ)', N.monChipN === 1, N);
+  check('[N] liveMonBody มีชิ้นเดียว (ไม่ซ้ำ)', N.monBodyN === 1, N);
+  check('[N] อยู่ในการ์ด #sumLive จริง', N.inSumLive, N);
 
   check('ไม่มี error หลุดในหน้า', errors.length === 0, errors.slice(0, 3));
 
