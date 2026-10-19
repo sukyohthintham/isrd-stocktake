@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.25.0">
+<meta name="version" content="2.26.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.25.0</title>
+<title>ISRD Stocktake v2.26.0</title>
 
 <style>
 :root{
@@ -1490,6 +1490,37 @@ body.no-doc-images .doc .imgbox{display:none}
           <button class="btn ghost block" id="btnLinkUser">เพิ่มด้วย UID</button>
         </div>
       </details>
+
+      <!-- ⭐ v2.26.0 — สร้างหลายคนพร้อมกัน วางจาก Excel ทีเดียว
+           ทุกคนเป็น "พนักงานยิงอย่างเดียว" (scanner) และถูกฟิกสาขาตามคอลัมน์สาขา
+           ใช้ฟังก์ชันเดิมทั้งหมด (createUser → writeUserRecord → saveUserField) ไม่แตะข้อมูลนับ -->
+      <details id="bulkUserWrap" style="margin-top:14px">
+        <summary class="muted" style="cursor:pointer">สร้างหลายคนพร้อมกัน (วางจาก Excel)</summary>
+        <div style="margin-top:12px">
+          <p class="muted" style="margin:0 0 10px;font-size:13px">
+            วางจาก Excel ทั้งก้อน <b>รวมหัวตาราง</b> มาได้เลย — ระบบอ่านจาก<b>ชื่อหัวคอลัมน์</b>
+            เรียงคอลัมน์แบบไหนก็ได้ มีคอลัมน์เกิน (เช่น Zone) ก็ข้ามให้<br>
+            หัวต้องมีคำว่า: <b>ชื่อ</b> · <b>เมล์</b> (หรือ email/@) · <b>รหัส</b> (หรือ PW) · <b>สาขา</b><br>
+            ช่อง <b>รหัส</b> เว้นว่างได้ ระบบสุ่มให้ · <b>สาขา</b> ใส่รหัส (LKB-01) หรือชื่อสาขาก็ได้
+            · ดูหลายสาขาใส่หลายอันคั่นด้วยคอมมา เช่น <b>LKB-01, RM9-02</b><br>
+            ทุกคนได้สิทธิ์ <b>พนักงานยิงอย่างเดียว</b> เห็นเฉพาะสาขาที่ระบุ
+          </p>
+          <label class="fld" style="margin-bottom:8px">
+            <span>วางข้อมูลที่นี่ (บรรทัดละ 1 คน)</span>
+            <textarea id="bulkUserInput" rows="6"
+              placeholder="ชื่อ&#9;เมล์&#9;รหัส&#9;สาขา&#10;สมชาย ใจดี&#9;somchai@isrd.local&#9;&#9;LKB-01&#10;สมหญิง รักงาน&#9;somying@isrd.local&#9;&#9;RM9-02, LKB-01"
+              style="width:100%;box-sizing:border-box;resize:vertical;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;line-height:1.5;padding:10px;border-radius:10px;border:1px solid var(--line-soft);background:var(--bg)"
+              autocomplete="off" spellcheck="false" autocapitalize="off"></textarea>
+          </label>
+          <div class="row" style="margin-bottom:10px">
+            <button class="btn grey sm" id="btnBulkPreview" style="flex:1">🔎 ตรวจก่อน</button>
+            <button class="btn grey sm" id="btnBulkClear" style="flex:1">🗑️ ล้างช่อง</button>
+          </div>
+          <div id="bulkUserMsg" class="muted" style="font-size:13px;margin-bottom:8px"></div>
+          <div id="bulkUserPreview" style="margin-bottom:10px"></div>
+          <button class="btn block" id="btnBulkCreate" disabled>สร้างทั้งหมด</button>
+        </div>
+      </details>
     </div>
 
     <div class="card">
@@ -1913,7 +1944,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.25.0';
+var APP_VERSION = '2.26.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -16201,15 +16232,22 @@ function saveUserFieldChecked(uid, patchFields, opts) {
 }
 
 /* เขียนเรคอร์ดสิทธิ์ — ใช้ร่วมกันทั้งการสร้างบัญชีใหม่และการเพิ่มด้วย UID */
-function writeUserRecord(uid, name, email, role) {
-  var patch = {};
-  patch[uid] = {
+function writeUserRecord(uid, name, email, role, branches) {
+  var rec = {
     name: name, email: email, role: role, active: true,
     /* เขียน perms ตามแม่แบบไว้เลยตั้งแต่สร้าง คนใหม่จะได้ไม่ต้องพึ่งการถอยไปอ่าน role
        และแอดมินเห็นช่องติ๊กตรงกับของจริงทันทีโดยไม่ต้องกดอะไรเพิ่ม */
     perms: permsFromRole(role),
     createdAt: Date.now(), updatedAt: Date.now(), createdBy: (state.me || {}).uid || ''
   };
+  /* ⭐ v2.26.0 — ถ้าส่งสาขามาด้วย เขียน role + สาขาลงก้อนเดียวกันเลย (atomic)
+     กันเคสสร้างหมู่: เดิมเขียน role ก่อน แล้วค่อยเขียน branches แยกอีก PATCH
+     ถ้าเน็ตสะดุดคั่นกลาง จะได้ scanner ที่ยังไม่ล็อกสาขา (เห็นทุกสาขา)
+     รวมเป็นเขียนเดียว → "สำเร็จหรือไม่ก็ทั้งคู่" · ไม่ส่งมา (เพิ่มเดี่ยว/UID) = เหมือนเดิมเป๊ะ */
+  var br = normBranchCodes(branches);
+  if (br.length) rec.branches = br;
+  var patch = {};
+  patch[uid] = rec;
   return db.update('users', patch).then(function () {
     state.users[uid] = patch[uid];
     renderUsers();
@@ -16315,6 +16353,394 @@ function showCredentials(name, email, pass, role) {
 
   ask('สร้างบัญชีเรียบร้อย', 'ส่งอีเมลกับรหัสผ่านให้พนักงานก่อนปิดกล่องนี้',
       'ก๊อปแล้ว ปิดได้', { hideCancel: true, detail: box });
+}
+
+/* ============================================================
+   ⭐ v2.26.0 — สร้างผู้ใช้หลายคนพร้อมกัน (วางจาก Excel)
+   ทุกคน = "พนักงานยิงอย่างเดียว" (scanner) · ฟิกสาขาตามคอลัมน์สาขา
+   ไม่มีโค้ดเขียน/ลบข้อมูลนับเลย ใช้ฟังก์ชันเดิม:
+     session.createUser → writeUserRecord(...,'scanner',[branch])  (role+สาขา เขียนก้อนเดียว atomic)
+   ============================================================ */
+
+/* แยกช่องในหนึ่งบรรทัด — วางจาก Excel จะได้ TAB เป็นตัวคั่น
+   เผื่อบางคนก๊อปมาเป็น CSV ก็รับคอมมาเป็นตัวคั่นสำรองให้ด้วย */
+function bulkSplitLine(line) {
+  var s = String(line == null ? '' : line);
+  var parts = s.split('\t');
+  if (parts.length < 2 && s.indexOf(',') >= 0) parts = s.split(',');
+  return parts.map(function (x) { return String(x).trim(); });
+}
+
+/* บรรทัดหัวตาราง (ชื่อ / เมล์ / ...) — ใช้ตอนไม่มีหัวที่ map ได้ เพื่อข้ามแถวหัวแบบเดิม */
+function bulkLooksLikeHeader(f) {
+  var a = f[0] || '', b = f[1] || '';
+  return /ชื่อ|name/i.test(a) && /เมล|mail|email/i.test(b);
+}
+
+/* ⭐ v2.26.0 — map คอลัมน์จาก "ชื่อหัวตาราง" ไม่ยึดตำแหน่ง
+   วางจาก Excel เรียงคอลัมน์แบบไหนก็ได้ มีคอลัมน์เกิน (เช่น Zone) ก็ข้ามให้
+   คืน {name,email,pass,branch} เป็น index ของคอลัมน์ · null = แถวนี้ไม่ใช่หัวตาราง
+   ต้องเจออย่างน้อย ชื่อ+เมล+สาขา ถึงจะถือว่าเป็นหัว (รหัสไม่บังคับ เว้นว่างได้) */
+function bulkHeaderMap(fields) {
+  var idx = { name: -1, email: -1, pass: -1, branch: -1, branchAlt: -1 };
+  var used = {}, i;
+
+  /* สาขา: ถ้ามีทั้ง "รหัสสาขา" (code) และ "สาขา" (ชื่อ) ให้ยึด code เป็นหลัก (ชัวร์กว่าชื่อ)
+     แล้วเก็บคอลัมน์ชื่อไว้เป็นตัวสำรอง (branchAlt) เผื่อ code ช่องไหนเพี้ยน/ว่าง (เช่น Excel
+     แปลง NOV-01 เป็นวันที่) จะได้ถอยไปใช้ชื่อสาขาแทนให้เองทีละแถว */
+  var bCode = -1, bName = -1;
+  for (i = 0; i < fields.length; i++) {
+    var hs = normText(fields[i]);
+    if (bCode < 0 && /รหัส\s*สาขา|สาขา.*code|branch.*code/.test(hs)) bCode = i;
+    else if (bName < 0 && /สาขา|branch|store/.test(hs)) bName = i;
+  }
+  idx.branch = bCode >= 0 ? bCode : bName;
+  idx.branchAlt = (bCode >= 0 && bName >= 0) ? bName : -1;
+  if (idx.branch >= 0) used[idx.branch] = 1;
+  if (idx.branchAlt >= 0) used[idx.branchAlt] = 1;
+
+  for (i = 0; i < fields.length; i++) {
+    if (used[i]) continue;
+    var se = normText(fields[i]), raw = String(fields[i] == null ? '' : fields[i]);
+    if (idx.email < 0 && (/เมล|อีเมล|e-?mail/.test(se) || raw.indexOf('@') >= 0)) { idx.email = i; used[i] = 1; }
+  }
+  /* รหัสผ่าน: ต้องกันคอลัมน์ "รหัสพนักงาน" (employee ID) และ "รหัสสาขา" ไม่ให้โดนอ่านเป็นรหัสผ่าน
+     (รหัสพนักงานเดาง่าย/สั้นเกิน) — รับเฉพาะหัวที่สื่อถึงรหัสผ่านจริง */
+  for (i = 0; i < fields.length; i++) {
+    if (used[i]) continue;
+    var sp = normText(fields[i]);
+    if (idx.pass < 0 && /รหัส|password|passcode|pass|pw/.test(sp) && !/สาขา|พนักงาน|employee|staff/.test(sp)) {
+      idx.pass = i; used[i] = 1;
+    }
+  }
+  /* ชื่อ: กันคอลัมน์ที่เป็นรหัส/ID (เช่น "รหัสพนักงาน") ไม่ให้โดนอ่านเป็นชื่อ */
+  for (i = 0; i < fields.length; i++) {
+    if (used[i]) continue;
+    var sn = normText(fields[i]);
+    if (idx.name < 0 && /ชื่อ|name|พนักงาน/.test(sn) && !/รหัส|code|\bid\b/.test(sn)) {
+      idx.name = i; used[i] = 1;
+    }
+  }
+  if (idx.name >= 0 && idx.email >= 0 && idx.branch >= 0) return idx;
+  return null;
+}
+
+/* แปลงข้อความในช่องสาขา (หนึ่งช่อง อาจมีหลายสาขาคั่น , ; / |) เป็นรายการรหัสสาขา */
+function bulkResolveCell(text) {
+  var codes = [], labelParts = [], unresolved = [], seenB = {};
+  String(text == null ? '' : text).split(/[,;/|]+/).forEach(function (t) {
+    t = String(t).trim();
+    if (!t) return;
+    var b = bulkResolveBranch(t);
+    if (!b) { unresolved.push(t); return; }
+    if (seenB[b.code]) return;
+    seenB[b.code] = 1;
+    codes.push(b.code);
+    labelParts.push(b.code + (b.name ? ' · ' + b.name : ''));
+  });
+  return { codes: codes, labelParts: labelParts, unresolved: unresolved };
+}
+
+/* หาสาขาจากข้อความที่ผู้ใช้กรอก — รับทั้งรหัสสาขาและชื่อสาขา
+   คืน {code,name} ถ้าเจอ · null ถ้าไม่พบในทะเบียน (รวมสาขาที่ปิดด้วย) */
+function bulkResolveBranch(input) {
+  var q = String(input == null ? '' : input).trim();
+  if (!q) return null;
+  var all = branchList('', true);
+  var i, lc = q.toLowerCase();
+  for (i = 0; i < all.length; i++) {
+    if (String(all[i].code).trim().toLowerCase() === lc) return { code: all[i].code, name: all[i].name };
+  }
+  var nq = normText(q);
+  for (i = 0; i < all.length; i++) {
+    if (normText(all[i].name) === nq) return { code: all[i].code, name: all[i].name };
+  }
+  return null;
+}
+
+/* มีอีเมลนี้ในระบบอยู่แล้วไหม — กันสร้างซ้ำก่อนยิงไป Firebase */
+function bulkEmailTaken(email) {
+  var lk = String(email || '').trim().toLowerCase();
+  if (!lk) return false;
+  var uids = Object.keys(state.users);
+  for (var i = 0; i < uids.length; i++) {
+    if (String((state.users[uids[i]] || {}).email || '').trim().toLowerCase() === lk) return true;
+  }
+  return false;
+}
+
+/* อ่านทั้งก้อนที่วางมา → แตกเป็นแถว พร้อมตรวจความถูกต้องทีละแถว
+   ไม่สร้างอะไรทั้งนั้นในขั้นนี้ แค่บอกว่าแถวไหนพร้อม แถวไหนติดปัญหา */
+function bulkParseRows(raw) {
+  var lines = String(raw == null ? '' : raw).replace(/\r/g, '').split('\n');
+
+  /* หาแถวหัวตาราง (ถ้ามี) จากแถวแรกที่มีข้อมูล แล้ว map คอลัมน์ตามชื่อหัว
+     เจอหัว = วางเรียงคอลัมน์ยังไงก็ได้ · ไม่เจอ = ใช้ลำดับเดิม ชื่อ·เมล·รหัส·สาขา */
+  var map = null, headerIdx = -1;
+  for (var h = 0; h < lines.length; h++) {
+    if (!String(lines[h]).trim()) continue;
+    map = bulkHeaderMap(bulkSplitLine(lines[h]));
+    if (map) headerIdx = h;
+    break;                       // ดูแค่แถวแรกที่มีข้อมูล
+  }
+  var col = map || { name: 0, email: 1, pass: 2, branch: 3 };
+  function cell(f, k) { return (col[k] >= 0 && f[col[k]] != null) ? String(f[col[k]]).trim() : ''; }
+
+  var rows = [], okCount = 0, errCount = 0, seen = {};
+  for (var i = 0; i < lines.length; i++) {
+    if (i === headerIdx) continue;
+    if (!String(lines[i]).trim()) continue;
+    var f = bulkSplitLine(lines[i]);
+    if (!map && bulkLooksLikeHeader(f)) continue;   // โหมดลำดับ: ยังข้ามแถวหัวแบบเดิม
+
+    var name = cell(f, 'name');
+    var email = cell(f, 'email');
+    var pass = cell(f, 'pass');
+    var branchIn = cell(f, 'branch');
+    var errs = [];
+
+    if (!name) errs.push('ไม่มีชื่อ');
+    if (!email) {
+      errs.push('ไม่มีอีเมล');
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      errs.push('อีเมลผิดรูปแบบ');
+    } else {
+      var lk = email.toLowerCase();
+      if (seen[lk]) errs.push('อีเมลซ้ำในรายการ'); else seen[lk] = 1;
+      if (bulkEmailTaken(email)) errs.push('อีเมลนี้มีผู้ใช้แล้ว');
+    }
+    if (pass && pass.length < 6) errs.push('รหัสสั้นกว่า 6 ตัว');
+
+    /* สาขา: ลองจากคอลัมน์หลัก (code) ก่อน — ถ้าทั้งช่องแปลงไม่ได้เลย ถอยไปใช้คอลัมน์ชื่อ (branchAlt)
+       เช่น Excel แปลงรหัส NOV-01 เป็นวันที่ ก็ยังกู้ได้จากชื่อสาขา · ช่องเดียวใส่หลายสาขาได้ (, ; / |) */
+    var altIn = (col.branchAlt >= 0 && f[col.branchAlt] != null) ? String(f[col.branchAlt]).trim() : '';
+    var res = bulkResolveCell(branchIn), usedIn = branchIn;
+    if (!res.codes.length && altIn) {
+      var alt = bulkResolveCell(altIn);
+      if (alt.codes.length) { res = alt; usedIn = altIn; }
+    }
+    if (!branchIn && !altIn) errs.push('ไม่มีสาขา');
+    else if (!res.codes.length && !res.unresolved.length) errs.push('ไม่มีสาขา');
+    else if (res.unresolved.length && !res.codes.length) errs.push('ไม่พบสาขา "' + res.unresolved.join('", "') + '"');
+    else if (res.unresolved.length) errs.push('บางสาขาไม่พบ "' + res.unresolved.join('", "') + '"');
+
+    rows.push({
+      line: i + 1, name: name, email: email, pass: pass,
+      branchIn: usedIn, branchCodes: res.codes,
+      branchLabel: res.labelParts.length ? res.labelParts.join(', ') : (usedIn || '-'),
+      errors: errs
+    });
+    if (errs.length) errCount++; else okCount++;
+  }
+  return { rows: rows, okCount: okCount, errCount: errCount };
+}
+
+/* วาดตารางตรวจทาน + เปิด/ปิดปุ่ม "สร้างทั้งหมด" ตามผลตรวจ */
+function renderBulkPreview() {
+  var host = $('bulkUserPreview');
+  var msg = $('bulkUserMsg');
+  var btn = $('btnBulkCreate');
+  if (!host || !msg || !btn) return;
+
+  var parsed = bulkParseRows($('bulkUserInput').value);
+  host.innerHTML = '';
+
+  if (!parsed.rows.length) {
+    msg.textContent = 'ยังไม่มีข้อมูล — วางจาก Excel ทั้งก้อน (รวมหัวตาราง: ชื่อ · เมล์ · รหัส · สาขา)';
+    msg.style.color = '';
+    btn.disabled = true;
+    btn.textContent = 'สร้างทั้งหมด';
+    return;
+  }
+
+  var table = document.createElement('table');
+  table.style.cssText = 'width:100%;border-collapse:collapse;font-size:13px';
+  var thead = document.createElement('thead');
+  thead.innerHTML = '<tr style="text-align:left;color:var(--muted)">' +
+    '<th style="padding:4px 6px">#</th>' +
+    '<th style="padding:4px 6px">ชื่อ</th>' +
+    '<th style="padding:4px 6px">อีเมล</th>' +
+    '<th style="padding:4px 6px">สาขา</th>' +
+    '<th style="padding:4px 6px">สถานะ</th></tr>';
+  table.appendChild(thead);
+  var tbody = document.createElement('tbody');
+
+  function bulkTd(text, style) {
+    var el = document.createElement('td');
+    el.style.cssText = style;
+    el.textContent = text;          // textContent = กัน HTML injection จากชื่อ/อีเมลในตัว โดยไม่ต้องมี esc
+    return el;
+  }
+  parsed.rows.forEach(function (r, idx) {
+    var tr = document.createElement('tr');
+    tr.style.borderTop = '1px solid var(--line-soft)';
+    var bad = r.errors.length > 0;
+    var branchTxt = r.branchLabel || '-';
+    var statusTxt = bad ? '⚠️ ' + r.errors.join(', ') : '✅ พร้อม (scanner)';
+    tr.appendChild(bulkTd(String(idx + 1), 'padding:4px 6px;color:var(--muted)'));
+    tr.appendChild(bulkTd(r.name || '-', 'padding:4px 6px'));
+    tr.appendChild(bulkTd(r.email || '-', 'padding:4px 6px'));
+    tr.appendChild(bulkTd(branchTxt, 'padding:4px 6px'));
+    tr.appendChild(bulkTd(statusTxt, 'padding:4px 6px;color:' + (bad ? 'var(--bad,#c0392b)' : 'var(--ok,#1e8e3e)')));
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  host.appendChild(table);
+
+  if (parsed.errCount) {
+    msg.textContent = 'พร้อมสร้าง ' + fmtNum(parsed.okCount) + ' คน · ติดปัญหา ' +
+      fmtNum(parsed.errCount) + ' แถว — แก้ให้ครบก่อนถึงจะสร้างได้';
+    msg.style.color = 'var(--bad,#c0392b)';
+    btn.disabled = true;
+  } else {
+    msg.textContent = 'พร้อมสร้างทั้งหมด ' + fmtNum(parsed.okCount) + ' คน (สิทธิ์: พนักงานยิงอย่างเดียว)';
+    msg.style.color = 'var(--ok,#1e8e3e)';
+    btn.disabled = false;
+  }
+  btn.textContent = 'สร้างทั้งหมด (' + fmtNum(parsed.okCount) + ' คน)';
+}
+
+/* สร้างจริง — ทีละคนเรียงกันไป (ไม่ยิงพร้อมกันเพื่อไม่ให้ Identity API รับไม่ไหว)
+   เก็บผลไว้โชว์รหัสผ่านครั้งเดียวตอนจบ เพราะระบบไม่เก็บรหัสผ่านไว้ที่ไหน */
+function bulkUserCreate() {
+  if (!requireAdmin('สร้างบัญชีผู้ใช้ไม่ได้')) return;
+  var parsed = bulkParseRows($('bulkUserInput').value);
+  if (!parsed.rows.length) { toast('ยังไม่มีข้อมูล วางจาก Excel ก่อน', true); return; }
+  if (parsed.errCount) {
+    toast('ยังมี ' + parsed.errCount + ' แถวที่ติดปัญหา แก้ให้ครบก่อนนะ', true);
+    renderBulkPreview();
+    return;
+  }
+
+  var btn = $('btnBulkCreate'), pv = $('btnBulkPreview');
+  btn.disabled = true; pv.disabled = true;
+  var total = parsed.rows.length, results = [];
+  var chain = Promise.resolve();
+
+  parsed.rows.forEach(function (r, i) {
+    chain = chain.then(function () {
+      btn.textContent = 'กำลังสร้าง ' + (i + 1) + '/' + total + '...';
+      var pass = r.pass || randomPassword(8);
+      var made = null;                       /* บัญชี auth ที่สร้างสำเร็จแล้ว (ไว้บอก UID ถ้าเขียนสิทธิ์พังทีหลัง) */
+      return session.createUser(r.email, pass).then(function (created) {
+        made = created;
+        if (state.users[created.uid]) throw new Error('ALREADY_LINKED');
+        /* ⭐ role + สาขา เขียนก้อนเดียว (atomic) — เลิกแยก saveUserField แล้ว */
+        return writeUserRecord(created.uid, r.name, r.email, 'scanner', r.branchCodes);
+      }).then(function () {
+        results.push({ name: r.name, email: r.email, pass: pass, branchCodes: r.branchCodes, branchLabel: r.branchLabel, uid: made.uid, ok: true });
+      }).catch(function (err) {
+        var reason;
+        if (err && err.authCode) reason = authMessage(err.authCode);
+        else if (err && err.message === 'ALREADY_LINKED') reason = 'มีสิทธิ์อยู่แล้ว';
+        else if (made) reason = 'สร้างบัญชีแล้วแต่เขียนสิทธิ์ไม่ผ่าน — เพิ่มด้วย UID: ' + made.uid;
+        else reason = 'สร้างไม่สำเร็จ (เน็ตหลุดหรือฐานปฏิเสธ)';
+        results.push({ name: r.name, email: r.email, pass: '', branchCodes: r.branchCodes, branchLabel: r.branchLabel, uid: made ? made.uid : '', ok: false, err: reason });
+      });
+    });
+  });
+
+  chain.then(function () {
+    pv.disabled = false;
+    var okR = results.filter(function (x) { return x.ok; });
+    var failR = results.filter(function (x) { return !x.ok; });
+    renderUsers();
+    showBulkResults(okR, failR);
+    if (!failR.length) {
+      $('bulkUserInput').value = '';
+      $('bulkUserPreview').innerHTML = '';
+      $('bulkUserMsg').textContent = '';
+      btn.disabled = true;
+      btn.textContent = 'สร้างทั้งหมด';
+    } else {
+      /* เหลือเฉพาะแถวที่ล้มเหลวไว้ในช่อง ให้แก้แล้วกดสร้างซ้ำได้ทันที */
+      $('bulkUserInput').value = failR.map(function (x) {
+        return [x.name, x.email, '', (x.branchCodes || []).join(', ')].join('\t');
+      }).join('\n');
+      renderBulkPreview();
+    }
+  });
+}
+
+/* ค่าหนึ่งช่องสำหรับไฟล์ CSV — ใส่เครื่องหมายคำพูดถ้ามีอักขระพิเศษ */
+function bulkCsvCell(v) {
+  var s = String(v == null ? '' : v);
+  return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+/* กล่องสรุปผล — โชว์รหัสผ่านทุกคนครั้งเดียว ก๊อปทั้งชุด/โหลดเป็นไฟล์ได้ */
+function showBulkResults(okR, failR) {
+  var box = document.createElement('div');
+
+  var warn = document.createElement('div');
+  warn.className = 'banner';
+  warn.textContent = 'กล่องนี้แสดงครั้งเดียว — ปิดแล้วดูรหัสผ่านซ้ำไม่ได้ ' +
+    'เพราะระบบไม่เก็บรหัสผ่านไว้ที่ไหนเลย ก๊อปหรือโหลดไฟล์เก็บไว้ก่อนปิด';
+  box.appendChild(warn);
+
+  var sec = repSection('สร้างสำเร็จ ' + fmtNum(okR.length) + ' คน' +
+    (failR.length ? ' · ไม่สำเร็จ ' + fmtNum(failR.length) + ' คน' : ''));
+  box.appendChild(sec);
+
+  var blockText = okR.map(function (u) {
+    return '— ' + u.name + '\nอีเมล: ' + u.email + '\nรหัสผ่าน: ' + u.pass +
+      '\nสาขา: ' + (u.branchLabel || '-');
+  }).join('\n\n');
+
+  if (okR.length) {
+    var pre = document.createElement('div');
+    pre.style.cssText = 'white-space:pre-wrap;user-select:all;background:var(--line-soft);' +
+      'border-radius:10px;padding:12px 14px;margin:12px 0;font-size:14px;max-height:280px;overflow:auto;' +
+      'font-family:ui-monospace,Menlo,Consolas,monospace';
+    pre.textContent = blockText;
+    box.appendChild(pre);
+
+    var bAll = document.createElement('button');
+    bAll.className = 'btn ghost block';
+    bAll.textContent = '📋 ก๊อปทั้งชุด (ส่งไลน์)';
+    bAll.onclick = function () { copyText(blockText, 'คัดลอกทั้งชุดแล้ว'); };
+    box.appendChild(bAll);
+
+    var bCsv = document.createElement('button');
+    bCsv.className = 'btn grey block sm';
+    bCsv.style.marginTop = '8px';
+    bCsv.textContent = '⬇️ โหลดเป็นไฟล์ Excel (CSV)';
+    bCsv.onclick = function () {
+      var head = ['ชื่อ', 'อีเมล', 'รหัสผ่าน', 'สาขา'];
+      var lines = [head].concat(okR.map(function (u) {
+        return [u.name, u.email, u.pass, u.branchLabel || ''];
+      })).map(function (row) {
+        return row.map(bulkCsvCell).join(',');
+      }).join('\r\n');
+      var blob = new Blob(['﻿' + lines], { type: 'text/csv;charset=utf-8' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'isrd-users-' + new Date().toISOString().slice(0, 10) + '.csv';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+    };
+    box.appendChild(bCsv);
+  }
+
+  if (failR.length) {
+    var fsec = repSection('รายการที่สร้างไม่สำเร็จ');
+    failR.forEach(function (u) {
+      repLine(fsec, u.name + ' (' + u.email + ')', u.err, true);
+    });
+    box.appendChild(fsec);
+    var note = document.createElement('div');
+    note.className = 'muted';
+    note.style.marginTop = '10px';
+    note.textContent = 'รายชื่อที่ไม่สำเร็จถูกใส่กลับในช่องวางให้แล้ว แก้แล้วกด "สร้างทั้งหมด" ซ้ำได้ · ' +
+      'ถ้าข้อความขึ้น "เพิ่มด้วย UID: ..." แปลว่าบัญชีถูกสร้างแล้วแต่สิทธิ์ยังไม่ลง — ' +
+      'ให้เอา UID นั้นไปกรอกที่ช่อง "เพิ่มด้วย User UID" ด้านบนแทน (สร้างซ้ำจะติดอีเมลซ้ำ)';
+    box.appendChild(note);
+  }
+
+  ask('สร้างผู้ใช้เสร็จแล้ว',
+    okR.length ? 'ก๊อปหรือโหลดไฟล์รหัสผ่านเก็บไว้ก่อนปิดกล่องนี้' : 'ไม่มีบัญชีใดถูกสร้าง',
+    'ปิด', { hideCancel: true, detail: box });
 }
 
 /* ---------- เพิ่มด้วย UID (บัญชีที่มีอยู่แล้วใน Console) ---------- */
@@ -17004,6 +17430,18 @@ function init() {
   };
   $('btnCreateUser').onclick = createUserAccount;
   $('btnLinkUser').onclick = linkExistingUser;
+
+  /* ⭐ v2.26.0 — สร้างหลายคนพร้อมกัน */
+  if ($('btnBulkPreview')) $('btnBulkPreview').onclick = renderBulkPreview;
+  if ($('btnBulkCreate')) $('btnBulkCreate').onclick = bulkUserCreate;
+  if ($('btnBulkClear')) $('btnBulkClear').onclick = function () {
+    $('bulkUserInput').value = '';
+    $('bulkUserPreview').innerHTML = '';
+    $('bulkUserMsg').textContent = '';
+    $('btnBulkCreate').disabled = true;
+    $('btnBulkCreate').textContent = 'สร้างทั้งหมด';
+  };
+  if ($('bulkUserInput')) $('bulkUserInput').addEventListener('input', renderBulkPreview);
 
   $('branchSearch').addEventListener('input', renderBranchPicker);
   $('branchShowClosed').addEventListener('change', renderBranchPicker);
