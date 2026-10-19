@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.27.1">
+<meta name="version" content="2.27.2">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.27.1</title>
+<title>ISRD Stocktake v2.27.2</title>
 
 <style>
 :root{
@@ -1962,7 +1962,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.27.1';
+var APP_VERSION = '2.27.2';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -13314,9 +13314,9 @@ function renderLive() {
 }
 
 function refreshLive() {
-  /* ⭐ v2.27.1 — เริ่ม "รอบใหม่" ทุกครั้ง (ไม่บล็อกด้วย liveLoading อีกต่อไป)
-     รอบเก่าที่ยังวิ่งอยู่จะเช็ค gen เองแล้วทิ้งผล ไม่ทับจอ/ไม่ปลด flag ของรอบใหม่
-     → ปุ่ม "รีเฟรชเดี๋ยวนี้" กดติดเสมอ และไม่มีรอบซ้อนทับกัน (บทเรียน CC v2.27.1) */
+  /* ⭐ v2.27.1/.2 — กันรอบซ้อน: ถ้ากำลังโหลดอยู่ ไม่เริ่มใหม่ (getLast ไม่เข้าคิวแล้ว จบไว ไม่ค้าง)
+     + เลขรอบ (gen) กันรอบเก่าที่ watchdog ปลดล็อกระหว่างทางมาทับจอ/ปลด flag ของรอบใหม่ */
+  if (state.liveLoading) return;
   var gen = ++state.liveGen;
   state.liveLoading = true;
   /* watchdog: ถ้าอ่านนานผิดปกติ ปลด flag โหลดของรอบนี้เอง (เฉพาะถ้ายังเป็นรอบปัจจุบัน) */
@@ -18300,10 +18300,12 @@ function startApp() {
     renderJobBar();
     if (state.page === 'jobs') renderJobs();
     if (state.page === 'summary') renderSummary();
-    /* ⭐ v2.27.1 — roundIndex มาแบบ SSE: ถ้าแท็บมอนิเตอร์สดเปิดอยู่ ให้โหลดใหม่ด้วย
-       (renderSummary ไม่แตะมอนิเตอร์) แก้เคสเปิดแท็บตอน index ยังมาไม่ครบ → ชิปค้าง 0
-       และทำให้สาขาที่เพิ่งเปิด/ปิดรอบนับ โผล่/หายเองโดยไม่ต้องรอรอบ 5 นาที */
-    if (state.page === 'summary' && state.summaryTab === 'live') refreshLive();
+    /* ⭐ v2.27.2 — roundIndex มาแบบ SSE: เติมมอนิเตอร์ "เฉพาะตอนจอยังว่าง + มีข้อมูลรอบแล้ว"
+       แก้เคสเปิดแท็บตอน index ยังมาไม่ครบ (เติมครั้งเดียวพอ) — ไม่ยิงซ้ำทุกครั้งที่ roundIndex ขยับ
+       (ของเดิม v2.27.1 ยิงทุกครั้ง บางจังหวะ cids ว่างชั่วคราวเลยล้างจอที่มีข้อมูลแล้วเป็น 0) */
+    if (state.page === 'summary' && state.summaryTab === 'live'
+        && !(state.liveData && state.liveData.length)
+        && Object.keys(state.roundIndex).length) refreshLive();
     if (state.page === 'doc') renderDoc();
 
     /* ย้ายยอดระบบขึ้นรอบนับครั้งเดียวตอนเปิดแอป — รันซ้ำได้แต่ไม่ต้องรันทุกครั้งที่ Job เปลี่ยน */

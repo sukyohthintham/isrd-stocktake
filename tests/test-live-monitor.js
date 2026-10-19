@@ -229,6 +229,18 @@ const HARNESS = `
         L.staleRet === null && L.keptSentinel, L);
   check('[L] รอบปัจจุบัน (gen ตรง) อัปเดต liveData เป็น 2 สาขาปกติ', L.afterFreshN === 2, L);
 
+  /* ---------- [M] ⭐ ตัวกันซ้อน: กำลังโหลดอยู่ กดรีเฟรชซ้ำต้องไม่เริ่มรอบใหม่ ---------- */
+  console.log('\n[M] ⭐ liveLoading=true → refreshLive() เป็น no-op (ไม่ bump gen ไม่อ่านซ้ำ)');
+  const M = await page.evaluate(() => {
+    state.liveLoading = true;
+    const g0 = state.liveGen;
+    refreshLive();                     // ควรถูกบล็อกทันที
+    const g1 = state.liveGen;
+    state.liveLoading = false;         // คืนสภาพ
+    return { g0, g1 };
+  });
+  check('[M] กำลังโหลดอยู่ → refreshLive ไม่ bump gen (ไม่เริ่มรอบซ้อน)', M.g0 === M.g1, M);
+
   check('ไม่มี error หลุดในหน้า', errors.length === 0, errors.slice(0, 3));
 
   console.log('\n==== ' + pass + ' passed, ' + fail + ' failed ====');
