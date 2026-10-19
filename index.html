@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.27.3">
+<meta name="version" content="2.28.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.27.3</title>
+<title>ISRD Stocktake v2.28.0</title>
 
 <style>
 :root{
@@ -1962,7 +1962,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.27.3';
+var APP_VERSION = '2.28.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -2056,7 +2056,7 @@ function authMessage(code) {
 }
 
 var session = (function () {
-  var idToken = '', refreshToken = '', user = null, timer = null, tokenCb = null;
+  var idToken = '', refreshToken = '', user = null, timer = null, tokenCb = null, tokenExpMs = 0;
 
   function save() {
     if (!refreshToken) { localStorage.removeItem(AUTH_LS); return; }
@@ -2083,7 +2083,9 @@ var session = (function () {
   /* ต่ออายุก่อนหมดจริง 5 นาที — เผื่อเวลาเครื่องเพี้ยนและเผื่อสายที่ค้างอยู่ */
   function schedule(expiresIn) {
     clearTimeout(timer);
-    var ms = Math.max(60, (Number(expiresIn) || 3600) - 300) * 1000;
+    var secs = Number(expiresIn) || 3600;
+    tokenExpMs = Date.now() + secs * 1000;   // ⭐ เวลาหมดอายุจริงของ idToken (ไว้ให้ ensureFresh เช็กเชิงรุก)
+    var ms = Math.max(60, secs - 300) * 1000;
     timer = setTimeout(function () { refresh().catch(function () {}); }, ms);
   }
 
@@ -2145,6 +2147,15 @@ var session = (function () {
     get user() { return user; },
     token: function () { return idToken; },
     onToken: function (cb) { tokenCb = cb; },
+
+    /* ⭐ ต่ออายุเชิงรุกก่อน "ใช้งานจริง" (เขียน/ปลุกแท็บ/รอบ flush) — กันเคส setTimeout ของ schedule()
+       ถูกเบราว์เซอร์แช่แข็งตอนล็อกจอ/สลับแอป แล้ว idToken หมดเงียบ ๆ โดยไม่มี timer มาต่อให้
+       เหลือน้อยกว่า 5 นาที (หรือหมดไปแล้ว) = ต่อก่อน · ยังสดอยู่ = คืน idToken เดิมทันที ไม่แตะเน็ต */
+    ensureFresh: function () {
+      if (!REMOTE_MODE || !refreshToken) return Promise.resolve(idToken);
+      if (tokenExpMs && Date.now() < tokenExpMs - 300000) return Promise.resolve(idToken);
+      return refresh();
+    },
 
     signIn: function (email, password) {
       email = String(email || '').trim();
@@ -2570,15 +2581,19 @@ var db = (function () {
      ลองแค่ 2 ครั้ง (ไม่ใช่ 3 เท่าฝั่งอ่าน) เพราะผู้ใช้กดปุ่มค้างรออยู่หน้าจอ */
   function remoteUpdate(path, patch) {
     var t0 = Date.now();
-    return retryNet(function () {
-      return withAuthRetry(function () {
-        return fetchT(url(path), {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(patch)
+    /* ⭐ ต่ออายุ token ก่อนเขียนทุกครั้งถ้าใกล้หมด — กันคิวค้างเพราะ PATCH โดน 401 ตอน token หมดเงียบ ๆ
+       ถ้าต่อไม่ผ่าน (เน็ต/refreshToken เสีย) ก็ยังลองเขียนด้วยของเดิม แล้วปล่อยให้ withAuthRetry จัดการต่อ */
+    return session.ensureFresh().catch(function () {}).then(function () {
+      return retryNet(function () {
+        return withAuthRetry(function () {
+          return fetchT(url(path), {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(patch)
+          });
         });
-      });
-    }, 2).then(
+      }, 2);
+    }).then(
       function (r) { return remoteDone('PATCH', path, t0, false, r); },
       function (e) { return remoteFailed('PATCH', path, t0, false, e); }
     );
@@ -18196,12 +18211,15 @@ function init() {
   db.onStatus(applyConnStatus);
   window.addEventListener('online', function () {
     state.connection = 'unknown';
-    flushQueue();
     renderConnection();
-    /* เน็ตเครื่องกลับมา — สายที่ตายตอน ERR_NETWORK_CHANGED ต้องถูกเปิดใหม่ด้วย
+    /* เน็ตเครื่องกลับมา — ต่ออายุ token ก่อน แล้วค่อยส่งคิว/เปิดสายใหม่ด้วย token สด
+       (ตอน sleep นาน token มักหมดไปแล้ว ถ้า flush เลยจะโดน 401 ทั้งแผง)
        db.reconnect() มีพื้นเวลา 1.5 วิของตัวเองอยู่แล้ว เน็ตกะพริบถี่ ๆ จึงไม่รื้อสายรัว */
-    db.reconnect();
-    scheduleRecover();
+    session.ensureFresh().catch(function () {}).then(function () {
+      flushQueue();
+      db.reconnect();
+      scheduleRecover();
+    });
   });
   window.addEventListener('offline', function () { state.connection = 'offline'; renderConnection(); });
   /* ⭐ v2.9.5 — มือถือ/แท็บกลับมา visible (ปลุกจากล็อกจอ, สลับแอปกลับมา) สาย SSE มักถูก
@@ -18209,10 +18227,19 @@ function init() {
      อาจค้างนาน · พอหน้าเพจกลับมามองเห็น สั่งเปิดสายใหม่ + อ่านข้อมูลกลับลงมาเลย
      (db.reconnect มีพื้นเวลา 1.5 วิของตัวเอง กดสลับถี่ ๆ จึงไม่รื้อสายรัว) */
   document.addEventListener('visibilitychange', function () {
-    if (!document.hidden && db.reconnect()) scheduleRecover();
+    if (document.hidden) return;
+    /* แท็บกลับมาเห็น (ปลุกจากล็อกจอ/สลับแอป) — ต่ออายุ token ก่อน แล้วส่งคิวที่ค้าง + เปิดสายใหม่ด้วย token สด */
+    session.ensureFresh().catch(function () {}).then(function () {
+      flushQueue();
+      if (db.reconnect()) scheduleRecover();
+    });
   });
   window.addEventListener('pageshow', function (e) {
-    if (e && e.persisted && db.reconnect()) scheduleRecover();   // กลับจาก bfcache = สายเดิมตายหมด
+    if (!(e && e.persisted)) return;   // กลับจาก bfcache = สายเดิมตายหมด
+    session.ensureFresh().catch(function () {}).then(function () {
+      flushQueue();
+      if (db.reconnect()) scheduleRecover();
+    });
   });
   /* ⭐ v2.16.6 — คลิกกลับมาที่หน้าต่างก็ถือเป็นสัญญาณว่าคนกลับมาใช้งานแล้ว
      บนเดสก์ท็อปที่เปิดหลายหน้าต่างซ้อนกัน การสลับหน้าต่างไม่ทำให้ document.hidden เปลี่ยน
@@ -18227,7 +18254,10 @@ function init() {
      ตัวเลขที่เคยขึ้นทันทีจากแคชเลยกลายเป็นค่อย ๆ ไหลขึ้นทีละสาขา (regression ของ v2.16.6)
      สายยังดี = ไม่มีอะไรต้องกู้ ปล่อยแคชไว้ · สายตายจริงค่อยทำงานตามเจตนาเดิม */
   window.addEventListener('focus', function () {
-    if (db.connInfo().dead > 0 && db.reconnect()) scheduleRecover();
+    if (db.connInfo().dead <= 0) return;   // สายยังดี = ไม่ต้องกู้ (คงเจตนา v2.16.7 กัน focus รัว)
+    session.ensureFresh().catch(function () {}).then(function () {
+      if (db.reconnect()) scheduleRecover();
+    });
   });
   $('btnReconnect').onclick = manualReconnect;
 
@@ -18267,7 +18297,9 @@ function startApp() {
   if (dropped) {
     toast('ข้ามคิวเก่าจากโหมดทดสอบ ' + fmtNum(dropped) + ' รายการ ไม่ได้ส่งขึ้นฐานจริง');
   }
-  if (!startApp._timer) startApp._timer = setInterval(flushQueue, 15000);
+  if (!startApp._timer) startApp._timer = setInterval(function () {
+    session.ensureFresh().catch(function () {}).then(flushQueue);
+  }, 15000);
   flushQueue();
   renderConnection();
 
