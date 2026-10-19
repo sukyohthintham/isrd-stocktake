@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.27.0">
+<meta name="version" content="2.27.1">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.27.0</title>
+<title>ISRD Stocktake v2.27.1</title>
 
 <style>
 :root{
@@ -1962,7 +1962,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.27.0';
+var APP_VERSION = '2.27.1';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -2547,7 +2547,9 @@ var db = (function () {
     var token = null;
     function release() { if (quiet && token !== null) { bgDone(token); token = null; } }
 
-    var gate = quiet
+    /* ⭐ v2.27.1 — noQueue: อ่านเงียบแต่ "ไม่เข้าคิว BG" (สำหรับ getLast ที่จิ๋วและโหลดทีละตัว)
+       กันเคสคำขอจิ๋วไปต่อคิวหลังการอ่านยอดระบบหนัก (BG_MAX=2) แล้วค้างยาว (บทเรียน v2.10.x) */
+    var gate = (quiet && !opts.noQueue)
       ? bgSlot(path).then(function (tk) { token = tk; })
       : Promise.resolve();
 
@@ -2798,7 +2800,7 @@ var db = (function () {
     getLast: function (path) {
       var q = 'orderBy=%22%24key%22&limitToLast=1';
       var p = REMOTE_MODE
-        ? remoteGet(path, { quiet: true, query: q, timeout: 10000, tries: 1 })
+        ? remoteGet(path, { quiet: true, noQueue: true, query: q, timeout: 10000, tries: 1 })
         : Promise.resolve(readLocal(path));
       return p.then(function (data) {
         if (!data || typeof data !== 'object') return null;
@@ -4262,7 +4264,7 @@ var state = {
   cycleStats: {},          // cycleId -> ความคืบหน้าและความแม่นของทั้งรอบนับ
   /* ⭐ v2.27.0 — มอนิเตอร์สด */
   liveTimer: null, liveAuto: true, liveOpen: {}, liveData: [], liveLoading: false, liveLastAt: 0, liveReads: 0,
-  liveDetail: {}, liveDetailLoading: {},
+  liveDetail: {}, liveDetailLoading: {}, liveGen: 0,
   jobConfirmed: false,     // ยืนยัน Job แล้วหรือยังก่อนเริ่มยิง
   lastZoneName: '',        // โซนของชิ้นล่าสุดที่ยิง — ตัวเลขและตัวอักษรบนหน้ายิงตามตัวนี้
   locationsLoaded: false,  // ตาราง Location มาถึงหรือยัง — โซนขึ้นกับมันตั้งแต่ v2.1.9
@@ -13173,7 +13175,8 @@ function liveCountingCycles() {
 /* ⭐ รอบวิ่งเบา: อ่านแค่ "แถวล่าสุดอันเดียว" ต่อ Job (db.getLast ≈ 1 ก้อน/สาขา)
    พอรู้ว่าสาขาไหนขยับ/เงียบ โดยไม่ดึง scans ทั้งก้อน → เปิดค้างทั้งวันบนแพ็กฟรีก็ไม่ชนโควตา
    ยอด "รายคน/จำนวนชิ้น" เป็นของหนัก ไปโหลดตอน "กางดู" สาขานั้นแทน (loadBranchDetail) */
-function loadLiveMonitor() {
+function loadLiveMonitor(gen) {
+  if (gen == null) gen = state.liveGen;        // เรียกตรง (เช่นในเทส) = ถือว่าเป็นรอบปัจจุบัน
   var cids = liveCountingCycles();
   var acc = {};
   cids.forEach(function (cid) {
@@ -13186,6 +13189,8 @@ function loadLiveMonitor() {
   var chain = Promise.resolve();
   tasks.forEach(function (t) {
     chain = chain.then(function () {
+      /* ⭐ v2.27.1 — หยุดถ้ารอบนี้ถูกแทนที่แล้ว (gen ไม่ตรง) หรือออกจากแท็บ — ไม่อ่านต่อให้เปลืองโควตา */
+      if (gen !== state.liveGen) return;
       if (state.page !== 'summary' || state.summaryTab !== 'live') return;
       state.liveReads++;
       return db.getLast('rounds/' + t.jid + '/scans').then(function (last) {   // แถวล่าสุดอันเดียว
@@ -13196,6 +13201,7 @@ function loadLiveMonitor() {
     });
   });
   return chain.then(function () {
+    if (gen !== state.liveGen) return null;   // รอบเก่าจบทีหลัง → อย่าทับ liveData ของรอบใหม่
     var rows = cids.map(function (cid) { return acc[cid]; });
     rows.sort(function (a, b) {
       if (!a.lastTs && !b.lastTs) return 0;
@@ -13308,19 +13314,26 @@ function renderLive() {
 }
 
 function refreshLive() {
-  if (state.liveLoading) return;
+  /* ⭐ v2.27.1 — เริ่ม "รอบใหม่" ทุกครั้ง (ไม่บล็อกด้วย liveLoading อีกต่อไป)
+     รอบเก่าที่ยังวิ่งอยู่จะเช็ค gen เองแล้วทิ้งผล ไม่ทับจอ/ไม่ปลด flag ของรอบใหม่
+     → ปุ่ม "รีเฟรชเดี๋ยวนี้" กดติดเสมอ และไม่มีรอบซ้อนทับกัน (บทเรียน CC v2.27.1) */
+  var gen = ++state.liveGen;
   state.liveLoading = true;
+  /* watchdog: ถ้าอ่านนานผิดปกติ ปลด flag โหลดของรอบนี้เอง (เฉพาะถ้ายังเป็นรอบปัจจุบัน) */
+  var wd = setTimeout(function () { if (gen === state.liveGen) state.liveLoading = false; }, 15000);
   renderLive();
-  loadLiveMonitor().then(function () {
+  loadLiveMonitor(gen).then(function () {
+    if (gen !== state.liveGen) return;   // ถูกแทนที่แล้ว → ไม่ต้องโหลดรายคนต่อ
     /* รีเฟรชรายคนเฉพาะสาขาที่ "กางอยู่" (จำกัดด้วยจำนวนที่แอดมินเปิดดูเอง) */
     var openCids = Object.keys(state.liveOpen).filter(function (c) { return state.liveOpen[c]; });
     var chain = Promise.resolve();
-    openCids.forEach(function (cid) { chain = chain.then(function () { return loadBranchDetail(cid); }); });
+    openCids.forEach(function (cid) { chain = chain.then(function () { if (gen === state.liveGen) return loadBranchDetail(cid); }); });
     return chain;
   }).then(function () {
-    state.liveLoading = false;
+    if (gen !== state.liveGen) return;   // รอบเก่าจบทีหลัง → อย่าแตะ flag/จอของรอบใหม่
+    clearTimeout(wd); state.liveLoading = false;
     if (state.page === 'summary' && state.summaryTab === 'live') renderLive();
-  }).catch(function () { state.liveLoading = false; });
+  }).catch(function () { if (gen === state.liveGen) { clearTimeout(wd); state.liveLoading = false; } });
 }
 
 function startLiveTimer() {
@@ -18287,6 +18300,10 @@ function startApp() {
     renderJobBar();
     if (state.page === 'jobs') renderJobs();
     if (state.page === 'summary') renderSummary();
+    /* ⭐ v2.27.1 — roundIndex มาแบบ SSE: ถ้าแท็บมอนิเตอร์สดเปิดอยู่ ให้โหลดใหม่ด้วย
+       (renderSummary ไม่แตะมอนิเตอร์) แก้เคสเปิดแท็บตอน index ยังมาไม่ครบ → ชิปค้าง 0
+       และทำให้สาขาที่เพิ่งเปิด/ปิดรอบนับ โผล่/หายเองโดยไม่ต้องรอรอบ 5 นาที */
+    if (state.page === 'summary' && state.summaryTab === 'live') refreshLive();
     if (state.page === 'doc') renderDoc();
 
     /* ย้ายยอดระบบขึ้นรอบนับครั้งเดียวตอนเปิดแอป — รันซ้ำได้แต่ไม่ต้องรันทุกครั้งที่ Job เปลี่ยน */

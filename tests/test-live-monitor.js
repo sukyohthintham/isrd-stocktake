@@ -201,6 +201,34 @@ const HARNESS = `
   check('เห็นแค่สาขาตัวเอง (1 สาขา = LKB-01)', ii.n === 1 && ii.code === 'LKB-01', ii);
   check('รอบวิ่งอ่านแค่ Job ของสาขาที่เห็น (1 ครั้ง)', ii.glance === 1, ii);
 
+  /* ---------- [K] ⭐ roundIndex มาทีหลัง (race) → โหลดใหม่ต้องเห็นสาขา ---------- */
+  console.log('\n[K] ⭐ เปิดแท็บตอนข้อมูลยังไม่ครบ (0 สาขา) แล้วข้อมูลมาเต็ม → โหลดใหม่เห็น 2 สาขา');
+  const k = await page.evaluate(async () => {
+    const realGroups = window.cycleGroups;
+    window.cycleGroups = function () { return {}; };     // จำลอง roundIndex ยังไม่มา
+    const empty = (await loadLiveMonitor()).length;
+    window.cycleGroups = realGroups;                      // ข้อมูลมาเต็ม (SSE อัปเดต)
+    const full = (await loadLiveMonitor()).length;
+    return { empty, full };
+  });
+  check('ตอนข้อมูลยังไม่มา = 0 สาขา (ชิปจะขึ้น 0)', k.empty === 0, k);
+  check('พอข้อมูลมาเต็มแล้วโหลดใหม่ = 2 สาขา (หายเอง ไม่ต้องกดรีเฟรช)', k.full === 2, k);
+
+  /* ---------- [L] ⭐ เลขรอบ (generation): ผลรอบเก่าต้องไม่ทับรอบใหม่ ---------- */
+  console.log('\n[L] ⭐ รอบเก่าที่จบทีหลัง (gen ไม่ตรง) ต้องทิ้งผล ไม่ทับ state.liveData');
+  const L = await page.evaluate(async () => {
+    state.liveGen = 5;
+    state.liveData = [{ code: 'SENTINEL' }];           // ของรอบใหม่ (ปัจจุบัน)
+    const stale = await loadLiveMonitor(4);            // รอบเก่า gen=4 (ไม่ตรงปัจจุบัน=5)
+    const afterStale = state.liveData.map(r => r.code);
+    const fresh = await loadLiveMonitor(5);            // รอบปัจจุบัน gen=5
+    const afterFresh = state.liveData.map(r => r.code);
+    return { staleRet: stale, afterStale, afterFreshN: afterFresh.length, keptSentinel: afterStale[0] === 'SENTINEL' };
+  });
+  check('[L] รอบเก่า (gen ไม่ตรง) คืน null และไม่ทับ liveData (ยังเห็น SENTINEL)',
+        L.staleRet === null && L.keptSentinel, L);
+  check('[L] รอบปัจจุบัน (gen ตรง) อัปเดต liveData เป็น 2 สาขาปกติ', L.afterFreshN === 2, L);
+
   check('ไม่มี error หลุดในหน้า', errors.length === 0, errors.slice(0, 3));
 
   console.log('\n==== ' + pass + ' passed, ' + fail + ' failed ====');
