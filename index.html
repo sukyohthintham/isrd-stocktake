@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.26.0">
+<meta name="version" content="2.27.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.26.0</title>
+<title>ISRD Stocktake v2.27.0</title>
 
 <style>
 :root{
@@ -1540,6 +1540,24 @@ body.no-doc-images .doc .imgbox{display:none}
     <button class="btn sm" data-sumtab="overview">ภาพรวมทุกสาขา</button>
     <button class="btn sm grey" data-sumtab="job">สรุปรอบนี้</button>
     <button class="btn sm grey" data-sumtab="sd">โชว์/สต็อก</button>
+    <button class="btn sm grey" data-sumtab="live">📡 มอนิเตอร์สด</button>
+  </div>
+
+  <!-- ⭐ v2.27.0 — มอนิเตอร์สดวันนับ: ดูสาขาที่กำลังนับ + รายคน แบบอัปเดตเอง (read-only) -->
+  <div id="sumLive" style="display:none">
+    <div class="card">
+      <h3>📡 มอนิเตอร์สด <span class="chip" id="liveChip">0</span></h3>
+      <div class="muted" style="font-size:13px;margin-bottom:8px">
+        เฉพาะสาขาที่กำลังนับ · อัปเดตเองทุก 5 นาที (อ่านเบา ๆ ทีละสาขา) · กดแถวดูรายคน · กด 🔄 รีเฟรชเดี๋ยวนี้ได้ตลอด<br>
+        🟢 เพิ่งยิง · 🟡 เงียบ 3–15 นาที · 🔴 เงียบเกิน 15 นาที หรือยังไม่เริ่ม
+      </div>
+      <div class="row" style="margin-bottom:8px;align-items:center">
+        <button class="btn sm grey" id="btnLiveRefresh">🔄 รีเฟรชเดี๋ยวนี้</button>
+        <button class="btn sm" id="btnLiveAuto">⏸ หยุดอัปเดตเอง</button>
+        <span class="muted" id="liveUpdated" style="margin-left:auto;font-size:12px"></span>
+      </div>
+      <div id="liveBody"></div>
+    </div>
   </div>
 
   <!-- ⭐ v2.16.0 — รายงาน "มีสต็อก ไม่มีโชว์"
@@ -1944,7 +1962,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.26.0';
+var APP_VERSION = '2.27.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -2335,9 +2353,11 @@ var db = (function () {
 
   /* ทุกคำขอต้องแนบ idToken ปัจจุบัน ไม่ใช่ค่าที่จำไว้ตอนเปิดแอป
      เพราะ token หมุนทุกชั่วโมง ถ้าค้างของเก่าไว้จะกลายเป็น 401 กลางวัน */
-  function url(path) {
+  function url(path, query) {
     var t = session.token();
-    return base + '/' + scoped(path) + '.json' + (t ? '?auth=' + encodeURIComponent(t) : '');
+    var qs = t ? '?auth=' + encodeURIComponent(t) : '';
+    if (query) qs += (qs ? '&' : '?') + query;   // ต่อ query เช่น orderBy/limitToLast สำหรับ getLast
+    return base + '/' + scoped(path) + '.json' + qs;
   }
 
   var remoteCache = {};   // mirror of every subscribed subtree, kept fresh by SSE
@@ -2533,7 +2553,7 @@ var db = (function () {
 
     return gate.then(function () {
       return retryNet(function () {
-        return withAuthRetry(function () { return fetchT(url(path), { timeoutMs: tmo }); });
+        return withAuthRetry(function () { return fetchT(url(path, opts.query), { timeoutMs: tmo }); });
       }, tries);
     }).then(
       function (r) { release(); return remoteDone('GET', path, t0, quiet, r); },
@@ -2769,6 +2789,24 @@ var db = (function () {
     getQuiet: function (path) {
       if (REMOTE_MODE) return remoteGet(path, { quiet: true });
       return Promise.resolve(readLocal(path));
+    },
+
+    /* ⭐ อ่านแค่ "ลูกตัวสุดท้าย" ของ path — เบามาก (คืนมา 1 ก้อน ไม่ใช่ทั้งกอง)
+       ใช้ orderBy="$key"&limitToLast=1 : pushId เรียงตามเวลาอยู่แล้ว ลูกตัวท้ายคือยิงล่าสุด
+       และ $key เป็น index ในตัว ไม่ต้องตั้ง .indexOn ใน Rules (ไม่ต้องแก้ Console)
+       หัวใจของมอนิเตอร์สดแบบประหยัดโควตา — รู้ว่าสาขาไหนขยับ โดยไม่ลากทั้งก้อน scans */
+    getLast: function (path) {
+      var q = 'orderBy=%22%24key%22&limitToLast=1';
+      var p = REMOTE_MODE
+        ? remoteGet(path, { quiet: true, query: q, timeout: 10000, tries: 1 })
+        : Promise.resolve(readLocal(path));
+      return p.then(function (data) {
+        if (!data || typeof data !== 'object') return null;
+        var ks = Object.keys(data);
+        if (!ks.length) return null;
+        if (!REMOTE_MODE) ks.sort();                   // local: เรียงคีย์เอง แล้วเอาตัวท้าย
+        return data[ks[ks.length - 1]];
+      });
     },
 
     /* patch keys may contain slashes, e.g. {'counts/abc': {...}} */
@@ -4222,6 +4260,9 @@ var state = {
   jobBranch: 'all',
   jobStats: {},            // roundId -> ยอดที่ Job ใบนั้นยิงได้ (คำนวณครั้งเดียวแล้วเก็บไว้)
   cycleStats: {},          // cycleId -> ความคืบหน้าและความแม่นของทั้งรอบนับ
+  /* ⭐ v2.27.0 — มอนิเตอร์สด */
+  liveTimer: null, liveAuto: true, liveOpen: {}, liveData: [], liveLoading: false, liveLastAt: 0, liveReads: 0,
+  liveDetail: {}, liveDetailLoading: {},
   jobConfirmed: false,     // ยืนยัน Job แล้วหรือยังก่อนเริ่มยิง
   lastZoneName: '',        // โซนของชิ้นล่าสุดที่ยิง — ตัวเลขและตัวอักษรบนหน้ายิงตามตัวนี้
   locationsLoaded: false,  // ตาราง Location มาถึงหรือยัง — โซนขึ้นกับมันตั้งแต่ v2.1.9
@@ -13073,11 +13114,241 @@ function setSummaryTab(tab) {
   $('sumOverview').style.display = tab === 'overview' ? 'block' : 'none';
   $('sumJob').style.display = tab === 'job' ? 'block' : 'none';
   $('sumSd').style.display = tab === 'sd' ? 'block' : 'none';
+  $('sumLive').style.display = tab === 'live' ? 'block' : 'none';
+  if (tab !== 'live') stopLiveTimer();            // ออกจากแท็บ = หยุดยิงอ่านเบื้องหลัง
   if (tab === 'overview') renderOverview();
   else if (tab === 'sd') renderStockDisplay();
+  else if (tab === 'live') startLiveTimer();
   /* ⭐ v2.14.2 — วาดหน้าสรุปทันทีตอนสลับมาแท็บนี้
      ของเดิมสลับกลับมาแล้วตัวเลขค้างจากครั้งก่อน ต้องไปกดสลับราคาให้มันวาดใหม่เอง */
   else renderSummary();
+}
+
+/* ============================================================
+   ⭐ v2.27.0 — มอนิเตอร์สดวันนับ (Live Count-Day Monitor)
+   รอบวิ่งเบา: อ่านแค่ "แถวล่าสุดอันเดียว" ต่อ Job (db.getLast) → รู้ว่าสาขาไหนขยับ/เงียบ
+   ยอดรายคน/จำนวนชิ้น (ของหนัก) โหลดตอน "กางดู" สาขานั้นเท่านั้น (loadBranchDetail)
+   READ-ONLY ล้วน ไม่เขียนฐาน ไม่แตะยอดนับ · auto-refresh ทุก 5 นาที
+   ============================================================ */
+/* ⭐ v2.27.0 — ประหยัดโควตา Firebase (แพ็กฟรี Spark) เป็นหลัก:
+   (1) รอบวิ่งอ่าน getLast = แค่ก้อนล่าสุด/สาขา (~ไม่กี่ KB) ไม่ลากทั้งกอง scans
+   (2) อ่านทีละ Job เรียงกัน ไม่ Promise.all — คิวอ่านเบื้องหลัง BG_MAX=2 แชร์กับ ensureRoleFresh
+       (ปิดรอบ/ล้างยอด/แก้สิทธิ์) ถ้ายิงพร้อมกันทั้งก้อนจะถล่มคิว (บทเรียน v2.10.1–2.10.2)
+   (3) รีเฟรช 5 นาที + หยุดเมื่อออกจากแท็บ/สลับหน้า (document.hidden) */
+var LIVE_REFRESH_MS = 300000, LIVE_YELLOW_MIN = 3, LIVE_RED_MIN = 15;
+
+/* "เมื่อ X ที่แล้ว" จาก timestamp */
+function agoText(ts) {
+  if (!ts) return 'ยังไม่เริ่ม';
+  var s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+  if (s < 10) return 'เมื่อสักครู่';
+  if (s < 60) return s + ' วิที่แล้ว';
+  var m = Math.floor(s / 60);
+  if (m < 60) return m + ' นาทีที่แล้ว';
+  var h = Math.floor(m / 60), mm = m % 60;
+  return h + ' ชม.' + (mm ? ' ' + mm + ' น.' : '') + ' ที่แล้ว';
+}
+
+/* สีเตือนตามเวลาที่เงียบ */
+function liveIdleClass(ts) {
+  if (!ts) return 'red';
+  var m = (Date.now() - ts) / 60000;
+  if (m > LIVE_RED_MIN) return 'red';
+  if (m > LIVE_YELLOW_MIN) return 'yellow';
+  return 'green';
+}
+function liveDot(cls) { return cls === 'green' ? '🟢' : (cls === 'yellow' ? '🟡' : '🔴'); }
+function liveColor(cls) { return cls === 'red' ? 'var(--bad,#c0392b)' : (cls === 'yellow' ? '#b8860b' : 'var(--ok,#1e8e3e)'); }
+
+/* รอบที่สถานะ "กำลังนับ" + เห็นได้ตามสิทธิ์สาขา (เหมือนหน้ารายการ Job) เท่านั้น
+   คนที่ถูกจำกัดสาขาจะไม่เห็นชื่อคนยิงของสาขาอื่น */
+function liveCountingCycles() {
+  return Object.keys(cycleGroups()).filter(function (cid) {
+    if (cycleStatus(cid) !== 'counting') return false;
+    var b = cycleBranch(cid);
+    return canSeeBranch(b && b.branchCode);
+  });
+}
+
+/* ⭐ รอบวิ่งเบา: อ่านแค่ "แถวล่าสุดอันเดียว" ต่อ Job (db.getLast ≈ 1 ก้อน/สาขา)
+   พอรู้ว่าสาขาไหนขยับ/เงียบ โดยไม่ดึง scans ทั้งก้อน → เปิดค้างทั้งวันบนแพ็กฟรีก็ไม่ชนโควตา
+   ยอด "รายคน/จำนวนชิ้น" เป็นของหนัก ไปโหลดตอน "กางดู" สาขานั้นแทน (loadBranchDetail) */
+function loadLiveMonitor() {
+  var cids = liveCountingCycles();
+  var acc = {};
+  cids.forEach(function (cid) {
+    var b = cycleBranch(cid);
+    acc[cid] = { cid: cid, code: b.branchCode || '-', name: b.branchName || b.branch || '-', lastTs: 0, lastUser: '' };
+  });
+  var tasks = [];
+  cids.forEach(function (cid) { jobsInCycle(cid).forEach(function (jid) { tasks.push({ cid: cid, jid: jid }); }); });
+  state.liveReads = 0;
+  var chain = Promise.resolve();
+  tasks.forEach(function (t) {
+    chain = chain.then(function () {
+      if (state.page !== 'summary' || state.summaryTab !== 'live') return;
+      state.liveReads++;
+      return db.getLast('rounds/' + t.jid + '/scans').then(function (last) {   // แถวล่าสุดอันเดียว
+        var a = acc[t.cid]; if (!a || !last) return;
+        var ts = Number(last.ts) || 0;
+        if (ts > a.lastTs) { a.lastTs = ts; a.lastUser = last.user || ''; }
+      }).catch(function () {});
+    });
+  });
+  return chain.then(function () {
+    var rows = cids.map(function (cid) { return acc[cid]; });
+    rows.sort(function (a, b) {
+      if (!a.lastTs && !b.lastTs) return 0;
+      if (!a.lastTs) return -1;
+      if (!b.lastTs) return 1;
+      return a.lastTs - b.lastTs;                                              // เงียบนานสุดขึ้นบน
+    });
+    state.liveData = rows;
+    state.liveLastAt = Date.now();
+    return rows;
+  });
+}
+
+/* โหลดรายละเอียดรายคนของ "สาขาเดียว" (ของหนัก) — เรียกเฉพาะตอนกางดู/รีเฟรชสาขาที่กางอยู่ */
+function loadBranchDetail(cid) {
+  state.liveDetail = state.liveDetail || {};
+  var jobs = jobsInCycle(cid), pieces = 0, users = {};
+  var chain = Promise.resolve();
+  jobs.forEach(function (jid) {
+    chain = chain.then(function () {
+      return db.getQuiet('rounds/' + jid + '/scans').then(function (scans) {
+        Object.keys(scans || {}).forEach(function (sid) {
+          var r = scans[sid]; if (!r) return;
+          var d = Number(r.delta) || 0, ts = Number(r.ts) || 0, u = r.user || 'ไม่ระบุ';
+          pieces += d;
+          var e = users[u] || (users[u] = { user: u, pieces: 0, last: 0 });
+          e.pieces += d; if (ts > e.last) e.last = ts;
+        });
+      }).catch(function () {});
+    });
+  });
+  return chain.then(function () {
+    var ulist = Object.keys(users).map(function (k) { return users[k]; }).sort(function (a, b) { return b.last - a.last; });
+    state.liveDetail[cid] = { pieces: pieces, users: ulist, at: Date.now() };
+    return state.liveDetail[cid];
+  });
+}
+
+/* กาง/หุบสาขา — กางครั้งแรกค่อยโหลดรายคน (lazy) */
+function toggleLiveBranch(cid) {
+  state.liveOpen[cid] = !state.liveOpen[cid];
+  state.liveDetailLoading = state.liveDetailLoading || {};
+  if (state.liveOpen[cid] && !(state.liveDetail && state.liveDetail[cid])) {
+    state.liveDetailLoading[cid] = true;
+    renderLive();
+    loadBranchDetail(cid).then(function () { state.liveDetailLoading[cid] = false; renderLive(); });
+  } else {
+    renderLive();
+  }
+}
+
+function renderLive() {
+  var host = $('liveBody'); if (!host) return;
+  var rows = state.liveData || [];
+  if ($('liveChip')) $('liveChip').textContent = fmtNum(rows.length);
+  if ($('liveUpdated')) $('liveUpdated').textContent = state.liveLastAt ? 'อัปเดตล่าสุด ' + agoText(state.liveLastAt) : '';
+
+  host.innerHTML = '';
+  if (!rows.length) {
+    var none = document.createElement('div');
+    none.className = 'muted'; none.style.padding = '12px 4px';
+    none.textContent = state.liveLoading ? 'กำลังโหลด...' : 'ตอนนี้ไม่มีสาขาที่กำลังนับอยู่';
+    host.appendChild(none);
+    return;
+  }
+  var table = document.createElement('table');
+  table.className = 'grid'; table.style.width = '100%';
+  table.innerHTML = '<thead><tr style="text-align:left;color:var(--muted)">' +
+    '<th style="padding:6px">สาขา</th><th style="padding:6px">ยิงล่าสุด</th>' +
+    '<th style="padding:6px">คนล่าสุด</th></tr></thead>';
+  var tb = document.createElement('tbody');
+  function cell(text, style) { var td = document.createElement('td'); td.style.cssText = style; td.textContent = text; return td; }
+  function spanRow(text, style) { var tr = document.createElement('tr'); var td = cell(text, style); td.colSpan = 3; tr.appendChild(td); return tr; }
+
+  rows.forEach(function (r) {
+    var cls = liveIdleClass(r.lastTs), open = !!state.liveOpen[r.cid];
+    var tr = document.createElement('tr');
+    tr.style.borderTop = '1px solid var(--line-soft)';
+    tr.style.cursor = 'pointer';
+    tr.onclick = function () { toggleLiveBranch(r.cid); };
+    tr.appendChild(cell(liveDot(cls) + ' ' + r.code + ' · ' + r.name + ' ' + (open ? '▾' : '▸'), 'padding:6px'));
+    tr.appendChild(cell(agoText(r.lastTs), 'padding:6px;color:' + liveColor(cls)));
+    tr.appendChild(cell(r.lastUser || '-', 'padding:6px;color:var(--muted)'));
+    tb.appendChild(tr);
+
+    if (open) {
+      var loading = state.liveDetailLoading && state.liveDetailLoading[r.cid];
+      var det = state.liveDetail && state.liveDetail[r.cid];
+      if (loading || !det) {
+        tb.appendChild(spanRow('กำลังโหลดรายคน...', 'padding:4px 6px 8px 24px;color:var(--muted);font-size:13px'));
+      } else if (!det.users.length) {
+        tb.appendChild(spanRow('ยังไม่มีใครยิงในสาขานี้', 'padding:4px 6px 8px 24px;color:var(--muted);font-size:13px'));
+      } else {
+        tb.appendChild(spanRow('รวม ' + fmtNum(det.pieces) + ' ชิ้น · ' + fmtNum(det.users.length) + ' คน · ข้อมูลรายคนเมื่อ ' + agoText(det.at),
+          'padding:4px 6px 4px 24px;color:var(--muted);font-size:12px'));
+        det.users.forEach(function (u) {
+          var ucls = liveIdleClass(u.last);
+          var utr = document.createElement('tr');
+          utr.style.background = 'var(--line-soft)';
+          utr.appendChild(cell(liveDot(ucls) + ' ' + u.user, 'padding:4px 6px 4px 24px;font-size:13px'));
+          utr.appendChild(cell(fmtNum(u.pieces) + ' ชิ้น', 'padding:4px 6px;font-size:13px'));
+          utr.appendChild(cell(agoText(u.last), 'padding:4px 6px;font-size:13px;color:' + liveColor(ucls)));
+          tb.appendChild(utr);
+        });
+      }
+    }
+  });
+  table.appendChild(tb);
+  host.appendChild(table);
+}
+
+function refreshLive() {
+  if (state.liveLoading) return;
+  state.liveLoading = true;
+  renderLive();
+  loadLiveMonitor().then(function () {
+    /* รีเฟรชรายคนเฉพาะสาขาที่ "กางอยู่" (จำกัดด้วยจำนวนที่แอดมินเปิดดูเอง) */
+    var openCids = Object.keys(state.liveOpen).filter(function (c) { return state.liveOpen[c]; });
+    var chain = Promise.resolve();
+    openCids.forEach(function (cid) { chain = chain.then(function () { return loadBranchDetail(cid); }); });
+    return chain;
+  }).then(function () {
+    state.liveLoading = false;
+    if (state.page === 'summary' && state.summaryTab === 'live') renderLive();
+  }).catch(function () { state.liveLoading = false; });
+}
+
+function startLiveTimer() {
+  stopLiveTimer();
+  var btn = $('btnLiveAuto');
+  if (btn) { btn.textContent = state.liveAuto ? '⏸ หยุดอัปเดตเอง' : '▶ เปิดอัปเดตเอง'; btn.className = 'btn sm' + (state.liveAuto ? '' : ' grey'); }
+  refreshLive();
+  if (state.liveAuto) {
+    state.liveTimer = setInterval(function () {
+      if (state.page !== 'summary' || state.summaryTab !== 'live') { stopLiveTimer(); return; }
+      if (document.hidden) return;                 // ⭐ จอดับ/สลับแอป = ไม่อ่าน (ประหยัดโควตา)
+      refreshLive();
+    }, LIVE_REFRESH_MS);
+  }
+}
+
+function stopLiveTimer() {
+  if (state.liveTimer) { clearInterval(state.liveTimer); state.liveTimer = null; }
+}
+
+function toggleLiveAuto() {
+  state.liveAuto = !state.liveAuto;
+  if (state.liveAuto) startLiveTimer();
+  else {
+    stopLiveTimer();
+    var btn = $('btnLiveAuto');
+    if (btn) { btn.textContent = '▶ เปิดอัปเดตเอง'; btn.className = 'btn sm grey'; }
+  }
 }
 
 function renderJobBar() {
@@ -13837,6 +14108,7 @@ function showPage(name) {
   /* setSummaryTab วาดให้เองแล้วทั้งสองแท็บ (v2.14.2) — เรียก renderSummary() ตรงนี้อีก
      จะกลายเป็นวาดซ้ำรอบหนึ่งทุกครั้งที่เข้าหน้า รอบที่มีหลายพัน SKU จะสะดุดบนมือถือ
      ทุกอย่างที่ renderSummary แตะอยู่ใน #sumJob ซึ่งถูกซ่อนตอนอยู่แท็บภาพรวมอยู่แล้ว */
+  if (name !== 'summary') stopLiveTimer();        // ⭐ v2.27.0 ออกจากหน้าสรุป = หยุดมอนิเตอร์สด
   if (name === 'summary') setSummaryTab(state.summaryTab);
   if (name === 'master') renderMaster();
   if (name === 'scan') renderScanPage();
@@ -17743,6 +18015,13 @@ function init() {
   /* ---- ภาพรวมทุกสาขา ---- */
   document.querySelectorAll('[data-sumtab]').forEach(function (b) {
     b.onclick = function () { setSummaryTab(b.getAttribute('data-sumtab')); };
+  });
+
+  /* ⭐ v2.27.0 — มอนิเตอร์สด */
+  if ($('btnLiveRefresh')) $('btnLiveRefresh').onclick = refreshLive;
+  if ($('btnLiveAuto')) $('btnLiveAuto').onclick = toggleLiveAuto;
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden && state.page === 'summary' && state.summaryTab === 'live' && state.liveAuto) refreshLive();
   });
 
   /* รายงานโชว์/สต็อก — ค้นหาและเรียงวาดเฉพาะตาราง ไม่วาดทั้งหน้าใหม่
