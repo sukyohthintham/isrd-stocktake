@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.28.0">
+<meta name="version" content="2.29.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.28.0</title>
+<title>ISRD Stocktake v2.29.0</title>
 
 <style>
 :root{
@@ -1256,7 +1256,10 @@ body.no-doc-images .doc .imgbox{display:none}
 
   <div id="masterProducts">
     <div class="card">
-      <h3>ข้อมูลสินค้าหลัก (Master)</h3>
+      <h3 style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+        <span>ข้อมูลสินค้าหลัก (Master)</span>
+        <button class="btn sm grey" id="btnRefreshMaster" type="button" style="flex:none">🔄 โหลดใหม่</button>
+      </h3>
       <label class="fld" style="margin-bottom:8px">
         <span>ค้นหาด้วยรหัส ชื่อ หรือบาร์โค้ด</span>
         <input type="text" id="masterSearch" placeholder="พิมพ์เพื่อค้นหา" autocomplete="off">
@@ -1962,7 +1965,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.28.0';
+var APP_VERSION = '2.29.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -6702,6 +6705,9 @@ function handleScanValue(raw) {
     renderLivePanel();
     renderSyncBar();
     $('btnUndo').disabled = false;
+    /* ⭐ v2.29.0 — ไม่ดึง Master ทั้งก้อน (7.6MB) อัตโนมัติตอนยิงเจอของไม่มีในระบบ
+       วันนับเจอของนอกระบบบ่อย ดึงทุกครั้ง = เปลืองโควตามหาศาล (สวนเจตนา cache)
+       ถ้าเพิ่งมีคนเพิ่มของนี้เข้า Master ให้กดลิงก์ "โหลด Master ใหม่" บนการ์ด แล้วยิงซ้ำ (ดู showScanNewCode) */
     return;
   }
 
@@ -6948,7 +6954,23 @@ function showScanNewCode(value, key) {
   /* ต้องปิดที่นี่ด้วย — การ์ดถูกวาดสองทาง ถ้าใส่ที่เดียวจะรั่วตอนยิงบาร์โค้ดที่ไม่มีในระบบ */
   $('slSysBox').style.display = hasPerm('seeSystemQty') ? '' : 'none';
   $('slQty').textContent = fmtNum(state.counts[key] || 0);
-  $('slMeta').textContent = 'ยิงตัวถัดไปต่อได้เลย';
+  /* ⭐ v2.29.0 — ปุ่มโหลด Master ใหม่บนการ์ด (ให้คนหน้างานกดเองได้ ไม่ต้องเข้าหน้า Master ซึ่ง counter อาจไม่มีสิทธิ์)
+     ใช้ตอนเพิ่งมีคนเพิ่มสินค้านี้เข้า Master แล้วอยากให้ยิงติดเลย — ดึงครั้งเดียวตอนกด ไม่ดึงอัตโนมัติ
+     มีเพดาน 60 วิ (card-reload) กันกดรัวทุกการยิงจนดึง 7.6MB ซ้ำ ๆ เปลืองโควตา · ปุ่มเต็มแถวกดง่ายแม้ใส่ถุงมือ */
+  var RELOAD_LABEL = '🔄 เพิ่งเพิ่มของนี้? กดโหลด Master ใหม่';
+  $('slMeta').innerHTML = 'ยิงตัวถัดไปต่อได้เลย<br><button type="button" id="slReloadMaster" class="btn sm grey" style="margin-top:6px;width:100%">' + RELOAD_LABEL + '</button>';
+  var _rl = $('slReloadMaster');
+  if (_rl) _rl.onclick = function () {
+    if (_rl.disabled) return;
+    _rl.disabled = true; _rl.textContent = '⏳ กำลังโหลด...';
+    forceRefreshMaster('card-reload', 60000).then(function (res) {
+      _rl.disabled = false; _rl.textContent = RELOAD_LABEL;
+      if (res === 'debounced') { toast('เพิ่งโหลด Master ไปเมื่อครู่ — ลองยิง ' + value + ' ซ้ำได้เลย'); return; }
+      if (res === 'failed') { toast('โหลด Master ไม่สำเร็จ — เช็กสัญญาณเน็ตแล้วกดใหม่อีกครั้ง', true); return; }
+      if (state.scanIndex.get(String(value).toUpperCase())) toast('🔄 เจอ ' + value + ' ใน Master แล้ว — ยิงอีกครั้งเพื่อนับเป็นสินค้าปกติ');
+      else toast('ยังไม่พบ ' + value + ' ใน Master (อาจยังไม่ได้เพิ่ม)');
+    });
+  };
   showUnknownNote(value);
 }
 
@@ -8461,6 +8483,7 @@ function saveProductEdit(key, field, value) {
      แล้วการ import รอบถัดไปจะทับค่าที่คนเพิ่งแก้ */
   if (state.products[key]) {
     Object.keys(next).forEach(function (f) { state.products[key][f] = next[f]; });
+    cacheProducts();                               // ⭐ v2.29.0 สำเนาในเครื่องสดตามที่แก้ทันที
   }
   return db.update('products', patch);
 }
@@ -11550,6 +11573,7 @@ function handleNoteImport(file) {
           state.products[k].note = res.updates[k];
           state.products[k].updatedAt = now;
         });
+        cacheProducts();                           // ⭐ v2.29.0 อัปเดตสำเนาในเครื่อง (กัน note หายหลังเปิดใหม่ภายใน 10 นาที)
 
         var box = document.createElement('div');
         var sec = repSection('ผลการอัปเดตหมายเหตุ');
@@ -15291,14 +15315,90 @@ function refreshSystemQty() {
   }).catch(function () { /* ใช้ค่าเดิมไปก่อน */ });
 }
 
+/* ============================================================
+   ⭐ v2.29.0 — cache Master (products) ในเครื่องด้วย IndexedDB
+   products ~15,806 รายการ (~7.6MB) เดิมดึงใหม่ทั้งก้อนทุกครั้งที่เปิดแอป = หนัก+เปลืองโควตา
+   → เก็บสำเนาลง IndexedDB · เปิดแอปใช้สำเนาทันที (ไม่รอ) · ดึงสดเฉพาะเมื่อจำเป็น:
+     (ก) สำเนาเก่ากว่า 10 นาที · (ข) เข้าหน้า Master · (ค) ยิงเจอของที่ไม่มีในระบบ · (ง) กดปุ่มโหลดใหม่
+   localStorage ใส่ 7.6MB ไม่ได้ (เพดาน ~5MB) จึงใช้ IndexedDB · ล้มเหลวทุกจุด = ถอยไปโหลดสดตามเดิม ไม่พัง
+   ============================================================ */
+var PCACHE_DB = 'isrd_cache', PCACHE_STORE = 'kv', PRODUCTS_TTL = 10 * 60 * 1000;
+function idbOpen() {
+  return new Promise(function (res, rej) {
+    try {
+      if (typeof indexedDB === 'undefined') { rej(new Error('no-idb')); return; }
+      var r = indexedDB.open(PCACHE_DB, 1);
+      r.onupgradeneeded = function () { try { r.result.createObjectStore(PCACHE_STORE); } catch (e) {} };
+      r.onsuccess = function () { res(r.result); };
+      r.onerror = function () { rej(r.error || new Error('idb-open')); };
+    } catch (e) { rej(e); }
+  });
+}
+function idbGet(k) {
+  return idbOpen().then(function (db) {
+    return new Promise(function (res) {
+      try {
+        var rq = db.transaction(PCACHE_STORE, 'readonly').objectStore(PCACHE_STORE).get(k);
+        rq.onsuccess = function () { res(rq.result || null); };
+        rq.onerror = function () { res(null); };
+      } catch (e) { res(null); }
+    }).then(function (v) { try { db.close(); } catch (e) {} return v; });   // ปิด connection กัน leak
+  }).catch(function () { return null; });
+}
+function idbSet(k, v) {
+  return idbOpen().then(function (db) {
+    return new Promise(function (res) {
+      try {
+        var tx = db.transaction(PCACHE_STORE, 'readwrite');
+        tx.objectStore(PCACHE_STORE).put(v, k);
+        tx.oncomplete = function () { res(true); };
+        tx.onerror = function () { res(false); };
+      } catch (e) { res(false); }
+    }).then(function (ok) { try { db.close(); } catch (e) {} return ok; });   // ปิด connection กัน leak
+  }).catch(function () { return false; });
+}
+function cacheProducts() { idbSet('products', { data: state.products, at: Date.now() }); }
+
+var masterSyncAt = 0, masterSyncing = false;
+/* ดึง Master สดจากฐาน — กันยิงรัว (debounce 15 วิ) ยกเว้นสั่ง manual
+   คืน Promise(ดึงจริงไหม) ให้ผู้เรียกต่อได้ เช่น เช็คว่าหลังดึงเจอรหัสที่เพิ่งยิงหรือยัง */
+function forceRefreshMaster(reason, minGap) {
+  if (masterSyncing) return Promise.resolve('debounced');
+  var gap = (minGap != null) ? minGap : 15000;                 // เพดานเวลาเริ่มต้น 15 วิ · 'manual' (ปุ่มหน้า Master) ข้ามเพดาน
+  if (reason !== 'manual' && Date.now() - masterSyncAt < gap) return Promise.resolve('debounced');
+  masterSyncing = true;
+  return refreshProducts().then(function (ok) {
+    masterSyncing = false;
+    if (ok) { masterSyncAt = Date.now(); return 'ok'; }
+    return 'failed';                                            // db.get พัง — แยกจาก 'debounced' เพื่อบอกผู้ใช้ให้ถูก
+  });
+}
+
+/* เปิดแอป/กู้หน้า — โชว์จากสำเนาในเครื่องก่อน (เร็ว) แล้วดึงสดเฉพาะถ้าสำเนาเก่าเกิน TTL */
+function cacheFirstProducts() {
+  return idbGet('products').then(function (c) {
+    if (c && c.data && Object.keys(c.data).length && !Object.keys(state.products).length) {
+      state.products = c.data;
+      buildScanIndex();
+      if (state.page === 'master') renderMaster();
+      if (state.page === 'summary') renderSummary();
+      if (state.page === 'doc') renderDoc();
+    }
+    var fresh = c && c.at && (Date.now() - c.at < PRODUCTS_TTL);
+    if (!fresh) return refreshProducts();          // ไม่มีสำเนา/เก่าเกินไป → ดึงสด
+  }).catch(function () { return refreshProducts(); });
+}
+
 function refreshProducts() {
   return db.get('products').then(function (data) {
     state.products = data || {};
     buildScanIndex();
+    cacheProducts();                               // ⭐ เก็บสำเนาล่าสุดลงเครื่อง
     if (state.page === 'master') renderMaster();
     if (state.page === 'summary') renderSummary();
     if (state.page === 'doc') renderDoc();
-  }).catch(function () { /* ใช้ค่าเดิมไปก่อน */ });
+    return true;
+  }).catch(function () { return false; });          // โหลดพัง (เน็ต/ฐาน) — ใช้ค่าเดิม แต่บอกผู้เรียกว่าไม่สำเร็จ
 }
 
 function refreshBranches() {
@@ -17930,7 +18030,11 @@ function init() {
     b.onclick = function () { state.masterFilter = b.getAttribute('data-mfilter'); renderMaster(); };
   });
   document.querySelectorAll('[data-mtab]').forEach(function (b) {
-    b.onclick = function () { state.masterTab = b.getAttribute('data-mtab'); renderMaster(); };
+    b.onclick = function () {
+      state.masterTab = b.getAttribute('data-mtab');
+      renderMaster();
+      if (state.masterTab === 'products') forceRefreshMaster('open-master');   // ⭐ v2.29.0 เข้า Master = ดึงสด
+    };
   });
 
   /* ---- ผังโซนหน้าร้าน (v2.18.0) ---- */
@@ -18125,6 +18229,15 @@ function init() {
     if (!requirePerm('editMaster', 'นำเข้า Master ไม่ได้')) return;
     $('masterFile').click();
   };
+
+  $('btnRefreshMaster').onclick = function () {   // ⭐ v2.29.0 โหลด Master สดทันที (ข้าม debounce)
+    var b = $('btnRefreshMaster'); if (b) { b.disabled = true; b.textContent = '⏳ กำลังโหลด...'; }
+    forceRefreshMaster('manual').then(function (res) {
+      var x = $('btnRefreshMaster'); if (x) { x.disabled = false; x.textContent = '🔄 โหลดใหม่'; }
+      if (res === 'failed') toast('โหลด Master ไม่สำเร็จ — เช็กสัญญาณเน็ตแล้วลองใหม่', true);
+      else toast('โหลด Master ล่าสุดแล้ว');
+    });
+  };
   $('masterFile').addEventListener('change', function () {
     if (this.files && this.files[0]) handleMasterImport(this.files[0]);
     this.value = '';
@@ -18303,7 +18416,7 @@ function startApp() {
   flushQueue();
   renderConnection();
 
-  refreshProducts();
+  cacheFirstProducts();
   refreshBranches();
   refreshCompany();
   refreshLocations();
