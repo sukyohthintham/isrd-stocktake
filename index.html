@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.29.0">
+<meta name="version" content="2.30.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.29.0</title>
+<title>ISRD Stocktake v2.30.0</title>
 
 <style>
 :root{
@@ -1177,7 +1177,7 @@ body.no-doc-images .doc .imgbox{display:none}
       <h3>ยิงไปแล้วในรอบนี้ <span class="chip" id="liveChip">0</span></h3>
       <div class="livewrap">
         <table class="grid" id="liveTable">
-          <thead><tr><th>เวลา</th><th>รหัส</th><th>ชื่อสินค้า</th><th>Location</th><th>+/-</th><th>ผู้ยิง</th></tr></thead>
+          <thead><tr><th>เวลา</th><th>รหัส</th><th>ชื่อสินค้า</th><th>Location</th><th>โซนสาขา</th><th>+/-</th><th>ผู้ยิง</th></tr></thead>
           <tbody id="liveBody"></tbody>
         </table>
       </div>
@@ -1965,7 +1965,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.29.0';
+var APP_VERSION = '2.30.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -6994,11 +6994,13 @@ function renderLivePanel() {
     var p = state.products[key] || {};
     var tr = document.createElement('tr');
     [fmtClock(s.rec.ts), s.rec.code, p.name || (s.rec.unknown ? '(ไม่มีในระบบ)' : s.rec.code),
-     locationText(key) || '-', (s.rec.delta > 0 ? '+' : '') + s.rec.delta, s.rec.user || '-'
+     locationText(key) || '-',
+     (s.rec.foundZone ? String(s.rec.foundZone).toUpperCase() : '-'),
+     (s.rec.delta > 0 ? '+' : '') + s.rec.delta, s.rec.user || '-'
     ].forEach(function (t, i) {
       var td = document.createElement('td');
       td.textContent = t;
-      if (i === 4) td.style.textAlign = 'right';
+      if (i === 5) td.style.textAlign = 'right';
       tr.appendChild(td);
     });
     if (s.rec.delta < 0) tr.style.opacity = '.6';
