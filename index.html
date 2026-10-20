@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.30.0">
+<meta name="version" content="2.32.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.30.0</title>
+<title>ISRD Stocktake v2.32.0</title>
 
 <style>
 :root{
@@ -1965,7 +1965,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.30.0';
+var APP_VERSION = '2.32.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -2025,6 +2025,13 @@ if (PREVIEW_MODE) FIREBASE_CONFIG.databaseURL = '';
 
 /* มี databaseURL จริง = ต่อฐานกลาง ไม่งั้นเป็นโหมดทดสอบเก็บในเครื่อง */
 var REMOTE_MODE = /^https?:\/\//.test(FIREBASE_CONFIG.databaseURL || '');
+
+/* ⭐ v2.32.0 LITE_MODE — ประหยัด Firebase connection (เพดาน Spark = 100 สายพร้อมกัน)
+   สายเปิดค้าง (EventSource) นับเป็น connection · เดิม 1 คนเปิด ~4 สาย (cycles+roundIndex+scans+unknown)
+   50 คน × 2 สายฐาน = ชน 100 · LITE_MODE เปลี่ยน cycles/roundIndex/unknown เป็นดึงครั้งเดียว (REST get)
+   + ดึงใหม่ตอนเข้าหน้า Job/สรุป · เหลือ scans เป็นสายสดสายเดียว → 1 สาย/คน
+   ปิดโหมดนี้ (กลับ realtime เดิม) = ตั้ง false บรรทัดเดียว */
+var LITE_MODE = true;
 
 var IDENTITY_SIGNIN = 'https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=';
 var IDENTITY_REFRESH = 'https://securetoken.googleapis.com/v1/token?key=';
@@ -14138,6 +14145,45 @@ function setJobView(v) {
   });
 }
 
+/* ⭐ v2.32.0 LITE_MODE handlers — นิยาม top-level ให้ showPage และ startApp เรียกได้เสมอ
+   ไม่ผูกกับลำดับการรัน (เดิมฝังใน startApp ซึ่งรันหลัง login เท่านั้น) */
+function applyCyclesData(data) {
+  var next = data || {};
+  /* systemQty กับ transfers ก้อนใหญ่ ไม่ต้องเก็บซ้ำในหน่วยความจำ เก็บแค่หัวรอบพอ */
+  state.cycles = {};
+  Object.keys(next).forEach(function (cid) {
+    var c = next[cid] || {};
+    state.cycles[cid] = { status: c.status, info: c.info || {} };
+  });
+  if (state.page === 'jobs') renderJobs();
+}
+function applyRoundIndexData(data) {
+  var first = !startApp._gotJobs;
+  state.roundIndex = data || {};
+  startApp._gotJobs = true;
+  renderStart();
+  renderJobBar();
+  if (state.page === 'jobs') renderJobs();
+  if (state.page === 'summary') renderSummary();
+  /* ⭐ v2.27.2 — เติมมอนิเตอร์เฉพาะตอนจอยังว่าง + มีข้อมูลรอบแล้ว (เติมครั้งเดียวพอ) */
+  if (state.page === 'summary' && state.summaryTab === 'live'
+      && !(state.liveData && state.liveData.length)
+      && Object.keys(state.roundIndex).length) refreshLive();
+  if (state.page === 'doc') renderDoc();
+  /* ย้ายยอดระบบขึ้นรอบนับครั้งเดียวตอนเปิดแอป */
+  if (first) {
+    migrateCyclesIfNeeded().then(function (report) {
+      if (!report) return;
+      dropAllCycleStats();
+      showCycleMigrationReport(report);
+      if (state.roundId) refreshSystemQty();
+      if (state.page === 'jobs') renderJobs();
+    });
+  }
+}
+window._applyCycles = applyCyclesData;
+window._applyRoundIndex = applyRoundIndexData;
+
 function showPage(name) {
   /* หน้าเอกสารต้องบอกเหตุผลตรง ๆ ไม่ใช่เด้งไปหน้าอื่นเงียบ ๆ แล้วคนงงว่าปุ่มเสีย */
   if (name === 'doc' && !canSeeDoc()) {
@@ -14159,6 +14205,12 @@ function showPage(name) {
      ถ้าค้างที่แท็บฟอร์มไว้ คนที่เพิ่งสร้าง Job เสร็จจะกลับมาเจอฟอร์มเปล่าแล้วงงว่ารายการหาย */
   if (name === 'jobs') setJobView('list');
   if (name === 'jobs') renderJobs();
+  /* ⭐ v2.32.0 LITE_MODE: เข้าหน้า Job/สรุป = ดึง roundIndex+cycles สดครั้งเดียว (แทน EventSource เปิดค้าง)
+     async — ได้ข้อมูลแล้ว _apply* จะสั่งวาดใหม่เอง · guard เผื่อ showPage ถูกเรียกก่อน startApp ตั้ง handler */
+  if (LITE_MODE && (name === 'jobs' || name === 'summary')) {
+    db.get('roundIndex').then(applyRoundIndexData);
+    db.get('cycles').then(applyCyclesData);
+  }
   /* setSummaryTab วาดให้เองแล้วทั้งสองแท็บ (v2.14.2) — เรียก renderSummary() ตรงนี้อีก
      จะกลายเป็นวาดซ้ำรอบหนึ่งทุกครั้งที่เข้าหน้า รอบที่มีหลายพัน SKU จะสะดุดบนมือถือ
      ทุกอย่างที่ renderSummary แตะอยู่ใน #sumJob ซึ่งถูกซ่อนตอนอยู่แท็บภาพรวมอยู่แล้ว */
@@ -15628,10 +15680,18 @@ function selectRound(id) {
       if (state.page === 'scan') renderScanTotals();
     }));
 
-    state.unsub.push(db.subscribeChildren('rounds/' + id + '/unknown', function (uid, rec) {
+    /* ⭐ v2.32.0 LITE_MODE: unknown ดึงครั้งเดียวตอนเข้ารอบ (ไม่เปิดสายค้าง) — ของเครื่องตัวเองรู้จาก local อยู่แล้ว */
+    var _onUnknown = function (uid, rec) {
       state.unknown[uid] = rec;
       if (state.page === 'scan') renderSyncBar();
-    }));
+    };
+    if (LITE_MODE) {
+      db.get('rounds/' + id + '/unknown').then(function (map) {
+        if (map) Object.keys(map).forEach(function (k) { _onUnknown(k, map[k]); });
+      });
+    } else {
+      state.unsub.push(db.subscribeChildren('rounds/' + id + '/unknown', _onUnknown));
+    }
 
     /* ข้อมูลฝั่งเอกสาร (reasons / docType / docNo / transferNo) ไม่ต้องเปิดสายค้างไว้
        ดึงตอนเปิดหน้าเอกสารพอ — ดูเหตุผลที่ refreshDocMeta() */
@@ -18427,45 +18487,16 @@ function startApp() {
   refreshShopZones();
   if (isAdmin()) refreshUsers().then(renderUsers);
 
-  /* ระเบียนรอบนับต้องมาก่อน roundIndex — cycleStatus และ Rules อ่านจากตรงนี้ */
-  db.subscribe('cycles', function (data) {
-    var next = data || {};
-    /* systemQty กับ transfers ก้อนใหญ่ ไม่ต้องเก็บซ้ำในหน่วยความจำ เก็บแค่หัวรอบพอ */
-    state.cycles = {};
-    Object.keys(next).forEach(function (cid) {
-      var c = next[cid] || {};
-      state.cycles[cid] = { status: c.status, info: c.info || {} };
-    });
-    if (state.page === 'jobs') renderJobs();
-  });
+  /* ระเบียนรอบนับต้องมาก่อน roundIndex — cycleStatus และ Rules อ่านจากตรงนี้
+     ⭐ v2.32.0 LITE_MODE: cycles ดึงครั้งเดียว + รีเฟรชตอนเข้าหน้า Job/สรุป แทนเปิดสายค้าง
+        (handler applyCyclesData นิยาม top-level ข้างบน ให้ showPage เรียกได้เสมอ) */
+  if (LITE_MODE) db.get('cycles').then(applyCyclesData);
+  else db.subscribe('cycles', applyCyclesData);
 
-  db.subscribe('roundIndex', function (data) {
-    var first = !startApp._gotJobs;
-    state.roundIndex = data || {};
-    startApp._gotJobs = true;
-    renderStart();
-    renderJobBar();
-    if (state.page === 'jobs') renderJobs();
-    if (state.page === 'summary') renderSummary();
-    /* ⭐ v2.27.2 — roundIndex มาแบบ SSE: เติมมอนิเตอร์ "เฉพาะตอนจอยังว่าง + มีข้อมูลรอบแล้ว"
-       แก้เคสเปิดแท็บตอน index ยังมาไม่ครบ (เติมครั้งเดียวพอ) — ไม่ยิงซ้ำทุกครั้งที่ roundIndex ขยับ
-       (ของเดิม v2.27.1 ยิงทุกครั้ง บางจังหวะ cids ว่างชั่วคราวเลยล้างจอที่มีข้อมูลแล้วเป็น 0) */
-    if (state.page === 'summary' && state.summaryTab === 'live'
-        && !(state.liveData && state.liveData.length)
-        && Object.keys(state.roundIndex).length) refreshLive();
-    if (state.page === 'doc') renderDoc();
-
-    /* ย้ายยอดระบบขึ้นรอบนับครั้งเดียวตอนเปิดแอป — รันซ้ำได้แต่ไม่ต้องรันทุกครั้งที่ Job เปลี่ยน */
-    if (first) {
-      migrateCyclesIfNeeded().then(function (report) {
-        if (!report) return;
-        dropAllCycleStats();
-        showCycleMigrationReport(report);
-        if (state.roundId) refreshSystemQty();
-        if (state.page === 'jobs') renderJobs();
-      });
-    }
-  });
+  /* ⭐ v2.32.0 LITE_MODE: roundIndex ดึงครั้งเดียว + รีเฟรชตอนเข้าหน้า Job/สรุป
+     (handler applyRoundIndexData นิยาม top-level ข้างบน · migration ยังรันครั้งแรกตามเดิม) */
+  if (LITE_MODE) db.get('roundIndex').then(applyRoundIndexData);
+  else db.subscribe('roundIndex', applyRoundIndexData);
 
   /* เปิดแอปมาให้กลับเข้า Job เดิมที่ค้างไว้ */
   var saved = localStorage.getItem('isrd_round');
