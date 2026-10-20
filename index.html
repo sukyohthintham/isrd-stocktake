@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.31.0">
+<meta name="version" content="2.30.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.31.0</title>
+<title>ISRD Stocktake v2.30.0</title>
 
 <style>
 :root{
@@ -1965,7 +1965,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.31.0';
+var APP_VERSION = '2.30.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -13167,50 +13167,6 @@ function setSummaryTab(tab) {
   else renderSummary();
 }
 
-/* ⭐ v2.31.0 — หน้าสรุปวาดใหม่เองเมื่อยอดยิงไหลเข้ามาสด
-   ปัญหาเดิม: สาย scans เรียก renderScanTotals เฉพาะหน้า 'scan' — คนเปิดหน้า "สรุป"
-   มาดูยอด พอมีคนยิงเพิ่ม (หรือตอนโหลดรอบครั้งแรก) จอค้างเลขเก่า/0% จนต้องกดสลับแท็บ
-   ให้วาดเอง · debounce กันวาดรัวตอนสายต่อครั้งแรก emit ทุกแถวในลูปเดียว
-   (และกัน ensureCycleData ยิงซ้ำทุกแถว = ประหยัดโควตา Spark) */
-var _sumRefreshT = null, _sumHeavyAt = 0, _sumTrailT = null;
-var SUM_HEAVY_MIN = 60000;   // รอบหลาย Job: โหลดยอดรวมทุกใบใหม่ไม่ถี่กว่า 60 วิ/จอ (กันถล่มโควตา Spark)
-/* วาดหน้าสรุปตามแท็บที่เปิดอยู่ — รอบหลาย Job ที่ต้องดึงยอดรวมทุกใบ (renderSummary/renderStockDisplay
-   เรียก ensureCycleData) ถูก throttle ไว้ ไม่งั้นทุกแถวที่ยิงเข้ามาจะล้าง cycleData แล้วโหลดใหม่ทั้งกอง */
-function renderSummaryActive() {
-  if (state.page !== 'summary') return;
-  var tab = state.summaryTab;
-  if (tab === 'live') return;              // แท็บ live มี timer อ่านเบื้องหลังของตัวเองอยู่แล้ว
-  if (tab === 'overview') { renderOverview(); return; }   // ใช้ cycleStats แคช ไม่ดึงใหม่ต่อแถว
-  /* แท็บ job / sd — รอบหลาย Job = งานหนัก (ดึงยอดรวมทุกใบ) จึงกันถี่ไว้
-     รอบ Job เดียวใช้ยอดในเครื่อง (state.counts) ไม่โหลดอะไรเพิ่ม วาดได้ทุกครั้ง */
-  if (cycleScope().multi) {
-    var now = Date.now();
-    var wait = SUM_HEAVY_MIN - (now - _sumHeavyAt);
-    if (wait > 0) {
-      /* ยังไม่ถึงรอบ — นัดวาดรอบท้ายไว้ 1 ตัว (trailing) กันยอดชุดสุดท้ายหาย
-         ถ้าคนยิงหยุดพอดีในกรอบ 60วิ ยอดชุดท้ายจะยังถูกวาด — โควตายังเท่าเดิม (≤ 1 ครั้ง/นาที) */
-      if (!_sumTrailT) {
-        _sumTrailT = setTimeout(function () {
-          _sumTrailT = null;
-          renderSummaryActive();
-        }, wait + 20);
-      }
-      return;
-    }
-    _sumHeavyAt = now;
-  }
-  if (tab === 'sd') renderStockDisplay();
-  else renderSummary();
-}
-function scheduleSummaryRefresh() {
-  if (state.page !== 'summary') return;
-  if (_sumRefreshT) return;               // รวมเบิร์สต์ให้วาดครั้งเดียว
-  _sumRefreshT = setTimeout(function () {
-    _sumRefreshT = null;
-    renderSummaryActive();
-  }, 250);
-}
-
 /* ============================================================
    ⭐ v2.27.0 — มอนิเตอร์สดวันนับ (Live Count-Day Monitor)
    รอบวิ่งเบา: อ่านแค่ "แถวล่าสุดอันเดียว" ต่อ Job (db.getLast) → รู้ว่าสาขาไหนขยับ/เงียบ
@@ -15670,13 +15626,11 @@ function selectRound(id) {
     state.unsub.push(db.subscribeChildren('rounds/' + id + '/scans', function (scanId, rec) {
       if (!applyScanRecord(scanId, rec)) return;
       if (state.page === 'scan') renderScanTotals();
-      else scheduleSummaryRefresh();
     }));
 
     state.unsub.push(db.subscribeChildren('rounds/' + id + '/unknown', function (uid, rec) {
       state.unknown[uid] = rec;
       if (state.page === 'scan') renderSyncBar();
-      else scheduleSummaryRefresh();
     }));
 
     /* ข้อมูลฝั่งเอกสาร (reasons / docType / docNo / transferNo) ไม่ต้องเปิดสายค้างไว้
