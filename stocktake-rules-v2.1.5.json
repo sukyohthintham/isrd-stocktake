@@ -45,6 +45,23 @@
       "settings": {
         ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && (root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin' || root.child('stocktake2026/users').child(auth.uid).child('perms/editMaster').val() === true)"
       },
+      "presence": {
+        "$uid": {
+          ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && (auth.uid === $uid || root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin')",
+          ".validate": "!newData.exists() || newData.hasChildren(['lastSeen']) || newData.hasChildren(['kickAt'])",
+          "name": { ".validate": "newData.isString() && newData.val().length < 120" },
+          "role": { ".validate": "newData.isString() && newData.val().length < 20" },
+          "branch": { ".validate": "newData.isString() && newData.val().length < 500" },
+          "page": { ".validate": "newData.isString() && newData.val().length < 200" },
+          "ver": { ".validate": "newData.isString() && newData.val().length < 20" },
+          "lastSeen": { ".validate": "newData.isNumber()" },
+          "sessionStart": { ".validate": "newData.isNumber()" },
+          "idleMs": { ".validate": "newData.isNumber()" },
+          "online": { ".validate": "newData.isBoolean()" },
+          "kickAt": { ".validate": "newData.isNumber()" },
+          "$other": { ".validate": false }
+        }
+      },
       "docCounters": {
         "$branch": {
           "$kind": {

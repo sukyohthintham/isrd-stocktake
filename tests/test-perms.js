@@ -126,7 +126,7 @@ const HARNESS = `
 
   console.log('\n[0b] Rules ต้องรู้จัก custom + perms');
   const rules = JSON.parse(fs.readFileSync(
-    require('path').join(__dirname, '..', 'stocktake-rules-v2.1.4.json'), 'utf8'));
+    require('path').join(__dirname, '..', 'stocktake-rules-v2.1.5.json'), 'utf8'));
   const RU = rules.rules.stocktake2026.users.$uid;
   check('role/.validate ยอมรับ custom', /custom/.test(RU.role['.validate']), RU.role['.validate']);
   check('perms รับเฉพาะ boolean', RU.perms.$cap['.validate'] === 'newData.isBoolean()', RU.perms);
@@ -176,9 +176,13 @@ const HARNESS = `
     if (typeof w === 'string' && w !== 'false' && w !== 'true' && !/perms\//.test(w)) noPerm.push(p);
     Object.keys(n).forEach(function (k) { if (k[0] !== '.') walk(n[k], p + '/' + k); });
   })(rules.rules, '');
-  check('มีเฉพาะ users/$uid + สามโหนดที่แช่แข็งที่ไม่มีทางเลือก perms',
+  /* ⭐ v2.33.0 presence/$uid จงใจไม่มีทางเลือก perms — ไม่ใช่ความสามารถที่ติ๊กได้
+     เจ้าของเขียน heartbeat ตัวเอง (auth.uid === $uid ทุก role) · เขียนของคนอื่น (เตะ) = admin เท่านั้น
+     เหตุผลเดียวกับ manageUsers: ใครเตะคนอื่นได้ก็ไล่ admin ออกได้ จึงไม่ทำเป็นช่องติ๊ก */
+  check('มีเฉพาะ users/$uid + presence/$uid + สามโหนดที่แช่แข็งที่ไม่มีทางเลือก perms',
         noPerm.slice().sort().join('\n') === [
           '/stocktake2026/cycles/$cycleId/deductTransfer',
+          '/stocktake2026/presence/$uid',
           '/stocktake2026/rounds/$roundId/deductTransfer',
           '/stocktake2026/rounds/$roundId/zones',
           '/stocktake2026/users/$uid'

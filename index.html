@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.43.25">
+<meta name="version" content="2.44.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.43.25</title>
+<title>ISRD Stocktake v2.44.0</title>
 
 <style>
 :root{
@@ -376,6 +376,12 @@ body.locked .topbar,body.locked .wrap,body.locked .nav{display:none}
 .badge.locbig{font-size:22px;font-weight:800;padding:8px 15px;border-radius:12px;gap:7px;letter-spacing:.3px}  /* Location หยิบ ตัวใหญ่ อ่านชัดตอนถือมือถือห่าง */
 .badge.ok{background:var(--over-bg);color:var(--over);border-color:var(--over)}
 .badge.warn{background:var(--warn-bg);color:#92400e;border-color:var(--warn)}
+/* ⭐ v2.33.0 ผู้ใช้ออนไลน์ — ใช้ตารางของตัวเอง ไม่ใช้ table.grid เพราะแถวสุดท้ายของ grid ถูกแต่งเป็นแถวยอดรวม */
+table.pres-tbl{border-collapse:collapse;font-size:14px;white-space:nowrap;width:100%}
+table.pres-tbl th,table.pres-tbl td{padding:9px 10px;border-bottom:1px solid var(--line-soft);text-align:left}
+table.pres-tbl th{background:#f8fafc;font-size:12px;color:var(--muted);font-weight:700}
+table.pres-tbl tr.pres-idle td{background:var(--warn-bg)}
+table.pres-tbl tr.pres-off td{color:var(--muted)}
 .badge.red{background:var(--short-bg);color:var(--short);border-color:var(--short)}
 .badge.rose{background:#ffe4e6;color:#9f1239;border-color:#fda4af}
 .badge.purple{background:#f3e8ff;color:#6b21a8;border-color:#d8b4fe}
@@ -1263,6 +1269,7 @@ body.no-doc-images .doc .imgbox{display:none}
       <button class="btn sm grey" data-mtab="shopzones">โซนหน้าร้าน</button>
       <button class="btn sm grey" data-mtab="newcodes" id="tabNewcodes" style="display:none">บาร์โค้ดใหม่</button>
       <button class="btn sm grey" data-mtab="users" id="tabUsers" style="display:none">ผู้ใช้</button>
+      <button class="btn sm grey" data-mtab="online" id="tabOnline" style="display:none">ผู้ใช้ออนไลน์</button>
     </div>
   </div>
 
@@ -1546,6 +1553,38 @@ body.no-doc-images .doc .imgbox{display:none}
       <div class="u-chips" id="userRoleChips"></div>
     </div>
     <div class="clist" id="userList"></div>
+  </div>
+
+  <!-- ⭐ v2.33.0 ผู้ใช้ออนไลน์ — admin เท่านั้น · ข้อมูลมาจาก heartbeat ทุก 45 วิ (REST ไม่เปิดสายค้าง) -->
+  <div id="masterOnline" style="display:none">
+    <div class="stats" id="presKpi"></div>
+    <div class="card">
+      <h3>ผู้ใช้ออนไลน์ <span class="chip" id="presChip">0</span></h3>
+      <div class="muted" id="presHint" style="margin-bottom:10px">กำลังโหลด...</div>
+      <div class="tablewrap">
+        <table class="pres-tbl">
+          <thead><tr><th>สถานะ</th><th>ผู้ใช้</th><th>สิทธิ์</th><th>กำลังทำ</th><th>ออนไลน์มาแล้ว</th><th>ไม่ขยับ</th><th></th></tr></thead>
+          <tbody id="presBody"></tbody>
+        </table>
+      </div>
+      <button class="btn sm grey" id="btnPresRefresh" style="margin-top:10px">🔄 รีเฟรชเดี๋ยวนี้</button>
+    </div>
+    <div class="card">
+      <h3>ตั้งค่าเตะอัตโนมัติ</h3>
+      <label class="fld" style="flex-direction:row;align-items:center;gap:10px">
+        <input type="checkbox" id="presAutoKick" style="width:24px;height:24px">
+        <span>เตะอัตโนมัติเมื่อเปิดแอปทิ้งไว้นาน</span>
+      </label>
+      <label class="fld" style="margin-top:10px">
+        <span>ไม่ขยับเกินกี่นาทีถึงเตะ</span>
+        <input type="text" inputmode="numeric" pattern="[0-9]*" id="presKickMin">
+      </label>
+      <label class="fld" style="margin-top:10px">
+        <span>ไม่ขยับกี่นาทีถึงขึ้นเหลือง (เปิดทิ้งไว้)</span>
+        <input type="text" inputmode="numeric" pattern="[0-9]*" id="presWarnMin">
+      </label>
+      <button class="btn" id="btnPresSave" style="margin-top:12px">บันทึกการตั้งค่า</button>
+    </div>
   </div>
 </section>
 
@@ -2024,7 +2063,8 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.43.25';
+/* ⭐ v2.44.0 — ชุบชีวิต presence (ผู้ใช้ออนไลน์ + เตะออก) จาก presence-hold v2.33.0 · Rules v2.1.5 เพิ่มโหนด presence */
+var APP_VERSION = '2.44.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -3657,7 +3697,7 @@ function cycleInfo(cid) { return (state.cycles[cid] || {}).info || {}; }
 function cycleMigrated(cid) { return Number(cycleInfo(cid).schema) >= 1; }
 
 /* ⭐ v2.11.1 — ย้ายข้อมูลขึ้นรอบนับได้เฉพาะรอบที่ยัง "นับอยู่" เท่านั้น
-   ตาม stocktake-rules-v2.1.3.json:
+   ตาม stocktake-rules-v2.1.5.json:
      cycles/$cid/systemQty  เขียนได้เมื่อ status ยังไม่มี หรือเป็น counting
      cycles/$cid/info       เขียนได้เมื่อ status ไม่ใช่ closed
    รอบที่ปิดหรือกำลังตรวจจึงถูกปฏิเสธ แล้วมันจะไม่ถูกทำเครื่องหมายว่าย้ายแล้ว
@@ -8721,6 +8761,8 @@ function renderMaster() {
   $('masterShopZones').style.display = tab === 'shopzones' ? 'block' : 'none';
   $('masterNewcodes').style.display = tab === 'newcodes' ? 'block' : 'none';
   $('masterUsers').style.display = tab === 'users' ? 'block' : 'none';
+  $('masterOnline').style.display = tab === 'online' ? 'block' : 'none';
+  if (tab !== 'online') stopPresenceWatch();
   /* ออกจากแท็บไหน ให้ปิดป็อปอัปของแท็บนั้นก่อน กัน panel แบบ fixed ค้างลอยอยู่ */
   if (tab !== 'products') setSearchPop($('masterList'), false);
   if (tab !== 'locations') setSearchPop($('locList'), false);
@@ -8729,6 +8771,7 @@ function renderMaster() {
   if (tab === 'shopzones') { renderShopZones(); return; }
   if (tab === 'newcodes') { renderNewCodes(); return; }
   if (tab === 'users') { refreshUsers().then(renderUsers); return; }
+  if (tab === 'online') { startPresenceWatch(); return; }
 
   /* สินค้าเป็นข้อมูลกลาง แก้ได้เฉพาะ admin — คนอื่นดูได้แต่ช่องกรอกถูกล็อก */
   $('btnImportImages').disabled = !hasPerm('editMaster');
@@ -17795,6 +17838,7 @@ function selectRound(id) {
       if (state.page === 'scan') renderSyncBar();
     };
     if (LITE_MODE) {
+      /* ⭐ v2.33.0 .catch กัน unhandled rejection ตอนคำขอล้ม (เน็ตหลุด/token หมด) */
       db.get('rounds/' + id + '/unknown').then(function (map) {
         if (map) Object.keys(map).forEach(function (k) { _onUnknown(k, map[k]); });
       }).catch(function () {});
@@ -17991,6 +18035,7 @@ function applyRoleChange(rec) {
 
 function forceSignOut() {
   stopRolePoll();
+  stopPresence();             // ⭐ v2.33.0 กัน heartbeat ซ้อน/ยิงด้วย token ที่ล้างแล้ว
   try { session.signOut(); } catch (e) { /* ออกให้ได้ไม่ว่าอะไรจะเกิด */ }
   try { db.closeAll(); } catch (e) {}
   state.me = null;
@@ -18011,6 +18056,379 @@ function startRolePoll() {
 }
 function stopRolePoll() {
   if (rolePollTimer) { clearInterval(rolePollTimer); rolePollTimer = null; }
+}
+
+/* ============================================================
+   ⭐ v2.33.0 PRESENCE — ใครออนไลน์ / เปิดแอปทิ้งไว้ + เตะออก
+   ============================================================
+   ทำไม: Spark จำกัด 100 สายพร้อมกัน แท็บที่เปิดทิ้งไว้ยังถือสาย scans อยู่ 1 สาย
+   admin ต้องเห็นว่าเป็นใครแล้วเตะออกได้ เพื่อคืนสายให้คนที่ยิงอยู่จริง
+
+   แอปเป็น REST ล้วน (ไม่มี SDK) จึงไม่มี onDisconnect ให้ใช้ — ใช้ heartbeat + ความเก่าแทน
+   ห้ามเปลี่ยนไปใช้ db.subscribe เด็ดขาด: EventSource 1 สาย = 1 connection
+   เท่ากับพาเครื่องทุกเครื่องกลับไปกินสายเพิ่ม ทำลายผลของ LITE_MODE (v2.32.0)
+
+   เวลาใช้ server timestamp ทั้งหมด (kickAt · sessionStart · lastSeen) เพราะนาฬิกามือถือแต่ละเครื่อง
+   เพี้ยนไม่เท่ากัน ถ้าเทียบ kickAt จากนาฬิกา admin กับเวลาเข้าระบบจากนาฬิกาเป้า
+   จะเกิดได้ทั้ง "เตะไม่ออก" และ "เข้าใหม่แล้วโดนเตะซ้ำทันที"
+   ส่วนความนานที่ไม่ขยับส่งเป็นระยะเวลา (idleMs) ที่วัดในเครื่องเดียว จึงไม่โดนนาฬิกาเพี้ยน
+
+   การเตะเป็น "ขอให้ออก" ไม่ใช่การแบน — เจ้าของเขียนโหนดตัวเองได้และเข้าใหม่ได้ทันที
+   เป้าคือคืนสายของแท็บที่ถูกลืมไว้ ไม่ใช่มาตรการความปลอดภัย (สิทธิ์จริงอยู่ที่ users/active) */
+var PRESENCE_HB_MS = 45000;            // heartbeat ทุก 45 วิ — เตะแล้วหลุดภายในรอบเดียว
+var PRESENCE_STALE_MS = 90000;         // ไม่ได้ยินเสียงเกิน 2 รอบ = ถือว่าปิดแท็บ/เน็ตหลุดแล้ว
+var PRESENCE_CFG_MS = 300000;          // config เปลี่ยนนาน ๆ ครั้ง อ่านทุก 5 นาทีพอ ไม่ต้องทุก tick
+var PRESENCE_ACT_MS = 5000;            // จับการขยับถี่สุดทุก 5 วิ (mousemove ยิงรัวมาก)
+var PRESENCE_DEFAULT = { autoKick: false, idleKickMin: 30, idleWarnMin: 5 };
+var PRESENCE_KICK_KEY = 'isrd_kick_msg';
+var PRESENCE_MSG_ADMIN = 'ถูกให้ออกจากระบบโดยผู้ดูแล — เข้าสู่ระบบใหม่ได้ถ้ายังต้องใช้งาน';
+var PRESENCE_MSG_IDLE = 'ออกจากระบบอัตโนมัติ (ไม่ใช้งานนาน) — เข้าสู่ระบบใหม่ได้เลย';
+var PAGE_WORD = { jobs: 'รายการ Job', start: 'เตรียมนับ', scan: 'กำลังยิง', master: 'หน้า Master',
+                  summary: 'หน้าสรุป', doc: 'หน้าเอกสาร', recheck: 'หน้ารีเช็ค' };   // v2.44.0 recheck มาทีหลัง presence-hold
+
+var presenceState = {
+  timer: null, watchTimer: null, kicking: false,
+  lastActivity: Date.now(),
+  sessionStart: null,                  // เวลา server ตอนแท็บนี้เข้าระบบ — เก็บในเครื่อง ไม่อ่านจากฐาน
+  offset: 0,                           // เวลา server - เวลาเครื่องนี้ (ประมาณจาก heartbeat ของตัวเอง)
+  cfg: { autoKick: false, idleKickMin: 30, idleWarnMin: 5 }, cfgAt: 0,
+  data: {}
+};
+
+/* ฐานจริงให้ server ประทับเวลาเอง · โหมดทดสอบในเครื่องไม่มี server จึงใช้นาฬิกาเครื่อง */
+function presenceTs() { return db.remote ? { '.sv': 'timestamp' } : Date.now(); }
+
+/* แค่จดเวลา ไม่เขียนฐาน — ส่งไปกับ heartbeat รอบถัดไป
+   ไม่ต้องไปแตะโค้ดยิง: เครื่องยิงส่ง keydown · ยิงด้วยกล้องเป็น click/touch อยู่แล้ว */
+function noteActivity() {
+  var n = Date.now();
+  if (n - presenceState.lastActivity < PRESENCE_ACT_MS) return;
+  presenceState.lastActivity = n;
+}
+
+function presencePageLabel() {
+  var word = PAGE_WORD[state.page] || state.page || '';
+  var round = state.roundId && state.roundIndex ? state.roundIndex[state.roundId] : null;
+  if (round && /^(start|scan|summary|doc)$/.test(state.page)) {
+    word += ' · ' + (round.jobCode ? round.jobCode + ' ' : '') + jobBranchName(round);
+  }
+  return String(word).slice(0, 150);
+}
+
+function presencePatch(idleMs) {
+  var me = state.me || {};
+  /* ห้ามมี kickAt ในนี้เด็ดขาด — PATCH จะทับคำสั่งเตะของ admin ทิ้งก่อนเครื่องนี้อ่านเจอ */
+  return {
+    name: String(me.name || '').slice(0, 100),
+    role: me.role || '',
+    branch: (me.branches || []).join(',').slice(0, 400),
+    page: presencePageLabel(),
+    ver: APP_VERSION,                  // เห็นได้ทันทีว่าเครื่องไหนยังไม่รีเฟรชเป็นรุ่นใหม่
+    lastSeen: presenceTs(),
+    idleMs: Math.max(0, Math.round(idleMs)),
+    online: true
+  };
+}
+
+function normPresenceConfig(c) {
+  c = c || {};
+  function mins(v, d) { var n = parseInt(v, 10); return n >= 1 && n <= 1440 ? n : d; }
+  return {
+    autoKick: c.autoKick === true,
+    idleKickMin: mins(c.idleKickMin, PRESENCE_DEFAULT.idleKickMin),
+    idleWarnMin: mins(c.idleWarnMin, PRESENCE_DEFAULT.idleWarnMin)
+  };
+}
+function loadPresenceConfig() {
+  return db.getQuiet('settings/presence').then(function (c) {
+    presenceState.cfg = normPresenceConfig(c);
+    presenceState.cfgAt = Date.now();
+    return presenceState.cfg;
+  }).catch(function () { return presenceState.cfg; });
+}
+
+/* เริ่มหลังล็อกอินสำเร็จเท่านั้น (เรียกจาก startApp) — ก่อนมี token เขียนไปก็โดน 401 เปล่า ๆ */
+function startPresence() {
+  if (presenceState.timer || !db.remote || !state.me) return;
+  var path = 'presence/' + state.me.uid;
+  var patch = presencePatch(0);
+  patch.sessionStart = presenceTs();
+  presenceState.lastActivity = Date.now();
+  var sent = Date.now();
+  db.update(path, patch).then(function () { return db.getQuiet(path); }).then(function (rec) {
+    if (rec && typeof rec.sessionStart === 'number') {
+      presenceState.sessionStart = rec.sessionStart;
+      presenceState.offset = rec.sessionStart - sent;
+    }
+  }).catch(function () { /* Rules ยังไม่ได้วาง / เน็ตหลุด — รอบหน้าลองใหม่ ไม่ให้แอปพัง */ });
+  loadPresenceConfig();
+  /* ไม่หยุดตอนแท็บถูกซ่อน — แท็บที่ซ่อนอยู่ยังถือสาย scans และคือตัวที่ต้องโดนเตะอัตโนมัติ */
+  presenceState.timer = setInterval(presenceTick, PRESENCE_HB_MS);
+}
+function stopPresence() {
+  if (presenceState.timer) { clearInterval(presenceState.timer); presenceState.timer = null; }
+}
+
+/* 1 รอบ = PATCH ตัวเอง + GET ก้อนเล็กของตัวเอง (ได้ kickAt กับเวลา server ในคำขอเดียว) */
+function presenceTick() {
+  if (!state.me || presenceState.kicking) return Promise.resolve();
+  var path = 'presence/' + state.me.uid;
+  var idleMs = Math.max(0, Date.now() - presenceState.lastActivity);
+  var sent = Date.now();
+  var cfgP = (Date.now() - presenceState.cfgAt > PRESENCE_CFG_MS)
+    ? loadPresenceConfig() : Promise.resolve(presenceState.cfg);
+  return db.update(path, presencePatch(idleMs)).then(function () {
+    return db.getQuiet(path);
+  }).then(function (rec) {
+    rec = rec || {};
+    if (typeof rec.lastSeen === 'number') presenceState.offset = rec.lastSeen - sent;
+    /* อ่านเวลาเข้าระบบตอนเริ่มไม่สำเร็จ — ใช้ของในฐานแทน (เคสหายาก: มีอีกแท็บของบัญชีเดียวกัน) */
+    if (presenceState.sessionStart == null && typeof rec.sessionStart === 'number') {
+      presenceState.sessionStart = rec.sessionStart;
+    }
+    var kickAt = Number(rec.kickAt) || 0;
+    if (presenceState.sessionStart != null && kickAt > presenceState.sessionStart) {
+      return presenceKick(PRESENCE_MSG_ADMIN);
+    }
+    return cfgP.then(function (cfg) {
+      if (!cfg.autoKick || idleMs <= cfg.idleKickMin * 60000) return;
+      /* admin ไม่โดนเตะอัตโนมัติ — จอมอนิเตอร์/หน้าผู้ใช้ออนไลน์มักเปิดค้างไว้ดูเฉย ๆ
+         ยกเว้นเฉพาะเตะอัตโนมัติ · admin ด้วยกันยังเตะด้วยมือได้ตามเดิม */
+      if (isAdmin()) return;
+      /* ยอดที่ยังค้างส่งอยู่ในเครื่อง — รอส่งหมดก่อนค่อยเตะ ไม่ให้คนต้องกลับมาล็อกอินเครื่องนี้เพื่อส่งของ */
+      if (pendingCount() > 0) { flushQueue(); return; }
+      return presenceKick(PRESENCE_MSG_IDLE);
+    });
+  }).catch(function () { /* เน็ตหลุด — ไม่เตะใครตอนออฟไลน์ รอรอบหน้า */ });
+}
+
+/* บอกฐานว่าออฟไลน์แล้ว admin จะเห็นหายทันที ไม่ต้องรอ 90 วิ
+   รอไม่เกิน 3 วิ — เน็ตแย่ก็ต้องออกจากระบบได้อยู่ดี */
+function presenceMarkOffline() {
+  if (!db.remote || !state.me) return Promise.resolve();
+  var p = db.update('presence/' + state.me.uid, { online: false, lastSeen: presenceTs() })
+    .catch(function () {});
+  return Promise.race([p, new Promise(function (r) { setTimeout(r, 3000); })]);
+}
+
+function presenceKick(msg) {
+  if (presenceState.kicking) return Promise.resolve();
+  presenceState.kicking = true;
+  stopPresence();
+  return presenceMarkOffline().then(function () {
+    /* หน้าโหลดใหม่แล้ว toast หาย — ฝากข้อความไว้ให้หน้าล็อกอินบอกเหตุผลต่อ */
+    try { sessionStorage.setItem(PRESENCE_KICK_KEY, msg); } catch (e) {}
+    toast(msg, true);
+    forceSignOut();
+  });
+}
+function takeKickMessage() {
+  try {
+    var m = sessionStorage.getItem(PRESENCE_KICK_KEY) || '';
+    sessionStorage.removeItem(PRESENCE_KICK_KEY);
+    return m;
+  } catch (e) { return ''; }
+}
+
+/* ---------- หน้า admin "ผู้ใช้ออนไลน์" ---------- */
+
+/* active = ยังขยับอยู่ · idle = ออนไลน์แต่เปิดทิ้งไว้ (ตัวที่ควรเตะ) · off = ปิดไปแล้ว */
+function presenceStatus(rec, now, cfg) {
+  if (!rec || rec.online === false) return 'off';
+  var age = now - (Number(rec.lastSeen) || 0);
+  if (age > PRESENCE_STALE_MS) return 'off';
+  var idle = (Number(rec.idleMs) || 0) + Math.max(0, age);
+  return idle >= cfg.idleWarnMin * 60000 ? 'idle' : 'active';
+}
+
+function fmtSpan(ms) {
+  var m = Math.floor(Math.max(0, ms) / 60000);
+  if (m < 1) return 'ไม่ถึง 1 นาที';
+  if (m < 60) return m + ' นาที';
+  return Math.floor(m / 60) + ' ชม. ' + (m % 60) + ' นาที';
+}
+
+function refreshPresence() {
+  return Promise.all([db.getQuiet('presence'), loadPresenceConfig()]).then(function (res) {
+    presenceState.data = res[0] || {};
+    renderPresence();
+  }).catch(function () {
+    $('presHint').textContent = 'โหลดรายชื่อไม่สำเร็จ ตรวจอินเทอร์เน็ตแล้วกดรีเฟรช ' +
+      'ถ้ายังไม่ได้ให้ตรวจว่าวาง Database Rules รุ่นที่มีโหนด presence แล้ว';
+  });
+}
+
+function renderPresence() {
+  var cfg = presenceState.cfg;
+  var now = Date.now() + presenceState.offset;
+  var data = presenceState.data || {};
+  var myUid = state.me ? state.me.uid : '';
+  var rows = Object.keys(data).map(function (uid) {
+    var r = data[uid] || {};
+    return { uid: uid, rec: r, st: presenceStatus(r, now, cfg) };
+  }).filter(function (x) {
+    /* ออฟไลน์เกินวันไม่ต้องโชว์ — รายชื่อจะยาวขึ้นเรื่อย ๆ จนหาคนที่ออนไลน์อยู่ไม่เจอ */
+    return x.st !== 'off' || now - (Number(x.rec.lastSeen) || 0) < 86400000;
+  });
+  var ORDER = { idle: 0, active: 1, off: 2 };          // เหลืองขึ้นก่อน = คนที่ควรเตะ
+  rows.sort(function (a, b) {
+    return (ORDER[a.st] - ORDER[b.st]) || String(a.rec.name || '').localeCompare(String(b.rec.name || ''), 'th');
+  });
+
+  var nActive = rows.filter(function (x) { return x.st === 'active'; }).length;
+  var nIdle = rows.filter(function (x) { return x.st === 'idle'; }).length;
+  var nOnline = nActive + nIdle;
+  var users = state.users || {};
+  var nAll = Object.keys(users).filter(function (u) { return users[u] && users[u].active === true; }).length;
+  nAll = Math.max(nAll, nOnline);
+
+  var kpi = $('presKpi');
+  kpi.innerHTML = '';
+  [['🟢 กำลังใช้งาน', nActive], ['🟡 เปิดทิ้งไว้', nIdle], ['⚫ ออฟไลน์', nAll - nOnline],
+   ['ออนไลน์ตอนนี้', nOnline + ' / ' + nAll + ' คน']].forEach(function (k) {
+    var d = document.createElement('div'); d.className = 'stat';
+    var n = document.createElement('div'); n.className = 's-num'; n.textContent = k[1];
+    var l = document.createElement('div'); l.className = 's-lab'; l.textContent = k[0];
+    d.appendChild(n); d.appendChild(l); kpi.appendChild(d);
+  });
+  $('presChip').textContent = nOnline;
+  $('presHint').textContent = 'อัปเดตทุก 45 วินาที · เหลือง = ออนไลน์แต่ไม่ขยับเกิน ' + cfg.idleWarnMin +
+    ' นาที (ควรเตะเพื่อคืนสาย) · เตะแล้วเครื่องนั้นจะหลุดภายในราว 45 วินาที' +
+    (cfg.autoKick ? ' · เปิดเตะอัตโนมัติที่ ' + cfg.idleKickMin + ' นาที' : ' · ยังไม่ได้เปิดเตะอัตโนมัติ');
+
+  var body = $('presBody');
+  body.innerHTML = '';
+  rows.forEach(function (x) {
+    var r = x.rec;
+    var tr = document.createElement('tr');
+    if (x.st === 'idle') tr.className = 'pres-idle';
+    if (x.st === 'off') tr.className = 'pres-off';
+    var age = Math.max(0, now - (Number(r.lastSeen) || 0));
+    var cells = [
+      x.st === 'active' ? '🟢' : (x.st === 'idle' ? '🟡' : '⚫'),
+      null,
+      ROLE_LABEL[r.role] || r.role || '-',
+      x.st === 'off' ? 'ออฟไลน์ ' + fmtSpan(age) + 'ที่แล้ว' : (r.page || '-'),
+      x.st === 'off' || !r.sessionStart ? '-' : fmtSpan(now - r.sessionStart),
+      x.st === 'off' ? '-' : fmtSpan((Number(r.idleMs) || 0) + age)
+    ];
+    cells.forEach(function (c, i) {
+      var td = document.createElement('td');
+      if (i === 1) {
+        var nm = document.createElement('div'); nm.textContent = r.name || x.uid;
+        nm.style.fontWeight = '700';
+        var sub = document.createElement('div'); sub.className = 'muted';
+        sub.style.fontSize = '12px';
+        sub.textContent = (r.branch ? 'สาขา ' + r.branch + ' · ' : '') + (r.ver ? 'v' + r.ver : '');
+        td.appendChild(nm); td.appendChild(sub);
+      } else if (i === 2) {
+        var b = document.createElement('span');
+        b.className = 'badge' + (r.role === 'admin' ? ' ok' : '');
+        b.textContent = c;
+        td.appendChild(b);
+      } else {
+        td.textContent = c;
+      }
+      tr.appendChild(td);
+    });
+    var tdBtn = document.createElement('td');
+    var btn = document.createElement('button');
+    btn.className = 'btn sm' + (x.st === 'idle' ? '' : ' grey');
+    btn.textContent = 'เตะออก';
+    btn.setAttribute('data-kick', x.uid);
+    btn.disabled = x.uid === myUid || x.st === 'off';
+    if (x.uid === myUid) btn.title = 'เตะตัวเองไม่ได้ — ใช้ปุ่มออกจากระบบแทน';
+    tdBtn.appendChild(btn);
+    tr.appendChild(tdBtn);
+    body.appendChild(tr);
+  });
+  if (!rows.length) {
+    var tr0 = document.createElement('tr');
+    var td0 = document.createElement('td');
+    td0.colSpan = 7; td0.className = 'muted';
+    td0.textContent = 'ยังไม่มีใครออนไลน์ (เครื่องที่ยังไม่ได้รีเฟรชเป็น v' + APP_VERSION + ' จะไม่ขึ้นในรายการนี้)';
+    tr0.appendChild(td0); body.appendChild(tr0);
+  }
+}
+
+function fillPresenceForm() {
+  var c = presenceState.cfg;
+  $('presAutoKick').checked = c.autoKick;
+  $('presKickMin').value = c.idleKickMin;
+  $('presWarnMin').value = c.idleWarnMin;
+}
+
+/* poll เฉพาะตอนเปิดแท็บนี้อยู่ — ออกจากแท็บ/หน้าแล้วหยุดเอง ไม่กินโควตาเบื้องหลัง */
+function startPresenceWatch() {
+  if (!isAdmin()) return;
+  if (!Object.keys(state.users || {}).length) refreshUsers().then(renderPresence);
+  refreshPresence().then(fillPresenceForm);
+  if (presenceState.watchTimer) return;
+  presenceState.watchTimer = setInterval(function () {
+    if (state.page !== 'master' || state.masterTab !== 'online' || !isAdmin()) { stopPresenceWatch(); return; }
+    if (typeof document !== 'undefined' && document.hidden) return;
+    refreshPresence();
+  }, PRESENCE_HB_MS);
+}
+function stopPresenceWatch() {
+  if (presenceState.watchTimer) { clearInterval(presenceState.watchTimer); presenceState.watchTimer = null; }
+}
+
+function kickUser(uid) {
+  if (!requireAdmin('เตะผู้ใช้ออกจากระบบไม่ได้')) return Promise.resolve(false);
+  if (state.me && uid === state.me.uid) {
+    toast('เตะตัวเองไม่ได้ — ใช้ปุ่มออกจากระบบแทน', true);
+    return Promise.resolve(false);
+  }
+  var rec = (presenceState.data || {})[uid] || {};
+  var name = rec.name || uid;
+  /* งานที่ทำให้คนอื่นหลุด — ยืนยันสิทธิ์สดก่อนเสมอ (กฎบ้านงานที่ทำลายของ) */
+  return ensureRoleFresh({ force: true }).then(function () {
+    if (!requireAdmin('เตะผู้ใช้ออกจากระบบไม่ได้')) return false;
+    return ask('ให้ ' + name + ' ออกจากระบบ?',
+      'เครื่องของเขาจะออกจากระบบเองภายในราว 45 วินาที ยอดที่ยิงไปแล้วไม่หาย ' +
+      'ส่วนที่ยังค้างส่งจะรออยู่ในเครื่องนั้นแล้วส่งต่อเมื่อเข้าใหม่ · เขาเข้าใหม่ได้ทันทีถ้ายังต้องใช้งาน',
+      'เตะออก');
+  }).then(function (ok) {
+    if (!ok) return false;
+    /* PATCH เฉพาะ kickAt — ไม่แตะฟิลด์อื่นของเขา */
+    return db.update('presence/' + uid, { kickAt: presenceTs() }).then(function () {
+      toast('ส่งคำสั่งแล้ว ' + name + ' จะหลุดภายในราว 45 วินาที');
+      refreshPresence();
+      return true;
+    }, function () {
+      toast('ส่งคำสั่งเตะไม่สำเร็จ ตรวจอินเทอร์เน็ตแล้วลองใหม่ ' +
+            'ถ้ายังไม่ได้ให้ตรวจว่าวาง Database Rules รุ่นที่มีโหนด presence แล้ว', true);
+      return false;
+    });
+  });
+}
+
+function savePresenceConfig() {
+  if (!requireAdmin('ตั้งค่าเตะอัตโนมัติไม่ได้')) return Promise.resolve(false);
+  var kick = String($('presKickMin').value).trim();
+  var warn = String($('presWarnMin').value).trim();
+  if (!/^\d+$/.test(kick) || +kick < 1 || +kick > 1440 || !/^\d+$/.test(warn) || +warn < 1 || +warn > 1440) {
+    toast('ใส่จำนวนนาทีเป็นเลขจำนวนเต็มตั้งแต่ 1 ถึง 1440', true);
+    return Promise.resolve(false);
+  }
+  if (+warn >= +kick) {
+    toast('นาทีที่ขึ้นเหลืองต้องน้อยกว่านาทีที่เตะ ไม่งั้นจะเตะก่อนได้เห็นเหลือง', true);
+    return Promise.resolve(false);
+  }
+  var cfg = { autoKick: $('presAutoKick').checked === true, idleKickMin: +kick, idleWarnMin: +warn };
+  return db.update('settings', { presence: cfg }).then(function () {
+    presenceState.cfg = cfg;
+    presenceState.cfgAt = Date.now();
+    renderPresence();
+    toast(cfg.autoKick
+      ? 'บันทึกแล้ว — เครื่องที่ไม่ขยับเกิน ' + cfg.idleKickMin + ' นาทีจะออกจากระบบเอง (มีผลภายใน 5 นาที)'
+      : 'บันทึกแล้ว — ปิดเตะอัตโนมัติ');
+    return true;
+  }, function () {
+    toast('บันทึกไม่สำเร็จ ตรวจอินเทอร์เน็ตแล้วลองใหม่', true);
+    return false;
+  });
 }
 
 /* perms ที่ใช้จริงของเรคอร์ดหนึ่งใบ — ว่างแปลว่ายังไม่เคยติ๊ก ให้ถอยไปใช้แม่แบบของ role
@@ -18084,15 +18502,20 @@ function doLogout() {
   ask('ออกจากระบบ?', 'ยอดที่ยังไม่ได้ส่งขึ้นฐานกลางจะยังค้างอยู่ในเครื่องนี้ ' +
       'เข้าใหม่แล้วระบบจะส่งต่อให้เอง', 'ออกจากระบบ').then(function (ok) {
     if (!ok) return;
-    session.signOut();
-    db.closeAll();
-    state.me = null;
-    state.counter = '';
-    state.roundId = null;
-    state.users = {};
-    localStorage.removeItem('isrd_round');
-    /* โหลดหน้าใหม่ทั้งหมด ปลอดภัยกว่าไล่ล้าง state ทีละตัวแล้วหลงเหลือของคนก่อน */
-    location.reload();
+    stopPresence();
+    /* ⭐ v2.33.0 บอกฐานว่าออกแล้วก่อนล้าง token — หลังล้างแล้วเขียนไม่ได้ (401)
+       admin จะเห็นหายทันทีแทนการรอ 90 วิ · รอไม่เกิน 3 วิ */
+    return presenceMarkOffline().then(function () {
+      session.signOut();
+      db.closeAll();
+      state.me = null;
+      state.counter = '';
+      state.roundId = null;
+      state.users = {};
+      localStorage.removeItem('isrd_round');
+      /* โหลดหน้าใหม่ทั้งหมด ปลอดภัยกว่าไล่ล้าง state ทีละตัวแล้วหลงเหลือของคนก่อน */
+      location.reload();
+    });
   });
 }
 
@@ -18111,9 +18534,10 @@ function renderAccount() {
     $('jobsAccountCard').style.display = canSeeMasterPage() ? 'none' : '';
   }
   $('tabUsers').style.display = isAdmin() ? '' : 'none';
+  $('tabOnline').style.display = isAdmin() ? '' : 'none';
   $('tabNewcodes').style.display = hasPerm('editMaster') ? '' : 'none';
   /* แท็บย่อยคนละสิทธิ์กัน — ผู้ใช้เป็นของ admin เท่านั้น บาร์โค้ดใหม่ผูกกับ editMaster */
-  if ((state.masterTab === 'users' && !isAdmin()) ||
+  if (((state.masterTab === 'users' || state.masterTab === 'online') && !isAdmin()) ||
       (state.masterTab === 'newcodes' && !hasPerm('editMaster'))) {
     state.masterTab = 'products';
   }
@@ -20213,6 +20637,18 @@ function init() {
     };
   });
 
+  /* ---- ⭐ v2.33.0 ผู้ใช้ออนไลน์ ---- */
+  $('btnPresRefresh').onclick = function () { refreshPresence(); };
+  $('btnPresSave').onclick = function () { savePresenceConfig(); };
+  $('presBody').addEventListener('click', function (e) {
+    var b = e.target && e.target.closest ? e.target.closest('[data-kick]') : null;
+    if (b && !b.disabled) kickUser(b.getAttribute('data-kick'));
+  });
+  /* capture = จับได้แม้ปุ่มไหนสั่ง stopPropagation · passive = ไม่หน่วงการเลื่อนจอ */
+  ['mousemove', 'keydown', 'touchstart', 'click'].forEach(function (ev) {
+    document.addEventListener(ev, noteActivity, { capture: true, passive: true });
+  });
+
   /* ---- ผังโซนหน้าร้าน (v2.18.0) ---- */
   $('btnSaveShopZones').onclick = function () {
     saveShopZones($('shopZoneBox').value);
@@ -20562,7 +20998,8 @@ function boot() {
   $('btnLogin').disabled = true;
   $('btnLogin').textContent = 'กำลังตรวจสอบเซสชัน...';
   session.restore().then(function (user) {
-    if (!user) { showLogin(''); return; }
+    /* ⭐ v2.33.0 ถูกเตะ/ออกอัตโนมัติ → บอกเหตุผลบนหน้าล็อกอิน ไม่ใช่เด้งออกเงียบ ๆ */
+    if (!user) { showLogin(takeKickMessage()); return; }
     return loadMyProfile(user).then(function () {
       hideLogin();
       startApp();
@@ -20583,6 +21020,7 @@ function boot() {
 function startApp() {
   renderAccount();
   startRolePoll();            // ⭐ v2.11.0 ยามเฝ้าสิทธิ์ — อ่านเป็นครั้ง ๆ ไม่เปิดสายค้างเพิ่ม
+  startPresence();            // ⭐ v2.33.0 heartbeat ผู้ใช้ออนไลน์ — REST ล้วน ไม่เปิดสายค้างเพิ่ม
 
   var dropped = dropForeignQueue();
   if (dropped) {
@@ -21131,7 +21569,7 @@ init();
            ทางแก้จริงอยู่นอกแอป — ไม่เดาต่อ
 
     Database Rules: ต้องวางใหม่ เพราะมี node cycles เพิ่ม ถ้าไม่วางจะนำเข้ายอดระบบไม่ได้
-    ไฟล์พร้อมก๊อปอยู่ที่ stocktake-rules-v2.1.3.json ที่รากโปรเจกต์ (ตรงกับบล็อกท้ายไฟล์นี้)
+    ไฟล์พร้อมก๊อปอยู่ที่ stocktake-rules-v2.1.5.json ที่รากโปรเจกต์ (ตรงกับบล็อกท้ายไฟล์นี้)
 
   v2.1.0 — Master ทั้งบริษัท · พิมพ์เร็วขึ้น · Export หลาย Job · role scanner
 

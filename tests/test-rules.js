@@ -27,7 +27,7 @@ function check(name, ok, got) {
   else { fail++; console.log('  FAIL  ' + name + '  ->  ' + JSON.stringify(got)); }
 }
 
-const RULES_FILE = path.join(__dirname, '..', 'stocktake-rules-v2.1.4.json');
+const RULES_FILE = path.join(__dirname, '..', 'stocktake-rules-v2.1.5.json');
 const rules = JSON.parse(fs.readFileSync(RULES_FILE, 'utf8'));
 
 /* ---------- จำลองฐานข้อมูลเท่าที่กฎอ้างถึง ---------- */
@@ -823,6 +823,66 @@ check('⭐ custom {adjustCount} ลบรูปได้ (delete only)',
       canWriteCaps(PH, ['adjustCount'], 'counting', { incoming: null, existing: 'data:image/jpeg;base64,x' }), 'adjustCount del');
 check('custom {adjustCount} เขียนรูปใหม่ไม่ได้ (แค่ลบ)',
       !canWriteCaps(PH, ['adjustCount'], 'counting', { incoming: 'data:image/jpeg;base64,x' }), 'adjustCount write');
+
+/* ============================================================
+   [13] ⭐ v2.44.0 presence (ย้ายจาก presence-hold v2.33.0) — heartbeat ผู้ใช้ออนไลน์ + เตะ
+   ============================================================
+   ไม่ผูกกับ role แบบตาราง [1] แต่ผูกกับ "เป็นเจ้าของโหนด" (auth.uid === $uid)
+   ทุก role รวม scanner/viewer ต้องเขียน heartbeat ของตัวเองได้ ไม่งั้นไม่ขึ้นในรายชื่อออนไลน์
+   แต่เขียนของคนอื่นได้เฉพาะ admin (ส่ง kickAt) · จึงแยกข้อออกมา ไม่ใส่ใน MATRIX
+   (ถ้าใส่ ข้อ [2] จะฟ้องว่า viewer เขียนได้ ซึ่งตั้งใจให้ได้ — เฉพาะโหนดของตัวเอง) */
+console.log('\n[10] presence — เจ้าของเขียน heartbeat ตัวเองได้ · admin เตะคนอื่นได้');
+const P = S.presence && S.presence.$uid;
+check('มีโหนด presence/$uid ใน Rules', !!P, Object.keys(S));
+function canPresence(role, targetUid, opts) {
+  opts = opts || {};
+  const db = makeDb(role, 'counting');
+  if (opts.inactive) db.stocktake2026.users.u_me.active = false;
+  const fn = new Function('root', 'auth', 'data', 'newData', '$uid', 'return (' + P['.write'] + ');');
+  return !!fn(snap(db), opts.anon ? null : { uid: 'u_me' }, snap(undefined),
+              snap({ lastSeen: 1 }), targetUid);
+}
+ROLES.concat(['custom']).forEach(function (role) {
+  check(role + ' เขียน presence ของตัวเองได้', canPresence(role, 'u_me') === true, role);
+});
+['counter', 'scanner', 'viewer', 'custom'].forEach(function (role) {
+  check(role + ' เขียน presence ของคนอื่นไม่ได้ (เตะใครไม่ได้)',
+        canPresence(role, 'u_other') === false, role);
+});
+check('admin เขียน presence ของคนอื่นได้ (ส่ง kickAt)', canPresence('admin', 'u_other') === true, 'admin');
+check('บัญชีถูกปิดใช้งาน เขียน presence ตัวเองไม่ได้',
+      canPresence('scanner', 'u_me', { inactive: true }) === false, 'inactive');
+check('admin ที่ถูกปิดใช้งาน เตะใครไม่ได้',
+      canPresence('admin', 'u_other', { inactive: true }) === false, 'inactive admin');
+check('ไม่ได้ล็อกอิน เขียน presence ไม่ได้', (function () {
+  try { return canPresence('admin', 'u_me', { anon: true }) === false; } catch (e) { return true; }
+})(), 'anon');
+
+console.log('\n[10b] presence — validate รับเฉพาะฟิลด์ที่แอปเขียน');
+function presValid(node) {
+  const fn = new Function('newData', 'return (' + P['.validate'] + ');');
+  return !!fn(snap(node));
+}
+function fieldValid(f, v) {
+  const rule = (P[f] || P.$other)['.validate'];
+  if (rule === false) return false;
+  return !!new Function('newData', 'return (' + rule + ');')(snap(v));
+}
+check('heartbeat เต็มก้อนผ่าน', presValid({ lastSeen: 1, idleMs: 0, online: true, name: 'ก' }), 'hb');
+check('admin PATCH เฉพาะ kickAt ใส่โหนดที่ยังไม่มี heartbeat ได้', presValid({ kickAt: 5 }), 'kick');
+check('ลบโหนดได้ (newData ไม่มี)', presValid(null), 'delete');
+check('ก้อนที่ไม่มีทั้ง lastSeen และ kickAt ไม่ผ่าน', presValid({ name: 'x' }) === false, 'junk');
+check('kickAt ต้องเป็นตัวเลข', fieldValid('kickAt', 'now') === false && fieldValid('kickAt', 5), 'kickAt');
+check('online ต้องเป็น boolean', fieldValid('online', 'yes') === false && fieldValid('online', false), 'online');
+check('ฟิลด์แปลกปลอมเขียนไม่ได้', fieldValid('hack', 'x') === false, '$other');
+check('ทุกฟิลด์ที่แอปเขียนมี rule รองรับ',
+      ['name', 'role', 'branch', 'page', 'ver', 'lastSeen', 'sessionStart', 'idleMs', 'online', 'kickAt']
+        .every(function (f) { return !!P[f]; }), Object.keys(P));
+/* settings/presence ใช้กฎเดิมของ settings ทั้งก้อน — จงใจไม่เพิ่มกฎลูก
+   เพราะสิทธิ์ write ไหลลงลูกเสมอ กฎลูกที่ "แน่นกว่า" จะหลอกตาว่าจำกัดได้ ทั้งที่ทำไม่ได้ */
+check('settings ไม่มีกฎลูก presence ที่หลอกตา', !(S.settings && S.settings.presence), S.settings);
+/* read ไหลลงลูกเหมือนกัน — stocktake2026/.read ให้ผู้ใช้ active อ่านได้ทั้งต้นอยู่แล้ว */
+check('presence ไม่มี .read ที่หลอกตาว่าจำกัดได้', !(S.presence && S.presence['.read']), S.presence);
 
 console.log('\n==== ' + pass + ' passed, ' + fail + ' failed ====');
 process.exit(fail ? 1 : 0);
