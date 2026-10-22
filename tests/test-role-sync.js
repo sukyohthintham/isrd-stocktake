@@ -51,6 +51,11 @@ const HARNESS = `
     };
   };
   window.db.update = function () { return Promise.resolve(); };
+  /* v2.35.0 — ปิดทางออกเน็ตจริงของ db.get (LITE_MODE ดึง roundIndex/cycles ตอนเข้าหน้า Job/สรุป)
+     ไม่งั้นมันวิ่งไป Firebase จริงด้วย token ปลอมข้างบน → 401 → เบราว์เซอร์พ่น
+     "Failed to load resource" ลงคอนโซลเอง (.catch ในแอปกันไม่ได้) เทสข้อ "ไม่มี error" จึงตก/ผ่านตามจังหวะเน็ต
+     คืน promise ที่ไม่มีวันจบ = ไม่มีผลข้างเคียงกับ state ที่ seed ไว้ และไม่มี rejection หลุด */
+  window.db.get = function () { return new Promise(function () {}); };
   /* นับเฉพาะการอ่านสิทธิ์ — การวาดหน้าจอก็ยิง getQuiet ของมันเอง (systemQty ฯลฯ)
      ถ้านับรวมจะกลายเป็นเทสเรื่องอื่นไปโดยไม่รู้ตัว */
   window.__roleReads = function () {
