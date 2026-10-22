@@ -102,15 +102,23 @@ function check(name, ok, got) {
   const r1 = await page.evaluate(() => {
     window.__seed();
     const out = window.__export();
-    return { head: out.sheet.rows[0], widths: out.sheet.widths, names: out.names };
+    return { head: out.sheet.rows[0], rows: out.sheet.rows.slice(1),
+             widths: out.sheet.widths, names: out.names };
   });
   check('คอลัมน์ที่ 5 (index 4) คือ "ประเภทที่นับ"', r1.head[4] === 'ประเภทที่นับ', r1.head);
   check('อยู่ต่อจาก "โซนที่เก็บ" พอดี', r1.head[3] === 'โซนที่เก็บ', r1.head);
   check('คอลัมน์ที่ตามมายังเป็นของเดิม (Status · หน่วย · ประเภท)',
         r1.head[5] === 'Status' && r1.head[6] === 'หน่วย' && r1.head[7] === 'ประเภท', r1.head);
-  check('หัวตารางมี 17 ช่อง', r1.head.length === 17, r1.head.length);
-  check('จำนวนความกว้างเท่าจำนวนคอลัมน์ (17 ช่อง)',
-        r1.widths.length === 17 && r1.widths.length === r1.head.length, r1.widths);
+  /* v2.33.0 — "ผลต่างมูลค่า" แทรกต่อจาก "มูลค่าจริง" ก่อน "หมายเหตุ" → 18 ช่อง */
+  check('หัวตารางมี 18 ช่อง', r1.head.length === 18, r1.head.length);
+  check('จำนวนความกว้างเท่าจำนวนคอลัมน์ (18 ช่อง)',
+        r1.widths.length === 18 && r1.widths.length === r1.head.length, r1.widths);
+  check('"ผลต่างมูลค่า" อยู่ระหว่าง "มูลค่าจริง" กับ "หมายเหตุ"',
+        r1.head[15] === 'มูลค่าจริง' && r1.head[16] === 'ผลต่างมูลค่า' && r1.head[17] === 'หมายเหตุ', r1.head);
+  check('ผลต่างมูลค่าทุกแถว = (จริง − ระบบ) × ราคา',
+        r1.rows.length > 0 && r1.rows.every(function (r) {
+          return r[16] === Math.round((r[9] - r[8]) * r[13] * 100) / 100;
+        }), r1.rows.map(function (r) { return [r[8], r[9], r[13], r[16]]; }));
   check('ความกว้างช่องใหม่ = 16 และช่องอื่นไม่เลื่อน',
         r1.widths[3] === 22 && r1.widths[4] === 16 && r1.widths[5] === 18, r1.widths);
   check('ชีทอื่นในไฟล์ยังครบเหมือนเดิม',

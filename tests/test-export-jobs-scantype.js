@@ -111,17 +111,24 @@ function check(name, ok, got) {
     window.__seed({ R1: {}, R2: {} });
     const out = await window.__exportJobs(['R1', 'R2']);
     const sheet = window.__jobSheet(out);
-    return { head: EXPORT_JOB_HEAD.slice(), sheetHead: sheet.rows[0],
+    return { head: EXPORT_JOB_HEAD.slice(), sheetHead: sheet.rows[0], rows: sheet.rows.slice(1),
              widths: sheet.widths, names: out.names };
   });
   check('EXPORT_JOB_HEAD index 4 คือ "ประเภทที่นับ"', r1.head[4] === 'ประเภทที่นับ', r1.head);
   check('อยู่ต่อจาก "โซนที่เก็บ" และตามด้วย Status เหมือนไฟล์รายงานสรุป',
         r1.head[3] === 'โซนที่เก็บ' && r1.head[5] === 'Status' && r1.head[6] === 'ประเภท', r1.head);
-  check('หัวตารางมี 14 ช่อง', r1.head.length === 14, r1.head.length);
+  /* v2.33.0 — "ผลต่างมูลค่า" แทรกต่อจาก "มูลค่าจริง" ก่อน "สถานะการนับ" → 15 ช่อง */
+  check('หัวตารางมี 15 ช่อง', r1.head.length === 15, r1.head.length);
   check('หัวในชีทจริงตรงกับ EXPORT_JOB_HEAD',
         JSON.stringify(r1.sheetHead) === JSON.stringify(r1.head), r1.sheetHead);
-  check('ความกว้างมี 14 ช่องเท่าจำนวนคอลัมน์',
-        r1.widths.length === 14 && r1.widths.length === r1.head.length, r1.widths);
+  check('ความกว้างมี 15 ช่องเท่าจำนวนคอลัมน์',
+        r1.widths.length === 15 && r1.widths.length === r1.head.length, r1.widths);
+  check('"ผลต่างมูลค่า" อยู่ระหว่าง "มูลค่าจริง" กับ "สถานะการนับ"',
+        r1.head[12] === 'มูลค่าจริง' && r1.head[13] === 'ผลต่างมูลค่า' && r1.head[14] === 'สถานะการนับ', r1.head);
+  check('ผลต่างมูลค่าทุกแถว = (จริง − ระบบ) × ราคา',
+        r1.rows.length > 0 && r1.rows.every(function (r) {
+          return r[13] === Math.round((r[8] - r[7]) * r[10] * 100) / 100;
+        }), r1.rows.map(function (r) { return [r[7], r[8], r[10], r[13]]; }));
   check('ความกว้างช่องใหม่ = 18 และช่องโซนเดิม (8) ไม่เลื่อน',
         r1.widths[3] === 8 && r1.widths[4] === 18 && r1.widths[5] === 18, r1.widths);
   check('ไฟล์ยังมีชีทสรุปรวมนำหน้าเหมือนเดิม', r1.names[0] === 'สรุปรวม', r1.names);

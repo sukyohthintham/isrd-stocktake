@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.32.0">
+<meta name="version" content="2.33.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.32.0</title>
+<title>ISRD Stocktake v2.33.0</title>
 
 <style>
 :root{
@@ -1712,6 +1712,7 @@ body.no-doc-images .doc .imgbox{display:none}
       <div class="s-sub pos" id="cardOverVal">&nbsp;</div>
     </button>
   </div>
+  <div class="muted" style="font-size:12px;margin:4px 2px 8px">💡 ตัวเลขเงินคิดเฉพาะสินค้าที่มีราคา — ของใช้ร้าน (ราคา 0) นับเป็นชิ้นแต่ไม่รวมเป็นเงิน</div>
 
   <div class="tablewrap" id="sumTableWrap" style="display:none">
     <table class="grid" id="sumTable">
@@ -1965,7 +1966,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.32.0';
+var APP_VERSION = '2.33.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -10015,7 +10016,7 @@ function buildSummaryExcel(data) {
      ทั้งสองไฟล์อ่านจาก reasons/{key} ก้อนเดียวกัน ตัวเลขกับข้อความจึงตรงกันเสมอ */
   var s2 = [['รหัสสินค้า', 'ชื่อสินค้า', 'Location', 'โซนที่เก็บ', 'ประเภทที่นับ', 'Status', 'หน่วย', 'ประเภท',
              'จำนวนระบบ', 'จำนวนจริง', 'ผลต่าง',
-             'จากการยิง', 'จากการกรอกมือ', priceLabel, 'มูลค่าระบบ', 'มูลค่าจริง',
+             'จากการยิง', 'จากการกรอกมือ', priceLabel, 'มูลค่าระบบ', 'มูลค่าจริง', 'ผลต่างมูลค่า',
              'หมายเหตุ']];
 
   /* ⭐ v2.15.0 — โซนที่เก็บ/นับจริง ต้องรวมทุก Job ในรอบ ไม่ใช่แค่ใบที่เปิดค้างอยู่
@@ -10075,6 +10076,7 @@ function buildSummaryExcel(data) {
              r.type === 'notProduct' ? 'Not Product' : 'Product',
              r.sys, r.act, r.diff, r.scanQty, r.manualQty, r.price,
              Math.round(r.sys * r.price * 100) / 100, Math.round(r.act * r.price * 100) / 100,
+             Math.round((r.act - r.sys) * r.price * 100) / 100,
              remarkTextOf(r.key)]);
   });
 
@@ -10122,7 +10124,7 @@ function buildSummaryExcel(data) {
     { name: 'สรุป', rows: s1, widths: [16, 12, 12, 13, 10, 10, 10, 14, 14, 14, 14, 14] },
     /* v2.21.0 — แทรกความกว้างของ "ประเภทที่นับ" (16) เป็นตัวที่ 5 ต่อจากโซนที่เก็บ
        จำนวนช่องต้องเท่าจำนวนคอลัมน์เสมอ ไม่งั้นความกว้างเลื่อนไปทั้งแถว */
-    { name: 'รายสินค้า', rows: s2, widths: [18, 34, 16, 22, 16, 18, 10, 12, 12, 12, 10, 11, 14, 12, 14, 14, 30] },
+    { name: 'รายสินค้า', rows: s2, widths: [18, 34, 16, 22, 16, 18, 10, 12, 12, 12, 10, 11, 14, 12, 14, 14, 14, 30] },
     { name: 'ประวัติการนับ', rows: s3,
       widths: histAll ? [22, 16, 18, 36, 16, 14, 10, 13, 22, 24]
                       : [22, 18, 36, 16, 14, 10, 13, 22, 24] },
@@ -14274,7 +14276,8 @@ function refreshNav() {
    จงใจต่างกันตรงนี้: ช่องโซนในไฟล์นี้เป็นชื่อโซนล้วน ๆ ไม่มีจำนวน (ของเดิม ไม่แก้)
    ส่วนช่องประเภทมีจำนวนในวงเล็บ เพื่อให้อ่านคู่กับไฟล์รายงานสรุปได้โดยไม่ต้องแปลงในหัว */
 var EXPORT_JOB_HEAD = ['รหัสสินค้า', 'ชื่อสินค้า', 'Location', 'โซนที่เก็บ', 'ประเภทที่นับ', 'Status', 'ประเภท',
-                       'ยอดระบบ', 'ยิงจริง', 'ผลต่าง', 'ราคา', 'มูลค่าระบบ', 'มูลค่าจริง', 'สถานะการนับ'];
+                       'ยอดระบบ', 'ยิงจริง', 'ผลต่าง', 'ราคา', 'มูลค่าระบบ', 'มูลค่าจริง', 'ผลต่างมูลค่า',
+                       'สถานะการนับ'];
 
 function exportJobsExcel(ids, cycleLabel) {
   ids = (ids || []).filter(Boolean);
@@ -14342,6 +14345,7 @@ function exportJobsExcel(ids, cycleLabel) {
                    r.sys, r.act, r.diff, r.price,
                    Math.round(r.sys * r.price * 100) / 100,
                    Math.round(r.act * r.price * 100) / 100,
+                   Math.round((r.act - r.sys) * r.price * 100) / 100,
                    !r.known ? 'ไม่มีในระบบ'
                             : (!r.inRound ? 'ไม่ใช่ของสาขานี้'
                                           : (r.diff === 0 ? 'ตรง' : (r.diff < 0 ? 'ขาด' : 'เกิน')))]);
@@ -14349,7 +14353,7 @@ function exportJobsExcel(ids, cycleLabel) {
       /* v2.22.0 — แทรกความกว้างของ "ประเภทที่นับ" (18) เป็นตัวที่ 5 ต่อจากโซนที่เก็บ (8)
          จำนวนช่องต้องเท่าจำนวนคอลัมน์เสมอ ไม่งั้นความกว้างเลื่อนไปทั้งแถว */
       sheets.push({ name: sheetNameFor(cid, sheets.length),
-                    rows: rows, widths: [18, 34, 16, 8, 18, 18, 12, 11, 10, 10, 11, 14, 14, 16] });
+                    rows: rows, widths: [18, 34, 16, 8, 18, 18, 12, 11, 10, 10, 11, 14, 14, 14, 16] });
     });
 
     summary.push([]);
