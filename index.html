@@ -14224,8 +14224,8 @@ function showPage(name) {
   /* ⭐ v2.32.0 LITE_MODE: เข้าหน้า Job/สรุป = ดึง roundIndex+cycles สดครั้งเดียว (แทน EventSource เปิดค้าง)
      async — ได้ข้อมูลแล้ว _apply* จะสั่งวาดใหม่เอง · guard เผื่อ showPage ถูกเรียกก่อน startApp ตั้ง handler */
   if (LITE_MODE && (name === 'jobs' || name === 'summary')) {
-    db.get('roundIndex').then(applyRoundIndexData);
-    db.get('cycles').then(applyCyclesData);
+    db.get('roundIndex').then(applyRoundIndexData).catch(function () {});
+    db.get('cycles').then(applyCyclesData).catch(function () {});
   }
   /* setSummaryTab วาดให้เองแล้วทั้งสองแท็บ (v2.14.2) — เรียก renderSummary() ตรงนี้อีก
      จะกลายเป็นวาดซ้ำรอบหนึ่งทุกครั้งที่เข้าหน้า รอบที่มีหลายพัน SKU จะสะดุดบนมือถือ
@@ -15702,7 +15702,7 @@ function selectRound(id) {
     if (LITE_MODE) {
       db.get('rounds/' + id + '/unknown').then(function (map) {
         if (map) Object.keys(map).forEach(function (k) { _onUnknown(k, map[k]); });
-      });
+      }).catch(function () {});
     } else {
       state.unsub.push(db.subscribeChildren('rounds/' + id + '/unknown', _onUnknown));
     }
@@ -18504,12 +18504,12 @@ function startApp() {
   /* ระเบียนรอบนับต้องมาก่อน roundIndex — cycleStatus และ Rules อ่านจากตรงนี้
      ⭐ v2.32.0 LITE_MODE: cycles ดึงครั้งเดียว + รีเฟรชตอนเข้าหน้า Job/สรุป แทนเปิดสายค้าง
         (handler applyCyclesData นิยาม top-level ข้างบน ให้ showPage เรียกได้เสมอ) */
-  if (LITE_MODE) db.get('cycles').then(applyCyclesData);
+  if (LITE_MODE) db.get('cycles').then(applyCyclesData).catch(function () {});
   else db.subscribe('cycles', applyCyclesData);
 
   /* ⭐ v2.32.0 LITE_MODE: roundIndex ดึงครั้งเดียว + รีเฟรชตอนเข้าหน้า Job/สรุป
      (handler applyRoundIndexData นิยาม top-level ข้างบน · migration ยังรันครั้งแรกตามเดิม) */
-  if (LITE_MODE) db.get('roundIndex').then(applyRoundIndexData);
+  if (LITE_MODE) db.get('roundIndex').then(applyRoundIndexData).catch(function () {});
   else db.subscribe('roundIndex', applyRoundIndexData);
 
   /* เปิดแอปมาให้กลับเข้า Job เดิมที่ค้างไว้ */
