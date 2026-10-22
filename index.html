@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.33.0">
+<meta name="version" content="2.34.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.33.0</title>
+<title>ISRD Stocktake v2.34.0</title>
 
 <style>
 :root{
@@ -1721,7 +1721,7 @@ body.no-doc-images .doc .imgbox{display:none}
         <th>ขาด (ชิ้น)</th><th>เกิน (ชิ้น)</th><th>ผลต่าง (ชิ้น)</th>
         <th>SKU ตรง</th><th>SKU ขาด</th><th>SKU เกิน</th>
         <th>%Success (ชิ้น)</th><th>%Success (SKU)</th>
-        <th>มูลค่าระบบ</th><th>มูลค่าจริง</th><th>ผลต่าง (บาท)</th>
+        <th>มูลค่าขาด</th><th>มูลค่าเกิน</th><th>ผลต่างสุทธิ</th>
       </tr></thead>
       <tbody id="sumBody"></tbody>
     </table>
@@ -1908,7 +1908,7 @@ body.no-doc-images .doc .imgbox{display:none}
             <th>%Success<br>(ชิ้น)</th>
             <th>สินค้า<br>ตรง</th><th>สินค้า<br>ขาด</th><th>สินค้า<br>เกิน</th><th>SKU<br>(Total)</th>
             <th>%Success<br>(SKU)</th>
-            <th>ระบบ</th><th>จริง</th><th>ผลต่าง</th>
+            <th>ขาด</th><th>เกิน</th><th>สุทธิ</th>
           </tr></thead>
           <tbody id="docDashBody"></tbody>
         </table>
@@ -1966,7 +1966,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.33.0';
+var APP_VERSION = '2.34.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -8767,8 +8767,20 @@ function renderMaster() {
 function blankGroup() {
   return {
     sysQty: 0, actQty: 0, skuTotal: 0, skuMatch: 0, skuShort: 0, skuOver: 0,
-    pcMatch: 0, pcShort: 0, pcOver: 0, sysValue: 0, actValue: 0
+    pcMatch: 0, pcShort: 0, pcOver: 0, sysValue: 0, actValue: 0,
+    /* ⭐ v2.34.0 — มูลค่าขาด/เกิน แยกกัน คู่กับ pcShort/pcOver ฝั่งชิ้น
+       sysValue/actValue เป็นมูลค่ารวมทั้งคลัง (หลักแสน) ดูไม่ออกว่าหายไปกี่บาท
+       ส่วนผลต่างสุทธิอย่างเดียว ขาด 5,000 เกิน 5,000 ก็ได้ 0 เท่ากับไม่ขาดไม่เกินเลย */
+    shortValue: 0, overValue: 0
   };
+}
+
+/* ⭐ v2.34.0 — 3 ช่องมูลค่าของสรุปกลุ่ม ลง Excel: [มูลค่าขาด (ติดลบ), มูลค่าเกิน, ผลต่างสุทธิ]
+   ทุกไฟล์เรียกที่นี่ที่เดียว หัวคอลัมน์กับค่าจะได้ไม่เพี้ยนกันคนละไฟล์
+   `|| 0` แปลง -0 เป็น 0 — ขาด 0 บาทต้องไม่ขึ้น "-0" ใน Excel */
+function moneyTriple(g) {
+  function r2(n) { return (Math.round(n * 100) / 100) || 0; }
+  return [r2(-g.shortValue), r2(g.overValue), r2(g.overValue - g.shortValue)];
 }
 
 /* ⭐ กฎ "แถวผี" ของทั้งแอป (v2.8.0) — มีที่เดียวตรงนี้เท่านั้น
@@ -8915,6 +8927,8 @@ function summaryData() {
       g.pcOver += Math.max(0, act - sys);
       g.sysValue += sys * price;
       g.actValue += act * price;
+      g.shortValue += Math.max(0, sys - act) * price;
+      g.overValue += Math.max(0, act - sys) * price;
     });
 
     rows.push({
@@ -9082,9 +9096,11 @@ function summaryDataFrom(sysMap, countMap, jobsPerSku, manualMap) {
       g.pcOver += Math.max(0, act - sys);
       g.sysValue += sys * price;
       g.actValue += act * price;
+      g.shortValue += Math.max(0, sys - act) * price;
+      g.overValue += Math.max(0, act - sys) * price;
     });
 
-    var manual = Number((manualMap || {})[key]) || 0;
+    var manual =Number((manualMap || {})[key]) || 0;
     rows.push({
       key: key, code: p.code, name: p.name, unit: p.unit || '', type: bucket,
       category: p.category || '', status: productStatus(p), location: locationText(key),
@@ -9803,7 +9819,7 @@ function renderSummary() {
     var tr = document.createElement('tr');
     tr.setAttribute('data-group', name);
     var diffQty = g.actQty - g.sysQty;
-    var diffValue = g.actValue - g.sysValue;
+    var diffValue = g.overValue - g.shortValue;
     var pctPieces = pctPiecesOf(g);
     var pctSku = pctSkuOf(g);
 
@@ -9829,8 +9845,9 @@ function renderSummary() {
       [fmtNum(g.skuOver), ''],
       [fmtPercent(pctPieces), 'pctPieces'],
       [fmtPercent(pctSku), 'pctSku'],
-      [fmtMoney(g.sysValue), 'sysValue'],
-      [fmtMoney(g.actValue), 'actValue'],
+      /* ⭐ v2.34.0 — มูลค่าขาด (ติดลบ แดง) · มูลค่าเกิน (บวก เขียว) · สุทธิ แทน มูลค่าระบบ/จริง */
+      [fmtMoney(-g.shortValue), g.shortValue > 0 ? 'neg shortValue' : 'shortValue'],
+      [(g.overValue > 0 ? '+' : '') + fmtMoney(g.overValue), g.overValue > 0 ? 'pos overValue' : 'overValue'],
       [(diffValue > 0 ? '+' : '') + fmtMoney(diffValue), diffValue > 0 ? 'pos' : (diffValue < 0 ? 'neg' : '')]
     ];
     cells.forEach(function (c) { tr.appendChild(cell(c[0], c[1])); });
@@ -9991,17 +10008,15 @@ function buildSummaryExcel(data) {
   var priceLabel = state.priceField === 'costPrice' ? 'ราคาต้นทุน' : 'ราคาขาย';
 
   var s1 = [['กลุ่ม', 'จำนวนระบบ', 'จำนวนจริง', 'ผลต่าง (ชิ้น)', 'SKU ตรง', 'SKU ขาด', 'SKU เกิน',
-             '%Success (ชิ้น)', '%Success (SKU)', 'มูลค่าระบบ', 'มูลค่าจริง', 'ผลต่าง (บาท)']];
+             '%Success (ชิ้น)', '%Success (SKU)', 'มูลค่าขาด', 'มูลค่าเกิน', 'ผลต่างสุทธิ']];
   ['product', 'notProduct', 'total'].forEach(function (name) {
     var g = data.groups[name];
     s1.push([
       GROUP_LABEL[name], g.sysQty, g.actQty, g.actQty - g.sysQty,
       g.skuMatch, g.skuShort, g.skuOver,
       pctPiecesOf(g) === null ? '' : Math.round(pctPiecesOf(g) * 100) / 100,
-      pctSkuOf(g) === null ? '' : Math.round(pctSkuOf(g) * 100) / 100,
-      Math.round(g.sysValue * 100) / 100, Math.round(g.actValue * 100) / 100,
-      Math.round((g.actValue - g.sysValue) * 100) / 100
-    ]);
+      pctSkuOf(g) === null ? '' : Math.round(pctSkuOf(g) * 100) / 100
+    ].concat(moneyTriple(g)));
   });
   s1.push([]);
   s1.push(['คิดมูลค่าด้วย', priceLabel]);
@@ -10409,7 +10424,7 @@ function renderDocDashboard(data) {
     tr.setAttribute('data-group', name);
     if (name === 'total') tr.className = 'total-row';
     var dift = g.actQty - g.sysQty;
-    var diffValue = g.actValue - g.sysValue;
+    var diffValue = g.overValue - g.shortValue;
 
     docCell(tr, GROUP_LABEL[name]);
     /* กลุ่มจำนวน (ชิ้น) */
@@ -10427,8 +10442,9 @@ function renderDocDashboard(data) {
     docCell(tr, fmtNum(g.skuTotal), 'num');
     docCell(tr, fmtPercent(pctSkuOf(g)), 'num pct-sku');
     /* กลุ่มมูลค่า (บาท) */
-    docCell(tr, fmtMoney(g.sysValue), 'num');
-    docCell(tr, fmtMoney(g.actValue), 'num');
+    /* ⭐ v2.34.0 — ขาด (ติดลบ แดง) · เกิน (บวก เขียว) · สุทธิ แทน มูลค่าระบบ/จริง */
+    docCell(tr, fmtMoney(-g.shortValue), 'num' + (g.shortValue > 0 ? ' neg' : ''));
+    docCell(tr, (g.overValue > 0 ? '+' : '') + fmtMoney(g.overValue), 'num' + (g.overValue > 0 ? ' pos' : ''));
     docCell(tr, (diffValue > 0 ? '+' : '') + fmtMoney(diffValue),
       'num ' + (diffValue > 0 ? 'pos' : (diffValue < 0 ? 'neg' : '')));
     body.appendChild(tr);
@@ -11214,7 +11230,7 @@ function exportDocExcel() {
   var s1 = [['กลุ่ม',
              'จำนวนในระบบ', 'จำนวนจริง', 'ตรง (ชิ้น)', 'ขาด (ชิ้น)', 'เกิน (ชิ้น)', 'Dift', '%Success (ชิ้น)',
              'สินค้าตรง', 'สินค้าขาด', 'สินค้าเกิน', 'SKU (Total)', '%Success (SKU)',
-             'มูลค่าระบบ', 'มูลค่าจริง', 'ผลต่างมูลค่า']];
+             'มูลค่าขาด', 'มูลค่าเกิน', 'ผลต่างสุทธิ']];
   ['product', 'notProduct', 'total'].forEach(function (name) {
     var g = data.groups[name];
     var pc = pctPiecesOf(g), sku = pctSkuOf(g);
@@ -11222,9 +11238,7 @@ function exportDocExcel() {
              g.sysQty, g.actQty, g.pcMatch, g.pcShort, g.pcOver, g.actQty - g.sysQty,
              pc === null ? '' : Math.round(pc * 100) / 100,
              g.skuMatch, g.skuShort, g.skuOver, g.skuTotal,
-             sku === null ? '' : Math.round(sku * 100) / 100,
-             Math.round(g.sysValue * 100) / 100, Math.round(g.actValue * 100) / 100,
-             Math.round((g.actValue - g.sysValue) * 100) / 100]);
+             sku === null ? '' : Math.round(sku * 100) / 100].concat(moneyTriple(g)));
   });
   /* Stock Counting Accuracy — โครงเดียวกับกราฟใน PDF: 2 บล็อก บล็อกละ 2 ตัวเลข
      Excel ได้เป็นตัวเลขไม่ใช่วงกลม เพราะการฝังกราฟจริงต้องเขียน chart XML
@@ -14312,8 +14326,8 @@ function exportJobsExcel(ids, cycleLabel) {
     var sheets = [];
     var summary = [['รอบนับ', 'สาขา', 'Job ในรอบ', 'สถานะรอบ',
                     'SKU ทั้งหมด', 'SKU ที่ยิงแล้ว', 'ชิ้นที่ยิงได้',
-                    '%Success (ชิ้น)', '%Success (SKU)', 'มูลค่าระบบ', 'มูลค่าจริง', 'ผลต่างมูลค่า']];
-    var totals = { sku: 0, scanned: 0, pieces: 0, sysV: 0, actV: 0 };
+                    '%Success (ชิ้น)', '%Success (SKU)', 'มูลค่าขาด', 'มูลค่าเกิน', 'ผลต่างสุทธิ']];
+    var totals = { sku: 0, scanned: 0, pieces: 0, shortValue: 0, overValue: 0 };
 
     cids.forEach(function (cid) {
       var c = byCycle[cid];
@@ -14325,15 +14339,13 @@ function exportJobsExcel(ids, cycleLabel) {
         cid, jobBranchLabel(job0), c.jobs.length, JOB_STATUS_TEXT[cycleStatus(cid)],
         g.skuTotal, scanned, g.actQty,
         pctPiecesOf(g) === null ? '' : Math.round(pctPiecesOf(g) * 100) / 100,
-        pctSkuOf(g) === null ? '' : Math.round(pctSkuOf(g) * 100) / 100,
-        Math.round(g.sysValue * 100) / 100, Math.round(g.actValue * 100) / 100,
-        Math.round((g.actValue - g.sysValue) * 100) / 100
-      ]);
+        pctSkuOf(g) === null ? '' : Math.round(pctSkuOf(g) * 100) / 100
+      ].concat(moneyTriple(g)));
       totals.sku += g.skuTotal;
       totals.scanned += scanned;
       totals.pieces += g.actQty;
-      totals.sysV += g.sysValue;
-      totals.actV += g.actValue;
+      totals.shortValue += g.shortValue;
+      totals.overValue += g.overValue;
 
       var rows = [EXPORT_JOB_HEAD.slice()];
       d.rows.forEach(function (r) {
@@ -14358,9 +14370,7 @@ function exportJobsExcel(ids, cycleLabel) {
 
     summary.push([]);
     summary.push(['รวมทุกรอบนับ', cids.length + ' รอบ', ids.length + ' Job', '',
-                  totals.sku, totals.scanned, totals.pieces, '', '',
-                  Math.round(totals.sysV * 100) / 100, Math.round(totals.actV * 100) / 100,
-                  Math.round((totals.actV - totals.sysV) * 100) / 100]);
+                  totals.sku, totals.scanned, totals.pieces, '', ''].concat(moneyTriple(totals)));
 
     /* บล็อกที่สอง — ใบไหนยิงอะไรไปเท่าไหร่ ไม่มียอดระบบและผลต่าง
        เพราะ SKU เดียวยิงข้าม Job ได้ เทียบรายใบไม่มีความหมาย */

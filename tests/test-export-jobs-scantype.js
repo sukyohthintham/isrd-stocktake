@@ -111,9 +111,17 @@ function check(name, ok, got) {
     window.__seed({ R1: {}, R2: {} });
     const out = await window.__exportJobs(['R1', 'R2']);
     const sheet = window.__jobSheet(out);
+    const sum = out.sheets.filter(function (s) { return s.name === 'สรุปรวม'; })[0];
     return { head: EXPORT_JOB_HEAD.slice(), sheetHead: sheet.rows[0], rows: sheet.rows.slice(1),
-             widths: sheet.widths, names: out.names };
+             widths: sheet.widths, names: out.names, sumHead: sum.rows[0],
+             sumTotal: sum.rows.filter(function (r) { return r[0] === 'รวมทุกรอบนับ'; })[0] };
   });
+  /* v2.34.0 — ชีตสรุปรวมเปลี่ยนมูลค่าเป็น ขาด/เกิน/สุทธิ แถว "รวมทุกรอบนับ" ต้องตามด้วย */
+  check('สรุปรวม: 3 ช่องท้าย = มูลค่าขาด · มูลค่าเกิน · ผลต่างสุทธิ',
+        JSON.stringify(r1.sumHead.slice(-3)) === JSON.stringify(['มูลค่าขาด', 'มูลค่าเกิน', 'ผลต่างสุทธิ']), r1.sumHead);
+  check('แถวรวมทุกรอบนับ: สุทธิ = เกิน + ขาด(ติดลบ) และขาด ≤ 0',
+        r1.sumTotal && r1.sumTotal.length === 12 && r1.sumTotal[9] <= 0 && r1.sumTotal[10] >= 0 &&
+        Math.abs(r1.sumTotal[11] - (r1.sumTotal[10] + r1.sumTotal[9])) < 0.01, r1.sumTotal);
   check('EXPORT_JOB_HEAD index 4 คือ "ประเภทที่นับ"', r1.head[4] === 'ประเภทที่นับ', r1.head);
   check('อยู่ต่อจาก "โซนที่เก็บ" และตามด้วย Status เหมือนไฟล์รายงานสรุป',
         r1.head[3] === 'โซนที่เก็บ' && r1.head[5] === 'Status' && r1.head[6] === 'ประเภท', r1.head);
