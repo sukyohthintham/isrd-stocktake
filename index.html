@@ -9252,6 +9252,7 @@ function sumCardRow(r, kind, group) {
   var row = document.createElement('div');
   row.className = 'srow';
   row.setAttribute('data-sku', r.code || r.key);
+  row.setAttribute('data-key', r.key);      // v2.35.0 ไว้หาแถวเดิมตอนอัปเดตในที่
 
   var head = document.createElement('div');
   head.className = 's-head';
@@ -9464,24 +9465,124 @@ function adjustJobCount(roundId, key, delta, reason) {
   return { id: id, rec: rec };
 }
 
-/* โหลดยอดรวมใหม่แล้วเปิดลิสต์เดิมกลับ — ใช้ร่วมกันทุกปุ่มปรับยอดในหน้าสรุป */
-function reloadAfterAdjust(kind, group) {
-  /* รอบที่มี Job เดียวต้องเปิดลิสต์กลับ "ทันที" ไม่ผ่าน Promise เลย (กติกาเดิมตั้งแต่ v2.7.x)
-     ไม่ใช่แค่เรื่องเร็ว — ถ้าเลื่อนไปรอบถัดไป ลิสต์จะไปโผล่ทีหลังตอนคนกดออกจากหน้าไปแล้ว
-     และยอดในเครื่องก็ขยับครบแล้วตั้งแต่ writeScan ไม่มีอะไรต้องรอโหลด */
-  if (!cycleScope().multi) {
-    renderSummary();
-    openSumCard(kind || 'over', group);
-    return;
+/* ---------- ⭐ v2.35.0 แถวที่เพิ่งแก้ "ค้างก่อนแล้วหายเอง" ----------
+   ของเดิมกดเพิ่ม/ลบแล้วปิดป๊อปอัปแล้วเปิดใหม่ทั้งลิสต์ SKU ที่เพิ่งแก้จนหลุดกลุ่ม (เช่น ขาด → ตรง)
+   หายวับไปทันที คนงงว่าเพิ่งแตะตัวไหน กดถูกไหม
+   ตอนนี้ป๊อปอัปไม่ปิด · อัปเดตเฉพาะแถวนั้นในที่ + ไฮไลต์ "✓ แก้แล้ว" · ยังอยู่ในกลุ่ม = ค้างต่อ กดซ้ำได้
+   หลุดกลุ่ม = ค้างให้เห็น SUMCARD_PIN_MS แล้วจางออก
+   ⚠️ แหล่งความจริงไม่เปลี่ยน — ตัวเลขในแถวมาจาก summaryData()/ยอดรวมรอบที่โหลดใหม่เหมือนเดิม
+   แค่ไม่วาดทั้งลิสต์ทับ แถวที่ pin ไว้จึงไม่หาย */
+var SUMCARD_PIN_MS = 3500;     // ค้างแถวที่แก้จนหลุดกลุ่มไว้ให้เห็นก่อนจาง
+var SUMCARD_FADE_MS = 600;     // เท่ากับ transition ของ .srow-done
+
+/* ข้อความใต้หัวป๊อปอัป — ใช้ทั้งตอนเปิดและตอนอัปเดตหลังกดปรับยอด */
+function sumCardMsg(rows, kind) {
+  var msg = fmtNum(rows.length) + ' รายการ' +
+    (kind === 'match' ? '' : ' · มูลค่าผลต่างรวม ' + signedMoney(sumCardValue(rows)));
+  /* บอกวิธีใช้ปุ่มเมื่อมีปุ่มให้กดจริง — ปุ่มขึ้นทุกกลุ่มที่ยิงไปแล้ว ไม่ใช่แค่กลุ่ม "เกิน" */
+  if (hasPerm('adjustCount') && rows.some(function (r) { return r.act > 0; })) {
+    msg += '\nยิงเกินโดยไม่ตั้งใจ กด "เอาออก 1 ชิ้น" ได้ — ระบบบันทึกเป็นประวัติ ไม่ได้ลบยอดเดิม';
   }
+  return msg;
+}
+
+/* ป้าย ✓ แก้แล้ว + พื้นเขียว */
+function markSumRowDone(el) {
+  el.classList.add('srow-done');
+  var head = el.querySelector('.s-head');
+  if (head && !head.querySelector('.s-done')) {
+    var tag = document.createElement('span');
+    tag.className = 's-done';
+    tag.setAttribute('data-done', '1');
+    tag.textContent = '✓ แก้แล้ว';
+    head.appendChild(tag);
+  }
+}
+
+function sumRowEl(ctx, key) {
+  var all = ctx.listHost.querySelectorAll('.srow');
+  for (var i = 0; i < all.length; i++) if (all[i].getAttribute('data-key') === key) return all[i];
+  return null;
+}
+
+function sumCardCtxLive(ctx) {
+  return !!ctx && state.sumCardCtx === ctx && ctx.listHost.isConnected &&
+         $('modalBg').classList.contains('show');
+}
+
+/* แถวที่เพิ่งแก้: ยังอยู่ในกลุ่ม = ค้างต่อ · หลุดกลุ่ม = ตั้งเวลาจางออก */
+function settleSumRow(ctx, fresh) {
+  var key = fresh.key;
+  clearTimeout(ctx.timers[key]);
+  var spec = SUM_CARD_SPEC[ctx.kind];
+  var inGroup = spec.pick(fresh) && (!ctx.group || fresh.type === ctx.group);
+  if (inGroup) return;
+  ctx.timers[key] = setTimeout(function () {
+    if (!sumCardCtxLive(ctx)) return;
+    var el = sumRowEl(ctx, key);
+    if (el) el.classList.add('srow-fade');
+    ctx.timers[key] = setTimeout(function () {
+      if (state.sumCardCtx !== ctx) return;
+      var gone = sumRowEl(ctx, key);
+      if (gone) gone.parentNode.removeChild(gone);
+      ctx.rows = ctx.rows.filter(function (r) { return r.key !== key; });
+      delete ctx.done[key];
+      if (!ctx.listHost.querySelector('.srow')) ctx.renderRows(ctx.term());
+    }, SUMCARD_FADE_MS);
+  }, SUMCARD_PIN_MS);
+}
+
+/* หลังเขียนแถวปรับยอดแล้ว — ใช้ร่วมกันทุกปุ่มปรับยอดในป๊อปอัป
+   reopen = true เมื่อกล่องยืนยัน (ask) ทับป๊อปอัปลิสต์ไปแล้ว ต้องเปิดลิสต์กลับพร้อม pin แถวนั้นไว้ */
+function reloadAfterAdjust(kind, group, r, reopen) {
+  kind = kind || 'over';
+  var ctx = state.sumCardCtx;
+  var key = r && r.key;
+  var multi = cycleScope().multi;
+
+  /* ระหว่างรอยอดรวมรอบ (หลายใบ) ล็อกปุ่มของแถวนั้นไว้ก่อน
+     กดซ้ำตอนนี้จะคิดจากยอดใบเก่าที่ยังไม่อัปเดต = หักเกินได้ */
+  if (multi && !reopen && sumCardCtxLive(ctx) && key) {
+    var pending = sumRowEl(ctx, key);
+    if (pending) {
+      markSumRowDone(pending);
+      Array.prototype.forEach.call(pending.querySelectorAll('button'), function (b) { b.disabled = true; });
+    }
+  }
+
+  var apply = function (data) {
+    /* หลายใบ: คนกดออกจากหน้าไประหว่างรอ = ไม่ต้องวาดอะไร (กติกาเดิม) */
+    if (multi && state.page !== 'summary' && state.page !== 'scan') return;
+    /* การ์ดใหญ่ด้านหลังตามความจริง — Job เดียววาดเสมอ (กติกาเดิม) · หลายใบเฉพาะตอนอยู่หน้าสรุป */
+    if (!multi || state.page === 'summary') renderSummary();
+    if (state.page === 'scan') renderScanTotals();         // การ์ดสดบนหน้ายิงก็ต้องตาม
+    if (!key) return;
+
+    var fresh = data.rows.filter(function (x) { return x.key === key; })[0];
+    /* แก้จนเหลือ 0/0 → กฎแถวผีตัดทิ้งจาก data.rows ไปแล้ว ถือว่าตรงที่ 0 */
+    if (!fresh) fresh = Object.assign({}, r, { sys: 0, act: 0, diff: 0 });
+
+    if (reopen) { openSumCard(kind, group, { pinRow: fresh }); return; }
+    if (!sumCardCtxLive(ctx)) return;                      // ปิดป๊อปอัปไปแล้ว — การ์ดอัปเดตแล้วพอ
+
+    var el = sumRowEl(ctx, key);
+    var next = sumCardRow(fresh, kind, group);
+    ctx.done[key] = true;
+    markSumRowDone(next);
+    if (el) el.parentNode.replaceChild(next, el);
+    var idx = -1;
+    ctx.rows.forEach(function (x, i) { if (x.key === key) idx = i; });
+    if (idx >= 0) ctx.rows[idx] = fresh;
+    $('modalMsg').textContent = sumCardMsg(sumCardRows(data, kind, group), kind);
+    settleSumRow(ctx, fresh);
+  };
+
+  /* รอบที่มี Job เดียวต้องอัปเดต "ทันที" ไม่ผ่าน Promise เลย (กติกาเดิมตั้งแต่ v2.7.x)
+     ยอดในเครื่องขยับครบแล้วตั้งแต่ writeScan ไม่มีอะไรต้องรอโหลด */
+  if (!multi) { apply(summaryData()); return; }
   /* หลายใบ — ยอดรวมทั้งรอบต้องดึงใหม่ เพราะแถวที่เพิ่งเขียนอาจลงใบอื่นที่ไม่ได้เปิดอยู่ */
   state.cycleData = null;
-  var reopen = function () {
-    if (state.page !== 'summary') return;
-    renderSummary();
-    openSumCard(kind || 'over', group);
-  };
-  ensureReportData().then(reopen, reopen);
+  ensureReportData().then(apply, function () { apply(reportDataSync()); });
 }
 
 /* เอาออกจากใบที่เลือก — ใบที่เปิดอยู่ใช้ writeScan ตัวเดิม (ยอดในเครื่องขยับทันที)
@@ -9507,8 +9608,8 @@ function removeFromJob(r, kind, jobId, qty, group) {
     else adjustJobCount(jobId, r.key, -qty, reason);
     toast('เอา ' + (r.code || r.key) + ' ออกจากใบ ' + job.jobCode + ' ' + fmtNum(qty) +
           ' ชิ้นแล้ว — บันทึกเป็นประวัติไว้ ไม่ได้ลบยอดเดิม');
-    $('modalOk').click();
-    reloadAfterAdjust(kind, group);
+    /* v2.35.0 ไม่ปิดป๊อปอัปแล้ว — อัปเดตแถวนี้ในที่ · หลายชิ้นผ่านกล่องยืนยันมา (ทับลิสต์ไปแล้ว) จึงเปิดกลับ */
+    reloadAfterAdjust(kind, group, r, qty > 1);
   };
 
   if (qty <= 1) { write(); return; }
@@ -9529,8 +9630,7 @@ function addFromSummary(r, kind, group) {
   if (!canScan()) { toast(blockedMessage() + ' — เพิ่มไม่ได้', true); return; }
   writeScan(r.key, 1, 'scan', 'เพิ่มจากสรุป (เจอของ)');
   toast('เพิ่ม ' + (r.code || r.key) + ' 1 ชิ้นเข้าใบ ' + jobCodeOf(state.roundId) + ' แล้ว');
-  $('modalOk').click();
-  reloadAfterAdjust(kind, group);
+  reloadAfterAdjust(kind, group, r, false);     // v2.35.0 ไม่ปิดป๊อปอัป — แถวนี้ค้าง ✓ อยู่ในที่
 }
 
 /* เอาของที่ยิงเกินออก — เขียนเป็นแถวใหม่ delta ติดลบ ไม่ได้ลบแถวเดิม
@@ -9558,18 +9658,10 @@ function removeOverScan(r, kind, qty, group) {
               qty > 1 ? 'เอาออกทั้งหมดจากสรุป' : 'เอาออกจากสรุป (ยิงเกิน)');
     toast('เอา ' + (r.code || r.key) + ' ออก ' + fmtNum(qty) +
           ' ชิ้นแล้ว — บันทึกเป็นประวัติไว้ ไม่ได้ลบยอดเดิม');
-    renderSummary();
-    if (state.page === 'scan') renderScanTotals();   // การ์ดสดบนหน้ายิงต้องตามด้วย
-    $('modalOk').click();                            // ปิดกล่องเดิม...
-    /* ...แล้วเปิดกลุ่มเดิมใหม่
-       รอบที่มี Job เดียวต้องเปิดกลับ "ทันที" ไม่ผ่าน Promise เลย — ไม่ใช่แค่เรื่องเร็ว
-       แต่ถ้าเลื่อนไปรอบถัดไป ลิสต์จะไปโผล่ทีหลังตอนคนกดออกจากหน้าไปแล้ว */
-    if (!cycleScope().multi) { openSumCard(kind || 'over', group); return; }
-    /* หลาย Job — ยอดรวมเพิ่งถูกล้างไปตอนเขียนแถวใหม่ ต้องรวมใหม่ก่อนเปิดลิสต์กลับ
-       ไม่งั้นตัวเลขจะกระโดดลงไปเป็นของใบนี้ใบเดียวแวบหนึ่งแล้วเด้งกลับ
-       เช็คว่ายังอยู่หน้าสรุปก่อนเปิด — ระหว่างรอ คนอาจกดออกไปหน้าอื่นแล้ว */
-    var reopen = function () { if (state.page === 'summary') openSumCard(kind || 'over', group); };
-    ensureReportData().then(reopen, reopen);
+    /* v2.35.0 — กติกาเดียวกับ removeFromJob: ไม่ปิดป๊อปอัป อัปเดตแถวในที่
+       หลายชิ้นผ่านกล่องยืนยันมา (ทับลิสต์ไปแล้ว) จึงเปิดกลับพร้อม pin แถวนี้ไว้
+       reloadAfterAdjust จัดการเรื่องรอยอดรวมรอบ (หลาย Job) และการ์ดด้านหลังให้เอง */
+    reloadAfterAdjust(kind, group, r, qty > 1);
   };
 
   if (qty <= 1) { write(); return; }
@@ -9590,11 +9682,10 @@ function removeOverScan(r, kind, qty, group) {
 
 /* group (v2.35.0) — กดจากการ์ดแถว Product/Not Product ส่งมาด้วย ลิสต์จะได้ไม่มีอีกกลุ่มปน
    ไม่ส่ง = ทุกกลุ่ม (การ์ดหน้ายิงยังเป็นยอดรวม) · ต้องส่งต่อทุกจุดที่เปิดลิสต์กลับ */
-function openSumCard(kind, group) {
+function openSumCard(kind, group, opts) {
   if (!hasPerm('viewSummary')) { toast(roleBlockMessage('ดูรายละเอียดผลต่างไม่ได้'), true); return Promise.resolve(); }
   var spec = SUM_CARD_SPEC[kind];
   var rows = sumCardRows(reportDataSync(), kind, group);
-  var money = sumCardValue(rows);
 
   var box = document.createElement('div');
   box.className = 'clist';
@@ -9618,10 +9709,24 @@ function openSumCard(kind, group) {
   }
   box.appendChild(listHost);
 
-  var renderRows = function (term) {
+  /* ⭐ v2.35.0 — ลิสต์ที่เปิดอยู่ตอนนี้ (ตัวเดียวทั้งแอป) ให้ reloadAfterAdjust อัปเดตแถวในที่ได้
+     ctx.rows เปลี่ยนตามการแก้ ช่องค้นหาจึงกรองจากตัวเลขล่าสุด ไม่ใช่ค่าตอนเปิด
+     ctx.done = แถวที่แก้แล้ว — วาดใหม่ตอนพิมพ์ค้นก็ยังคงป้าย ✓ */
+  var ctx = state.sumCardCtx = { kind: kind, group: group, rows: rows, listHost: listHost,
+                                 done: {}, timers: {},
+                                 term: function () { return search ? search.value : ''; } };
+
+  /* เปิดกลับหลังกล่องยืนยัน — แถวที่เพิ่งแก้อาจหลุดกลุ่มไปแล้ว ต้องดึงกลับมาค้างไว้บนสุดให้เห็นก่อน */
+  var pin = opts && opts.pinRow;
+  if (pin) {
+    ctx.rows = rows = [pin].concat(rows.filter(function (r) { return r.key !== pin.key; }));
+    ctx.done[pin.key] = true;
+  }
+
+  var renderRows = ctx.renderRows = function (term) {
     var q = String(term || '').trim().toUpperCase();
     listHost.innerHTML = '';
-    var hits = !q ? rows : rows.filter(function (r) {
+    var hits = !q ? ctx.rows : ctx.rows.filter(function (r) {
       return String(r.code || '').toUpperCase().indexOf(q) >= 0 ||
              String(r.name || '').toUpperCase().indexOf(q) >= 0;
     });
@@ -9633,19 +9738,21 @@ function openSumCard(kind, group) {
       listHost.appendChild(none);
       return;
     }
-    hits.forEach(function (r) { listHost.appendChild(sumCardRow(r, kind, group)); });
+    hits.forEach(function (r) {
+      var el = sumCardRow(r, kind, group);
+      if (ctx.done[r.key]) markSumRowDone(el);
+      listHost.appendChild(el);
+    });
   };
   if (search) search.oninput = function () { renderRows(this.value); };
   renderRows('');
 
-  var msg = fmtNum(rows.length) + ' รายการ' +
-    (kind === 'match' ? '' : ' · มูลค่าผลต่างรวม ' + signedMoney(money));
-  /* บอกวิธีใช้ปุ่มเมื่อมีปุ่มให้กดจริง — ปุ่มขึ้นทุกกลุ่มที่ยิงไปแล้ว ไม่ใช่แค่กลุ่ม "เกิน" */
-  if (hasPerm('adjustCount') && rows.some(function (r) { return r.act > 0; })) {
-    msg += '\nยิงเกินโดยไม่ตั้งใจ กด "เอาออก 1 ชิ้น" ได้ — ระบบบันทึกเป็นประวัติ ไม่ได้ลบยอดเดิม';
-  }
-  return ask(spec.title + (group ? ' · ' + GROUP_LABEL[group] : ''), msg, 'ปิด',
-             { hideCancel: true, detail: box });
+  /* ยอดรวมหัวป๊อปอัปเป็นของกลุ่มจริงเสมอ — แถวที่ pin ค้างไว้ไม่นับ ถ้ามันหลุดกลุ่มไปแล้ว */
+  var truth = pin ? sumCardRows(reportDataSync(), kind, group) : rows;
+  var p = ask(spec.title + (group ? ' · ' + GROUP_LABEL[group] : ''), sumCardMsg(truth, kind), 'ปิด',
+              { hideCancel: true, detail: box });
+  if (pin) settleSumRow(ctx, pin);
+  return p;
 }
 
 /* ตัวเลขผลต่างคือเครื่องมือจับทุจริต ถ้าคนยิงเห็นว่าตัวไหนขาดอยู่เท่าไหร่

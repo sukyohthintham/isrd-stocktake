@@ -246,6 +246,7 @@ function check(name, ok, got) {
       /* ป๊อปอัปต้องเปิดกลุ่ม "ตรง" กลับ (ไม่ใช่เด้งไปกลุ่มเกิน) และ M1 ต้องหายจากลิสต์ */
       reopenedList: !!document.querySelector('[data-sumcard-list="match"]'),
       stillInMatch: !!document.querySelector('[data-sumcard-list="match"] [data-sku="M1"]'),
+      doneTag: !!document.querySelector('[data-sumcard-list="match"] [data-sku="M1"] [data-done]'),
       cardMatch: $('cardMatchNum').textContent,
       cardShort: $('cardShortNum').textContent
     };
@@ -263,7 +264,9 @@ function check(name, ok, got) {
         a6.writes === 1 && a6.delta === -1 && a6.user === 'สมชาย' && a6.hasTs === true &&
         /^เอาออกจากสรุป \(Job /.test(a6.reason || ''), a6);
   check('ป๊อปอัปเปิดกลุ่มเดิมกลับ (ตรง) ไม่ใช่เด้งไปกลุ่มเกิน', a6.reopenedList === true, a6);
-  check('M1 หายจากกลุ่ม "ตรง"', a6.stillInMatch === false, a6);
+  /* v2.35.0 — ไม่หายวับแล้ว: ค้างพร้อมป้าย ✓ ให้เห็นก่อน แล้วค่อยจางเอง (คุมละเอียดใน test-sumcard-pin.js) */
+  check('M1 ยังค้างในลิสต์ "ตรง" พร้อมป้าย ✓ แก้แล้ว (ไม่หายวับ)',
+        a6.stillInMatch === true && a6.doneTag === true, a6);
   check('การ์ด Product ขยับ ตรง 2→1 · ขาด 2→3',
         a6.cardMatch === '1' && a6.cardShort === '3', a6);
   check('M1 ไปโผล่ในกลุ่ม "ขาด" ที่ -1', a6.nowInShort === true && a6.shortDiff === '-1', a6);
