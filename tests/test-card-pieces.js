@@ -161,14 +161,16 @@ function check(name, ok, got) {
              subsHaveUnit: Array.prototype.every.call(pcLines,
                function (e) { return /ชิ้น/.test(e.textContent); }) };
   });
-  check('ป้ายหน้าสรุปบอก (SKU) ครบ 3 ใบ',
-        JSON.stringify(r5.sum) === JSON.stringify(['✅ ตรง (SKU)', '❌ ขาด (SKU)', '➕ เกิน (SKU)']),
+  /* v2.35.0 — หน้าสรุปมี 2 แถว (Product / Not Product) แถวละ 3 ใบ */
+  check('ป้ายหน้าสรุปบอก (SKU) ครบ 2 แถว × 3 ใบ',
+        JSON.stringify(r5.sum) === JSON.stringify(['✅ ตรง (SKU)', '❌ ขาด (SKU)', '➕ เกิน (SKU)',
+                                                   '✅ ตรง (SKU)', '❌ ขาด (SKU)', '➕ เกิน (SKU)']),
         r5.sum);
   check('ป้ายหน้ายิงบอก (SKU) ครบ 3 ใบ',
         JSON.stringify(r5.scan) === JSON.stringify(['✅ ตรง (SKU)', '❌ ขาด (SKU)', '➕ เกิน (SKU)']),
         r5.scan);
-  check('บรรทัดจำนวนชิ้นมีครบ 6 การ์ด และมีคำว่า "ชิ้น" ทุกอัน',
-        r5.pcCount === 6 && r5.subsHaveUnit === true, r5);
+  check('บรรทัดจำนวนชิ้นมีครบ 9 การ์ด (สรุป 6 + หน้ายิง 3) และมีคำว่า "ชิ้น" ทุกอัน',
+        r5.pcCount === 9 && r5.subsHaveUnit === true, r5);
 
   /* ---------- 6. ไม่มีข้อมูลเลย ---------- */
   console.log('\n[6] รอบที่ยังไม่มีอะไรเลย');

@@ -104,6 +104,7 @@ function check(name, ok, got) {
     window.__setup('admin');
     return {
       match: $('cardMatchNum').textContent,
+      matchNP: $('cardMatchNPNum').textContent,
       matchVal: $('cardMatchVal').textContent.trim(),
       short: $('cardShortNum').textContent,
       shortVal: $('cardShortVal').textContent,
@@ -112,7 +113,9 @@ function check(name, ok, got) {
       exportDisabled: $('btnExport').disabled
     };
   });
-  check('การ์ดตรง = 3 SKU', a1.match === '3', a1.match);
+  /* v2.35.0 — การ์ดแยก 2 แถว: M3 เป็น Not Product จึงไปอยู่แถวล่าง ไม่ปนกับสินค้า */
+  check('การ์ดตรง (Product) = 2 SKU · (Not Product) = 1 SKU',
+        a1.match === '2' && a1.matchNP === '1', a1);
   check('การ์ดตรงไม่มีบรรทัดมูลค่า', a1.matchVal === '', JSON.stringify(a1.matchVal));
   check('การ์ดขาด = 2 SKU', a1.short === '2', a1.short);
   check('การ์ดขาดโชว์ -฿225.00', a1.shortVal === '-฿225.00', a1.shortVal);
@@ -261,8 +264,8 @@ function check(name, ok, got) {
         /^เอาออกจากสรุป \(Job /.test(a6.reason || ''), a6);
   check('ป๊อปอัปเปิดกลุ่มเดิมกลับ (ตรง) ไม่ใช่เด้งไปกลุ่มเกิน', a6.reopenedList === true, a6);
   check('M1 หายจากกลุ่ม "ตรง"', a6.stillInMatch === false, a6);
-  check('การ์ดขยับ ตรง 3→2 · ขาด 2→3',
-        a6.cardMatch === '2' && a6.cardShort === '3', a6);
+  check('การ์ด Product ขยับ ตรง 2→1 · ขาด 2→3',
+        a6.cardMatch === '1' && a6.cardShort === '3', a6);
   check('M1 ไปโผล่ในกลุ่ม "ขาด" ที่ -1', a6.nowInShort === true && a6.shortDiff === '-1', a6);
   /* ================= COUNTER — เห็นผลต่างครบเหมือน admin ================= */
   console.log('\n[B] role = counter (ผู้นับสต๊อก) — ต้องเห็นตัวเลขผลต่างครบ');
@@ -281,8 +284,8 @@ function check(name, ok, got) {
     shortVal: $('cardShortVal').textContent
   }));
   check('counter กดปุ่ม Excel ได้', b1.exportDisabled === false, b1.exportDisabled);
-  check('counter เห็นตัวเลขการ์ดครบ (3 / 2 / 2)',
-        b1.match === '3' && b1.short === '2' && b1.over === '2', b1);
+  check('counter เห็นตัวเลขการ์ด Product ครบ (2 / 2 / 2)',
+        b1.match === '2' && b1.short === '2' && b1.over === '2', b1);
   check('counter เห็นมูลค่าผลต่างด้วย', b1.shortVal === '-฿225.00', b1.shortVal);
 
   const b2 = await page.evaluate(() => {

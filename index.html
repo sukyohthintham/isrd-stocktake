@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.34.0">
+<meta name="version" content="2.35.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.34.0</title>
+<title>ISRD Stocktake v2.35.0</title>
 
 <style>
 :root{
@@ -515,7 +515,12 @@ table.grid td.neg{color:var(--short);font-weight:700}
 .filters .btn{flex:0 0 auto}
 /* หน้าสรุปใช้การ์ดแทนตาราง เพื่อให้ "ผลต่าง" กับ "สถานะ" อยู่ในจอมือถือเสมอ
    ไม่ต้องเลื่อนซ้ายขวาหา ซึ่งเป็นตัวเลขที่ทีมคลังต้องเห็นเป็นอันดับแรก */
+.sum-grp-hd{font-size:13px;font-weight:800;color:var(--muted);margin:2px 2px 6px}
 .srow{background:#fff;border:1px solid var(--line-soft);border-radius:12px;padding:12px;cursor:pointer}
+/* ⭐ v2.35.0 แถวที่เพิ่งกดเพิ่ม/ลบ — ค้างไว้ให้เห็นก่อน ถ้าหลุดกลุ่มแล้วค่อยจางหายเอง */
+.srow.srow-done{border-color:var(--over);background:#ecfdf5;transition:opacity .6s}
+.srow.srow-fade{opacity:0}
+.srow .s-done{font-size:12px;font-weight:800;color:var(--over);white-space:nowrap}
 .srow:active{background:#f8fafc}
 .s-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
 .s-code{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
@@ -1692,25 +1697,52 @@ body.no-doc-images .doc .imgbox{display:none}
   </div>
 
   <!-- กดการ์ดเพื่อไล่ดูรายตัวว่า SKU ไหนขาดไหนเกิน — เดิมต้องโหลด Excel ออกไปดูถึงจะรู้ -->
-  <div class="stats" id="sumCards" style="display:none">
-    <button type="button" class="stat tap" id="cardMatch" data-sumcard="match">
-      <div class="s-num" id="cardMatchNum">0</div>
-      <div class="s-lab">✅ ตรง (SKU)</div>
-      <div class="s-sub" id="cardMatchPc">0 ชิ้น</div>
-      <div class="s-sub" id="cardMatchVal">&nbsp;</div>
-    </button>
-    <button type="button" class="stat tap" id="cardShort" data-sumcard="short">
-      <div class="s-num neg" id="cardShortNum">0</div>
-      <div class="s-lab">❌ ขาด (SKU)</div>
-      <div class="s-sub" id="cardShortPc">0 ชิ้น</div>
-      <div class="s-sub neg" id="cardShortVal">&nbsp;</div>
-    </button>
-    <button type="button" class="stat tap" id="cardOver" data-sumcard="over">
-      <div class="s-num pos" id="cardOverNum">0</div>
-      <div class="s-lab">➕ เกิน (SKU)</div>
-      <div class="s-sub" id="cardOverPc">0 ชิ้น</div>
-      <div class="s-sub pos" id="cardOverVal">&nbsp;</div>
-    </button>
+  <!-- ⭐ v2.35.0 — แยกการ์ดเป็น 2 แถว Product / Not Product
+       รวมกันแล้วของใช้ร้าน/Asset (Not Product) ท่วมตัวเลข เคสจริง: ขาด 164 ทั้งที่สินค้าจริงขาด 38
+       แถว Product ใช้ id เดิม (cardMatch/Short/Over) ทุกที่ที่อ่าน id เดิมจึงได้ตัวเลขสินค้าจริง -->
+  <div id="sumCards" style="display:none">
+    <div class="sum-grp-hd">📦 Product</div>
+    <div class="stats" data-cardgroup="product">
+      <button type="button" class="stat tap" id="cardMatch" data-sumcard="match" data-group="product">
+        <div class="s-num" id="cardMatchNum">0</div>
+        <div class="s-lab">✅ ตรง (SKU)</div>
+        <div class="s-sub" id="cardMatchPc">0 ชิ้น</div>
+        <div class="s-sub" id="cardMatchVal">&nbsp;</div>
+      </button>
+      <button type="button" class="stat tap" id="cardShort" data-sumcard="short" data-group="product">
+        <div class="s-num neg" id="cardShortNum">0</div>
+        <div class="s-lab">❌ ขาด (SKU)</div>
+        <div class="s-sub" id="cardShortPc">0 ชิ้น</div>
+        <div class="s-sub neg" id="cardShortVal">&nbsp;</div>
+      </button>
+      <button type="button" class="stat tap" id="cardOver" data-sumcard="over" data-group="product">
+        <div class="s-num pos" id="cardOverNum">0</div>
+        <div class="s-lab">➕ เกิน (SKU)</div>
+        <div class="s-sub" id="cardOverPc">0 ชิ้น</div>
+        <div class="s-sub pos" id="cardOverVal">&nbsp;</div>
+      </button>
+    </div>
+    <div class="sum-grp-hd">🏷 Not Product</div>
+    <div class="stats" data-cardgroup="notProduct">
+      <button type="button" class="stat tap" id="cardMatchNP" data-sumcard="match" data-group="notProduct">
+        <div class="s-num" id="cardMatchNPNum">0</div>
+        <div class="s-lab">✅ ตรง (SKU)</div>
+        <div class="s-sub" id="cardMatchNPPc">0 ชิ้น</div>
+        <div class="s-sub" id="cardMatchNPVal">&nbsp;</div>
+      </button>
+      <button type="button" class="stat tap" id="cardShortNP" data-sumcard="short" data-group="notProduct">
+        <div class="s-num neg" id="cardShortNPNum">0</div>
+        <div class="s-lab">❌ ขาด (SKU)</div>
+        <div class="s-sub" id="cardShortNPPc">0 ชิ้น</div>
+        <div class="s-sub neg" id="cardShortNPVal">&nbsp;</div>
+      </button>
+      <button type="button" class="stat tap" id="cardOverNP" data-sumcard="over" data-group="notProduct">
+        <div class="s-num pos" id="cardOverNPNum">0</div>
+        <div class="s-lab">➕ เกิน (SKU)</div>
+        <div class="s-sub" id="cardOverNPPc">0 ชิ้น</div>
+        <div class="s-sub pos" id="cardOverNPVal">&nbsp;</div>
+      </button>
+    </div>
   </div>
   <div class="muted" style="font-size:12px;margin:4px 2px 8px">💡 ตัวเลขเงินคิดเฉพาะสินค้าที่มีราคา — ของใช้ร้าน (ราคา 0) นับเป็นชิ้นแต่ไม่รวมเป็นเงิน</div>
 
@@ -1966,7 +1998,7 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.34.0';
+var APP_VERSION = '2.35.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -9165,9 +9197,13 @@ var SUM_CARD_SPEC = {
   }
 };
 
-function sumCardRows(data, kind) {
+/* group = 'product' | 'notProduct' (ตรงกับ r.type) · ไม่ส่ง = ทุกกลุ่มรวมกันเหมือนเดิม
+   การ์ดหน้ายิงกับคีย์ลัดยังไม่ส่ง group จึงเห็นยอดรวมทั้งหมดตามเดิม */
+function sumCardRows(data, kind, group) {
   var spec = SUM_CARD_SPEC[kind];
-  return data.rows.filter(spec.pick).slice().sort(spec.sort);
+  return data.rows.filter(spec.pick)
+    .filter(function (r) { return !group || r.type === group; })
+    .slice().sort(spec.sort);
 }
 
 /* มูลค่าผลต่างรวมของกลุ่ม — คิดจาก diff × ราคาต่อตัว ตามช่องราคาที่เลือกอยู่ */
@@ -9190,25 +9226,29 @@ function signedMoney(v) {
   return (v > 0 ? '+' : '-') + '฿' + fmtMoney(Math.abs(v));
 }
 
+/* ⭐ v2.35.0 — 2 แถว: Product ใช้ id เดิม · Not Product ต่อท้าย id ด้วย "NP" */
 function renderSumCards(data) {
-  ['match', 'short', 'over'].forEach(function (kind) {
-    var rows = sumCardRows(data, kind);
-    var cap = kind.charAt(0).toUpperCase() + kind.slice(1);
-    $('card' + cap + 'Num').textContent = fmtNum(rows.length);
-    /* ตัวเลขใหญ่ = SKU · บรรทัดถัดมา = จำนวนชิ้น · บรรทัดล่างสุด = มูลค่า
-       แยกคนละบรรทัด ไม่ต่อกันด้วย " · " เพราะการ์ดกว้างแค่ ~110px บนมือถือ
-       พอรวมบรรทัดเดียวแล้วตัวเลขเงินตัดบรรทัด เครื่องหมายลบหลุดไปอยู่คนละแถวกับตัวเลข */
-    $('card' + cap + 'Pc').textContent = fmtNum(sumCardPieces(rows, kind)) + ' ชิ้น';
-    var money = $('card' + cap + 'Val');
-    /* กลุ่ม "ตรง" ผลต่างเป็น 0 เสมอ ไม่มีมูลค่าให้บอก แต่ต้องกันความสูงไว้ให้การ์ดเท่ากัน */
-    if (kind === 'match') { money.innerHTML = '&nbsp;'; return; }
-    money.textContent = signedMoney(sumCardValue(rows));
+  [['product', ''], ['notProduct', 'NP']].forEach(function (grp) {
+    var group = grp[0], suf = grp[1];
+    ['match', 'short', 'over'].forEach(function (kind) {
+      var rows = sumCardRows(data, kind, group);
+      var cap = kind.charAt(0).toUpperCase() + kind.slice(1);
+      $('card' + cap + suf + 'Num').textContent = fmtNum(rows.length);
+      /* ตัวเลขใหญ่ = SKU · บรรทัดถัดมา = จำนวนชิ้น · บรรทัดล่างสุด = มูลค่า
+         แยกคนละบรรทัด ไม่ต่อกันด้วย " · " เพราะการ์ดกว้างแค่ ~110px บนมือถือ
+         พอรวมบรรทัดเดียวแล้วตัวเลขเงินตัดบรรทัด เครื่องหมายลบหลุดไปอยู่คนละแถวกับตัวเลข */
+      $('card' + cap + suf + 'Pc').textContent = fmtNum(sumCardPieces(rows, kind)) + ' ชิ้น';
+      var money = $('card' + cap + suf + 'Val');
+      /* กลุ่ม "ตรง" ผลต่างเป็น 0 เสมอ ไม่มีมูลค่าให้บอก แต่ต้องกันความสูงไว้ให้การ์ดเท่ากัน */
+      if (kind === 'match') { money.innerHTML = '&nbsp;'; return; }
+      money.textContent = signedMoney(sumCardValue(rows));
+    });
   });
 }
 
 /* หนึ่งแถวในป๊อปอัป — ใช้การ์ด .srow ไม่ใช่ตารางเลื่อนซ้ายขวา
    เพราะคนอ่านคือทีมคลังบนมือถือ ผลต่างต้องอยู่ในจอเสมอ (เหตุผลเดียวกับคอมเมนต์ที่ .srow) */
-function sumCardRow(r, kind) {
+function sumCardRow(r, kind, group) {
   var row = document.createElement('div');
   row.className = 'srow';
   row.setAttribute('data-sku', r.code || r.key);
@@ -9323,7 +9363,7 @@ function sumCardRow(r, kind) {
           minus.disabled = true;
           minus.title = blockedMessage();
         } else {
-          minus.onclick = function (ev) { ev.stopPropagation(); removeFromJob(r, kind, j.id, 1); };
+          minus.onclick = function (ev) { ev.stopPropagation(); removeFromJob(r, kind, j.id, 1, group); };
         }
 
         var right = document.createElement('span');
@@ -9341,7 +9381,7 @@ function sumCardRow(r, kind) {
           allBtn.style.margin = '4px 0 8px';
           allBtn.setAttribute('data-removejoball', j.id);
           allBtn.textContent = '🗑 เอาออกทั้งหมดจากใบ ' + j.jobCode + ' (' + fmtNum(j.net) + ' ชิ้น)';
-          allBtn.onclick = function (ev) { ev.stopPropagation(); removeFromJob(r, kind, j.id, j.net); };
+          allBtn.onclick = function (ev) { ev.stopPropagation(); removeFromJob(r, kind, j.id, j.net, group); };
           row.appendChild(allBtn);
         }
       });
@@ -9356,7 +9396,7 @@ function sumCardRow(r, kind) {
     addBtn.textContent = '➕ เพิ่ม 1 ชิ้น (เข้าใบที่เปิดอยู่)';
     addBtn.disabled = locked;
     if (locked) addBtn.title = blockedMessage();
-    else addBtn.onclick = function (ev) { ev.stopPropagation(); addFromSummary(r, kind); };
+    else addBtn.onclick = function (ev) { ev.stopPropagation(); addFromSummary(r, kind, group); };
     row.appendChild(addBtn);
   }
     return row;
@@ -9425,13 +9465,13 @@ function adjustJobCount(roundId, key, delta, reason) {
 }
 
 /* โหลดยอดรวมใหม่แล้วเปิดลิสต์เดิมกลับ — ใช้ร่วมกันทุกปุ่มปรับยอดในหน้าสรุป */
-function reloadAfterAdjust(kind) {
+function reloadAfterAdjust(kind, group) {
   /* รอบที่มี Job เดียวต้องเปิดลิสต์กลับ "ทันที" ไม่ผ่าน Promise เลย (กติกาเดิมตั้งแต่ v2.7.x)
      ไม่ใช่แค่เรื่องเร็ว — ถ้าเลื่อนไปรอบถัดไป ลิสต์จะไปโผล่ทีหลังตอนคนกดออกจากหน้าไปแล้ว
      และยอดในเครื่องก็ขยับครบแล้วตั้งแต่ writeScan ไม่มีอะไรต้องรอโหลด */
   if (!cycleScope().multi) {
     renderSummary();
-    openSumCard(kind || 'over');
+    openSumCard(kind || 'over', group);
     return;
   }
   /* หลายใบ — ยอดรวมทั้งรอบต้องดึงใหม่ เพราะแถวที่เพิ่งเขียนอาจลงใบอื่นที่ไม่ได้เปิดอยู่ */
@@ -9439,14 +9479,14 @@ function reloadAfterAdjust(kind) {
   var reopen = function () {
     if (state.page !== 'summary') return;
     renderSummary();
-    openSumCard(kind || 'over');
+    openSumCard(kind || 'over', group);
   };
   ensureReportData().then(reopen, reopen);
 }
 
 /* เอาออกจากใบที่เลือก — ใบที่เปิดอยู่ใช้ writeScan ตัวเดิม (ยอดในเครื่องขยับทันที)
    ใบอื่นใช้ adjustJobCount แล้วรอโหลดใหม่ ไม่งั้นยอดใบที่เปิดจะเพี้ยน */
-function removeFromJob(r, kind, jobId, qty) {
+function removeFromJob(r, kind, jobId, qty, group) {
   qty = Math.max(1, Number(qty) || 1);
   if (!hasPerm('adjustCount')) { toast(roleBlockMessage('เอาของออกจากสรุปไม่ได้'), true); return; }
   if (!canScan()) { toast(blockedMessage() + ' — เอาออกไม่ได้', true); return; }
@@ -9468,7 +9508,7 @@ function removeFromJob(r, kind, jobId, qty) {
     toast('เอา ' + (r.code || r.key) + ' ออกจากใบ ' + job.jobCode + ' ' + fmtNum(qty) +
           ' ชิ้นแล้ว — บันทึกเป็นประวัติไว้ ไม่ได้ลบยอดเดิม');
     $('modalOk').click();
-    reloadAfterAdjust(kind);
+    reloadAfterAdjust(kind, group);
   };
 
   if (qty <= 1) { write(); return; }
@@ -9478,19 +9518,19 @@ function removeFromJob(r, kind, jobId, qty) {
       '\nยอดของใบนี้จะถูกหักจนเหลือ 0 (ใบอื่นไม่ถูกแตะ)\n' +
       'ระบบบันทึกเป็นประวัติไว้ ไม่ได้ลบยอดเดิมทิ้ง ตรวจย้อนหลังได้เสมอ',
       'เอาออก ' + fmtNum(qty) + ' ชิ้น', { danger: true }).then(function (ok) {
-    if (!ok) { openSumCard(kind || 'over'); return; }
+    if (!ok) { openSumCard(kind || 'over', group); return; }
     write();
   });
 }
 
 /* เจอของเพิ่มตอนตรวจ — เข้าใบที่เปิดอยู่เสมอ เพราะคนที่กดคือคนที่ถือของอยู่ตรงนั้น */
-function addFromSummary(r, kind) {
+function addFromSummary(r, kind, group) {
   if (!hasPerm('adjustCount')) { toast(roleBlockMessage('เพิ่มยอดจากสรุปไม่ได้'), true); return; }
   if (!canScan()) { toast(blockedMessage() + ' — เพิ่มไม่ได้', true); return; }
   writeScan(r.key, 1, 'scan', 'เพิ่มจากสรุป (เจอของ)');
   toast('เพิ่ม ' + (r.code || r.key) + ' 1 ชิ้นเข้าใบ ' + jobCodeOf(state.roundId) + ' แล้ว');
   $('modalOk').click();
-  reloadAfterAdjust(kind);
+  reloadAfterAdjust(kind, group);
 }
 
 /* เอาของที่ยิงเกินออก — เขียนเป็นแถวใหม่ delta ติดลบ ไม่ได้ลบแถวเดิม
@@ -9498,7 +9538,7 @@ function addFromSummary(r, kind) {
    kind = กลุ่มที่กดมา ต้องเปิดกลุ่มเดิมกลับ ไม่ใช่เด้งไปกลุ่ม "เกิน" เสมอ
    ของที่ยอดลดจนเปลี่ยนกลุ่ม (ตรง → ขาด) จะหายจากลิสต์เดิมเอง ซึ่งถูกแล้ว
    qty = จำนวนที่จะหัก (ไม่ส่งมา = 1) · มากกว่า 1 ต้องถามยืนยันก่อนเสมอ */
-function removeOverScan(r, kind, qty) {
+function removeOverScan(r, kind, qty, group) {
   qty = Math.max(1, Number(qty) || 1);
   if (!hasPerm('adjustCount')) { toast(roleBlockMessage('เอาของออกจากสรุปไม่ได้'), true); return; }
   if (!canScan()) { toast(blockedMessage() + ' — เอาออกไม่ได้', true); return; }
@@ -9524,11 +9564,11 @@ function removeOverScan(r, kind, qty) {
     /* ...แล้วเปิดกลุ่มเดิมใหม่
        รอบที่มี Job เดียวต้องเปิดกลับ "ทันที" ไม่ผ่าน Promise เลย — ไม่ใช่แค่เรื่องเร็ว
        แต่ถ้าเลื่อนไปรอบถัดไป ลิสต์จะไปโผล่ทีหลังตอนคนกดออกจากหน้าไปแล้ว */
-    if (!cycleScope().multi) { openSumCard(kind || 'over'); return; }
+    if (!cycleScope().multi) { openSumCard(kind || 'over', group); return; }
     /* หลาย Job — ยอดรวมเพิ่งถูกล้างไปตอนเขียนแถวใหม่ ต้องรวมใหม่ก่อนเปิดลิสต์กลับ
        ไม่งั้นตัวเลขจะกระโดดลงไปเป็นของใบนี้ใบเดียวแวบหนึ่งแล้วเด้งกลับ
        เช็คว่ายังอยู่หน้าสรุปก่อนเปิด — ระหว่างรอ คนอาจกดออกไปหน้าอื่นแล้ว */
-    var reopen = function () { if (state.page === 'summary') openSumCard(kind || 'over'); };
+    var reopen = function () { if (state.page === 'summary') openSumCard(kind || 'over', group); };
     ensureReportData().then(reopen, reopen);
   };
 
@@ -9543,15 +9583,17 @@ function removeOverScan(r, kind, qty) {
       '\nยอดที่ยิงไว้จะถูกหักจนเหลือ 0\n' +
       'ระบบบันทึกเป็นประวัติไว้ ไม่ได้ลบยอดเดิมทิ้ง ตรวจย้อนหลังได้เสมอ',
       'เอาออก ' + fmtNum(qty) + ' ชิ้น', { danger: true }).then(function (ok) {
-    if (!ok) { openSumCard(kind || 'over'); return; }
+    if (!ok) { openSumCard(kind || 'over', group); return; }
     write();
   });
 }
 
-function openSumCard(kind) {
+/* group (v2.35.0) — กดจากการ์ดแถว Product/Not Product ส่งมาด้วย ลิสต์จะได้ไม่มีอีกกลุ่มปน
+   ไม่ส่ง = ทุกกลุ่ม (การ์ดหน้ายิงยังเป็นยอดรวม) · ต้องส่งต่อทุกจุดที่เปิดลิสต์กลับ */
+function openSumCard(kind, group) {
   if (!hasPerm('viewSummary')) { toast(roleBlockMessage('ดูรายละเอียดผลต่างไม่ได้'), true); return Promise.resolve(); }
   var spec = SUM_CARD_SPEC[kind];
-  var rows = sumCardRows(reportDataSync(), kind);
+  var rows = sumCardRows(reportDataSync(), kind, group);
   var money = sumCardValue(rows);
 
   var box = document.createElement('div');
@@ -9591,7 +9633,7 @@ function openSumCard(kind) {
       listHost.appendChild(none);
       return;
     }
-    hits.forEach(function (r) { listHost.appendChild(sumCardRow(r, kind)); });
+    hits.forEach(function (r) { listHost.appendChild(sumCardRow(r, kind, group)); });
   };
   if (search) search.oninput = function () { renderRows(this.value); };
   renderRows('');
@@ -9602,7 +9644,8 @@ function openSumCard(kind) {
   if (hasPerm('adjustCount') && rows.some(function (r) { return r.act > 0; })) {
     msg += '\nยิงเกินโดยไม่ตั้งใจ กด "เอาออก 1 ชิ้น" ได้ — ระบบบันทึกเป็นประวัติ ไม่ได้ลบยอดเดิม';
   }
-  return ask(spec.title, msg, 'ปิด', { hideCancel: true, detail: box });
+  return ask(spec.title + (group ? ' · ' + GROUP_LABEL[group] : ''), msg, 'ปิด',
+             { hideCancel: true, detail: box });
 }
 
 /* ตัวเลขผลต่างคือเครื่องมือจับทุจริต ถ้าคนยิงเห็นว่าตัวไหนขาดอยู่เท่าไหร่
@@ -18211,7 +18254,9 @@ function init() {
   };
   /* ครอบทั้งการ์ดหน้าสรุปและการ์ดผลต่างสดบนหน้ายิง — openSumCard เช็คสิทธิ์ในตัวเองอยู่แล้ว */
   document.querySelectorAll('[data-sumcard]').forEach(function (b) {
-    b.onclick = function () { openSumCard(b.getAttribute('data-sumcard')); };
+    b.onclick = function () {
+      openSumCard(b.getAttribute('data-sumcard'), b.getAttribute('data-group') || undefined);
+    };
   });
   $('btnExportPicked').onclick = function () { exportJobsExcel(state.exportPick.slice()); };
   $('btnExportClear').onclick = function () {
