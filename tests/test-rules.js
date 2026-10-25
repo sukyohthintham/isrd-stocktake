@@ -43,17 +43,19 @@ function makeDb(role, roundStatus) {
 
 /* ในภาษา Rules สตริงมีเมธอด matches() ให้ใช้ — JS ไม่มี ต้องเติมเอง */
 String.prototype.matches = function (re) { return re.test(this.valueOf()); };
+String.prototype.beginsWith = function (p) { return this.valueOf().indexOf(p) === 0; };
 
 /* DataSnapshot จำลอง — รองรับเมธอดเท่าที่ไฟล์ Rules เรียกใช้จริง */
-function snap(node) {
+function snap(node, parent) {
   return {
     child: function (p) {
       let cur = node;
       String(p).split('/').filter(Boolean).forEach(function (seg) {
         cur = (cur && typeof cur === 'object') ? cur[seg] : undefined;
       });
-      return snap(cur);
+      return snap(cur, node);
     },
+    parent: function () { return snap(parent); },
     val: function () { return node === undefined ? null : node; },
     exists: function () { return node !== undefined && node !== null; },
     hasChildren: function (keys) {
@@ -69,7 +71,7 @@ function snap(node) {
 function evalRule(expr, ctx) {
   const fn = new Function('root', 'auth', 'data', 'newData', '$roundId', '$cycleId', '$uid',
                           'return (' + expr + ');');
-  return !!fn(snap(ctx.db), ctx.auth, snap(ctx.existing), snap(ctx.incoming),
+  return !!fn(snap(ctx.db), ctx.auth, snap(ctx.existing, ctx.existingParent), snap(ctx.incoming, ctx.incomingParent),
               'R1', 'C1', 'u_me');
 }
 
@@ -78,7 +80,7 @@ function canWrite(expr, role, roundStatus, extra) {
   return evalRule(expr, {
     db: makeDb(role, roundStatus),
     auth: { uid: 'u_me' },
-    existing: extra.existing,
+    existing: extra.existing, existingParent: extra.existingParent,
     incoming: extra.incoming === undefined ? { x: 1 } : extra.incoming
   });
 }
@@ -180,6 +182,17 @@ const MATRIX = [
   { path: 'rounds/$id/schema', rule: R.schema['.write'],
     want: function () { return A_C; }, extra: { incoming: 2 } },
 
+  /* ---- ⭐ v2.37.0 รีเช็ค: แยกสิทธิ์รายฟิลด์ (admin จัดการ · เด็กกรอกผล) · รูปแยกโหนด ---- */
+  { path: 'rounds/$id/rechecks/$sku (admin ส่ง/ลบ/applied)', rule: R.rechecks.$sku['.write'],
+    want: function (st) { return st === 'counting' ? A_C : []; },
+    extra: { incoming: { name: 'x' } } },
+  { path: 'rounds/$id/rechecks/$sku/qty (เด็กกรอกผล)', rule: R.rechecks.$sku.qty['.write'],
+    want: function (st) { return st === 'counting' ? A_C_S : []; },
+    extra: { incoming: 5, existingParent: { sentAt: 1 } } },
+  { path: 'recheckPhotos/$rid/$sku (เด็กแนบรูป)', rule: S.recheckPhotos.$roundId.$sku['.write'],
+    want: function (st) { return st === 'counting' ? A_C_S : []; },
+    extra: { incoming: 'data:image/jpeg;base64,/9j/x' } },
+
   /* ---- ของเก่าที่เลิกใช้แล้ว: ห้ามเขียนถาวร ---- */
   { path: 'rounds/$id/counts', rule: String(R.counts['.write']),
     want: function () { return []; } },
@@ -221,9 +234,11 @@ MATRIX.forEach(function (row) {
 /* v2.10.0 — stat/skuQty เข้ามาอยู่ในลิสต์นี้ด้วยโดยตั้งใจ
    scanner ยิงบาร์โค้ดได้ ก็ต้องอัปเดตยอดสรุปของรอบได้ ไม่งั้นเด็กหน้าร้านยิงไปทั้งวัน
    แล้วยอดสรุปไม่ขยับเลย (ยอดนับถูก แต่ตัวเลขบนการ์ดค้าง) */
-check('ตอนนับ scanner เขียนได้แค่ scans · unknown · reasons · stat · skuQty',
+check('ตอนนับ scanner เขียนได้แค่ scans · unknown · reasons · stat · skuQty · rechecks/qty · รูปรีเช็ค',
       JSON.stringify(scannerOk.sort()) === JSON.stringify(
-        ['rounds/$id/reasons', 'rounds/$id/scans/$scanId', 'rounds/$id/skuQty',
+        ['recheckPhotos/$rid/$sku (เด็กแนบรูป)',
+         'rounds/$id/reasons', 'rounds/$id/rechecks/$sku/qty (เด็กกรอกผล)',
+         'rounds/$id/scans/$scanId', 'rounds/$id/skuQty',
          'rounds/$id/stat', 'rounds/$id/unknown/$id']),
       scannerOk);
 check('รอบส่งตรวจแล้ว scanner เขียนหมายเหตุไม่ได้',
@@ -256,7 +271,7 @@ function canWriteInactive(expr, role, extra) {
   db.stocktake2026.users.u_me.active = false;
   return evalRule(expr, {
     db: db, auth: { uid: 'u_me' },
-    existing: extra.existing,
+    existing: extra.existing, existingParent: extra.existingParent,
     incoming: extra.incoming === undefined ? { x: 1 } : extra.incoming
   });
 }
@@ -323,7 +338,7 @@ function canWriteCaps(expr, caps, roundStatus, extra, cycleStatus) {
   if (cycleStatus) db.stocktake2026.cycles.C1.status = cycleStatus;
   return evalRule(expr, {
     db: db, auth: { uid: 'u_me' },
-    existing: extra.existing,
+    existing: extra.existing, existingParent: extra.existingParent,
     incoming: extra.incoming === undefined ? { x: 1 } : extra.incoming
   });
 }
@@ -698,6 +713,56 @@ check('ชุดผู้เขียน sold = systemQty ทุก role × ส�
   check('sold/$sku .validate รับจำนวน ≥ 0', ok(0) && ok(3) && ok(2.5), v);
   check('sold/$sku .validate ปฏิเสธติดลบ / ข้อความ', !ok(-1) && !ok('2'), v);
 })();
+
+/* ---------- 11. v2.37.0 — รีเช็ค: แยกสิทธิ์รายฟิลด์ + กัน XSS ที่รูป ---------- */
+console.log('\n[11] v2.37.0 — แท็บรีเช็ค (แยกสิทธิ์ + กัน XSS ที่รูป)');
+check('⭐ rechecks/$sku (ส่ง/ลบ/applied) = admin|counter เท่านั้น',
+      canWrite(R.rechecks.$sku['.write'], 'admin', 'counting') &&
+      canWrite(R.rechecks.$sku['.write'], 'counter', 'counting') &&
+      !canWrite(R.rechecks.$sku['.write'], 'scanner', 'counting'), 'ADMIN field');
+check('⭐ rechecks/$sku/qty (ผลเด็ก) = scanner เขียนได้ตอน counting · ปิดรอบไม่ได้',
+      canWrite(R.rechecks.$sku.qty['.write'], 'scanner', 'counting', { existingParent: { sentAt: 1 } }) &&
+      !canWrite(R.rechecks.$sku.qty['.write'], 'scanner', 'closed', { existingParent: { sentAt: 1 } }), 'SCAN field');
+check('⭐ ไม่มี perms/viewSummary ในนิพจน์ .write (cap แสดงผลห้ามใส่)',
+      R.rechecks.$sku['.write'].indexOf('viewSummary') < 0 &&
+      R.rechecks.$sku.qty['.write'].indexOf('viewSummary') < 0 &&
+      S.recheckPhotos.$roundId.$sku['.write'].indexOf('viewSummary') < 0, 'no viewSummary');
+(function () {
+  const v = S.recheckPhotos.$roundId.$sku['.validate'];
+  const ok = function (val) { return evalRule(v, { db: makeDb('scanner', 'counting'), auth: { uid: 'u_me' }, incoming: val }); };
+  check('รูป .validate: รับ data:image/jpeg;base64,...', ok('data:image/jpeg;base64,/9j/4AAQ'), v);
+  check('⭐ รูป .validate: ปฏิเสธ HTML/สคริปต์/ตัวเลข (กัน stored XSS)',
+        !ok('<img src=x onerror=alert(1)>') && !ok('javascript:alert(1)') && !ok(123), v);
+})();
+
+/* ---------- 12. v2.37.0 — PATCH ส่งคืนของเด็กทั้งก้อน (Firebase atomic) + กันแถวผี ---------- */
+console.log('\n[12] v2.37.0 — PATCH ส่งคืนของเด็ก (atomic multi-path) + sentAt guard');
+var RC = R.rechecks.$sku;
+var SENT = { name: 'x', sentBy: 'a', sentAt: 1 };   // node ที่ admin ส่งแล้ว (มี sentAt)
+/* Firebase ประเมิน PATCH หลายช่องทั้งก้อน — ทุกช่องต้องผ่าน (field .write หรือ ancestor $sku) */
+function submitOk(role, caps) {
+  return [[RC.qty['.write'], 5], [RC.by['.write'], 'เด็ก'], [RC.at['.write'], 2], [RC.applied['.write'], false]]
+    .every(function (fd) {
+      var ex = { incoming: fd[1], existingParent: SENT };
+      var okF = caps ? canWriteCaps(fd[0], caps, 'counting', ex) : canWrite(fd[0], role, 'counting', ex);
+      var okS = caps ? canWriteCaps(RC['.write'], caps, 'counting', ex) : canWrite(RC['.write'], role, 'counting', ex);
+      return okF || okS;
+    });
+}
+check('⭐ scanner ส่งคืน (qty+by+at+applied:false) ผ่านทั้งก้อน', submitOk('scanner'), 'scanner');
+check('⭐ custom {scan} ส่งคืนผ่านทั้งก้อน', submitOk(null, ['scan']), 'custom scan');
+check('counter ส่งคืนผ่านทั้งก้อน', submitOk('counter'), 'counter');
+check('⭐ scanner ตั้ง applied:true เองไม่ได้',
+      !(canWrite(RC.applied['.write'], 'scanner', 'counting', { incoming: true, existingParent: SENT }) ||
+        canWrite(RC['.write'], 'scanner', 'counting', { incoming: true, existingParent: SENT })), 'scanner applied true');
+check('viewer ส่งคืนไม่ได้', !submitOk('viewer'), 'viewer');
+check('⭐ เด็กเขียน qty ใส่ SKU ที่ admin ไม่ได้ส่ง (ไม่มี sentAt) ไม่ผ่าน (กันแถวผี)',
+      !canWrite(RC.qty['.write'], 'scanner', 'counting', { incoming: 5, existingParent: {} }), 'no sentAt');
+var PH = S.recheckPhotos.$roundId.$sku['.write'];
+check('⭐ custom {adjustCount} ลบรูปได้ (delete only)',
+      canWriteCaps(PH, ['adjustCount'], 'counting', { incoming: null, existing: 'data:image/jpeg;base64,x' }), 'adjustCount del');
+check('custom {adjustCount} เขียนรูปใหม่ไม่ได้ (แค่ลบ)',
+      !canWriteCaps(PH, ['adjustCount'], 'counting', { incoming: 'data:image/jpeg;base64,x' }), 'adjustCount write');
 
 console.log('\n==== ' + pass + ' passed, ' + fail + ' failed ====');
 process.exit(fail ? 1 : 0);
