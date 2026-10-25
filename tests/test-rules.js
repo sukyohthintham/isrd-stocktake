@@ -660,5 +660,44 @@ console.log('\n[9e] บัญชีถูกปิดใช้งาน — role
 check('counter ที่ active=false เขียน products ไม่ได้',
       canWriteInactive(S.products['.write'], 'counter') === false, 'inactive counter');
 
+/* ---------- 10. v2.36.0 — cycles/$cid/sold (ขายออกระหว่างนับ) ----------
+   applySoldImport() เขียน sold ด้วยสิทธิ์เดียวกับนำเข้ายอดระบบ → ชุดผู้เขียนต้องตรงกับ systemQty เป๊ะ
+   ถ้าไม่มีโหนดนี้ใน Rules ทุกคนจะเด้ง 401 เพราะ stocktake2026/.write = false */
+console.log('\n[10] cycles/$cid/sold — ขายออกระหว่างนับ');
+function canWriteCycle(expr, role, cycleStatus) {
+  const db = makeDb(role, 'counting');
+  if (cycleStatus === null) delete db.stocktake2026.cycles.C1.status;
+  else db.stocktake2026.cycles.C1.status = cycleStatus;
+  return evalRule(expr, { db: db, auth: { uid: 'u_me' }, existing: undefined, incoming: { A1: 2 } });
+}
+check('มีโหนด sold ใต้ cycles/$cycleId', !!(C.sold && C.sold['.write']), Object.keys(C));
+check('⭐ .write ของ sold = ของ systemQty เป๊ะ', C.sold['.write'] === C.systemQty['.write'], 'ต้องเหมือนกันทุกตัวอักษร');
+check('admin / counter เขียน sold ได้ตอนรอบ counting',
+      canWriteCycle(C.sold['.write'], 'admin', 'counting') && canWriteCycle(C.sold['.write'], 'counter', 'counting'), 'A_C');
+check('custom + importSysQty เขียน sold ได้ตอนรอบ counting',
+      canWriteCaps(C.sold['.write'], ['importSysQty'], 'counting', null, 'counting') === true, 'importSysQty');
+check('รอบที่ยังไม่มี status (ยังไม่เคยเปิด) เขียน sold ได้เหมือน systemQty',
+      canWriteCycle(C.sold['.write'], 'counter', null) === true, 'no status');
+check('scanner / viewer เขียน sold ไม่ได้',
+      !canWriteCycle(C.sold['.write'], 'scanner', 'counting') && !canWriteCycle(C.sold['.write'], 'viewer', 'counting'), 'scanner/viewer');
+check('custom ที่ติ๊กแค่ scan / ไม่ติ๊กอะไร เขียน sold ไม่ได้',
+      !canWriteCaps(C.sold['.write'], ['scan'], 'counting') && !canWriteCaps(C.sold['.write'], [], 'counting'), 'custom');
+check('⭐ ปิดรอบ (closed) แล้ว — admin ก็เขียน sold ไม่ได้',
+      !canWriteCycle(C.sold['.write'], 'admin', 'closed') && !canWriteCaps(C.sold['.write'], ['importSysQty'], 'counting', null, 'closed'), 'closed');
+check('รอบ reviewing เขียน sold ไม่ได้', canWriteCycle(C.sold['.write'], 'counter', 'reviewing') === false, 'reviewing');
+check('บัญชีถูกปิด (active=false) เขียน sold ไม่ได้', canWriteInactive(C.sold['.write'], 'admin') === false, 'inactive');
+check('ชุดผู้เขียน sold = systemQty ทุก role × สถานะรอบ',
+      ROLES.every(function (r) {
+        return ['counting', 'reviewing', 'closed', null].every(function (st) {
+          return canWriteCycle(C.sold['.write'], r, st) === canWriteCycle(C.systemQty['.write'], r, st);
+        });
+      }), 'ต้องตรงกัน');
+(function () {
+  const v = C.sold.$sku['.validate'];
+  const ok = function (val) { return evalRule(v, { db: makeDb('admin', 'counting'), auth: { uid: 'u_me' }, incoming: val }); };
+  check('sold/$sku .validate รับจำนวน ≥ 0', ok(0) && ok(3) && ok(2.5), v);
+  check('sold/$sku .validate ปฏิเสธติดลบ / ข้อความ', !ok(-1) && !ok('2'), v);
+})();
+
 console.log('\n==== ' + pass + ' passed, ' + fail + ' failed ====');
 process.exit(fail ? 1 : 0);

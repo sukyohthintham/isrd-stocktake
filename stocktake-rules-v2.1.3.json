@@ -88,6 +88,12 @@
               ".validate": "!newData.exists() || newData.isNumber()"
             }
           },
+          "sold": {
+            ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && (root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) || root.child('stocktake2026/users').child(auth.uid).child('perms/importSysQty').val() === true) && (!root.child('stocktake2026/cycles').child($cycleId).child('status').exists() || root.child('stocktake2026/cycles').child($cycleId).child('status').val() === 'counting')",
+            "$sku": {
+              ".validate": "newData.isNumber() && newData.val() >= 0"
+            }
+          },
           "transfers": {
             ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && (root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) || root.child('stocktake2026/users').child(auth.uid).child('perms/importSysQty').val() === true) && (!root.child('stocktake2026/cycles').child($cycleId).child('status').exists() || root.child('stocktake2026/cycles').child($cycleId).child('status').val() === 'counting')"
           },

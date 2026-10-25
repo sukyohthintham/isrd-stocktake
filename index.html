@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.35.0">
+<meta name="version" content="2.36.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.35.0</title>
+<title>ISRD Stocktake v2.36.0</title>
 
 <style>
 :root{
@@ -1025,6 +1025,13 @@ body.no-doc-images .doc .imgbox{display:none}
         ใส่หรือไม่ใส่ก็ได้: ชื่อสินค้า · หมวดหมู่ · หมวดหมู่ย่อย · Tag · ราคาขาย · หน่วยสินค้า · Barcode
       </p>
     </div>
+    <div id="soldAction" style="margin-top:14px;border-top:1px solid var(--line-soft);padding-top:14px">
+      <div id="soldStatus" class="muted" style="margin-bottom:10px">ขายออกระหว่างนับ (ไม่บังคับ) — อัปโหลดไฟล์ขายจาก Zort แล้วระบบจะหักออกจากยอดตั้งต้นเป็น "ควรเหลือ"</div>
+      <input type="file" id="soldFileInput" accept=".csv,.xlsx" style="display:none">
+      <button class="btn ghost block" id="btnImportSold">🧾 นำเข้ายอดขายระหว่างนับ (Excel / CSV)</button>
+      <button class="btn ghost sm block" id="btnSoldTpl" style="margin-top:8px">⬇ ดาวน์โหลดเทมเพลตไฟล์ขาย (รหัส + จำนวน)</button>
+      <p class="muted" style="margin:10px 0 0">ต้องมีคอลัมน์ <b>รหัสสินค้า</b> + <b>จำนวน</b> (ยอดที่ขายไปช่วงนับ) · ยอดตั้งต้นเดิมไม่ถูกแก้ เก็บเป็นหลักฐานเสมอ</p>
+    </div>
     <div id="importLocked" style="display:none">
       <div class="muted" id="importLockedMsg" style="margin-bottom:12px"></div>
       <button class="btn ghost sm block" id="btnUnlockImport">🔓 ต้องแก้ไข? ปลดล็อกเพื่อนำเข้าใหม่</button>
@@ -1998,7 +2005,10 @@ body.no-doc-images .doc .imgbox{display:none}
    No CDN, no bundler, no npm. See CLAUDE.md for the house rules.
    ============================================================ */
 
-var APP_VERSION = '2.35.0';
+/* ⭐ v2.36.0 — "ขายออกระหว่างนับ": นำเข้าไฟล์ขาย (รหัส+จำนวน) → หักจากตั้งต้นเป็น "ควรเหลือ"
+   ที่ประตูโหลดเดียว ทุกหน้าใช้ตรงกัน (สรุป/รวมรอบ/สกอร์บอร์ด/เอกสาร/Excel) · ตั้งต้นไม่ถูกแตะ
+   เก็บเป็นหลักฐาน · การ์ด SKU โชว์ ตั้งต้น/ขายออก/ควรเหลือ เมื่อมีขาย · ไม่มีขาย=เหมือนเดิม */
+var APP_VERSION = '2.36.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -3707,6 +3717,13 @@ function legacyRoundParts(cid, field) {
   }));
 }
 
+function loadCycleSold(cid) {
+  if (!cid) return Promise.resolve({});
+  return onceInflight('sold:' + cid, function () {
+    return db.getQuiet('cycles/' + cid + '/sold').then(function (data) { return data || {}; }).catch(function () { return {}; });
+  });
+}
+
 function loadCycleSystemQty(cid) {
   if (!cid) return Promise.resolve({});
   /* ⭐ ยอดระบบของรอบเป็นก้อนใหญ่และทุกการ์ดในรอบเรียกพร้อมกัน — ยิงจริงใบเดียวพอ
@@ -4251,7 +4268,9 @@ var state = {
   page: 'jobs',          // ต้องตรงกับ section ที่ติด class active ไว้ใน HTML
   jobView: 'list',       // แท็บในหน้า Job: list (รายการ) / create (ฟอร์มสร้าง)
   products: {},          // master ถาวร
-  systemQty: {},         // ยอดระบบของรอบที่เลือก
+  systemQty: {},         // ยอดระบบ "หลังหักขายออก" = ควรเหลือ (ที่ทุกหน้าใช้เทียบ)
+  systemQtyRaw: {},      // ⭐ ยอดระบบตั้งต้นจริงจากไฟล์ (ไม่หักขาย — หลักฐาน/โชว์)
+  sold: {},              // ⭐ ขายออกระหว่างนับ (ต่อ SKU)
   zones: {},
   counts: {},            // key -> ยอดรวม (ผลรวม delta)
   scanQty: {},           // key -> ยอดที่มาจากการยิง
@@ -5448,6 +5467,89 @@ function findDuplicateImport(fingerprint) {
 
 /* เขียนยอดระบบเข้า "รอบนับ" ไม่ใช่ Job — นำเข้าซ้ำในรอบเดิมจึงเป็นการแทนที่
    ไม่ใช่การบวกเพิ่ม (ข้อ F4) คีย์ที่หายไปจากไฟล์ใหม่ถูกลบออกให้ตรงกับไฟล์เสมอ */
+function downloadSoldTemplate() {
+  var blob = buildXlsx([
+    { name: 'ยอดขาย', widths: [26, 14],
+      rows: [['กรอกยอดที่ "ขายไประหว่างช่วงนับสต๊อก" ต่อ SKU (ดึงจาก Zort ช่วงเวลาที่นับ) · ระบบจะหักจากยอดตั้งต้นเป็น "ควรเหลือ"'],
+             ['รหัสสินค้า', 'จำนวน'],
+             ['SKU-ตัวอย่าง-001', 2],
+             ['SKU-ตัวอย่าง-002', 1]] }
+  ]);
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'ISRD-Sold-Template.xlsx';
+  document.body.appendChild(a); a.click();
+  setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(a.href); }, 0);
+}
+
+/* ===== ⭐ นำเข้า "ขายออกระหว่างนับ" (sold) — หักจากตั้งต้นได้ควรเหลือ ===== */
+function parseSoldFile(parsed) {
+  var rows = (parsed && parsed.rows) || [];
+  if (!rows.length) throw new Error('EMPTY_FILE');
+  var headerRow = findHeaderRow(rows);
+  if (headerRow < 0) throw missingColumnsError(['รหัสสินค้า', 'จำนวน']);
+  var header = rows[headerRow];
+  var idx = {};
+  Object.keys(COLUMN_ALIASES).forEach(function (field) {
+    var aliases = COLUMN_ALIASES[field].map(normText);
+    for (var c = 0; c < header.length; c++) {
+      if (headerMatches(header[c], aliases)) { idx[field] = c; return; }
+    }
+  });
+  if (idx.code === undefined || idx.qty === undefined) throw missingColumnsError(['รหัสสินค้า', 'จำนวน']);
+  var sold = {}, n = 0;
+  for (var r = headerRow + 1; r < rows.length; r++) {
+    var row = rows[r] || [];
+    var code = cellText(row[idx.code]);
+    /* ท้ายไฟล์ Zort ("Exported by ...") อยู่ช่องแรกได้ ไม่ใช่ช่องรหัสเสมอ — กติกาเดียวกับนำเข้ายอดระบบ
+       ไม่งั้นชื่อคน export จะกลายเป็น SKU ขาย 0 ชิ้นค้างอยู่ในฐาน */
+    if (isExportFooter(cellText(row[0])) || isExportFooter(code)) break;
+    if (!code) continue;
+    var q = parseNumberCell(row[idx.qty]);
+    if (q.bad) continue;
+    var key = safeKey(code);
+    sold[key] = (sold[key] || 0) + q.value;
+    n++;
+  }
+  return { sold: sold, count: n };
+}
+
+function applySoldImport(cid, soldMap) {
+  var patch = {};
+  Object.keys(soldMap).forEach(function (k) { patch['sold/' + k] = soldMap[k]; });
+  /* อัปไฟล์ใหม่ = แทนที่ชุดขายเดิมทั้งก้อน — ลบคีย์เก่าที่ไม่อยู่ในไฟล์ใหม่ */
+  Object.keys(state.sold || {}).forEach(function (k) {
+    if (soldMap[k] === undefined) patch['sold/' + k] = null;
+  });
+  return db.update('cycles/' + cid, patch);
+}
+
+function handleSoldImport(file) {
+  if (!requirePerm('importSysQty', 'นำเข้ายอดขายไม่ได้')) return;
+  if (!state.roundId) { toast('เลือก Job ก่อนนำเข้าไฟล์', true); return; }
+  if (!requireOpenCycle()) return;
+  var isXlsx = /\.xlsx$/i.test(file.name);
+  var st = $('soldStatus'); if (st) st.textContent = 'กำลังอ่านไฟล์ขาย...';
+  return file.arrayBuffer().then(function (buf) {
+    return isXlsx ? parseXlsx(buf) : Promise.resolve(parseCsv(decodeTextFile(buf)));
+  }).then(function (parsed) {
+    var res = parseSoldFile(parsed);
+    if (!res.count) { toast('ไม่พบรายการขายในไฟล์ (ต้องมีคอลัมน์ รหัสสินค้า + จำนวน)', true); if (st) st.textContent = ''; return; }
+    return applySoldImport(state.cycleId, res.sold)
+      .then(function () {
+        /* ควรเหลือของทั้งรอบเปลี่ยน — ล้างแคชยอดรวมรอบ/สกอร์บอร์ดเหมือน doImport
+           ไม่งั้นหน้ารวมทุก Job กับหัวรอบยังโชว์ตัวเลขก่อนหักขายจนกว่าจะรีเฟรช */
+        state.cycleData = null;
+        dropCycleStats(state.cycleId);
+        return refreshSystemQty();
+      })
+      .then(function () { toast('นำเข้ายอดขาย ' + res.count + ' รายการแล้ว — คิดเป็น "ควรเหลือ" ให้อัตโนมัติ'); renderStart(); });
+  }).catch(function (e) {
+    toast('นำเข้าไฟล์ขายไม่สำเร็จ: ' + ((e && e.message) || e), true);
+    if (st) st.textContent = '';
+  });
+}
+
 function applyImport(cid, parsedResult) {
   var productDiff = buildProductPatch(parsedResult.products);
   var sysPatch = {}, removed = 0;
@@ -5455,7 +5557,7 @@ function applyImport(cid, parsedResult) {
   Object.keys(parsedResult.systemQty).forEach(function (key) {
     sysPatch['systemQty/' + key] = parsedResult.systemQty[key];
   });
-  Object.keys(state.systemQty).forEach(function (key) {
+  Object.keys(state.systemQtyRaw || state.systemQty).forEach(function (key) {
     if (parsedResult.systemQty[key] === undefined) { sysPatch['systemQty/' + key] = null; removed++; }
   });
 
@@ -8976,6 +9078,8 @@ function summaryData() {
       inRound: state.systemQty[key] !== undefined,
       known: !!state.products[key],
       sys: sys, act: act, diff: act - sys, price: price,
+      sold: Number(state.sold[key]) || 0,
+      sysRaw: (state.systemQtyRaw[key] !== undefined ? (Number(state.systemQtyRaw[key]) || 0) : sys),
       scanQty: Number(state.scanQty[key]) || 0,
       manualQty: Number(state.manualQty[key]) || 0
     });
@@ -9003,8 +9107,14 @@ function loadCycleRaw(cid) {
       ]).then(function (r) {
         return { id: id, scans: r[0] || {}, reasons: r[1] || {} };
       });
-    }))
-  ]).then(function (res) { return { sys: res[0], jobs: res[1] }; });
+    })),
+    loadCycleSold(cid)
+  ]).then(function (res) {
+    /* ⭐ หักขายที่ประตูรอบรวมด้วย ให้ตรงกับหน้าสรุปราย Job */
+    var raw = res[0] || {}, sold = res[2] || {}, should = {};
+    Object.keys(raw).forEach(function (k) { should[k] = Math.max(0, (Number(raw[k]) || 0) - (Number(sold[k]) || 0)); });
+    return { sys: should, sysRaw: raw, sold: sold, jobs: res[1] };
+  });
 }
 
 function buildCycleData(raw) {
@@ -9141,6 +9251,7 @@ function summaryDataFrom(sysMap, countMap, jobsPerSku, manualMap) {
       inRound: sysMap[key] !== undefined,
       known: !!state.products[key],
       sys: sys, act: act, diff: act - sys, price: price,
+      sold: 0, sysRaw: sys,
       scanQty: act - manual, manualQty: manual,
       /* ข้อ D2 — SKU นี้ถูกยิงจากกี่ Job */
       jobCount: Object.keys((jobsPerSku || {})[key] || {}).length
@@ -9270,10 +9381,17 @@ function sumCardRow(r, kind, group) {
   var diffCls = r.diff > 0 ? 'over' : (r.diff < 0 ? 'short' : '');
   var nums = document.createElement('div');
   nums.className = 's-nums';
-  [['ระบบ', fmtNum(r.sys), '', 'sys'],
-   ['ยิงจริง', fmtNum(r.act), '', 'act'],
-   ['ผลต่าง', (r.diff > 0 ? '+' : '') + fmtNum(r.diff), diffCls, 'diff']
-  ].forEach(function (c) {
+  var _sold = Number(r.sold) || 0;
+  (_sold > 0
+    ? [['ตั้งต้น', fmtNum(r.sysRaw), '', 'sysraw'],
+       ['ขายออก', '-' + fmtNum(_sold), 'short', 'sold'],
+       ['ควรเหลือ', fmtNum(r.sys), '', 'sys'],
+       ['ยิงจริง', fmtNum(r.act), '', 'act'],
+       ['ผลต่าง', (r.diff > 0 ? '+' : '') + fmtNum(r.diff), diffCls, 'diff']]
+    : [['ระบบ', fmtNum(r.sys), '', 'sys'],
+       ['ยิงจริง', fmtNum(r.act), '', 'act'],
+       ['ผลต่าง', (r.diff > 0 ? '+' : '') + fmtNum(r.diff), diffCls, 'diff']]
+  ).forEach(function (c) {
     var box = document.createElement('div');
     var cap = document.createElement('span');
     cap.className = 's-cap';
@@ -12706,9 +12824,13 @@ function loadCycleStats(cid) {
   var ids = jobsInCycle(cid);
   return Promise.all([
     loadCycleSystemQty(cid),
-    Promise.all(ids.map(loadJobStats))
+    Promise.all(ids.map(loadJobStats)),
+    loadCycleSold(cid)
   ]).then(function (res) {
-    var sys = res[0] || {}, parts = res[1] || [];
+    var rawSys = res[0] || {}, parts = res[1] || [], soldMap = res[2] || {};
+    /* ⭐ หักขาย → สกอร์บอร์ด/ภาพรวมใช้ "ควรเหลือ" ตรงกับหน้าสรุป */
+    var sys = {};
+    Object.keys(rawSys).forEach(function (k) { sys[k] = Math.max(0, (Number(rawSys[k]) || 0) - (Number(soldMap[k]) || 0)); });
     var counts = {}, lastTs = 0, discarded = {};
     parts.forEach(function (p) {
       if (!p) return;
@@ -14575,7 +14697,11 @@ function sheetNameFor(code, i) {
 function loadJobsRaw(ids) {
   var sysCache = {};
   function sysOf(cid) {
-    if (!sysCache[cid]) sysCache[cid] = loadCycleSystemQty(cid);
+    if (!sysCache[cid]) sysCache[cid] = Promise.all([loadCycleSystemQty(cid), loadCycleSold(cid)]).then(function (r) {
+      var raw = r[0] || {}, sold = r[1] || {}, should = {};
+      Object.keys(raw).forEach(function (k) { should[k] = Math.max(0, (Number(raw[k]) || 0) - (Number(sold[k]) || 0)); });
+      return should;   /* ⭐ export ก็ใช้ "ควรเหลือ" (หักขาย) ตรงกับทุกหน้า */
+    });
     return sysCache[cid];
   }
   return Promise.all(ids.map(function (id) {
@@ -15524,9 +15650,15 @@ function refreshZones() {
 function refreshSystemQty() {
   if (!state.roundId) return Promise.resolve();
   var id = state.roundId, cid = state.cycleId;
-  return loadCycleSystemQty(cid).then(function (data) {
+  return Promise.all([loadCycleSystemQty(cid), loadCycleSold(cid)]).then(function (res) {
     if (state.roundId !== id) return;
-    state.systemQty = data || {};
+    var raw = res[0] || {}, sold = res[1] || {};
+    state.systemQtyRaw = raw;
+    state.sold = sold;
+    /* ⭐ หัก "ขายออก" ที่ประตูเดียว → ทุกหน้าใช้ "ควรเหลือ" เหมือนกัน (ไม่แตะสูตรรายหน้า) */
+    var should = {};
+    Object.keys(raw).forEach(function (k) { should[k] = Math.max(0, (Number(raw[k]) || 0) - (Number(sold[k]) || 0)); });
+    state.systemQty = should;
     renderStart();
     if (state.page === 'summary') renderSummary();
     if (state.page === 'doc') renderDoc();
@@ -15808,6 +15940,8 @@ function selectRound(id) {
   localStorage.setItem('isrd_round', id);
   state.zones = {};
   state.systemQty = {};
+  state.systemQtyRaw = {};
+  state.sold = {};
   state.importUnlocked = false;    // ⭐ v2.10.7 ปลดล็อกเป็นของรายรอบ ห้ามติดค้างข้ามใบ
   state.lastImport = null;
   state.reasons = {};
@@ -18141,6 +18275,9 @@ function init() {
   });
 
   $('btnImport').onclick = function () { $('fileInput').click(); };
+  $('btnImportSold').onclick = function () { $('soldFileInput').click(); };
+  $('btnSoldTpl').onclick = downloadSoldTemplate;
+  $('soldFileInput').addEventListener('change', function () { if (this.files && this.files[0]) handleSoldImport(this.files[0]); this.value = ''; });
   /* ปลดล็อกแค่เปิดปุ่มให้เห็น ยังไม่ได้เขียนอะไร — ด่านยืนยันจริงอยู่ที่ handleImport อีกชั้น */
   $('btnUnlockImport').onclick = function () { state.importUnlocked = true; renderStart(); };
   $('btnImportReport').onclick = showImportReport;
