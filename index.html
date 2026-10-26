@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.37.4">
+<meta name="version" content="2.37.5">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.37.4</title>
+<title>ISRD Stocktake v2.37.5</title>
 
 <style>
 :root{
@@ -2022,7 +2022,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.37.4';
+var APP_VERSION = '2.37.5';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -4286,6 +4286,10 @@ var state = {
   recheckDraft: {},      // ร่างที่เด็กกำลังกรอก (จำนวน+รูป) ก่อนกดส่งคืน
   rcBusy: false,         // ⭐ v2.37.1 กันกดส่งคืนซ้ำระหว่างกำลังอัปรูป
   rcPhotoCache: {},      // ⭐ v2.37.4 แคชรูปรีเช็คต่อ Job (กันโหลด recheckPhotos ซ้ำทุก render = กินโควตา)
+  zortWarehouse: null,   // v2.37.5 ชื่อคลังปลายทางไฟล์ปรับ Zort (pre-fill ชื่อสาขา)
+  zortScope: 'all',      // v2.37.5 ไฟล์ปรับ Zort: 'all'=ทุก SKU ที่นับ · 'diff'=เฉพาะผลต่าง≠0
+  zortIncludeZero: false, // v2.37.5 รวม SKU ที่ยิงได้ 0 ในไฟล์ปรับ Zort (default ตัดออก กันล้างสต๊อก)
+  reportRechecks: null,  // v2.37.5 ยอดรีเช็คทุก Job โหลดตอน export (คอลัมน์ 'เด็กรีเช็คส่งกลับมา')
   products: {},          // master ถาวร
   systemQty: {},         // ยอดระบบ "หลังหักขายออก" = ควรเหลือ (ที่ทุกหน้าใช้เทียบ)
   systemQtyRaw: {},      // ⭐ ยอดระบบตั้งต้นจริงจากไฟล์ (ไม่หักขาย — หลักฐาน/โชว์)
@@ -9206,7 +9210,8 @@ function buildCycleData(raw) {
      โหลดมาแล้วตั้งแต่ loadCycleRaw ถ้าทิ้งไปจะต้องอ่านเน็ตซ้ำทั้งรอบเพื่อเอาของเดิม
      แลกกับหน่วยความจำที่โตขึ้นตามจำนวนใบ — ยอมรับได้ เพราะรอบหนึ่งมีไม่กี่ใบ */
   return { sys: sysAll, counts: countAll, manual: manualAll, jobs: raw.jobs,
-           remarkParts: remarkParts, jobsPerSku: jobsPerSku, perJob: perJob };
+           remarkParts: remarkParts, jobsPerSku: jobsPerSku, perJob: perJob,
+           sysRaw: raw.sysRaw, sold: raw.sold };
 }
 
 /* ข้อความหมายเหตุที่จะเอาไปโชว์/พิมพ์ — รวมทุกใบเมื่ออยู่โหมดรวม
@@ -9238,7 +9243,7 @@ function remarkEditableHere(key) {
 
 /* ทำให้หน้าตาเหมือน summaryData() เป๊ะ เพื่อให้ตาราง/กราฟ/Excel ใช้โค้ดชุดเดิมได้หมด
    manualMap ใส่หรือไม่ใส่ก็ได้ — ไม่ใส่แปลว่าไม่รู้ที่มา ให้ถือว่ามาจากการยิงทั้งหมด */
-function summaryDataFrom(sysMap, countMap, jobsPerSku, manualMap) {
+function summaryDataFrom(sysMap, countMap, jobsPerSku, manualMap, sysRawMap, soldMap) {
   var priceField = state.priceField;
   var groups = { product: blankGroup(), notProduct: blankGroup(), total: blankGroup() };
   var keys = {};
@@ -9282,7 +9287,8 @@ function summaryDataFrom(sysMap, countMap, jobsPerSku, manualMap) {
       inRound: sysMap[key] !== undefined,
       known: !!state.products[key],
       sys: sys, act: act, diff: act - sys, price: price,
-      sold: 0, sysRaw: sys,
+      sold: Number((soldMap || {})[key]) || 0,
+      sysRaw: (sysRawMap && sysRawMap[key] != null) ? (Number(sysRawMap[key]) || 0) : sys,
       scanQty: act - manual, manualQty: manual,
       /* ข้อ D2 — SKU นี้ถูกยิงจากกี่ Job */
       jobCount: Object.keys((jobsPerSku || {})[key] || {}).length
@@ -10274,10 +10280,28 @@ function renderSummary() {
 /* ไฟล์นี้คือของที่ถูกส่งต่อออกไปนอกแอป ผิดแล้วตามแก้ไม่ได้
    จึงต้อง "รอ" ยอดรวมทุก Job ให้มาถึงก่อนเสมอ ไม่ใช่วาดด้วยของที่มีในมือแบบหน้าจอ
    รอบที่มี Job เดียว ensureReportData คืนค่าทันทีโดยไม่แตะเน็ต — เร็วเท่าเดิมทุกประการ */
+/* โหลดยอดรีเช็คของทุก Job ในรอบก่อนสร้างไฟล์ Export (ก้อนเล็ก ไม่มีรูป)
+   คอลัมน์ "เด็กรีเช็คส่งกลับมา" จะได้ไม่ว่าง แม้ยังไม่เปิดแท็บรีเช็ค หรือรอบมีหลาย Job */
+function loadReportRechecks() {
+  var ids = cycleScope().multi ? jobsInCycle(cycleOf(currentJob())) : [state.roundId];
+  state.reportRechecks = {};
+  return Promise.all(ids.filter(Boolean).map(function (id) {
+    return db.getQuiet('rounds/' + id + '/rechecks').then(function (rc) {
+      if (!rc) return;
+      Object.keys(rc).forEach(function (k) {
+        var q = rc[k] && rc[k].qty;
+        if (q != null && q !== '') state.reportRechecks[k] = Number(q);
+      });
+    }).catch(function () {});
+  }));
+}
+
 function exportExcel() {
   var scope = cycleScope();
   if (scope.multi && !cycleDataReady()) toast('กำลังรวมยอดทุก Job ในรอบก่อนสร้างไฟล์ ...');
-  return ensureReportData().then(buildSummaryExcel, function () {
+  return ensureReportData().then(function (data) {
+    return loadReportRechecks().then(function () { buildSummaryExcel(data); });
+  }, function () {
     toast('รวมยอดทุก Job ไม่สำเร็จ ยังสร้างไฟล์ไม่ได้ — เช็คเน็ตแล้วลองใหม่', true);
   });
 }
@@ -10300,6 +10324,13 @@ function fmtStockTypeTally(m) {
   return fixed.concat(extra, ['']).filter(function (t) { return m[t] > 0; })
     .map(function (t) { return (SCAN_TYPE_LABEL[t] || t || '(ไม่ระบุ)') + ' (' + m[t] + ')'; })
     .join(', ');
+}
+
+/* ยอดที่เด็กรีเช็คส่งกลับมา (ว่างถ้าไม่มีรีเช็ค) — คอลัมน์ในไฟล์ Export ชีตรายสินค้า */
+function recheckQtyOf(k) {
+  if (state.reportRechecks && state.reportRechecks[k] != null) return state.reportRechecks[k];
+  var it = (state.rechecks || {})[k];
+  return (it && it.qty != null && it.qty !== '') ? Number(it.qty) : '';
 }
 
 function buildSummaryExcel(data) {
@@ -10329,7 +10360,7 @@ function buildSummaryExcel(data) {
   /* คอลัมน์หมายเหตุ (v2.7.4) — ไฟล์ของหน้าเอกสารมีมาตั้งแต่เดิม ไฟล์นี้เพิ่งได้
      ทั้งสองไฟล์อ่านจาก reasons/{key} ก้อนเดียวกัน ตัวเลขกับข้อความจึงตรงกันเสมอ */
   var s2 = [['รหัสสินค้า', 'ชื่อสินค้า', 'Location', 'โซนที่เก็บ', 'ประเภทที่นับ', 'Status', 'หน่วย', 'ประเภท',
-             'จำนวนระบบ', 'จำนวนจริง', 'ผลต่าง',
+             'ตั้งต้น', 'ขายออก', 'คงเหลือ', 'ยิงจริง', 'ผลต่าง', 'เด็กรีเช็คส่งกลับมา',
              'จากการยิง', 'จากการกรอกมือ', priceLabel, 'มูลค่าระบบ', 'มูลค่าจริง', 'ผลต่างมูลค่า',
              'หมายเหตุ']];
 
@@ -10388,7 +10419,8 @@ function buildSummaryExcel(data) {
     s2.push([r.code, r.name, r.location || '', fzZones(r.key), stTypes(r.key),
              r.status || DEFAULT_STATUS, r.unit,
              r.type === 'notProduct' ? 'Not Product' : 'Product',
-             r.sys, r.act, r.diff, r.scanQty, r.manualQty, r.price,
+             r.sysRaw, r.sold, r.sys, r.act, r.diff, recheckQtyOf(r.key),
+             r.scanQty, r.manualQty, r.price,
              Math.round(r.sys * r.price * 100) / 100, Math.round(r.act * r.price * 100) / 100,
              Math.round((r.act - r.sys) * r.price * 100) / 100,
              remarkTextOf(r.key)]);
@@ -10438,7 +10470,7 @@ function buildSummaryExcel(data) {
     { name: 'สรุป', rows: s1, widths: [16, 12, 12, 13, 10, 10, 10, 14, 14, 14, 14, 14] },
     /* v2.21.0 — แทรกความกว้างของ "ประเภทที่นับ" (16) เป็นตัวที่ 5 ต่อจากโซนที่เก็บ
        จำนวนช่องต้องเท่าจำนวนคอลัมน์เสมอ ไม่งั้นความกว้างเลื่อนไปทั้งแถว */
-    { name: 'รายสินค้า', rows: s2, widths: [18, 34, 16, 22, 16, 18, 10, 12, 12, 12, 10, 11, 14, 12, 14, 14, 14, 30] },
+    { name: 'รายสินค้า', rows: s2, widths: [18, 34, 16, 22, 16, 18, 10, 12, 12, 12, 12, 12, 10, 16, 11, 14, 12, 14, 14, 14, 30] },
     { name: 'ประวัติการนับ', rows: s3,
       widths: histAll ? [22, 16, 18, 36, 16, 14, 10, 13, 22, 24]
                       : [22, 18, 36, 16, 14, 10, 13, 22, 24] },
@@ -11274,7 +11306,7 @@ function ensureCycleData() {
     var raw = buildCycleData(parts);
     state.cycleData = {
       cid: cid, raw: raw, at: Date.now(),
-      data: summaryDataFrom(raw.sys, raw.counts, raw.jobsPerSku, raw.manual)
+      data: summaryDataFrom(raw.sys, raw.counts, raw.jobsPerSku, raw.manual, raw.sysRaw, raw.sold)
     };
     return state.cycleData;
   });
@@ -14606,6 +14638,100 @@ function renderRecheckAdmin() {
   }
   list.sort(function (a, b) { return String(a.code).localeCompare(String(b.code), 'th'); });
   list.forEach(function (r) { body.appendChild(rcAdminCard(r, rc[r.key], canManage)); });
+
+  if (canManage) body.appendChild(rcZortCard());
+}
+
+/* ====== เฟส 3: สร้างไฟล์ปรับยอดเข้า Zort (v2.37.5) ======
+   ไฟล์ Excel 4 คอลัมน์: รหัสสินค้า · ชื่อสินค้า · จำนวนหน่วย(=จำนวนจริงที่นับได้) · ชื่อคลังสินค้า
+   โหมด: 'all'  = ทุก SKU ที่นับ (ตั้งยอดทั้งคลังให้ตรงกับที่นับ — ตามที่พี่หนึ่งทำอยู่ ใช้คอลัมน์จำนวนจริง)
+         'diff' = เฉพาะ SKU ผลต่าง≠0 (ปรับเฉพาะตัวที่ไม่ตรง)
+   ใช้ ensureReportData() รวมทุก Job ในรอบเหมือน exportExcel แล้ว buildXlsx ก้อนเดียวกัน */
+function zortAdjustRows(data, scope, includeZero) {
+  return data.rows.filter(function (r) {
+    if (!r.known) return false;             // เอาเฉพาะ SKU ที่มีในระบบ (unknown = ยังไม่มีใน Zort ต้องสร้างสินค้าก่อน)
+    if (!includeZero && (Number(r.act) || 0) === 0) return false;   // กันล้างสต๊อก: ไม่รวม SKU ที่ยิงได้ 0 (เว้นแต่ติ๊กรวม)
+    return scope === 'diff' ? (r.diff !== 0) : true;
+  });
+}
+
+function exportZortAdjust() {
+  var round = state.roundIndex[state.roundId] || {};
+  var defWh = jobBranchName(round);
+  var wh = String(state.zortWarehouse != null ? state.zortWarehouse
+                  : (defWh && defWh !== '-' ? defWh : '')).trim();
+  if (!wh) { toast('ใส่ชื่อคลังสินค้าก่อน — ต้องตรงกับชื่อคลังใน Zort', true); return; }
+  var scope = state.zortScope || 'all';
+  var incZero = !!state.zortIncludeZero;
+  var cyc = cycleScope();
+  if (cyc.multi && !cycleDataReady()) toast('กำลังรวมยอดทุก Job ในรอบก่อนสร้างไฟล์ ...');
+  return ensureReportData().then(function (data) { buildZortAdjust(data, wh, scope, incZero); }, function () {
+    toast('รวมยอดทุก Job ไม่สำเร็จ ยังสร้างไฟล์ไม่ได้ — เช็คเน็ตแล้วลองใหม่', true);
+  });
+}
+
+function buildZortAdjust(data, warehouse, scope, includeZero) {
+  var picked = zortAdjustRows(data, scope, includeZero);
+  if (!picked.length) {
+    toast(scope === 'diff' ? 'ไม่มี SKU ที่ต้องปรับ — ผลต่างเป็น 0 ทั้งหมด' : 'ยังไม่มี SKU ที่นับในรอบนี้', true);
+    return;
+  }
+  var rows = [['รหัสสินค้า', 'ชื่อสินค้า', 'จำนวนหน่วย', 'ชื่อคลังสินค้า']];
+  picked.forEach(function (r) { rows.push([r.code, r.name, Math.max(0, Number(r.act) || 0), warehouse]); });
+  var blob = buildXlsx([{ name: 'ปรับ Zort', rows: rows, widths: [20, 42, 12, 26] }]);
+  var round = state.roundIndex[state.roundId] || { name: 'stocktake' };
+  var safeName = String(jobBranchName(round)).replace(/[\\\/:*?"<>|]/g, '_').slice(0, 30);
+  var d = new Date();
+  var stamp = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'ปรับZort_' + safeName + '_' + stamp + '.xlsx';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+  toast('ดาวน์โหลดไฟล์ปรับ Zort แล้ว (' + picked.length + ' รายการ)');
+}
+
+function rcZortCard() {
+  var round = state.roundIndex[state.roundId] || {};
+  var defWh = jobBranchName(round);
+  if (state.zortWarehouse == null) state.zortWarehouse = (defWh && defWh !== '-') ? defWh : '';
+  var scope = state.zortScope || 'all';
+  var incZero = !!state.zortIncludeZero;
+  var n = zortAdjustRows(reportDataSync(), scope, incZero).length;
+
+  var card = el('div', { class: 'card', style: 'margin-top:14px;border:1px dashed #94a3b8;background:#f8fafc' });
+  card.appendChild(el('div', { style: 'font-weight:800;font-size:15px;margin-bottom:4px', text: '📤 สร้างไฟล์ปรับยอดเข้า Zort' }));
+  card.appendChild(el('div', { class: 'muted', style: 'font-size:13px;margin-bottom:10px',
+    text: 'ไฟล์ Excel 4 คอลัมน์ · "จำนวนหน่วย" = จำนวนจริงที่นับได้ · นำเข้า Zort เพื่อตั้งยอดคลังให้ตรงกับที่นับ' }));
+
+  function segBtn(val, label) {
+    var b = el('button', { class: 'btn sm' + (scope === val ? '' : ' grey'), style: 'flex:1;margin:0', text: label });
+    b.addEventListener('click', function () { state.zortScope = val; renderRecheckAdmin(); });
+    return b;
+  }
+  card.appendChild(el('div', { class: 'row', style: 'gap:6px;margin-bottom:10px' }, [
+    segBtn('all', 'ทุก SKU ที่นับ'), segBtn('diff', 'เฉพาะผลต่าง≠0')]));
+
+  var zz = el('label', { style: 'display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:10px;cursor:pointer' });
+  var zcb = el('input', { type: 'checkbox' });
+  zcb.checked = incZero;
+  zcb.addEventListener('change', function () { state.zortIncludeZero = zcb.checked; renderRecheckAdmin(); });
+  zz.appendChild(zcb);
+  zz.appendChild(el('span', { text: 'รวม SKU ที่ยิงได้ 0 (ตั้งยอดใน Zort = 0)' }));
+  card.appendChild(zz);
+
+  card.appendChild(el('label', { style: 'font-weight:600;font-size:13px', text: 'ชื่อคลังสินค้า (ปลายทางใน Zort)' }));
+  var whIn = el('input', { type: 'text', value: state.zortWarehouse, placeholder: 'เช่น คลังสินค้าหลัก',
+    style: 'width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:8px;margin:4px 0 10px;box-sizing:border-box' });
+  whIn.addEventListener('input', function () { state.zortWarehouse = whIn.value; });
+  card.appendChild(whIn);
+
+  card.appendChild(el('div', { class: 'muted', style: 'font-size:13px;margin-bottom:8px', text: 'จะสร้างไฟล์ ' + fmtNum(n) + ' รายการ' }));
+  var btn = el('button', { class: 'btn block', text: '⬇ สร้างไฟล์ปรับ Zort' });
+  btn.addEventListener('click', function () { exportZortAdjust(); });
+  card.appendChild(btn);
+  return card;
 }
 
 function rcAdminCard(r, it, canManage) {
@@ -16320,6 +16446,7 @@ function selectRound(id) {
   state.recheckDraft = {};
   state.rcPhotoCache = {};
   state.importUnlocked = false;    // ⭐ v2.10.7 ปลดล็อกเป็นของรายรอบ ห้ามติดค้างข้ามใบ
+  state.zortWarehouse = null;      // v2.37.5 ชื่อคลัง Zort รีเซ็ตตามรอบ (pre-fill ชื่อสาขาใหม่)
   state.lastImport = null;
   state.reasons = {};
   state.docType = DEFAULT_DOC_TYPE;

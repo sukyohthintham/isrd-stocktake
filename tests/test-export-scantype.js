@@ -110,15 +110,18 @@ function check(name, ok, got) {
   check('คอลัมน์ที่ตามมายังเป็นของเดิม (Status · หน่วย · ประเภท)',
         r1.head[5] === 'Status' && r1.head[6] === 'หน่วย' && r1.head[7] === 'ประเภท', r1.head);
   /* v2.33.0 — "ผลต่างมูลค่า" แทรกต่อจาก "มูลค่าจริง" ก่อน "หมายเหตุ" → 18 ช่อง */
-  check('หัวตารางมี 18 ช่อง', r1.head.length === 18, r1.head.length);
-  check('จำนวนความกว้างเท่าจำนวนคอลัมน์ (18 ช่อง)',
-        r1.widths.length === 18 && r1.widths.length === r1.head.length, r1.widths);
+  check('หัวตารางมี 21 ช่อง', r1.head.length === 21, r1.head.length);
+  check('คอลัมน์ชุดใหม่ ตั้งต้น·ขายออก·คงเหลือ·ยิงจริง·ผลต่าง·เด็กรีเช็คส่งกลับ (index 8-13)',
+        r1.head[8] === 'ตั้งต้น' && r1.head[9] === 'ขายออก' && r1.head[10] === 'คงเหลือ' &&
+        r1.head[11] === 'ยิงจริง' && r1.head[12] === 'ผลต่าง' && r1.head[13] === 'เด็กรีเช็คส่งกลับมา', r1.head);
+  check('จำนวนความกว้างเท่าจำนวนคอลัมน์ (21 ช่อง)',
+        r1.widths.length === 21 && r1.widths.length === r1.head.length, r1.widths);
   check('"ผลต่างมูลค่า" อยู่ระหว่าง "มูลค่าจริง" กับ "หมายเหตุ"',
-        r1.head[15] === 'มูลค่าจริง' && r1.head[16] === 'ผลต่างมูลค่า' && r1.head[17] === 'หมายเหตุ', r1.head);
+        r1.head[18] === 'มูลค่าจริง' && r1.head[19] === 'ผลต่างมูลค่า' && r1.head[20] === 'หมายเหตุ', r1.head);
   check('ผลต่างมูลค่าทุกแถว = (จริง − ระบบ) × ราคา',
         r1.rows.length > 0 && r1.rows.every(function (r) {
-          return r[16] === Math.round((r[9] - r[8]) * r[13] * 100) / 100;
-        }), r1.rows.map(function (r) { return [r[8], r[9], r[13], r[16]]; }));
+          return r[19] === Math.round((r[11] - r[10]) * r[16] * 100) / 100;
+        }), r1.rows.map(function (r) { return [r[10], r[11], r[16], r[19]]; }));
   check('ความกว้างช่องใหม่ = 16 และช่องอื่นไม่เลื่อน',
         r1.widths[3] === 22 && r1.widths[4] === 16 && r1.widths[5] === 18, r1.widths);
   check('ชีทอื่นในไฟล์ยังครบเหมือนเดิม',
@@ -145,7 +148,7 @@ function check(name, ok, got) {
         r2.a1[4] === 'โชว์ (3), สต็อก (2)', r2.a1 && r2.a1[4]);
   check('A2 ได้ "Asset (4)"', r2.a2[4] === 'Asset (4)', r2.a2 && r2.a2[4]);
   check('ยอดรวมในคอลัมน์เดิมไม่ขยับ (A1 จำนวนจริง = 5)',
-        r2.a1[9] === 5 && r2.counts.A1 === 5, { row: r2.a1, counts: r2.counts });
+        r2.a1[11] === 5 && r2.counts.A1 === 5, { row: r2.a1, counts: r2.counts });
   check('คอลัมน์โซนที่เก็บยังทำงานเหมือนเดิม (ไม่ได้พิมพ์โซน → โซนจาก Location)',
         r2.a1[3] === 'D (5)', r2.a1 && r2.a1[3]);
 
@@ -236,6 +239,17 @@ function check(name, ok, got) {
         r6.heads.some(function (h) {
           return h[0] === 'รหัสสินค้า' && h[2] === 'กลุ่ม' && h[4] === 'โซน';
         }), r6.heads);
+
+  console.log('\n[7] summaryDataFrom ใส่ ตั้งต้น/ขายออก จริง (ข้อ CC-1 รอบหลาย Job)');
+  const r7 = await page.evaluate(() => {
+    window.__seed();
+    var sys = { ZZ: 3 }, cnt = { ZZ: 4 }, sysRaw = { ZZ: 5 }, sold = { ZZ: 2 };
+    var withMaps = summaryDataFrom(sys, cnt, null, null, sysRaw, sold).rows[0];
+    var without = summaryDataFrom(sys, cnt, null, null).rows[0];
+    return { wR: withMaps.sysRaw, wS: withMaps.sold, woR: without.sysRaw, woS: without.sold };
+  });
+  check('ส่ง sysRaw/sold → ตั้งต้น=5 ขายออก=2 (รอบหลาย Job ถูก)', r7.wR === 5 && r7.wS === 2, r7);
+  check('ไม่ส่ง map → fallback เดิม (sysRaw=sys=3, sold=0)', r7.woR === 3 && r7.woS === 0, r7);
 
   console.log('\n--- console/page errors ---');
   console.log(errors.slice(0, 10).join('\n') || '(none)');
