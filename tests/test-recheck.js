@@ -98,18 +98,37 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
   await page.evaluate(() => { __calls.enqueue = []; __calls.toast = []; state.recheckDraft = {}; submitRecheck('A001'); });
   check('บล็อกการส่งเมื่อยังไม่ครบ', await page.evaluate(() => __calls.enqueue.length === 0 && __calls.toast.some(t => t.bad)));
 
-  // ---------- [5] submit ครบ → เขียน 2 โหนด (meta + รูปแยก) ----------
-  console.log('\n[5] ใส่จำนวน+รูป แล้วส่งคืน');
-  await page.evaluate(() => {
+  // ---------- [5] submit ครบ → รูปส่งตรง db.update, สำเร็จก่อนค่อยบันทึกยอด ----------
+  console.log('\n[5] ใส่จำนวน+รูป แล้วส่งคืน (รูปตรง db.update → ยอดตาม)');
+  const r5 = await page.evaluate(async () => {
+    window.__dbUpd = [];
+    var orig = db.update;
+    db.update = function (path, patch) { __dbUpd.push({ path: path, patch: patch }); return Promise.resolve(); };
     state.recheckDraft = { A001: { qty: 12, photo: 'data:image/jpeg;base64,/9j/zzzz' } };
     __calls.enqueue = []; submitRecheck('A001');
+    await new Promise(r => setTimeout(r, 50));
+    db.update = orig;
+    return { upd: __dbUpd, enq: __calls.enqueue };
   });
-  let e5 = await page.evaluate(() => __calls.enqueue);
-  let meta = (e5.find(x => x.path === 'rounds/R1/rechecks') || {}).patch || {};
-  let photo = (e5.find(x => x.path === 'recheckPhotos/R1') || {}).patch || {};
-  check('เขียน meta (qty/by/at/applied=false) ไป rounds/.../rechecks', meta['A001/qty'] === 12 && !!meta['A001/by'] && !!meta['A001/at'] && meta['A001/applied'] === false, meta);
-  check('เขียนรูปแยกไป recheckPhotos/R1 (ไม่ปนใน rounds)', typeof photo['A001'] === 'string' && photo['A001'].indexOf('data:image/jpeg;base64,') === 0 && meta['A001/photo'] === undefined, { photo: !!photo['A001'], metaHasPhoto: meta['A001/photo'] !== undefined });
+  const photoUpd = (r5.upd.find(x => x.path === 'recheckPhotos/R1') || {}).patch || {};
+  const meta5 = (r5.enq.find(x => x.path === 'rounds/R1/rechecks') || {}).patch || {};
+  check('รูปส่งตรง db.update → recheckPhotos/R1 (ไม่ผ่านคิว localStorage)', typeof photoUpd['A001'] === 'string' && photoUpd['A001'].indexOf('data:image/jpeg;base64,') === 0, photoUpd);
+  check('รูปสำเร็จแล้วค่อยบันทึกยอด (qty/by/at/applied=false ผ่าน enqueue · รูปไม่ปนใน meta)', meta5['A001/qty'] === 12 && !!meta5['A001/by'] && meta5['A001/applied'] === false && meta5['A001/photo'] === undefined, meta5);
   check('อัปเดต cache + ล้าง draft', await page.evaluate(() => state.rechecks.A001.qty === 12 && !state.recheckDraft.A001));
+
+  // ---------- [5b] รูปส่งไม่สำเร็จ → ยอดไม่ขึ้น (กัน orphan) + เตือน ----------
+  console.log('\n[5b] รูปส่งไม่สำเร็จ → ยอดไม่ขึ้น');
+  const r5b = await page.evaluate(async () => {
+    var orig = db.update;
+    db.update = function () { return Promise.reject(new Error('quota/net')); };
+    state.rechecks = {}; state.recheckDraft = { Z9: { qty: 7, photo: 'data:image/jpeg;base64,/9j/zzzz' } };
+    __calls.enqueue = []; __calls.toast = []; submitRecheck('Z9');
+    await new Promise(r => setTimeout(r, 50));
+    db.update = orig;
+    return { enq: __calls.enqueue.length, bad: __calls.toast.some(t => t.bad), cached: !!state.rechecks.Z9, draft: !!state.recheckDraft.Z9 };
+  });
+  check('รูป fail → ไม่บันทึกยอด (ไม่มี orphan qty)', r5b.enq === 0 && !r5b.cached, r5b);
+  check('รูป fail → เตือน + คง draft ให้ส่งใหม่ได้', r5b.bad && r5b.draft, r5b);
 
   // ---------- [6] admin เห็นผลกลับ + ปุ่มใช้ยอด + ปุ่มดูรูป ----------
   console.log('\n[6] admin เห็นผลรีเช็คกลับ');
@@ -152,6 +171,37 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
   });
   check('ถอน: ลบ meta (rounds/.../rechecks B002=null)', e9.some(x => x.path === 'rounds/R1/rechecks' && x.patch['B002'] === null), e9);
   check('ถอน: ลบรูป (recheckPhotos/R1 B002=null)', e9.some(x => x.path === 'recheckPhotos/R1' && x.patch['B002'] === null), e9);
+
+  // ---------- [9b] cancelRecheck ตอนรอบปิด = block (ล็อกชั้นฟังก์ชัน) ----------
+  console.log('\n[9b] ถอนรีเช็คตอนรอบปิด = block');
+  const e9b = await page.evaluate(async () => {
+    __seed('admin');
+    state.roundIndex.R1.status = 'closed';
+    state.rechecks = { B002: { name: 'x', sentAt: 1 } };
+    __calls.enqueue = []; __calls.toast = [];
+    cancelRecheck('B002');
+    await new Promise(r => setTimeout(r, 30));
+    return { enq: __calls.enqueue.length, bad: __calls.toast.some(t => t.bad) };
+  });
+  check('รอบปิด: cancelRecheck ไม่ enqueue + เตือน', e9b.enq === 0 && e9b.bad, e9b);
+
+  // ---------- [9c] queueSave: localStorage เต็ม → ล้างแคชรูปสินค้าแล้วเขียนคิวได้ (ยอดยิงไม่หาย) ----------
+  console.log('\n[9c] queueSave เต็ม → กู้ด้วยล้างแคชรูป');
+  const rq = await page.evaluate(() => {
+    var removed = [];
+    var origSet = localStorage.setItem.bind(localStorage);
+    var origRem = localStorage.removeItem.bind(localStorage);
+    var failOnce = true;
+    localStorage.setItem = function (k, v) {
+      if (k === 'isrd_write_queue' && failOnce) { failOnce = false; var e = new Error('quota'); e.name = 'QuotaExceededError'; throw e; }
+      return origSet(k, v);
+    };
+    localStorage.removeItem = function (k) { removed.push(k); return origRem(k); };
+    var ok = queueSave([{ path: 'x', patch: { a: 1 } }]);
+    localStorage.setItem = origSet; localStorage.removeItem = origRem;
+    return { ok: ok, removedThumb: removed.indexOf('isrd_thumbs_v2') >= 0, saved: JSON.parse(localStorage.getItem('isrd_write_queue') || '[]').length };
+  });
+  check('queueSave เต็ม → ลบแคชรูปสินค้า (isrd_thumbs_v2) แล้วเขียนคิวสำเร็จ (ยอดไม่หาย)', rq.ok && rq.removedThumb && rq.saved === 1, rq);
 
   // ---------- [10] no page errors ----------
   console.log('\n[10] ไม่มี error');

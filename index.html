@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.37.0">
+<meta name="version" content="2.37.1">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.37.0</title>
+<title>ISRD Stocktake v2.37.1</title>
 
 <style>
 :root{
@@ -2018,7 +2018,8 @@ body.no-doc-images .doc .imgbox{display:none}
    ที่ประตูโหลดเดียว ทุกหน้าใช้ตรงกัน (สรุป/รวมรอบ/สกอร์บอร์ด/เอกสาร/Excel) · ตั้งต้นไม่ถูกแตะ
    เก็บเป็นหลักฐาน · การ์ด SKU โชว์ ตั้งต้น/ขายออก/ควรเหลือ เมื่อมีขาย · ไม่มีขาย=เหมือนเดิม */
 /* ⭐ v2.37.0 — แท็บรีเช็ค: admin ส่ง SKU ผลต่าง≠อให้เด็กนับใหม่+แนบรูปหลักฐาน → ดูผลเทียบ → กด“ใช้ยอดรีเช็ค”ปรับยอดนับ (rounds/{rid}/rechecks/{sku} — ไม่เก็บเป้า) */
-var APP_VERSION = '2.37.0';
+/* ⭐ v2.37.1 — แก้ bug รูปรีเช็คหายเงียบ: ส่งรูปตรง db.update ไม่ผ่านคิว localStorage (เต็มแล้ว queueSave catch เงียบ) · รูปสำเร็จก่อนค่อยบันทึกยอด */
+var APP_VERSION = '2.37.1';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -4698,7 +4699,14 @@ function queueLoad() {
   catch (e) { return []; }
 }
 function queueSave(q) {
-  try { localStorage.setItem(QUEUE_KEY, JSON.stringify(q)); } catch (e) { /* เต็มก็ปล่อย */ }
+  try { localStorage.setItem(QUEUE_KEY, JSON.stringify(q)); return true; }
+  catch (e) {
+    /* ⭐ v2.37.1 localStorage เต็ม — คิวเขียนไม่ลง = ยอดยิง/รูปหายเงียบ (ขัดกฎ "ห้ามทำยอดหาย")
+       ล้างแคชรูปสินค้า (isrd_thumbs_v2 สร้างใหม่ได้) เปิดที่ให้คิวก่อน แล้วลองใหม่ — ยอดยิงสำคัญกว่า thumbnail */
+    try { localStorage.removeItem(THUMB_STORE_KEY); thumbCache = Object.create(null); thumbDirty = false; } catch (e2) {}
+    try { localStorage.setItem(QUEUE_KEY, JSON.stringify(q)); return true; }
+    catch (e3) { toast('⚠️ พื้นที่เครื่องเต็ม บันทึกยอดลงคิวไม่ได้ — ปิดแท็บอื่น/ล้างข้อมูลเว็บแล้วลองใหม่', true); return false; }
+  }
 }
 function pendingCount() { return queueLoad().length; }
 
@@ -14716,17 +14724,29 @@ function sendRecheck(k) {
 function submitRecheck(k) {
   if (!requirePerm('scan', 'ส่งผลรีเช็คไม่ได้')) return;
   if (!rcRoundCounting()) { toast('รอบนี้ปิดแล้ว ส่งคืนไม่ได้', true); return; }
+  if (state.rcBusy) { toast('กำลังส่งอยู่ รอสักครู่', true); return; }
   var dr = (state.recheckDraft || {})[k] || {};
   if (dr.qty == null || dr.qty === '' || !rcPhotoOk(dr.photo)) { toast('ต้องใส่จำนวน + แนบรูป (JPEG) ก่อนส่งคืน', true); return; }
   var rid = state.roundId, now = Date.now(), qn = Number(dr.qty);
-  /* meta+qty → rounds/.../rechecks (เล็ก) · รูป → recheckPhotos (นอก rounds กัน selectRound โหลดรูป) · applied:false รีเซ็ตเผื่อแก้ใหม่หลังปรับไปแล้ว */
-  var p = {}; p[k + '/qty'] = qn; p[k + '/by'] = state.counter || 'ไม่ระบุ'; p[k + '/at'] = now; p[k + '/applied'] = false;
-  enqueueWrite('rounds/' + rid + '/rechecks', p);
-  var pp = {}; pp[k] = dr.photo; enqueueWrite('recheckPhotos/' + rid, pp);
-  var it = rcMap()[k] || (rcMap()[k] = {}); it.qty = qn; it.by = state.counter || 'ไม่ระบุ'; it.at = now; it.applied = false;
-  delete state.recheckDraft[k];
-  toast('ส่งคืนรีเช็คแล้ว ✓');
-  renderRecheck(true);
+  /* ⭐ v2.37.1 รูปเป็น base64 ก้อนใหญ่ — ส่งตรง db.update "ไม่ผ่านคิว localStorage"
+     คิวเก็บใน localStorage ซึ่งเต็มง่าย (thumbnail cache รูปสินค้ากินพื้นที่) แล้ว queueSave จับ error เงียบ
+     → รูปหายโดยไม่มีอะไรฟ้อง (bug เดิม: ยอดขึ้นแต่รูปหาย) · ต้องส่งรูปสำเร็จ "ก่อน" ค่อยบันทึกยอด กัน orphan */
+  var pp = {}; pp[k] = dr.photo;
+  state.rcBusy = true;
+  toast('กำลังส่งรูป…');
+  db.update('recheckPhotos/' + rid, pp).then(function () {
+    state.rcBusy = false;
+    if (state.roundId !== rid) return;   /* เปลี่ยน Job ระหว่างรออัป = ทิ้ง ไม่เขียนข้าม Job */
+    var p = {}; p[k + '/qty'] = qn; p[k + '/by'] = state.counter || 'ไม่ระบุ'; p[k + '/at'] = now; p[k + '/applied'] = false;
+    enqueueWrite('rounds/' + rid + '/rechecks', p);   /* ยอด/meta ก้อนเล็ก ผ่านคิว durable ได้ตามเดิม */
+    var it = rcMap()[k] || (rcMap()[k] = {}); it.qty = qn; it.by = state.counter || 'ไม่ระบุ'; it.at = now; it.applied = false;
+    delete state.recheckDraft[k];
+    toast('ส่งคืนรีเช็คแล้ว ✓');
+    renderRecheck(true);
+  }).catch(function () {
+    state.rcBusy = false;
+    toast('รูปส่งไม่สำเร็จ (เน็ตไม่นิ่ง/พื้นที่เต็ม) — ลองกดส่งคืนใหม่อีกครั้ง', true);
+  });
 }
 
 function reopenRecheck(k) {
