@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.37.5">
+<meta name="version" content="2.37.6">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.37.5</title>
+<title>ISRD Stocktake v2.37.6</title>
 
 <style>
 :root{
@@ -2022,7 +2022,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.37.5';
+var APP_VERSION = '2.37.6';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -14830,8 +14830,8 @@ function rcScannerCard(k, it, dr) {
 
     var hasPhoto = rcPhotoOk(dr.photo);
     var thumb = hasPhoto
-      ? el('img', { style: 'width:58px;height:58px;object-fit:cover;border-radius:8px;border:1px solid #cbd5e1;cursor:zoom-in', onclick: function () { showRecheckImg(dr.photo); } })
-      : el('div', { style: 'width:58px;height:58px;border-radius:8px;border:1px dashed #cbd5e1;display:flex;align-items:center;justify-content:center;font-size:22px', text: '📷' });
+      ? el('img', { style: 'width:58px;height:58px;flex:0 0 58px;min-width:58px;max-width:58px;object-fit:cover;border-radius:8px;border:1px solid #cbd5e1;cursor:zoom-in;display:block', onclick: function () { showRecheckImg(dr.photo); } })
+      : el('div', { style: 'width:58px;height:58px;flex:0 0 58px;min-width:58px;max-width:58px;border-radius:8px;border:1px dashed #cbd5e1;display:flex;align-items:center;justify-content:center;font-size:22px', text: '📷' });
     if (hasPhoto) thumb.src = dr.photo;
     var fileInput = el('input', { type: 'file', accept: 'image/*', capture: 'environment', style: 'display:none' });
     fileInput.addEventListener('change', function () { pickRecheckPhoto(k, fileInput); });
