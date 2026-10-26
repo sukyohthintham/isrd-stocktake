@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.37.1">
+<meta name="version" content="2.37.2">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.37.1</title>
+<title>ISRD Stocktake v2.37.2</title>
 
 <style>
 :root{
@@ -2019,7 +2019,8 @@ body.no-doc-images .doc .imgbox{display:none}
    เก็บเป็นหลักฐาน · การ์ด SKU โชว์ ตั้งต้น/ขายออก/ควรเหลือ เมื่อมีขาย · ไม่มีขาย=เหมือนเดิม */
 /* ⭐ v2.37.0 — แท็บรีเช็ค: admin ส่ง SKU ผลต่าง≠อให้เด็กนับใหม่+แนบรูปหลักฐาน → ดูผลเทียบ → กด“ใช้ยอดรีเช็ค”ปรับยอดนับ (rounds/{rid}/rechecks/{sku} — ไม่เก็บเป้า) */
 /* ⭐ v2.37.1 — แก้ bug รูปรีเช็คหายเงียบ: ส่งรูปตรง db.update ไม่ผ่านคิว localStorage (เต็มแล้ว queueSave catch เงียบ) · รูปสำเร็จก่อนค่อยบันทึกยอด */
-var APP_VERSION = '2.37.1';
+/* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
+var APP_VERSION = '2.37.2';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -4281,6 +4282,7 @@ var state = {
   recheckView: 'admin',  // ⭐ v2.37.0 แท็บรีเช็ค: admin (ส่ง/ดูผล) / scanner (เด็กนับคืน)
   rechecks: {},          // cache meta คิวรีเช็คของ Job ที่เปิดอยู่ (โหลดด้วย db.getQuiet · รูปอยู่คนละโหนด recheckPhotos)
   recheckDraft: {},      // ร่างที่เด็กกำลังกรอก (จำนวน+รูป) ก่อนกดส่งคืน
+  rcBusy: false,         // ⭐ v2.37.1 กันกดส่งคืนซ้ำระหว่างกำลังอัปรูป
   products: {},          // master ถาวร
   systemQty: {},         // ยอดระบบ "หลังหักขายออก" = ควรเหลือ (ที่ทุกหน้าใช้เทียบ)
   systemQtyRaw: {},      // ⭐ ยอดระบบตั้งต้นจริงจากไฟล์ (ไม่หักขาย — หลักฐาน/โชว์)
@@ -4773,7 +4775,12 @@ function retryFailedWrites() {
 function enqueueWrite(path, patch) {
   var q = queueLoad();
   q.push({ path: path, patch: patch, remote: !!db.remote });
-  queueSave(q);
+  if (!queueSave(q)) {
+    /* ⭐ v2.37.2 คิวเขียนลง localStorage ไม่ได้แม้ล้างแคชรูปแล้ว — ยิงตรงขึ้นฐานทันที กันยอดหาย (เน็ตหลุดค่อยว่ากัน) */
+    db.update(path, patch).catch(function () { toast('⚠️ ยอดอาจไม่ถูกบันทึก (เครื่องเต็ม+เน็ต) — เช็คค้างส่ง/รีเฟรช', true); });
+    renderSyncBar(); renderConnection();
+    return;
+  }
   renderSyncBar();
   renderConnection();
   flushQueue();
@@ -14736,12 +14743,13 @@ function submitRecheck(k) {
   toast('กำลังส่งรูป…');
   db.update('recheckPhotos/' + rid, pp).then(function () {
     state.rcBusy = false;
-    if (state.roundId !== rid) return;   /* เปลี่ยน Job ระหว่างรออัป = ทิ้ง ไม่เขียนข้าม Job */
+    /* ⭐ v2.37.2 ยอดลง Job เดิม (rid) เสมอ — แม้เปลี่ยน Job ระหว่างรออัป ยอดต้องไม่หาย (กฎ "ห้ามทำยอดหาย") */
     var p = {}; p[k + '/qty'] = qn; p[k + '/by'] = state.counter || 'ไม่ระบุ'; p[k + '/at'] = now; p[k + '/applied'] = false;
-    enqueueWrite('rounds/' + rid + '/rechecks', p);   /* ยอด/meta ก้อนเล็ก ผ่านคิว durable ได้ตามเดิม */
-    var it = rcMap()[k] || (rcMap()[k] = {}); it.qty = qn; it.by = state.counter || 'ไม่ระบุ'; it.at = now; it.applied = false;
-    delete state.recheckDraft[k];
+    enqueueWrite('rounds/' + rid + '/rechecks', p);
+    if (state.recheckDraft) delete state.recheckDraft[k];
     toast('ส่งคืนรีเช็คแล้ว ✓');
+    if (state.roundId !== rid) return;   /* เปลี่ยน Job แล้ว — ยอดลงแล้ว แค่ไม่แตะ cache/จอของ Job อื่น */
+    var it = rcMap()[k] || (rcMap()[k] = {}); it.qty = qn; it.by = state.counter || 'ไม่ระบุ'; it.at = now; it.applied = false;
     renderRecheck(true);
   }).catch(function () {
     state.rcBusy = false;

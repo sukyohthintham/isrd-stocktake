@@ -24,6 +24,7 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
 
   await page.evaluate(() => {
     window.__calls = { enqueue: [], scan: [], toast: [] };
+    window.__realEnqueue = window.enqueueWrite;
     window.enqueueWrite = (path, patch) => __calls.enqueue.push({ path: path, patch: patch });
     window.writeScan = (k, d, m, r) => __calls.scan.push({ k: k, d: d, m: m, r: r });
     window.toast = (m, bad) => __calls.toast.push({ m: m, bad: bad });
@@ -184,6 +185,38 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
     return { enq: __calls.enqueue.length, bad: __calls.toast.some(t => t.bad) };
   });
   check('รอบปิด: cancelRecheck ไม่ enqueue + เตือน', e9b.enq === 0 && e9b.bad, e9b);
+
+  // ---------- [5c] เปลี่ยน Job ระหว่างอัปรูป → ยอดยังลง Job เดิม (ยอดไม่หาย) ----------
+  console.log('\n[5c] เปลี่ยน Job ระหว่างอัป → ยอดลง Job เดิม');
+  const r5c = await page.evaluate(async () => {
+    __seed('scanner'); state.roundId = 'R1'; state.rechecks = {};
+    var orig = db.update; var resolveFn;
+    db.update = function (path) { if (String(path).indexOf('recheckPhotos') === 0) return new Promise(function (res) { resolveFn = res; }); return Promise.resolve(); };
+    state.recheckDraft = { M5: { qty: 4, photo: 'data:image/jpeg;base64,/9j/zz' } };
+    __calls.enqueue = [];
+    submitRecheck('M5');        // รูป pending
+    state.roundId = 'R2';       // เปลี่ยน Job ระหว่างรอ
+    resolveFn();                // รูปสำเร็จ
+    await new Promise(r => setTimeout(r, 40));
+    db.update = orig;
+    return { paths: __calls.enqueue.map(function (x) { return x.path; }) };
+  });
+  check('เปลี่ยน Job ระหว่างอัป → ยอดยัง enqueue ลง Job เดิม (rounds/R1)', r5c.paths.indexOf('rounds/R1/rechecks') >= 0, r5c);
+
+  // ---------- [9d] queueSave เต็มตลอด → enqueueWrite ยิงตรง db.update (ยอดไม่หาย) ----------
+  console.log('\n[9d] queueSave เต็มตลอด → ยิงตรง');
+  const r9d = await page.evaluate(async () => {
+    var origSet = localStorage.setItem.bind(localStorage);
+    var origRem = localStorage.removeItem.bind(localStorage);
+    localStorage.setItem = function (k, v) { if (k === 'isrd_write_queue') { var e = new Error('q'); e.name = 'QuotaExceededError'; throw e; } return origSet(k, v); };
+    localStorage.removeItem = function (k) { return origRem(k); };
+    var direct = []; var origUpd = db.update; db.update = function (p) { direct.push(p); return Promise.resolve(); };
+    __calls.toast = [];
+    window.__realEnqueue('rounds/R1', { 'scans/x': { code: 'A', delta: 1 } });   // enqueueWrite ตัวจริง (setup mock ตัว global ไว้)
+    localStorage.setItem = origSet; localStorage.removeItem = origRem; db.update = origUpd;
+    return { direct: direct };
+  });
+  check('queueSave เต็มตลอด → enqueueWrite ยิงตรง db.update (ยอดไม่หาย)', r9d.direct.indexOf('rounds/R1') >= 0, r9d);
 
   // ---------- [9c] queueSave: localStorage เต็ม → ล้างแคชรูปสินค้าแล้วเขียนคิวได้ (ยอดยิงไม่หาย) ----------
   console.log('\n[9c] queueSave เต็ม → กู้ด้วยล้างแคชรูป');
