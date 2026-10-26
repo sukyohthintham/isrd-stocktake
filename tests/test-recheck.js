@@ -142,7 +142,7 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
   check('admin แสดงยอดที่เด็กนับคืน', r.t.indexOf('นับรีเช็คได้') >= 0);
   check('admin เทียบ 12 vs ควรเหลือ 12 → ตรงแล้ว', r.t.indexOf('ตรงแล้ว') >= 0);
   check('admin มีปุ่ม "ใช้ยอดรีเช็ค"', r.b.some(t => t.indexOf('ใช้ยอดรีเช็ค') >= 0), r.b);
-  check('admin มีปุ่ม "ดูรูป" (lazy load)', r.b.some(t => t.indexOf('ดูรูป') >= 0), r.b);
+  check('admin มีรูปย่อ (thumbnail) ให้คลิกขยาย', await page.evaluate(() => !!document.getElementById('recheckBody').querySelector('img')), 'thumb');
 
   // ---------- [7] applyRecheck (admin) → ปรับยอดนับ ----------
   console.log('\n[7] admin ใช้ยอดรีเช็ค');

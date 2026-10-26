@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.37.2">
+<meta name="version" content="2.37.3">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.37.2</title>
+<title>ISRD Stocktake v2.37.3</title>
 
 <style>
 :root{
@@ -1970,15 +1970,15 @@ body.no-doc-images .doc .imgbox{display:none}
   </div>
 </section>
 
-</div>
-
 <section class="page" id="pageRecheck">
-  <div class="filters" id="recheckTabs" style="display:none">
-    <button class="btn sm" data-rcview="admin">👔 มุมมอง Admin</button>
-    <button class="btn sm grey" data-rcview="scanner">📷 มุมมองเด็กหน้าร้าน</button>
+  <div class="filters" id="recheckTabs" style="display:none;gap:8px">
+    <button class="btn" data-rcview="admin" style="flex:1">👔 มุมมอง Admin</button>
+    <button class="btn grey" data-rcview="scanner" style="flex:1">📷 มุมมองเด็กหน้าร้าน</button>
   </div>
   <div id="recheckBody"></div>
 </section>
+
+</div>
 
 <nav class="nav">
   <button id="navJobs" class="on"><span class="ic">🗒</span>Job</button>
@@ -2020,7 +2020,8 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.0 — แท็บรีเช็ค: admin ส่ง SKU ผลต่าง≠อให้เด็กนับใหม่+แนบรูปหลักฐาน → ดูผลเทียบ → กด“ใช้ยอดรีเช็ค”ปรับยอดนับ (rounds/{rid}/rechecks/{sku} — ไม่เก็บเป้า) */
 /* ⭐ v2.37.1 — แก้ bug รูปรีเช็คหายเงียบ: ส่งรูปตรง db.update ไม่ผ่านคิว localStorage (เต็มแล้ว queueSave catch เงียบ) · รูปสำเร็จก่อนค่อยบันทึกยอด */
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
-var APP_VERSION = '2.37.2';
+/* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
+var APP_VERSION = '2.37.3';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -14620,7 +14621,7 @@ function rcAdminCard(r, it, canManage) {
   if (it && it.qty != null && it.qty !== '') {
     var q = Number(it.qty), match = (q === r.sys);
     card.appendChild(el('div', { class: 'row', style: 'align-items:center;gap:10px;margin:4px 0' }, [
-      rcPhotoBtn(k),
+      rcThumb(k),
       el('div', {}, [
         el('div', {}, ['✅ เด็กนับรีเช็คได้ ', el('b', { style: 'font-size:17px', text: fmtNum(q) }), ' ชิ้น ',
           el('span', { class: 'muted', style: 'font-size:12px', text: 'โดย ' + (it.by || '-') })]),
@@ -14642,16 +14643,14 @@ function rcAdminCard(r, it, canManage) {
 }
 
 /* ปุ่มดูรูป — โหลดรูปจาก recheckPhotos เฉพาะตอนกด (lazy) ไม่ดึงมาพร้อมหน้า */
-function rcPhotoBtn(k) {
-  var btn = el('button', { class: 'btn sm grey', style: 'padding:6px 10px', text: '📷 ดูรูป' });
-  btn.addEventListener('click', function () {
-    btn.disabled = true; btn.textContent = 'กำลังโหลด...';
-    db.getQuiet('recheckPhotos/' + state.roundId + '/' + k).then(function (src) {
-      btn.disabled = false; btn.textContent = '📷 ดูรูป';
-      if (rcPhotoOk(src)) showRecheckImg(src); else toast('ไม่มีรูป หรือรูปไม่ถูกต้อง', true);
-    }).catch(function () { btn.disabled = false; btn.textContent = '📷 ดูรูป'; toast('โหลดรูปไม่ได้', true); });
-  });
-  return btn;
+/* รูปย่อในการ์ด (แบบ mockup) — โหลดจาก recheckPhotos ตอนวาดการ์ด (รีเช็คมีไม่กี่ตัว) · คลิกขยายดูเต็มจอ */
+function rcThumb(k) {
+  var img = el('img', { alt: 'รูปรีเช็ค', style: 'width:60px;height:60px;flex:0 0 60px;min-width:60px;max-width:60px;object-fit:cover;border-radius:8px;border:1px solid #cbd5e1;cursor:zoom-in;background:#f1f5f9;display:block' });
+  img.addEventListener('click', function () { if (img.src) showRecheckImg(img.src); });
+  db.getQuiet('recheckPhotos/' + state.roundId + '/' + k).then(function (src) {
+    if (rcPhotoOk(src)) img.src = src; else img.style.display = 'none';
+  }).catch(function () { img.style.display = 'none'; });
+  return img;
 }
 
 /* ---------- ฝั่งเด็กหน้าร้าน ---------- */
@@ -14708,7 +14707,7 @@ function rcScannerCard(k, it, dr) {
     sync();
   } else {
     card.appendChild(el('div', { class: 'row', style: 'align-items:center;gap:10px;margin:6px 0' }, [
-      rcPhotoBtn(k),
+      rcThumb(k),
       el('div', {}, ['นับได้ ', el('b', { style: 'font-size:17px', text: fmtNum(Number(it.qty)) }), ' ชิ้น'])]));
     card.appendChild(el('button', { class: 'btn sm grey', text: 'แก้ไขอีกครั้ง', onclick: function () { reopenRecheck(k); } }));
   }
