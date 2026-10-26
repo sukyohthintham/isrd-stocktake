@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.37.3">
+<meta name="version" content="2.37.4">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.37.3</title>
+<title>ISRD Stocktake v2.37.4</title>
 
 <style>
 :root{
@@ -2021,7 +2021,8 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.1 — แก้ bug รูปรีเช็คหายเงียบ: ส่งรูปตรง db.update ไม่ผ่านคิว localStorage (เต็มแล้ว queueSave catch เงียบ) · รูปสำเร็จก่อนค่อยบันทึกยอด */
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
-var APP_VERSION = '2.37.3';
+/* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
+var APP_VERSION = '2.37.4';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -4284,6 +4285,7 @@ var state = {
   rechecks: {},          // cache meta คิวรีเช็คของ Job ที่เปิดอยู่ (โหลดด้วย db.getQuiet · รูปอยู่คนละโหนด recheckPhotos)
   recheckDraft: {},      // ร่างที่เด็กกำลังกรอก (จำนวน+รูป) ก่อนกดส่งคืน
   rcBusy: false,         // ⭐ v2.37.1 กันกดส่งคืนซ้ำระหว่างกำลังอัปรูป
+  rcPhotoCache: {},      // ⭐ v2.37.4 แคชรูปรีเช็คต่อ Job (กันโหลด recheckPhotos ซ้ำทุก render = กินโควตา)
   products: {},          // master ถาวร
   systemQty: {},         // ยอดระบบ "หลังหักขายออก" = ควรเหลือ (ที่ทุกหน้าใช้เทียบ)
   systemQtyRaw: {},      // ⭐ ยอดระบบตั้งต้นจริงจากไฟล์ (ไม่หักขาย — หลักฐาน/โชว์)
@@ -14621,7 +14623,7 @@ function rcAdminCard(r, it, canManage) {
   if (it && it.qty != null && it.qty !== '') {
     var q = Number(it.qty), match = (q === r.sys);
     card.appendChild(el('div', { class: 'row', style: 'align-items:center;gap:10px;margin:4px 0' }, [
-      rcThumb(k),
+      rcThumb(k, it.at),
       el('div', {}, [
         el('div', {}, ['✅ เด็กนับรีเช็คได้ ', el('b', { style: 'font-size:17px', text: fmtNum(q) }), ' ชิ้น ',
           el('span', { class: 'muted', style: 'font-size:12px', text: 'โดย ' + (it.by || '-') })]),
@@ -14642,13 +14644,20 @@ function rcAdminCard(r, it, canManage) {
   return card;
 }
 
-/* ปุ่มดูรูป — โหลดรูปจาก recheckPhotos เฉพาะตอนกด (lazy) ไม่ดึงมาพร้อมหน้า */
-/* รูปย่อในการ์ด (แบบ mockup) — โหลดจาก recheckPhotos ตอนวาดการ์ด (รีเช็คมีไม่กี่ตัว) · คลิกขยายดูเต็มจอ */
-function rcThumb(k) {
+/* รูปย่อในการ์ด (แบบ mockup) · คลิกขยายดูเต็มจอ
+   ⭐ แคชด้วย key = SKU@at (at = เวลาที่เด็กส่งคืน) — รูปเปลี่ยน=key เปลี่ยน=โหลดใหม่เอง (ครอบข้ามเครื่อง/ส่งรูปใหม่)
+   จับ cache/roundId ตอนเรียก (closure) — สลับ Job ระหว่างโหลดจะไม่เขียนทับแคช Job ใหม่
+   โหลดล้มเหลว = ไม่เขียนแคช (ลองใหม่ครั้งถัดไป) */
+function rcThumb(k, at) {
+  if (!state.rcPhotoCache) state.rcPhotoCache = {};
+  var cache = state.rcPhotoCache, rid = state.roundId, ck = k + '@' + (at || 0);
   var img = el('img', { alt: 'รูปรีเช็ค', style: 'width:60px;height:60px;flex:0 0 60px;min-width:60px;max-width:60px;object-fit:cover;border-radius:8px;border:1px solid #cbd5e1;cursor:zoom-in;background:#f1f5f9;display:block' });
   img.addEventListener('click', function () { if (img.src) showRecheckImg(img.src); });
-  db.getQuiet('recheckPhotos/' + state.roundId + '/' + k).then(function (src) {
-    if (rcPhotoOk(src)) img.src = src; else img.style.display = 'none';
+  var show = function (src) { if (rcPhotoOk(src)) img.src = src; else img.style.display = 'none'; };
+  if (Object.prototype.hasOwnProperty.call(cache, ck)) { show(cache[ck]); return img; }
+  db.getQuiet('recheckPhotos/' + rid + '/' + k).then(function (src) {
+    cache[ck] = rcPhotoOk(src) ? src : null;
+    show(src);
   }).catch(function () { img.style.display = 'none'; });
   return img;
 }
@@ -14707,7 +14716,7 @@ function rcScannerCard(k, it, dr) {
     sync();
   } else {
     card.appendChild(el('div', { class: 'row', style: 'align-items:center;gap:10px;margin:6px 0' }, [
-      rcThumb(k),
+      rcThumb(k, it.at),
       el('div', {}, ['นับได้ ', el('b', { style: 'font-size:17px', text: fmtNum(Number(it.qty)) }), ' ชิ้น'])]));
     card.appendChild(el('button', { class: 'btn sm grey', text: 'แก้ไขอีกครั้ง', onclick: function () { reopenRecheck(k); } }));
   }
@@ -16309,6 +16318,7 @@ function selectRound(id) {
   state.sold = {};
   state.rechecks = {};
   state.recheckDraft = {};
+  state.rcPhotoCache = {};
   state.importUnlocked = false;    // ⭐ v2.10.7 ปลดล็อกเป็นของรายรอบ ห้ามติดค้างข้ามใบ
   state.lastImport = null;
   state.reasons = {};

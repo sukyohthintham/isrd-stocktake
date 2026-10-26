@@ -144,6 +144,87 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
   check('admin มีปุ่ม "ใช้ยอดรีเช็ค"', r.b.some(t => t.indexOf('ใช้ยอดรีเช็ค') >= 0), r.b);
   check('admin มีรูปย่อ (thumbnail) ให้คลิกขยาย', await page.evaluate(() => !!document.getElementById('recheckBody').querySelector('img')), 'thumb');
 
+  // ---------- [6b] รูปแคช — วาดการ์ดซ้ำไม่โหลด recheckPhotos ซ้ำ (กันกินโควตา) ----------
+  console.log('\n[6b] รูปแคชต่อ Job');
+  const r6b = await page.evaluate(async () => {
+    __seed('admin');
+    var calls = 0; var orig = db.getQuiet;
+    db.getQuiet = function (path) { if (String(path).indexOf('recheckPhotos') === 0) calls++; return Promise.resolve('data:image/jpeg;base64,/9j/zz'); };
+    state.rcPhotoCache = {};
+    state.rechecks = { A001: { name: 'x', sentAt: 1, qty: 12, by: 'เด็ก' } };
+    renderRecheckAdmin(); await new Promise(r => setTimeout(r, 25));
+    renderRecheckAdmin(); await new Promise(r => setTimeout(r, 25));
+    renderRecheckAdmin(); await new Promise(r => setTimeout(r, 25));
+    db.getQuiet = orig;
+    return { calls: calls };
+  });
+  check('รูปแคช: วาดการ์ด 3 ครั้ง โหลด recheckPhotos ครั้งเดียว (ไม่กินโควตาซ้ำ)', r6b.calls === 1, r6b);
+
+  // ---------- [6c] รูปแคชถูกใบ — key = SKU@at · closure · ล้มแล้วลองใหม่ ----------
+  console.log('\n[6c] รูปแคชถูกใบ (กันรูปผิด)');
+  // (A) at เปลี่ยน (เด็กส่งรูปใหม่จากอีกเครื่อง) → โหลดรูปใหม่
+  const r6cA = await page.evaluate(async () => {
+    __seed('admin');
+    var calls = 0; var orig = db.getQuiet;
+    db.getQuiet = function (path) { if (String(path).indexOf('recheckPhotos') === 0) calls++; return Promise.resolve('data:image/jpeg;base64,/9j/zz'); };
+    state.rcPhotoCache = {};
+    state.rechecks = { A001: { name: 'x', sentAt: 1, qty: 12, by: 'เด็ก', at: 100 } };
+    renderRecheckAdmin(); await new Promise(r => setTimeout(r, 25));
+    renderRecheckAdmin(); await new Promise(r => setTimeout(r, 25));
+    var same = calls;
+    state.rechecks.A001.at = 200;
+    renderRecheckAdmin(); await new Promise(r => setTimeout(r, 25));
+    db.getQuiet = orig;
+    return { same: same, after: calls };
+  });
+  check('รูปแคช: at เดิม วาดซ้ำไม่โหลดใหม่ (=1)', r6cA.same === 1, r6cA);
+  check('รูปแคช: at เปลี่ยน (เด็กส่งรูปใหม่อีกเครื่อง) → โหลดรูปใหม่ (=2)', r6cA.after === 2, r6cA);
+
+  // (B) โหลดล้ม → ไม่แคช null ถาวร · เรนเดอร์ใหม่ลองโหลดอีก
+  const r6cB = await page.evaluate(async () => {
+    __seed('admin');
+    var calls = 0, failNow = true; var orig = db.getQuiet;
+    db.getQuiet = function (path) {
+      if (String(path).indexOf('recheckPhotos') !== 0) return orig(path);
+      calls++; return failNow ? Promise.reject(new Error('net')) : Promise.resolve('data:image/jpeg;base64,/9j/zz');
+    };
+    state.rcPhotoCache = {};
+    state.rechecks = { A001: { name: 'x', sentAt: 1, qty: 12, by: 'เด็ก', at: 300 } };
+    renderRecheckAdmin(); await new Promise(r => setTimeout(r, 25));
+    var c1 = calls, cached = Object.prototype.hasOwnProperty.call(state.rcPhotoCache, 'A001@300');
+    failNow = false;
+    renderRecheckAdmin(); await new Promise(r => setTimeout(r, 25));
+    db.getQuiet = orig;
+    return { c1: c1, c2: calls, cached: cached };
+  });
+  check('รูปแคช: โหลดล้ม → ไม่แคช null (ลองใหม่ได้)', r6cB.cached === false, r6cB);
+  check('รูปแคช: โหลดล้มแล้วเรนเดอร์ใหม่ → ลองโหลดซ้ำ (1→2)', r6cB.c1 === 1 && r6cB.c2 === 2, r6cB);
+
+  // (C) สลับ Job ระหว่างรูปกำลังโหลด → เขียนลงแคช Job เก่า (closure) ไม่ปน Job ใหม่ (กันรูปผิดใบ)
+  const r6cC = await page.evaluate(async () => {
+    __seed('admin');
+    var resolvers = []; var orig = db.getQuiet;
+    db.getQuiet = function (path) {
+      if (String(path).indexOf('recheckPhotos') !== 0) return orig(path);
+      return new Promise(function (res) { resolvers.push(function () { res('data:image/jpeg;base64,/9j/OLD'); }); });
+    };
+    state.roundId = 'R1';
+    var oldCache = (state.rcPhotoCache = {});
+    state.rechecks = { A001: { name: 'x', sentAt: 1, qty: 12, by: 'เด็ก', at: 100 } };
+    renderRecheckAdmin(); await new Promise(r => setTimeout(r, 10));
+    var newCache = (state.rcPhotoCache = {}); state.roundId = 'R2';
+    resolvers.forEach(function (f) { f(); }); await new Promise(r => setTimeout(r, 25));
+    db.getQuiet = orig;
+    return {
+      oldHas: Object.prototype.hasOwnProperty.call(oldCache, 'A001@100'),
+      newPolluted: Object.prototype.hasOwnProperty.call(newCache, 'A001@100')
+    };
+  });
+  check('รูปแคช: สลับ Job ระหว่างโหลด → เขียนลงแคช Job เก่า (closure)', r6cC.oldHas === true, r6cC);
+  check('รูปแคช: สลับ Job ระหว่างโหลด → ไม่ปนแคช Job ใหม่ (กันรูปผิดใบ)', r6cC.newPolluted === false, r6cC);
+  // คืนสภาพ state ให้เทสถัดไป ([7] ใช้ A001 qty 12 บน R1)
+  await page.evaluate(() => { __seed('admin'); state.rechecks = { A001: { name: 'x', sentAt: 1, qty: 12, by: 'เด็ก' } }; renderRecheckAdmin(); });
+
   // ---------- [7] applyRecheck (admin) → ปรับยอดนับ ----------
   console.log('\n[7] admin ใช้ยอดรีเช็ค');
   await page.evaluate(() => { __calls.scan = []; applyRecheck('A001'); });
