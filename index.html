@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.37.10">
+<meta name="version" content="2.37.11">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.37.10</title>
+<title>ISRD Stocktake v2.37.11</title>
 
 <style>
 :root{
@@ -2024,7 +2024,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.37.10';
+var APP_VERSION = '2.37.11';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -13532,6 +13532,7 @@ function renderStaffReport() {
   sel.appendChild(el('option', { value: 'live', text: '📡 สาขาที่กำลังนับ (ทั้งหมด)' }));
   sel.appendChild(el('option', { value: 'closed', text: '✅ รอบที่ปิดแล้ว (ทั้งหมด)' }));
   sel.appendChild(el('option', { value: 'all', text: '🗂️ ทุกรอบทุกสถานะ (ทั้งหมด — รอบเยอะอาจช้า)' }));
+  sel.appendChild(el('option', { value: 'range', text: '📅 เลือกช่วงวันที่ (จาก–ถึง)' }));
   Object.keys(grps).map(function (k) { return grps[k]; }).sort(function (a, b) { return (b.createdAt || 0) - (a.createdAt || 0); }).forEach(function (g) {
     if (!canSeeBranch(g.branchCode)) return;   /* คนจำกัดสาขาไม่เห็นรอบสาขาอื่น */
     var dt = g.createdAt ? new Date(g.createdAt) : null;
@@ -13542,6 +13543,22 @@ function renderStaffReport() {
   sel.addEventListener('change', function () { state.staffScope = sel.value; state.staffReport = null; renderStaffReport(); });
   box.appendChild(el('label', { style: 'font-weight:600;font-size:13px', text: 'เลือกรอบ' }));
   box.appendChild(sel);
+  if ((state.staffScope || 'live') === 'range') {
+    var _iso = function (d) { return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); };
+    if (!state.staffFrom) state.staffFrom = _iso(new Date());
+    if (!state.staffTo) state.staffTo = _iso(new Date());
+    var _dw = el('div', { class: 'row', style: 'gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px' });
+    var _inF = el('input', { type: 'date', value: state.staffFrom, style: 'padding:6px;border:1px solid #cbd5e1;border-radius:8px' });
+    var _inT = el('input', { type: 'date', value: state.staffTo, style: 'padding:6px;border:1px solid #cbd5e1;border-radius:8px' });
+    _inF.addEventListener('change', function () { state.staffFrom = _inF.value; state.staffReport = null; });
+    _inT.addEventListener('change', function () { state.staffTo = _inT.value; state.staffReport = null; });
+    _dw.appendChild(el('span', { style: 'font-size:13px', text: 'ตั้งแต่' }));
+    _dw.appendChild(_inF);
+    _dw.appendChild(el('span', { style: 'font-size:13px', text: 'ถึง' }));
+    _dw.appendChild(_inT);
+    box.appendChild(_dw);
+    box.appendChild(el('div', { class: 'muted', style: 'font-size:12px;margin-bottom:10px', text: 'ดึงเฉพาะรอบที่เปิดรอบในช่วงนี้ · เบากว่าดึงทั้งปี' }));
+  }
   if (!state.staffReport) {
     var b0 = el('button', { class: 'btn', text: '📥 โหลดผลงานยิง (รอบที่เลือก)' });
     b0.addEventListener('click', function () { loadStaffReport(); });
@@ -13585,10 +13602,20 @@ function loadStaffReport() {
   var scope = state.staffScope || 'live';
   var cids;
   if (scope === 'live') cids = liveCountingCycles();
-  else if (scope === 'all' || scope === 'closed') {
+  else if (scope === 'all' || scope === 'closed' || scope === 'range') {
+    var _fr = 0, _to = Infinity;
+    if (scope === 'range') {
+      _fr = state.staffFrom ? new Date(state.staffFrom + 'T00:00:00').getTime() : 0;
+      _to = state.staffTo ? new Date(state.staffTo + 'T23:59:59').getTime() : Infinity;
+    }
     var _g = cycleGroups();
     cids = Object.keys(_g).map(function (k) { return _g[k]; })
-      .filter(function (g) { return canSeeBranch(g.branchCode) && (scope === 'all' || cycleStatus(g.id) === 'closed'); })
+      .filter(function (g) {
+        if (!canSeeBranch(g.branchCode)) return false;
+        if (scope === 'closed') return cycleStatus(g.id) === 'closed';
+        if (scope === 'range') { var c = g.createdAt || 0; return c >= _fr && c <= _to; }
+        return true; /* all */
+      })
       .sort(function (a, b) { return (b.createdAt || 0) - (a.createdAt || 0); })
       .map(function (g) { return g.id; });
   } else cids = canSeeBranch((cycleBranch(scope) || {}).branchCode) ? [scope] : [];
@@ -13596,7 +13623,7 @@ function loadStaffReport() {
   var doneC = 0, totalC = cids.length;
   function staffProg() { if (box) { box.textContent = ''; box.appendChild(el('div', { class: 'muted', style: 'padding:12px', text: 'กำลังโหลดผลงานยิง... ' + doneC + '/' + totalC + ' สาขา' })); } }
   staffProg();
-  /* ดึงขนาน: ทุก Job ในสาขา + ทุกสาขาพร้อมกัน (REST GET ไม่ชน Spark concurrent cap) — เบราว์เซอร์คุมคิว ~6 เส้น */
+  /* ดึงขนาน: ทุก Job + ทุกสาขาพร้อมกัน (REST GET ไม่ชน Spark concurrent cap) — getQuiet เข้าคิวเบื้องหลัง BG_MAX=2 ของแอป จึงวิ่งจริงทีละ 2 สาย (ยังเร็วกว่า sequential) */
   return Promise.all(cids.map(function (cid) {
     var b = cycleBranch(cid), users = {}, pieces = 0, jl = jobsInCycle(cid), failed = 0;
     return Promise.all(jl.map(function (jid) {

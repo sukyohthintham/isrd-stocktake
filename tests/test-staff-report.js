@@ -126,8 +126,8 @@ function check(n, ok, g) { if (ok) { pass++; console.log('  PASS  ' + n); } else
     window.__allowBranch = true;
     return { all: all, restricted: none };
   });
-  check('dropdown: มีสิทธิ์เห็นครบ (live+ปิด+ทุก + 2 รอบ = 5)', rdd.all === 5, rdd);
-  check('dropdown: สาขาที่ไม่มีสิทธิ์ถูกกรองออก เหลือแต่ตัวรวม 3', rdd.restricted === 3, rdd);
+  check('dropdown: มีสิทธิ์เห็นครบ (live+ปิด+ทุก+ช่วง + 2 รอบ = 6)', rdd.all === 6, rdd);
+  check('dropdown: สาขาที่ไม่มีสิทธิ์ถูกกรองออก เหลือแต่ตัวรวม 4', rdd.restricted === 4, rdd);
 
   const rcb = await page.evaluate(async () => {
     window.__allowBranch = false;
@@ -167,6 +167,31 @@ function check(n, ok, g) { if (ok) { pass++; console.log('  PASS  ' + n); } else
   });
   check('scope "ปิดแล้ว" → เฉพาะรอบปิด (B2)', rcl.closed.length === 1 && rcl.closed[0] === 'B2', rcl);
   check('scope "ทุกสถานะ" → ทุกรอบ (B1+B2)', rcl.all.length === 2 && rcl.all[0] === 'B1' && rcl.all[1] === 'B2', rcl);
+
+  /* ---- 6c) เลือกช่วงวันที่ (จาก-ถึง) — ดึงเฉพาะรอบในช่วง ไม่ลากทั้งปี ---- */
+  const rrg = await page.evaluate(async () => {
+    var saveGrp = window.cycleGroups, saveBr = window.cycleBranch, saveJobs = window.jobsInCycle, saveGet = window.db.getQuiet, saveSt = window.cycleStatus;
+    var now = Date.now(), old = now - 10 * 86400000;
+    window.cycleGroups = () => ({ CT: { id: 'CT', branchCode: 'B1', branchName: 'วันนี้', createdAt: now }, CO: { id: 'CO', branchCode: 'B2', branchName: 'เก่า', createdAt: old } });
+    window.cycleStatus = () => 'closed';
+    window.cycleBranch = (cid) => cid === 'CO' ? { branchCode: 'B2', branchName: 'เก่า' } : { branchCode: 'B1', branchName: 'วันนี้' };
+    window.jobsInCycle = () => ['J1'];
+    var T8 = new Date(2026, 9, 20, 8, 0, 0).getTime();
+    window.db.getQuiet = (p) => String(p).indexOf('/scans') >= 0 ? Promise.resolve({ x: { code: 'A', delta: 1, ts: T8, user: 'ก' } }) : Promise.resolve({});
+    window.__allowBranch = true;
+    var iso = (d) => d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+    var today = iso(new Date(now));
+    state.staffScope = 'range'; state.staffFrom = today; state.staffTo = today; state.staffReport = null; state.staffLoading = false;
+    await loadStaffReport();
+    var todayOnly = state.staffReport.branches.map(b => b.code).sort();
+    state.staffFrom = iso(new Date(old - 86400000)); state.staffTo = today; state.staffReport = null; state.staffLoading = false;
+    await loadStaffReport();
+    var wide = state.staffReport.branches.map(b => b.code).sort();
+    window.cycleGroups = saveGrp; window.cycleBranch = saveBr; window.jobsInCycle = saveJobs; window.db.getQuiet = saveGet; window.cycleStatus = saveSt;
+    return { todayOnly, wide };
+  });
+  check('ช่วงวัน: วันนี้-วันนี้ → เฉพาะรอบวันนี้ (B1)', rrg.todayOnly.length === 1 && rrg.todayOnly[0] === 'B1', rrg);
+  check('ช่วงวัน: ขยายช่วงคลุมของเก่า → ได้ทั้ง 2 (B1+B2)', rrg.wide.length === 2, rrg);
 
   /* ---- 7) ดึงหลายสาขาพร้อมกัน (parallel) — ยอดต้องแยกสาขาถูก เรียงตามรหัส ---- */
   const rpar = await page.evaluate(async () => {
