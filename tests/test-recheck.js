@@ -332,6 +332,25 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
   check('requestReopen → enqueue reopenReq=true + ตั้ง flag', r11.reqF && !!r11.reqP && r11.reqP['A001/reopenReq'] === true, r11.reqP);
   check('allowReopen → enqueue reopenOk=true (ไม่เขียน reopenReq กัน PATCH ตกสำหรับ custom)', r11.okF && !!r11.okP && r11.okP['A001/reopenOk'] === true && r11.okP['A001/reopenReq'] === undefined, r11.okP);
 
+  console.log('\n[12] auto-refresh poll (ไม่ต้องรีเฟรชหน้าเอง)');
+  const r12 = await page.evaluate(() => {
+    var has = typeof startRecheckPoll === 'function' && typeof stopRecheckPoll === 'function';
+    state.rcLastLocalAt = 0;
+    window.__realEnqueue('rounds/R1/rechecks', { 'A001/reopenReq': true });
+    var stamped = state.rcLastLocalAt > 0;
+    state.rcLastLocalAt = 0;
+    window.__realEnqueue('rounds/R1/scans', { x: 1 });
+    var noStampOther = state.rcLastLocalAt === 0;
+    state.page = 'recheck'; state.roundId = 'R1';
+    startRecheckPoll(); var started = !!state.rcPollTimer;
+    stopRecheckPoll(); var stopped = !state.rcPollTimer;
+    return { has: has, stamped: stamped, noStampOther: noStampOther, started: started, stopped: stopped };
+  });
+  check('startRecheckPoll/stopRecheckPoll มีจริง', r12.has, r12);
+  check('enqueueWrite rechecks → stamp rcLastLocalAt (กัน poll ทับ local)', r12.stamped, r12);
+  check('enqueueWrite path อื่น (scans) ไม่ stamp', r12.noStampOther, r12);
+  check('startRecheckPoll ตั้ง timer · stopRecheckPoll เคลียร์', r12.started && r12.stopped, r12);
+
   console.log('\n[10] ไม่มี error');
   check('ไม่มี page error', errors.length === 0, errors.slice(0, 5));
 

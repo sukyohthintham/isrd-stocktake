@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.37.7">
+<meta name="version" content="2.37.8">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.37.7</title>
+<title>ISRD Stocktake v2.37.8</title>
 
 <style>
 :root{
@@ -2022,7 +2022,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.37.7';
+var APP_VERSION = '2.37.8';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -4780,6 +4780,7 @@ function retryFailedWrites() {
 }
 
 function enqueueWrite(path, patch) {
+  if (String(path).indexOf('/rechecks') >= 0) state.rcLastLocalAt = Date.now();   /* v2.37.8 กัน poll รีเฟรชทับ local ที่เพิ่งกด */
   var q = queueLoad();
   q.push({ path: path, patch: patch, remote: !!db.remote });
   if (!queueSave(q)) {
@@ -14574,9 +14575,34 @@ function el(tag, props, kids) {
 function loadRechecks(cb) {
   var rid = state.roundId;
   if (!rid) { state.rechecks = {}; if (cb) cb(); return; }
-  db.getQuiet('rounds/' + rid + '/rechecks').then(function (d) { state.rechecks = d || {}; if (cb) cb(); })
+  db.getQuiet('rounds/' + rid + '/rechecks').then(function (d) { state.rechecks = d || {}; state.rcLastSnap = JSON.stringify(state.rechecks); if (cb) cb(); })
     .catch(function () { if (cb) cb(); });
 }
+
+/* ⭐ v2.37.8 รีเฟรชแท็บรีเช็คอัตโนมัติ — poll REST เบา ๆ (rechecks ก้อนเล็ก ไม่มีรูป) ไม่เปิด EventSource ค้าง จึงไม่ชน LITE_MODE/Spark
+   ให้ admin เห็นเด็กส่ง/ขอแก้ และเด็กเห็นหัวหน้าอนุมัติ โดยไม่ต้องรีเฟรชหน้าเอง
+   ข้ามรอบเมื่อ: ออกจากแท็บ · แท็บถูกซ่อน · กำลังพิมพ์ (กัน input เด้ง) · กำลังส่ง (rcBusy) · เพิ่งกดเอง <10 วิ (กัน poll ดึง DB เก่าทับ local) */
+var RC_POLL_MS = 8000;
+function startRecheckPoll() {
+  stopRecheckPoll();
+  state.rcPollTimer = setInterval(function () {
+    if (state.page !== 'recheck' || !state.roundId) { stopRecheckPoll(); return; }
+    if (document.hidden || state.rcBusy) return;
+    var ae = document.activeElement;
+    if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) return;
+    if (state.rcLastLocalAt && Date.now() - state.rcLastLocalAt < 10000) return;
+    var rid = state.roundId;
+    db.getQuiet('rounds/' + rid + '/rechecks').then(function (d) {
+      if (state.page !== 'recheck' || state.roundId !== rid) return;
+      var snap = JSON.stringify(d || {});
+      if (snap === state.rcLastSnap) return;
+      state.rechecks = d || {};
+      state.rcLastSnap = snap;
+      renderRecheck(true);
+    }).catch(function () {});
+  }, RC_POLL_MS);
+}
+function stopRecheckPoll() { if (state.rcPollTimer) { clearInterval(state.rcPollTimer); state.rcPollTimer = null; } }
 
 function renderRecheck(skipLoad) {
   if (!state.recheckDraft) state.recheckDraft = {};
@@ -15040,11 +15066,12 @@ function showPage(name) {
      จะกลายเป็นวาดซ้ำรอบหนึ่งทุกครั้งที่เข้าหน้า รอบที่มีหลายพัน SKU จะสะดุดบนมือถือ
      ทุกอย่างที่ renderSummary แตะอยู่ใน #sumJob ซึ่งถูกซ่อนตอนอยู่แท็บภาพรวมอยู่แล้ว */
   if (name !== 'summary') stopLiveTimer();        // ⭐ v2.27.0 ออกจากหน้าสรุป = หยุดมอนิเตอร์สด
+  if (name !== 'recheck') stopRecheckPoll();      // ⭐ v2.37.8 ออกจากแท็บรีเช็ค = หยุด poll
   if (name === 'summary') setSummaryTab(state.summaryTab);
   if (name === 'master') renderMaster();
   if (name === 'scan') renderScanPage();
   if (name === 'doc') { renderDoc(); refreshDocMeta(); }
-  if (name === 'recheck') renderRecheck();
+  if (name === 'recheck') { renderRecheck(); startRecheckPoll(); }
 }
 
 function refreshNav() {
