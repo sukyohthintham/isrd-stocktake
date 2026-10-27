@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.37.11">
+<meta name="version" content="2.37.12">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.37.11</title>
+<title>ISRD Stocktake v2.37.12</title>
 
 <style>
 :root{
@@ -2024,7 +2024,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.37.11';
+var APP_VERSION = '2.37.12';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -13550,8 +13550,8 @@ function renderStaffReport() {
     var _dw = el('div', { class: 'row', style: 'gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px' });
     var _inF = el('input', { type: 'date', value: state.staffFrom, style: 'padding:6px;border:1px solid #cbd5e1;border-radius:8px' });
     var _inT = el('input', { type: 'date', value: state.staffTo, style: 'padding:6px;border:1px solid #cbd5e1;border-radius:8px' });
-    _inF.addEventListener('change', function () { state.staffFrom = _inF.value; state.staffReport = null; });
-    _inT.addEventListener('change', function () { state.staffTo = _inT.value; state.staffReport = null; });
+    _inF.addEventListener('change', function () { state.staffFrom = _inF.value; state.staffReport = null; renderStaffReport(); });
+    _inT.addEventListener('change', function () { state.staffTo = _inT.value; state.staffReport = null; renderStaffReport(); });
     _dw.appendChild(el('span', { style: 'font-size:13px', text: 'ตั้งแต่' }));
     _dw.appendChild(_inF);
     _dw.appendChild(el('span', { style: 'font-size:13px', text: 'ถึง' }));
@@ -13605,8 +13605,10 @@ function loadStaffReport() {
   else if (scope === 'all' || scope === 'closed' || scope === 'range') {
     var _fr = 0, _to = Infinity;
     if (scope === 'range') {
-      _fr = state.staffFrom ? new Date(state.staffFrom + 'T00:00:00').getTime() : 0;
-      _to = state.staffTo ? new Date(state.staffTo + 'T23:59:59').getTime() : Infinity;
+      var _f = state.staffFrom || '', _t = state.staffTo || '';
+      if (_f && _t && _f > _t) { var _x = _f; _f = _t; _t = _x; }   /* ใส่กลับด้านก็ยังได้ผล */
+      _fr = _f ? new Date(_f + 'T00:00:00').getTime() : 0;
+      _to = _t ? new Date(_t + 'T23:59:59').getTime() : Infinity;
     }
     var _g = cycleGroups();
     cids = Object.keys(_g).map(function (k) { return _g[k]; })

@@ -187,11 +187,15 @@ function check(n, ok, g) { if (ok) { pass++; console.log('  PASS  ' + n); } else
     state.staffFrom = iso(new Date(old - 86400000)); state.staffTo = today; state.staffReport = null; state.staffLoading = false;
     await loadStaffReport();
     var wide = state.staffReport.branches.map(b => b.code).sort();
+    state.staffFrom = today; state.staffTo = iso(new Date(old - 86400000)); state.staffReport = null; state.staffLoading = false;
+    await loadStaffReport();
+    var swapped = state.staffReport.branches.map(b => b.code).sort();
     window.cycleGroups = saveGrp; window.cycleBranch = saveBr; window.jobsInCycle = saveJobs; window.db.getQuiet = saveGet; window.cycleStatus = saveSt;
-    return { todayOnly, wide };
+    return { todayOnly, wide, swapped };
   });
   check('ช่วงวัน: วันนี้-วันนี้ → เฉพาะรอบวันนี้ (B1)', rrg.todayOnly.length === 1 && rrg.todayOnly[0] === 'B1', rrg);
   check('ช่วงวัน: ขยายช่วงคลุมของเก่า → ได้ทั้ง 2 (B1+B2)', rrg.wide.length === 2, rrg);
+  check('ช่วงวัน: ใส่กลับด้าน (ตั้งแต่>ถึง) → swap ให้ ได้ผลเหมือนไม่กลับ (2 สาขา)', rrg.swapped.length === 2, rrg);
 
   /* ---- 7) ดึงหลายสาขาพร้อมกัน (parallel) — ยอดต้องแยกสาขาถูก เรียงตามรหัส ---- */
   const rpar = await page.evaluate(async () => {
