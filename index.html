@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.37.9">
+<meta name="version" content="2.37.10">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.37.9</title>
+<title>ISRD Stocktake v2.37.10</title>
 
 <style>
 :root{
@@ -2024,7 +2024,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.37.9';
+var APP_VERSION = '2.37.10';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -13516,6 +13516,9 @@ function renderOverview() {
    แสดงเฉพาะคนที่ยิงจริง (เอาไปเทียบใบเบิก OT เอง) · ไฮไลต์ยิงน้อยผิดปกติ/เริ่มสายกว่า 10 โมง · ดาวน์โหลด Excel
    โหลดตอนกดเท่านั้น (ของหนัก ดึง scans เต็ม) ไม่ยิงอ่านตลอด */
 function timeHM(ts) { if (!ts) return '-'; var d = new Date(ts); return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2); }
+/* วันที่+เวลา — ไว้ดูผลงานยิงข้ามวัน (รอบเก่า/ทุกสถานะ) จะได้รู้นับวันไหน · dateHM เต็ม(มีปี พ.ศ.)สำหรับ Excel · dateHMs ย่อ(ไม่มีปี)สำหรับจอ */
+function dateHM(ts) { if (!ts) return '-'; var d = new Date(ts), p = function (n) { return ('0' + n).slice(-2); }; return p(d.getDate()) + '/' + p(d.getMonth() + 1) + '/' + String(d.getFullYear() + 543).slice(-2) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()); }
+function dateHMs(ts) { if (!ts) return '-'; var d = new Date(ts), p = function (n) { return ('0' + n).slice(-2); }; return p(d.getDate()) + '/' + p(d.getMonth() + 1) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()); }
 
 function renderStaffReport() {
   var box = $('sumStaff'); if (!box) return;
@@ -13527,6 +13530,8 @@ function renderStaffReport() {
   var grps = cycleGroups();
   var sel = el('select', { style: 'width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:8px;margin-bottom:12px;box-sizing:border-box' });
   sel.appendChild(el('option', { value: 'live', text: '📡 สาขาที่กำลังนับ (ทั้งหมด)' }));
+  sel.appendChild(el('option', { value: 'closed', text: '✅ รอบที่ปิดแล้ว (ทั้งหมด)' }));
+  sel.appendChild(el('option', { value: 'all', text: '🗂️ ทุกรอบทุกสถานะ (ทั้งหมด — รอบเยอะอาจช้า)' }));
   Object.keys(grps).map(function (k) { return grps[k]; }).sort(function (a, b) { return (b.createdAt || 0) - (a.createdAt || 0); }).forEach(function (g) {
     if (!canSeeBranch(g.branchCode)) return;   /* คนจำกัดสาขาไม่เห็นรอบสาขาอื่น */
     var dt = g.createdAt ? new Date(g.createdAt) : null;
@@ -13566,7 +13571,7 @@ function renderStaffReport() {
         el('span', { style: 'font-weight:700', text: u.user }),
         low ? el('span', { class: 'badge red', style: 'margin-left:6px', text: '🔴 ยิงน้อย' }) : null,
         late ? el('span', { class: 'badge warn', style: 'margin-left:6px', text: '🟠 เริ่มสาย' }) : null]));
-      row.appendChild(el('div', { class: 'muted', style: 'font-size:13px', text: fmtNum(u.pieces) + ' ชิ้น · ' + fmtNum(u.skus) + ' SKU · เริ่ม ' + u.firstT + ' · ล่าสุด ' + u.lastT }));
+      row.appendChild(el('div', { class: 'muted', style: 'font-size:13px', text: fmtNum(u.pieces) + ' ชิ้น · ' + fmtNum(u.skus) + ' SKU · เริ่ม ' + dateHMs(u.first) + ' · ล่าสุด ' + dateHMs(u.last) }));
       card.appendChild(row);
     });
     box.appendChild(card);
@@ -13578,40 +13583,46 @@ function loadStaffReport() {
   state.staffLoading = true;
   var box = $('sumStaff'); if (box) { box.textContent = ''; box.appendChild(el('div', { class: 'muted', style: 'padding:12px', text: 'กำลังโหลดผลงานยิงทุกสาขา... (อาจใช้เวลาสักครู่)' })); }
   var scope = state.staffScope || 'live';
-  var cids = (scope !== 'live') ? (canSeeBranch((cycleBranch(scope) || {}).branchCode) ? [scope] : []) : liveCountingCycles(), out = [];
-  var chain = Promise.resolve();
-  cids.forEach(function (cid) {
-    chain = chain.then(function () {
-      var b = cycleBranch(cid), users = {}, pieces = 0, jl = jobsInCycle(cid), failed = 0;
-      var jc = Promise.resolve();
-      jl.forEach(function (jid) {
-        jc = jc.then(function () {
-          return db.getQuiet('rounds/' + jid + '/scans').catch(function () { return db.getQuiet('rounds/' + jid + '/scans'); }).then(function (scans) {
-            Object.keys(scans || {}).forEach(function (sid) {
-              var r = scans[sid]; if (!r) return;
-              var d = Number(r.delta) || 0, ts = Number(r.ts) || 0, u = r.user || 'ไม่ระบุ', k = safeKey(r.code);
-              pieces += d;
-              var e = users[u] || (users[u] = { user: u, pieces: 0, net: {}, first: 0, last: 0 });
-              e.pieces += d; e.net[k] = (e.net[k] || 0) + d;
-              if (ts && (!e.first || ts < e.first)) e.first = ts;
-              if (ts > e.last) e.last = ts;
-            });
-          }).catch(function () { failed++; });
+  var cids;
+  if (scope === 'live') cids = liveCountingCycles();
+  else if (scope === 'all' || scope === 'closed') {
+    var _g = cycleGroups();
+    cids = Object.keys(_g).map(function (k) { return _g[k]; })
+      .filter(function (g) { return canSeeBranch(g.branchCode) && (scope === 'all' || cycleStatus(g.id) === 'closed'); })
+      .sort(function (a, b) { return (b.createdAt || 0) - (a.createdAt || 0); })
+      .map(function (g) { return g.id; });
+  } else cids = canSeeBranch((cycleBranch(scope) || {}).branchCode) ? [scope] : [];
+  var out = [];
+  var doneC = 0, totalC = cids.length;
+  function staffProg() { if (box) { box.textContent = ''; box.appendChild(el('div', { class: 'muted', style: 'padding:12px', text: 'กำลังโหลดผลงานยิง... ' + doneC + '/' + totalC + ' สาขา' })); } }
+  staffProg();
+  /* ดึงขนาน: ทุก Job ในสาขา + ทุกสาขาพร้อมกัน (REST GET ไม่ชน Spark concurrent cap) — เบราว์เซอร์คุมคิว ~6 เส้น */
+  return Promise.all(cids.map(function (cid) {
+    var b = cycleBranch(cid), users = {}, pieces = 0, jl = jobsInCycle(cid), failed = 0;
+    return Promise.all(jl.map(function (jid) {
+      return db.getQuiet('rounds/' + jid + '/scans').catch(function () { return db.getQuiet('rounds/' + jid + '/scans'); }).then(function (scans) {
+        Object.keys(scans || {}).forEach(function (sid) {
+          var r = scans[sid]; if (!r) return;
+          var d = Number(r.delta) || 0, ts = Number(r.ts) || 0, u = r.user || 'ไม่ระบุ', k = safeKey(r.code);
+          pieces += d;
+          var e = users[u] || (users[u] = { user: u, pieces: 0, net: {}, first: 0, last: 0 });
+          e.pieces += d; e.net[k] = (e.net[k] || 0) + d;
+          if (ts && (!e.first || ts < e.first)) e.first = ts;
+          if (ts > e.last) e.last = ts;
         });
-      });
-      return jc.then(function () {
-        var ulist = Object.keys(users).map(function (uk) {
-          var e = users[uk];
-          var skus = Object.keys(e.net).filter(function (k) { return e.net[k] !== 0; }).length;
-          var fd = e.first ? new Date(e.first) : null;
-          return { user: e.user, pieces: e.pieces, skus: skus, first: e.first, last: e.last,
-                   firstT: timeHM(e.first), lastT: timeHM(e.last), firstH: fd ? fd.getHours() : null };
-        }).sort(function (a, b) { return b.pieces - a.pieces; });
-        out.push({ cid: cid, code: b.branchCode || '-', name: (b.branchCode ? b.branchCode + ' · ' : '') + (b.branchName || b.branch || '-'), pieces: pieces, users: ulist, jobs: jl.length, failed: failed });
-      });
+      }).catch(function () { failed++; });
+    })).then(function () {
+      var ulist = Object.keys(users).map(function (uk) {
+        var e = users[uk];
+        var skus = Object.keys(e.net).filter(function (k) { return e.net[k] !== 0; }).length;
+        var fd = e.first ? new Date(e.first) : null;
+        return { user: e.user, pieces: e.pieces, skus: skus, first: e.first, last: e.last,
+                 firstT: timeHM(e.first), lastT: timeHM(e.last), firstH: fd ? fd.getHours() : null };
+      }).sort(function (a, b) { return b.pieces - a.pieces; });
+      out.push({ cid: cid, code: b.branchCode || '-', name: (b.branchCode ? b.branchCode + ' · ' : '') + (b.branchName || b.branch || '-'), pieces: pieces, users: ulist, jobs: jl.length, failed: failed });
+      doneC++; staffProg();
     });
-  });
-  return chain.then(function () {
+  })).then(function () {
     if (state.staffScope !== scope) { state.staffLoading = false; return; }   /* เปลี่ยนรอบระหว่างโหลด → ผลนี้ของรอบเก่า ทิ้งไป */
     out.sort(function (a, b) { return String(a.code).localeCompare(String(b.code), 'th'); });
     state.staffReport = { branches: out, at: Date.now() };
@@ -13633,10 +13644,10 @@ function exportStaffExcel() {
         if (maxP > 0 && u.pieces < maxP * 0.3) notes.push('ยิงน้อยผิดปกติ');
         if (u.firstH != null && u.firstH >= 10) notes.push('เริ่มหลัง 10 โมง');
       }
-      rows.push([b.name, u.user, u.pieces, u.skus, u.firstT, u.lastT, notes.join(' · ')]);
+      rows.push([b.name, u.user, u.pieces, u.skus, dateHM(u.first), dateHM(u.last), notes.join(' · ')]);
     });
   });
-  var blob = buildXlsx([{ name: 'ผลงานยิง', rows: rows, widths: [24, 20, 12, 12, 10, 10, 26] }]);
+  var blob = buildXlsx([{ name: 'ผลงานยิง', rows: rows, widths: [24, 20, 12, 12, 15, 15, 26] }]);
   var d = new Date(), stamp = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
   var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'ผลงานยิง_' + stamp + '.xlsx';
   document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 4000);

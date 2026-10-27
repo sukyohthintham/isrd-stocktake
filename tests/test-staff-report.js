@@ -19,7 +19,8 @@ function check(n, ok, g) { if (ok) { pass++; console.log('  PASS  ' + n); } else
     window.cycleBranch = () => ({ branchCode: 'B1', branchName: 'สาขาทดสอบ' });
     window.cycleGroups = () => ({ C1: { id: 'C1', branchCode: 'B1', branchName: 'สาขาทดสอบ', createdAt: Date.now() },
                                  C2: { id: 'C2', branchCode: 'B2', branchName: 'สาขาสอง', createdAt: Date.now() - 1000 } });
-    window.cycleStatus = () => 'closed';
+    window.__status = { C1: 'counting', C2: 'closed' };
+    window.cycleStatus = (cid) => window.__status[cid] || 'closed';
     var T8 = new Date(2026, 9, 20, 8, 0, 0).getTime(), T830 = new Date(2026, 9, 20, 8, 30, 0).getTime(), T11 = new Date(2026, 9, 20, 11, 0, 0).getTime();
     window.__scans = { s1: { code: 'A', delta: 50, ts: T8, user: 'สมชาย' }, s2: { code: 'B', delta: 30, ts: T830, user: 'สมชาย' }, s3: { code: 'A', delta: 5, ts: T11, user: 'สมหญิง' } };
     window.__scansOk = function (p) { if (String(p).indexOf('/scans') >= 0) return Promise.resolve(window.__scans); return Promise.resolve({}); };
@@ -49,6 +50,17 @@ function check(n, ok, g) { if (ok) { pass++; console.log('  PASS  ' + n); } else
   });
   check('Excel ชีต "ผลงานยิง" หัว 7 คอลัมน์', x.name === 'ผลงานยิง' && x.head.length === 7 && x.head[0] === 'สาขา' && x.head[2] === 'จำนวนชิ้น', x);
   check('flag สมหญิง: ยิงน้อยผิดปกติ + เริ่มหลัง 10 โมง', x.note.indexOf('ยิงน้อย') >= 0 && x.note.indexOf('เริ่มหลัง 10') >= 0, x);
+
+  /* ---- 2b) วันที่ต้องติดทั้งใน Excel และบนจอ (ข้ามวัน/รอบเก่าจะได้รู้วันไหน) ---- */
+  const xdate = await page.evaluate(() => {
+    exportStaffExcel(); var sh = window.__xlsx[0];
+    var somchai = sh.rows.filter(row => row[1] === 'สมชาย')[0];
+    state.summaryTab = 'staff'; renderStaffReport();
+    var box = document.getElementById('sumStaff');
+    return { xlsStart: somchai && somchai[4], screenHasDate: /\d{2}\/\d{2} \d{2}:\d{2}/.test(box.textContent) };
+  });
+  check('Excel: คอลัมน์เริ่มยิงมีวันที่ (DD/MM/YY HH:MM)', /^\d{2}\/\d{2}\/\d{2} \d{2}:\d{2}$/.test(xdate.xlsStart) && xdate.xlsStart.indexOf('20/10') === 0, xdate);
+  check('หน้าเว็บ: แถวผู้ยิงมีวันที่กำกับเวลา (DD/MM HH:MM)', xdate.screenHasDate === true, xdate);
 
   /* ---- 3) เลือกดูรอบเก่าที่ปิดแล้ว ---- */
   const rsc = await page.evaluate(async () => {
@@ -114,8 +126,8 @@ function check(n, ok, g) { if (ok) { pass++; console.log('  PASS  ' + n); } else
     window.__allowBranch = true;
     return { all: all, restricted: none };
   });
-  check('dropdown: มีสิทธิ์เห็นครบ (live + 2 รอบ = 3)', rdd.all === 3, rdd);
-  check('dropdown: สาขาที่ไม่มีสิทธิ์ถูกกรองออก เหลือแต่ live', rdd.restricted === 1, rdd);
+  check('dropdown: มีสิทธิ์เห็นครบ (live+ปิด+ทุก + 2 รอบ = 5)', rdd.all === 5, rdd);
+  check('dropdown: สาขาที่ไม่มีสิทธิ์ถูกกรองออก เหลือแต่ตัวรวม 3', rdd.restricted === 3, rdd);
 
   const rcb = await page.evaluate(async () => {
     window.__allowBranch = false;
@@ -137,6 +149,45 @@ function check(n, ok, g) { if (ok) { pass++; console.log('  PASS  ' + n); } else
     return { survived: state.staffReport.branches[0].code, loading: state.staffLoading };
   });
   check('เปลี่ยนรอบระหว่างโหลด → ทิ้งผลรอบเก่า ไม่ทับรอบใหม่', rst.survived === 'MARKER_OLD' && rst.loading === false, rst);
+
+  /* ---- 6b) scope รวม: ปิดแล้ว / ทุกสถานะ ---- */
+  const rcl = await page.evaluate(async () => {
+    var saveBr = window.cycleBranch, saveJobs = window.jobsInCycle, saveGet = window.db.getQuiet;
+    window.cycleBranch = (cid) => cid === 'C2' ? { branchCode: 'B2', branchName: 'สอง' } : { branchCode: 'B1', branchName: 'หนึ่ง' };
+    window.jobsInCycle = (cid) => cid === 'C2' ? ['J2'] : ['J1'];
+    var T8 = new Date(2026, 9, 20, 8, 0, 0).getTime();
+    window.db.getQuiet = (p) => String(p).indexOf('/scans') >= 0 ? Promise.resolve({ x: { code: 'A', delta: 1, ts: T8, user: 'ก' } }) : Promise.resolve({});
+    window.__allowBranch = true;
+    state.staffScope = 'closed'; state.staffReport = null; state.staffLoading = false; await loadStaffReport();
+    var closed = state.staffReport.branches.map(b => b.code).sort();
+    state.staffScope = 'all'; state.staffReport = null; state.staffLoading = false; await loadStaffReport();
+    var all = state.staffReport.branches.map(b => b.code).sort();
+    window.cycleBranch = saveBr; window.jobsInCycle = saveJobs; window.db.getQuiet = saveGet;
+    return { closed, all };
+  });
+  check('scope "ปิดแล้ว" → เฉพาะรอบปิด (B2)', rcl.closed.length === 1 && rcl.closed[0] === 'B2', rcl);
+  check('scope "ทุกสถานะ" → ทุกรอบ (B1+B2)', rcl.all.length === 2 && rcl.all[0] === 'B1' && rcl.all[1] === 'B2', rcl);
+
+  /* ---- 7) ดึงหลายสาขาพร้อมกัน (parallel) — ยอดต้องแยกสาขาถูก เรียงตามรหัส ---- */
+  const rpar = await page.evaluate(async () => {
+    var saveLive = window.liveCountingCycles, saveBr = window.cycleBranch, saveJobs = window.jobsInCycle, saveGet = window.db.getQuiet;
+    window.liveCountingCycles = () => ['C1', 'C2'];
+    window.cycleBranch = (cid) => cid === 'C2' ? { branchCode: 'B2', branchName: 'สาขาสอง' } : { branchCode: 'B1', branchName: 'สาขาหนึ่ง' };
+    window.jobsInCycle = (cid) => cid === 'C2' ? ['J2'] : ['J1'];
+    var T8 = new Date(2026, 9, 20, 8, 0, 0).getTime();
+    window.db.getQuiet = function (p) {
+      if (String(p).indexOf('J1/scans') >= 0) return Promise.resolve({ a: { code: 'A', delta: 10, ts: T8, user: 'ก' } });
+      if (String(p).indexOf('J2/scans') >= 0) return Promise.resolve({ b: { code: 'B', delta: 20, ts: T8, user: 'ข' } });
+      return Promise.resolve({});
+    };
+    window.__allowBranch = true;
+    state.staffScope = 'live'; state.staffReport = null; state.staffLoading = false;
+    await loadStaffReport();
+    var r = state.staffReport.branches;
+    window.liveCountingCycles = saveLive; window.cycleBranch = saveBr; window.jobsInCycle = saveJobs; window.db.getQuiet = saveGet;
+    return { n: r.length, b0: r[0].code, b0p: r[0].pieces, b1: r[1].code, b1p: r[1].pieces };
+  });
+  check('หลายสาขาพร้อมกัน (parallel): ได้ 2 สาขา เรียงรหัส B1→B2 ยอดแยกถูก', rpar.n === 2 && rpar.b0 === 'B1' && rpar.b0p === 10 && rpar.b1 === 'B2' && rpar.b1p === 20, rpar);
 
   check('ไม่มี page error', errs.length === 0, errs.slice(0, 3));
   console.log('\n==== test-staff-report: ' + pass + ' passed, ' + fail + ' failed ====');
