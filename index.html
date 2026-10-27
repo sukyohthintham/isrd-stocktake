@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.37.8">
+<meta name="version" content="2.37.9">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.37.8</title>
+<title>ISRD Stocktake v2.37.9</title>
 
 <style>
 :root{
@@ -1556,6 +1556,7 @@ body.no-doc-images .doc .imgbox{display:none}
     <button class="btn sm grey" data-sumtab="job">สรุปรอบนี้</button>
     <button class="btn sm grey" data-sumtab="sd">โชว์/สต็อก</button>
     <button class="btn sm grey" data-sumtab="live">📡 มอนิเตอร์สด</button>
+    <button class="btn sm grey" id="tabStaffBtn" data-sumtab="staff" style="display:none">👥 ผลงานยิง</button>
   </div>
 
   <!-- ⭐ v2.27.0 — มอนิเตอร์สดวันนับ: ดูสาขาที่กำลังนับ + รายคน แบบอัปเดตเอง (read-only) -->
@@ -1577,6 +1578,7 @@ body.no-doc-images .doc .imgbox{display:none}
 
   <!-- ⭐ v2.16.0 — รายงาน "มีสต็อก ไม่มีโชว์"
        อยู่เป็นแท็บในหน้าสรุป ไม่ใช่ปุ่มบนแถบล่าง เพราะแถบล่างมี 6 ปุ่มเต็มแล้ว -->
+  <div id="sumStaff" style="display:none"></div>
   <div id="sumSd" style="display:none">
     <div id="sdShareHead" style="text-align:center;margin:6px 0 10px">
       <div class="tbl-title">Stock vs Display</div>
@@ -2022,7 +2024,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.37.8';
+var APP_VERSION = '2.37.9';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -13509,7 +13511,141 @@ function renderOverview() {
   });
 }
 
+/* ====== ⭐ v2.37.9 สรุปผลงานยิงรายคน (จับ OT เบิกแต่ไม่ได้นับ) ======
+   admin กดโหลด → ดึง scans ทุก Job ของสาขาที่กำลังนับ → รวมรายคน: ชิ้น · SKU · เวลาเริ่ม-ล่าสุด
+   แสดงเฉพาะคนที่ยิงจริง (เอาไปเทียบใบเบิก OT เอง) · ไฮไลต์ยิงน้อยผิดปกติ/เริ่มสายกว่า 10 โมง · ดาวน์โหลด Excel
+   โหลดตอนกดเท่านั้น (ของหนัก ดึง scans เต็ม) ไม่ยิงอ่านตลอด */
+function timeHM(ts) { if (!ts) return '-'; var d = new Date(ts); return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2); }
+
+function renderStaffReport() {
+  var box = $('sumStaff'); if (!box) return;
+  box.textContent = '';
+  if (typeof isAdmin === 'function' && !isAdmin()) { box.appendChild(el('div', { class: 'muted', style: 'padding:12px', text: 'หน้านี้เปิดให้เฉพาะผู้ดูแลระบบ' })); return; }
+  box.appendChild(el('div', { class: 'muted', style: 'font-size:13px;margin-bottom:10px',
+    text: 'รวมยอดยิงรายคน · แสดงเฉพาะคนที่ยิงจริง (เอาไปเทียบใบเบิก OT ได้เลย) · เลือกดูรอบที่กำลังนับหรือรอบเก่าที่ปิดแล้วก็ได้ · โหลดตอนกดเท่านั้น' }));
+  var STLB = { counting: 'กำลังนับ', reviewing: 'รอตรวจ', closed: 'ปิดแล้ว' };
+  var grps = cycleGroups();
+  var sel = el('select', { style: 'width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:8px;margin-bottom:12px;box-sizing:border-box' });
+  sel.appendChild(el('option', { value: 'live', text: '📡 สาขาที่กำลังนับ (ทั้งหมด)' }));
+  Object.keys(grps).map(function (k) { return grps[k]; }).sort(function (a, b) { return (b.createdAt || 0) - (a.createdAt || 0); }).forEach(function (g) {
+    if (!canSeeBranch(g.branchCode)) return;   /* คนจำกัดสาขาไม่เห็นรอบสาขาอื่น */
+    var dt = g.createdAt ? new Date(g.createdAt) : null;
+    var ds = dt ? (('0' + dt.getDate()).slice(-2) + '/' + ('0' + (dt.getMonth() + 1)).slice(-2) + '/' + String(dt.getFullYear() + 543).slice(-2)) : '-';
+    sel.appendChild(el('option', { value: g.id, text: (g.branchCode ? g.branchCode + ' · ' : '') + (g.branchName || '-') + ' · ' + ds + ' (' + (STLB[cycleStatus(g.id)] || cycleStatus(g.id)) + ')' }));
+  });
+  sel.value = state.staffScope || 'live';
+  sel.addEventListener('change', function () { state.staffScope = sel.value; state.staffReport = null; renderStaffReport(); });
+  box.appendChild(el('label', { style: 'font-weight:600;font-size:13px', text: 'เลือกรอบ' }));
+  box.appendChild(sel);
+  if (!state.staffReport) {
+    var b0 = el('button', { class: 'btn', text: '📥 โหลดผลงานยิง (รอบที่เลือก)' });
+    b0.addEventListener('click', function () { loadStaffReport(); });
+    box.appendChild(b0);
+    return;
+  }
+  var data = state.staffReport;
+  var bar = el('div', { class: 'row', style: 'gap:8px;margin-bottom:10px;flex-wrap:wrap' });
+  var rl = el('button', { class: 'btn sm grey', text: '🔄 โหลดใหม่' }); rl.addEventListener('click', function () { loadStaffReport(); }); bar.appendChild(rl);
+  var xl = el('button', { class: 'btn sm', text: '⬇ ดาวน์โหลด Excel' }); xl.addEventListener('click', function () { exportStaffExcel(); }); bar.appendChild(xl);
+  box.appendChild(bar);
+  box.appendChild(el('div', { class: 'muted', style: 'font-size:12px;margin-bottom:8px', text: 'ข้อมูลเมื่อ ' + agoText(data.at) + ' · 🔴 ยิงน้อยผิดปกติ (<30% ของคนยิงมากสุดในสาขา) · 🟠 เริ่มหลัง 10 โมง' }));
+  if (!data.branches.length) { box.appendChild(el('div', { class: 'card' }, [el('div', { class: 'muted', text: 'ยังไม่มีการยิงในรอบที่เลือก' })])); return; }
+  data.branches.forEach(function (b) {
+    var card = el('div', { class: 'card', style: 'margin-bottom:12px' });
+    card.appendChild(el('div', { style: 'font-weight:800;font-size:15px;margin-bottom:2px', text: b.name }));
+    if (b.failed) card.appendChild(el('div', { class: 'badge red', style: 'margin:4px 0;white-space:normal;display:block;line-height:1.4', text: '⚠ โหลดไม่ครบ ' + b.failed + '/' + b.jobs + ' Job — ตัวเลขอาจต่ำกว่าจริง ห้ามใช้ตัดสิน OT · กดโหลดใหม่' }));
+    card.appendChild(el('div', { class: 'muted', style: 'font-size:12px;margin-bottom:8px', text: 'รวม ' + fmtNum(b.pieces) + ' ชิ้น · ' + fmtNum(b.users.length) + ' คนยิง' + (b.failed ? ' (ไม่ครบ)' : '') }));
+    if (!b.users.length) card.appendChild(el('div', { class: 'muted', style: 'font-size:13px;padding:4px 0', text: b.failed ? '⚠ โหลดข้อมูลไม่ได้ — ยังสรุปไม่ได้ กดโหลดใหม่' : 'ยังไม่มีใครยิงในสาขานี้' }));
+    var maxP = b.users.reduce(function (m, u) { return Math.max(m, u.pieces); }, 0);
+    var okFlag = !b.failed;
+    b.users.forEach(function (u) {
+      var low = okFlag && maxP > 0 && u.pieces < maxP * 0.3;
+      var late = okFlag && u.firstH != null && u.firstH >= 10;
+      var row = el('div', { class: 'row', style: 'justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-top:1px solid #f1f5f9;flex-wrap:wrap' });
+      row.appendChild(el('div', {}, [
+        el('span', { style: 'font-weight:700', text: u.user }),
+        low ? el('span', { class: 'badge red', style: 'margin-left:6px', text: '🔴 ยิงน้อย' }) : null,
+        late ? el('span', { class: 'badge warn', style: 'margin-left:6px', text: '🟠 เริ่มสาย' }) : null]));
+      row.appendChild(el('div', { class: 'muted', style: 'font-size:13px', text: fmtNum(u.pieces) + ' ชิ้น · ' + fmtNum(u.skus) + ' SKU · เริ่ม ' + u.firstT + ' · ล่าสุด ' + u.lastT }));
+      card.appendChild(row);
+    });
+    box.appendChild(card);
+  });
+}
+
+function loadStaffReport() {
+  if (state.staffLoading) return;
+  state.staffLoading = true;
+  var box = $('sumStaff'); if (box) { box.textContent = ''; box.appendChild(el('div', { class: 'muted', style: 'padding:12px', text: 'กำลังโหลดผลงานยิงทุกสาขา... (อาจใช้เวลาสักครู่)' })); }
+  var scope = state.staffScope || 'live';
+  var cids = (scope !== 'live') ? (canSeeBranch((cycleBranch(scope) || {}).branchCode) ? [scope] : []) : liveCountingCycles(), out = [];
+  var chain = Promise.resolve();
+  cids.forEach(function (cid) {
+    chain = chain.then(function () {
+      var b = cycleBranch(cid), users = {}, pieces = 0, jl = jobsInCycle(cid), failed = 0;
+      var jc = Promise.resolve();
+      jl.forEach(function (jid) {
+        jc = jc.then(function () {
+          return db.getQuiet('rounds/' + jid + '/scans').catch(function () { return db.getQuiet('rounds/' + jid + '/scans'); }).then(function (scans) {
+            Object.keys(scans || {}).forEach(function (sid) {
+              var r = scans[sid]; if (!r) return;
+              var d = Number(r.delta) || 0, ts = Number(r.ts) || 0, u = r.user || 'ไม่ระบุ', k = safeKey(r.code);
+              pieces += d;
+              var e = users[u] || (users[u] = { user: u, pieces: 0, net: {}, first: 0, last: 0 });
+              e.pieces += d; e.net[k] = (e.net[k] || 0) + d;
+              if (ts && (!e.first || ts < e.first)) e.first = ts;
+              if (ts > e.last) e.last = ts;
+            });
+          }).catch(function () { failed++; });
+        });
+      });
+      return jc.then(function () {
+        var ulist = Object.keys(users).map(function (uk) {
+          var e = users[uk];
+          var skus = Object.keys(e.net).filter(function (k) { return e.net[k] !== 0; }).length;
+          var fd = e.first ? new Date(e.first) : null;
+          return { user: e.user, pieces: e.pieces, skus: skus, first: e.first, last: e.last,
+                   firstT: timeHM(e.first), lastT: timeHM(e.last), firstH: fd ? fd.getHours() : null };
+        }).sort(function (a, b) { return b.pieces - a.pieces; });
+        out.push({ cid: cid, code: b.branchCode || '-', name: (b.branchCode ? b.branchCode + ' · ' : '') + (b.branchName || b.branch || '-'), pieces: pieces, users: ulist, jobs: jl.length, failed: failed });
+      });
+    });
+  });
+  return chain.then(function () {
+    if (state.staffScope !== scope) { state.staffLoading = false; return; }   /* เปลี่ยนรอบระหว่างโหลด → ผลนี้ของรอบเก่า ทิ้งไป */
+    out.sort(function (a, b) { return String(a.code).localeCompare(String(b.code), 'th'); });
+    state.staffReport = { branches: out, at: Date.now() };
+    state.staffLoading = false;
+    if (state.summaryTab === 'staff') renderStaffReport();
+  }).catch(function () { state.staffLoading = false; if (state.summaryTab === 'staff') { state.staffReport = { branches: [], at: Date.now() }; renderStaffReport(); } });
+}
+
+function exportStaffExcel() {
+  if (!state.staffReport) return;
+  var rows = [['สาขา', 'ผู้ยิง', 'จำนวนชิ้น', 'จำนวน SKU', 'เริ่มยิง', 'ล่าสุด', 'หมายเหตุ']];
+  state.staffReport.branches.forEach(function (b) {
+    var maxP = b.users.reduce(function (m, u) { return Math.max(m, u.pieces); }, 0);
+    if (!b.users.length) { rows.push([b.name, b.failed ? '(โหลดข้อมูลไม่ได้)' : '(ยังไม่มีใครยิง)', 0, 0, '-', '-', b.failed ? '⚠ ข้อมูลไม่ครบ (โหลดไม่ครบ ' + b.failed + '/' + b.jobs + ' Job)' : '']); return; }
+    b.users.forEach(function (u) {
+      var notes = [];
+      if (b.failed) notes.push('⚠ ข้อมูลไม่ครบ (โหลดไม่ครบ ' + b.failed + '/' + b.jobs + ' Job)');
+      else {
+        if (maxP > 0 && u.pieces < maxP * 0.3) notes.push('ยิงน้อยผิดปกติ');
+        if (u.firstH != null && u.firstH >= 10) notes.push('เริ่มหลัง 10 โมง');
+      }
+      rows.push([b.name, u.user, u.pieces, u.skus, u.firstT, u.lastT, notes.join(' · ')]);
+    });
+  });
+  var blob = buildXlsx([{ name: 'ผลงานยิง', rows: rows, widths: [24, 20, 12, 12, 10, 10, 26] }]);
+  var d = new Date(), stamp = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+  var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'ผลงานยิง_' + stamp + '.xlsx';
+  document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+  toast('ดาวน์โหลดผลงานยิงแล้ว');
+}
+
 function setSummaryTab(tab) {
+  var _tsb = $('tabStaffBtn'); if (_tsb) _tsb.style.display = (typeof isAdmin === 'function' && isAdmin()) ? '' : 'none';
+  if (tab === 'staff' && !(typeof isAdmin === 'function' && isAdmin())) tab = 'job';
   state.summaryTab = tab;
   document.querySelectorAll('[data-sumtab]').forEach(function (b) {
     b.className = 'btn sm ' + (b.getAttribute('data-sumtab') === tab ? '' : 'grey');
@@ -13518,10 +13654,12 @@ function setSummaryTab(tab) {
   $('sumJob').style.display = tab === 'job' ? 'block' : 'none';
   $('sumSd').style.display = tab === 'sd' ? 'block' : 'none';
   $('sumLive').style.display = tab === 'live' ? 'block' : 'none';
+  $('sumStaff').style.display = tab === 'staff' ? 'block' : 'none';
   if (tab !== 'live') stopLiveTimer();            // ออกจากแท็บ = หยุดยิงอ่านเบื้องหลัง
   if (tab === 'overview') renderOverview();
   else if (tab === 'sd') renderStockDisplay();
   else if (tab === 'live') startLiveTimer();
+  else if (tab === 'staff') renderStaffReport();
   /* ⭐ v2.14.2 — วาดหน้าสรุปทันทีตอนสลับมาแท็บนี้
      ของเดิมสลับกลับมาแล้วตัวเลขค้างจากครั้งก่อน ต้องไปกดสลับราคาให้มันวาดใหม่เอง */
   else renderSummary();
