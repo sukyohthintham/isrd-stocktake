@@ -318,6 +318,20 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
   check('queueSave เต็ม → ลบแคชรูปสินค้า (isrd_thumbs_v2) แล้วเขียนคิวสำเร็จ (ยอดไม่หาย)', rq.ok && rq.removedThumb && rq.saved === 1, rq);
 
   // ---------- [10] no page errors ----------
+  console.log('\n[11] cut-off: ขอแก้ / อนุมัติ');
+  const r11 = await page.evaluate(() => {
+    __seed('admin');
+    state.rechecks = { A001: { name: 'x', sentAt: 1, qty: 12, by: 'เด็ก', at: 100 } };
+    __calls.enqueue = []; requestReopen('A001');
+    var reqP = (__calls.enqueue[0] || {}).patch; var reqF = state.rechecks.A001.reopenReq === true;
+    __calls.enqueue = []; allowReopen('A001');
+    var okP = (__calls.enqueue[0] || {}).patch;
+    var okF = state.rechecks.A001.reopenOk === true;
+    return { reqP: reqP, reqF: reqF, okP: okP, okF: okF };
+  });
+  check('requestReopen → enqueue reopenReq=true + ตั้ง flag', r11.reqF && !!r11.reqP && r11.reqP['A001/reopenReq'] === true, r11.reqP);
+  check('allowReopen → enqueue reopenOk=true (ไม่เขียน reopenReq กัน PATCH ตกสำหรับ custom)', r11.okF && !!r11.okP && r11.okP['A001/reopenOk'] === true && r11.okP['A001/reopenReq'] === undefined, r11.okP);
+
   console.log('\n[10] ไม่มี error');
   check('ไม่มี page error', errors.length === 0, errors.slice(0, 5));
 

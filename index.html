@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.37.6">
+<meta name="version" content="2.37.7">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.37.6</title>
+<title>ISRD Stocktake v2.37.7</title>
 
 <style>
 :root{
@@ -2022,7 +2022,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.37.6';
+var APP_VERSION = '2.37.7';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -5119,7 +5119,8 @@ var CAP_GROUPS = [
     { key: 'scan',         label: 'ยิงบาร์โค้ด',           help: 'ยิงและใส่หมายเหตุใน Job ที่กำลังนับ' },
     { key: 'seeSystemQty', label: 'เห็นยอดระบบตอนยิง',      help: 'ไม่ติ๊ก = นับแบบไม่เห็นเฉลย กันยิงให้ครบตามที่ระบบบอก' },
     { key: 'createJob',    label: 'สร้าง Job',             help: 'เปิดรอบนับใหม่ของสาขา' },
-    { key: 'closeJob',     label: 'ส่งตรวจสอบ / ปิด Job',   help: 'เปลี่ยนสถานะรอบนับ' }
+    { key: 'closeJob',     label: 'ส่งตรวจสอบ / ปิด Job',   help: 'เปลี่ยนสถานะรอบนับ' },
+    { key: 'approveRecheck', label: 'อนุมัติขอแก้รีเช็ค',     help: 'เปิดสิทธิ์ให้เด็กแก้ยอดรีเช็คที่ส่งคืนแล้วได้อีกครั้ง' }
   ] },
   { label: 'จัดการข้อมูล', caps: [
     { key: 'editMaster',   label: 'แก้ / อัปโหลด Master',   help: 'ทะเบียนสินค้า รูป Note ประเภท ค่า Status ประเภทคลัง' },
@@ -5153,7 +5154,7 @@ CAP_GROUPS.forEach(function (g) {
 var ROLE_PERMS = {
   admin:   CAPS.slice(),
   counter: ['scan', 'seeSystemQty', 'createJob', 'closeJob', 'importSysQty',
-            'viewSummary', 'docs', 'viewMasterLoc', 'editDoc', 'adjustCount'],
+            'viewSummary', 'docs', 'viewMasterLoc', 'editDoc', 'adjustCount', 'approveRecheck'],
   scanner: ['scan'],
   viewer:  ['docs'],
   custom:  []
@@ -14760,6 +14761,12 @@ function rcAdminCard(r, it, canManage) {
       el('button', { class: 'btn sm', text: '✅ ใช้ยอดรีเช็คนี้ (ปรับยอดนับ)', onclick: function () { applyRecheck(k); } }),
       el('button', { class: 'btn sm grey', text: 'ถอน', onclick: function () { cancelRecheck(k); } })]));
     else if (canManage) card.appendChild(el('button', { class: 'btn sm grey', style: 'margin-top:6px', text: 'ถอน', onclick: function () { cancelRecheck(k); } }));
+    if (it.reopenReq && !it.reopenOk) card.appendChild(el('div', { class: 'row', style: 'gap:8px;margin-top:6px;align-items:center;flex-wrap:wrap' }, [
+      el('span', { class: 'badge warn', text: '🙋 เด็กขอแก้ไขยอด' }),
+      hasPerm('approveRecheck')
+        ? el('button', { class: 'btn sm', text: '🔓 อนุญาตให้แก้', onclick: function () { allowReopen(k); } })
+        : el('span', { class: 'muted', style: 'font-size:12px', text: 'รอผู้มีสิทธิ์อนุมัติ' })]));
+    else if (it.reopenOk) card.appendChild(el('div', { style: 'margin-top:6px;font-size:12.5px;color:#075985;background:#e0f2fe;border-radius:8px;padding:5px 10px;display:inline-block', text: '🔓 เปิดให้เด็กแก้แล้ว — รอส่งยอดใหม่' }));
   } else if (it) {
     card.appendChild(el('div', { class: 'row', style: 'align-items:center;gap:10px;margin-top:4px' }, [
       el('span', { class: 'badge warn', text: '⏳ รอเด็กรีเช็ค...' }),
@@ -14844,7 +14851,14 @@ function rcScannerCard(k, it, dr) {
     card.appendChild(el('div', { class: 'row', style: 'align-items:center;gap:10px;margin:6px 0' }, [
       rcThumb(k, it.at),
       el('div', {}, ['นับได้ ', el('b', { style: 'font-size:17px', text: fmtNum(Number(it.qty)) }), ' ชิ้น'])]));
-    card.appendChild(el('button', { class: 'btn sm grey', text: 'แก้ไขอีกครั้ง', onclick: function () { reopenRecheck(k); } }));
+    if (it.reopenOk) {
+      card.appendChild(el('div', { class: 'badge ok', style: 'margin:4px 0', text: '🔓 หัวหน้าอนุญาตให้แก้ไขแล้ว — แก้ได้ 1 ครั้ง' }));
+      card.appendChild(el('button', { class: 'btn sm', text: '✏️ แก้ไขอีกครั้ง', onclick: function () { reopenRecheck(k); } }));
+    } else if (it.reopenReq) {
+      card.appendChild(el('div', { class: 'badge warn', style: 'margin-top:4px', text: '⏳ ส่งคำขอแก้ไขแล้ว — รอหัวหน้าอนุมัติ' }));
+    } else {
+      card.appendChild(el('button', { class: 'btn sm grey', text: '✏️ ขอแก้ไข', onclick: function () { requestReopen(k); } }));
+    }
   }
   return card;
 }
@@ -14879,11 +14893,12 @@ function submitRecheck(k) {
     state.rcBusy = false;
     /* ⭐ v2.37.2 ยอดลง Job เดิม (rid) เสมอ — แม้เปลี่ยน Job ระหว่างรออัป ยอดต้องไม่หาย (กฎ "ห้ามทำยอดหาย") */
     var p = {}; p[k + '/qty'] = qn; p[k + '/by'] = state.counter || 'ไม่ระบุ'; p[k + '/at'] = now; p[k + '/applied'] = false;
+    p[k + '/reopenOk'] = false; p[k + '/reopenReq'] = false;   /* ส่งใหม่ = ล็อกกลับ ต้องขออนุมัติใหม่ถ้าจะแก้อีก */
     enqueueWrite('rounds/' + rid + '/rechecks', p);
     if (state.recheckDraft) delete state.recheckDraft[k];
     toast('ส่งคืนรีเช็คแล้ว ✓');
     if (state.roundId !== rid) return;   /* เปลี่ยน Job แล้ว — ยอดลงแล้ว แค่ไม่แตะ cache/จอของ Job อื่น */
-    var it = rcMap()[k] || (rcMap()[k] = {}); it.qty = qn; it.by = state.counter || 'ไม่ระบุ'; it.at = now; it.applied = false;
+    var it = rcMap()[k] || (rcMap()[k] = {}); it.qty = qn; it.by = state.counter || 'ไม่ระบุ'; it.at = now; it.applied = false; it.reopenOk = false; it.reopenReq = false;
     renderRecheck(true);
   }).catch(function () {
     state.rcBusy = false;
@@ -14899,6 +14914,30 @@ function reopenRecheck(k) {
   db.getQuiet('recheckPhotos/' + state.roundId + '/' + k).then(function (src) {
     if (rcPhotoOk(src) && state.recheckDraft[k]) { state.recheckDraft[k].photo = src; if (state.page === 'recheck') renderRecheck(true); }
   }).catch(function () {});
+  renderRecheck(true);
+}
+
+/* เด็กขอแก้ยอดรีเช็คที่ส่งคืนแล้ว — ตั้งธง reopenReq รอหัวหน้าอนุมัติ (ยังแก้ qty ไม่ได้จนกว่า reopenOk) */
+function requestReopen(k) {
+  if (!requirePerm('scan', 'ขอแก้ไขไม่ได้')) return;
+  if (!rcRoundCounting()) { toast('รอบนี้ปิดแล้ว ขอแก้ไขไม่ได้', true); return; }
+  var it = rcMap()[k]; if (!it || it.qty == null) { toast('ยังไม่ได้ส่งคืน ไม่ต้องขอแก้', true); return; }
+  var rid = state.roundId, pr = {}; pr[k + '/reopenReq'] = true;
+  enqueueWrite('rounds/' + rid + '/rechecks', pr);
+  it.reopenReq = true;
+  toast('ส่งคำขอแก้ไขแล้ว — รอหัวหน้าอนุมัติ ✓');
+  renderRecheck(true);
+}
+
+/* หัวหน้า (สิทธิ์ approveRecheck) เปิดให้เด็กแก้ได้ 1 ครั้ง — ตั้ง reopenOk, เคลียร์ reopenReq
+   Rules ปล่อยให้เด็กเขียน qty ได้อีกครั้งเมื่อ reopenOk===true เท่านั้น (กันแก้พร่ำเพรื่อ) */
+function allowReopen(k) {
+  if (!requirePerm('approveRecheck', 'อนุมัติขอแก้รีเช็คไม่ได้')) return;
+  if (!rcRoundCounting()) { toast('รอบนี้ปิดแล้ว อนุมัติไม่ได้', true); return; }
+  var rid = state.roundId, pr = {}; pr[k + '/reopenOk'] = true;   /* ไม่เขียน reopenReq=false: ผู้มีแค่สิทธิ์ approveRecheck (ไม่มี scan) เขียน reopenReq ไม่ได้ จะทำให้ PATCH ตกทั้งก้อน · UI/Rules ดู reopenOk เป็นหลัก · submitRecheck ล้างทั้งคู่ตอนส่งใหม่ */
+  enqueueWrite('rounds/' + rid + '/rechecks', pr);
+  var it = rcMap()[k]; if (it) { it.reopenOk = true; }
+  toast('เปิดสิทธิ์ให้เด็กแก้ไขแล้ว ✓');
   renderRecheck(true);
 }
 

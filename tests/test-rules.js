@@ -324,7 +324,7 @@ check('บล็อก wms2026 ยังอยู่ (ห้ามหายต�
    ============================================================ */
 console.log('\n[8] perms — ติ๊ก cap แล้วเขียนได้จริง (custom user)');
 
-const ALL_CAPS = ['scan', 'seeSystemQty', 'createJob', 'closeJob', 'editMaster', 'editLocation',
+const ALL_CAPS = ['scan', 'seeSystemQty', 'createJob', 'closeJob', 'approveRecheck', 'editMaster', 'editLocation',
                   'importSysQty', 'adjustCount', 'viewSummary', 'docs', 'editDoc', 'viewMasterLoc',
                   'deleteJob', 'reopenRound', 'purgeUser'];
 
@@ -532,10 +532,10 @@ console.log('\n[9] ⭐ role-only (ไม่มี perms node) ต้องเข
 /* แม่แบบ role → cap ต้องตรงกับ ROLE_PERMS ใน index.html
    ตรวจซ้ำกับซอร์สข้างล่าง กันตารางนี้ล้าสมัยเงียบ ๆ เมื่อมีคนแก้แม่แบบในแอป */
 const ROLE_TEMPLATE = {
-  admin: ['scan', 'seeSystemQty', 'createJob', 'closeJob', 'editMaster', 'editLocation',
+  admin: ['scan', 'seeSystemQty', 'createJob', 'closeJob', 'approveRecheck', 'editMaster', 'editLocation',
           'importSysQty', 'adjustCount', 'viewSummary', 'docs', 'editDoc', 'viewMasterLoc',
           'deleteJob', 'reopenRound', 'purgeUser'],
-  counter: ['scan', 'seeSystemQty', 'createJob', 'closeJob', 'importSysQty',
+  counter: ['scan', 'seeSystemQty', 'createJob', 'closeJob', 'approveRecheck', 'importSysQty',
             'viewSummary', 'docs', 'viewMasterLoc', 'editDoc', 'adjustCount'],
   scanner: ['scan'],
   viewer: ['docs']
@@ -723,6 +723,39 @@ check('⭐ rechecks/$sku (ส่ง/ลบ/applied) = admin|counter เท่า
 check('⭐ rechecks/$sku/qty (ผลเด็ก) = scanner เขียนได้ตอน counting · ปิดรอบไม่ได้',
       canWrite(R.rechecks.$sku.qty['.write'], 'scanner', 'counting', { existingParent: { sentAt: 1 } }) &&
       !canWrite(R.rechecks.$sku.qty['.write'], 'scanner', 'closed', { existingParent: { sentAt: 1 } }), 'SCAN field');
+/* ⭐ v2.37.7 — cut-off รีเช็ค: เด็กแก้ qty ได้เฉพาะครั้งแรก หรือเมื่อหัวหน้าเปิด reopenOk */
+check('⭐ qty: ครั้งแรก (ยังไม่มี qty) เด็กเขียนได้',
+      canWrite(R.rechecks.$sku.qty['.write'], 'scanner', 'counting', { existingParent: { sentAt: 1 }, incoming: 5 }), 'first');
+check('⭐ qty: ส่งคืนแล้ว (มี qty) เด็กแก้ซ้ำไม่ได้ — กันแก้พร่ำเพรื่อ',
+      !canWrite(R.rechecks.$sku.qty['.write'], 'scanner', 'counting', { existingParent: { sentAt: 1, qty: 5 }, incoming: 6 }), 'locked');
+check('⭐ qty: หัวหน้าเปิด reopenOk แล้ว เด็กแก้ได้อีก',
+      canWrite(R.rechecks.$sku.qty['.write'], 'scanner', 'counting', { existingParent: { sentAt: 1, qty: 5, reopenOk: true }, incoming: 6 }), 'reopened');
+check('⭐ by/at: ล็อกเหมือน qty (ส่งแล้วแก้ไม่ได้ถ้าไม่เปิด reopenOk)',
+      !canWrite(R.rechecks.$sku.by['.write'], 'scanner', 'counting', { existingParent: { sentAt: 1, qty: 5 }, incoming: 'x' }) &&
+      !canWrite(R.rechecks.$sku.at['.write'], 'scanner', 'counting', { existingParent: { sentAt: 1, qty: 5 }, incoming: 9 }), 'by/at lock');
+check('⭐ reopenReq: เด็กขอแก้ได้ (counting+sentAt) · ปิดรอบขอไม่ได้',
+      canWrite(R.rechecks.$sku.reopenReq['.write'], 'scanner', 'counting', { existingParent: { sentAt: 1 }, incoming: true }) &&
+      !canWrite(R.rechecks.$sku.reopenReq['.write'], 'scanner', 'closed', { existingParent: { sentAt: 1 }, incoming: true }), 'reopenReq');
+check('⭐ reopenOk: admin เปิดได้ (true)',
+      canWrite(R.rechecks.$sku.reopenOk['.write'], 'admin', 'counting', { existingParent: { sentAt: 1 }, incoming: true }), 'admin open');
+check('⭐ reopenOk: เด็กเปิดเอง (true) ไม่ได้ — กันปลดล็อกตัวเอง',
+      !canWrite(R.rechecks.$sku.reopenOk['.write'], 'scanner', 'counting', { existingParent: { sentAt: 1 }, incoming: true }), 'scanner no-open');
+check('⭐ reopenOk: เด็กปิด (false) ได้ — reset ตอนส่งยอดใหม่',
+      canWrite(R.rechecks.$sku.reopenOk['.write'], 'scanner', 'counting', { existingParent: { sentAt: 1 }, incoming: false }), 'scanner reset');
+check('⭐ reopenOk (ชั้น field): role ที่ไม่มี approveRecheck เปิดไม่ได้ (admin|counter ผ่านชั้น $sku อยู่แล้ว)',
+      !canWrite(R.rechecks.$sku.reopenOk['.write'], 'viewer', 'counting', { existingParent: { sentAt: 1 }, incoming: true }), 'field no-perm');
+(function () {
+  var db = makeDb('scanner', 'counting');
+  db.stocktake2026.users.u_me.perms = { approveRecheck: true };
+  var ok = evalRule(R.rechecks.$sku.reopenOk['.write'], {
+    db: db, auth: { uid: 'u_me' }, existingParent: { sentAt: 1 }, incoming: true });
+  check('⭐ reopenOk: ผู้ได้รับสิทธิ์ perms/approveRecheck เปิดได้ (น้องที่หัวหน้า assign)', ok, 'perm open');
+  var db2 = makeDb('custom', 'counting');
+  db2.stocktake2026.users.u_me.perms = { approveRecheck: true };   // มีแค่ approveRecheck ไม่มี scan
+  var reqOk = evalRule(R.rechecks.$sku.reopenReq['.write'], {
+    db: db2, auth: { uid: 'u_me' }, existingParent: { sentAt: 1 }, incoming: false });
+  check('⭐ reopenReq: custom ที่มีแค่ approveRecheck (ไม่มี scan) เขียนไม่ได้ → เหตุที่ allowReopen ไม่เขียน reopenReq', !reqOk, 'req no-scan');
+})();
 check('⭐ ไม่มี perms/viewSummary ในนิพจน์ .write (cap แสดงผลห้ามใส่)',
       R.rechecks.$sku['.write'].indexOf('viewSummary') < 0 &&
       R.rechecks.$sku.qty['.write'].indexOf('viewSummary') < 0 &&

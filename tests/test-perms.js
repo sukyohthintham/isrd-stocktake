@@ -30,10 +30,10 @@ function check(name, ok, got) {
 
 /* แม่แบบที่ตกลงกันไว้ — ต้องตรงกับ ROLE_PERMS ใน index.html และกับพฤติกรรมก่อน v2.12.0 */
 const TEMPLATE = {
-  admin: ['scan', 'seeSystemQty', 'createJob', 'closeJob', 'editMaster', 'editLocation',
+  admin: ['scan', 'seeSystemQty', 'createJob', 'closeJob', 'approveRecheck', 'editMaster', 'editLocation',
           'importSysQty', 'adjustCount', 'viewSummary', 'docs', 'editDoc', 'viewMasterLoc',
           'deleteJob', 'reopenRound', 'purgeUser'],
-  counter: ['scan', 'seeSystemQty', 'createJob', 'closeJob', 'importSysQty',
+  counter: ['scan', 'seeSystemQty', 'createJob', 'closeJob', 'approveRecheck', 'importSysQty',
             'viewSummary', 'docs', 'editDoc', 'viewMasterLoc', 'adjustCount'],
   scanner: ['scan'],
   viewer: ['docs'],
@@ -208,7 +208,7 @@ const HARNESS = `
     out.__unknown = CAPS.filter(function (c) { return permsFromRole('ไม่รู้จัก')[c] === true; });
     return out;
   });
-  check('มีช่องติ๊กครบ 15 ช่อง', tpl.__caps.length === 15, tpl.__caps);
+  check('มีช่องติ๊กครบ 16 ช่อง', tpl.__caps.length === 16, tpl.__caps);
   check('manageUsers ไม่อยู่ในช่องติ๊ก', tpl.__caps.indexOf('manageUsers') < 0, tpl.__caps);
   Object.keys(TEMPLATE).forEach(function (r) {
     check(r + ': แม่แบบตรงที่ตกลงไว้',
@@ -446,7 +446,7 @@ const HARNESS = `
                                               function (b) { return b.disabled && b.checked; })
     };
   });
-  check('มีช่องติ๊กครบ 15 ช่อง', ui.count === 15, ui.count);
+  check('มีช่องติ๊กครบ 16 ช่อง', ui.count === 16, ui.count);
   check('ดรอปดาวน์มีตัวเลือก custom', ui.opts.indexOf('custom') >= 0, ui.opts);
   check('counter ถูกติ๊กตามแม่แบบ',
         ui.checked.slice().sort().join(',') === TEMPLATE.counter.slice().sort().join(','), ui.checked);
@@ -594,7 +594,7 @@ const HARNESS = `
   }, SEED_USERS);
   check('ค่าเริ่มต้นพับทุกคน', fold.before.hidden === true, fold.before);
   check('ลูกศรพับเป็น ▸', fold.before.arrow === '▸', fold.before);
-  check('editor ยังอยู่ใน DOM ตอนพับ (ไม่ได้ถอดทิ้ง)', fold.before.inDom === 15, fold.before);
+  check('editor ยังอยู่ใน DOM ตอนพับ (ไม่ได้ถอดทิ้ง)', fold.before.inDom === 16, fold.before);
   check('คลิกหัวแถวแล้วกาง', fold.after.hidden === false, fold.after);
   check('ลูกศรกางเป็น ▾', fold.after.arrow === '▾', fold.after);
   check('หัวแถวเป็นปุ่มจริง (คีย์บอร์ดใช้ได้)', fold.tag === 'BUTTON', fold.tag);
@@ -621,12 +621,12 @@ const HARNESS = `
     return out;
   }, SEED_USERS);
   check('admin โชว์ "ทุกสิทธิ์" ไม่ใช่ตัวเลข', /ทุกสิทธิ์/.test(summary.admin.count), summary.admin);
-  check('counter โชว์ ติ๊ก 10/15', /ติ๊ก 10\/15/.test(summary.counter.count), summary.counter);
-  check('scanner โชว์ ติ๊ก 1/15', /ติ๊ก 1\/15/.test(summary.scanner.count), summary.scanner);
-  check('custom โชว์ ติ๊ก 3/15', /ติ๊ก 3\/15/.test(summary.custom.count), summary.custom);
+  check('counter โชว์ ติ๊ก 11/16', /ติ๊ก 11\/16/.test(summary.counter.count), summary.counter);
+  check('scanner โชว์ ติ๊ก 1/16', /ติ๊ก 1\/16/.test(summary.scanner.count), summary.scanner);
+  check('custom โชว์ ติ๊ก 3/16', /ติ๊ก 3\/16/.test(summary.custom.count), summary.custom);
   check('ป้ายสิทธิ์ใช้ ROLE_LABEL', summary.counter.role === 'ผู้นับสต๊อก' &&
         summary.custom.role === 'กำหนดเอง', summary.counter);
-  check('⭐ ติ๊กแล้วตัวเลขบนหัวแถวขยับทันที', /ติ๊ก 4\/15/.test(summary.afterTick), summary.afterTick);
+  check('⭐ ติ๊กแล้วตัวเลขบนหัวแถวขยับทันที', /ติ๊ก 4\/16/.test(summary.afterTick), summary.afterTick);
 
   console.log('\n[9c] ช่องค้นหา');
   const search = await page.evaluate((seed) => {

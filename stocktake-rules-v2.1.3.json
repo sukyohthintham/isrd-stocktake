@@ -212,24 +212,38 @@
           "rechecks": {
             "$sku": {
               ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && (root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter)$/) || root.child('stocktake2026/users').child(auth.uid).child('perms/adjustCount').val() === true) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting'",
-              "name":    { ".validate": "newData.isString()" },
-              "sentBy":  { ".validate": "newData.isString()" },
-              "sentAt":  { ".validate": "newData.isNumber()" },
+              "name": {
+                ".validate": "newData.isString()"
+              },
+              "sentBy": {
+                ".validate": "newData.isString()"
+              },
+              "sentAt": {
+                ".validate": "newData.isNumber()"
+              },
               "applied": {
                 ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && (root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter|scanner)$/) || root.child('stocktake2026/users').child(auth.uid).child('perms/scan').val() === true) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting' && data.parent().child('sentAt').exists() && newData.val() === false",
                 ".validate": "newData.isBoolean()"
               },
               "qty": {
-                ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && (root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter|scanner)$/) || root.child('stocktake2026/users').child(auth.uid).child('perms/scan').val() === true) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting' && data.parent().child('sentAt').exists()",
+                ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && (root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter|scanner)$/) || root.child('stocktake2026/users').child(auth.uid).child('perms/scan').val() === true) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting' && data.parent().child('sentAt').exists() && (!data.parent().child('qty').exists() || data.parent().child('reopenOk').val() === true)",
                 ".validate": "newData.isNumber() && newData.val() >= 0"
               },
               "by": {
-                ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && (root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter|scanner)$/) || root.child('stocktake2026/users').child(auth.uid).child('perms/scan').val() === true) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting' && data.parent().child('sentAt').exists()",
+                ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && (root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter|scanner)$/) || root.child('stocktake2026/users').child(auth.uid).child('perms/scan').val() === true) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting' && data.parent().child('sentAt').exists() && (!data.parent().child('qty').exists() || data.parent().child('reopenOk').val() === true)",
                 ".validate": "newData.isString()"
               },
               "at": {
-                ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && (root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter|scanner)$/) || root.child('stocktake2026/users').child(auth.uid).child('perms/scan').val() === true) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting' && data.parent().child('sentAt').exists()",
+                ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && (root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter|scanner)$/) || root.child('stocktake2026/users').child(auth.uid).child('perms/scan').val() === true) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting' && data.parent().child('sentAt').exists() && (!data.parent().child('qty').exists() || data.parent().child('reopenOk').val() === true)",
                 ".validate": "newData.isNumber()"
+              },
+              "reopenReq": {
+                ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && (root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter|scanner)$/) || root.child('stocktake2026/users').child(auth.uid).child('perms/scan').val() === true) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting' && data.parent().child('sentAt').exists()",
+                ".validate": "newData.isBoolean()"
+              },
+              "reopenOk": {
+                ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting' && data.parent().child('sentAt').exists() && ( (root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin' || root.child('stocktake2026/users').child(auth.uid).child('perms/approveRecheck').val() === true) || ((root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter|scanner)$/) || root.child('stocktake2026/users').child(auth.uid).child('perms/scan').val() === true) && newData.val() === false) )",
+                ".validate": "newData.isBoolean()"
               }
             }
           },
