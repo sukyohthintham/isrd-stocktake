@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.41.0">
+<meta name="version" content="2.41.1">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.41.0</title>
+<title>ISRD Stocktake v2.41.1</title>
 
 <style>
 :root{
@@ -2024,7 +2024,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.41.0';
+var APP_VERSION = '2.41.1';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -15385,8 +15385,17 @@ function renderRecheckScanner(admin) {
 
   var show = (filter === 'done' ? doneKeys : pendingKeys).slice().sort();
   if (!show.length) {
-    body.appendChild(el('div', { class: 'card' }, [el('div', { class: 'muted', style: 'text-align:center;padding:14px',
-      text: filter === 'done' ? 'ยังไม่มีรายการที่ส่งคืน — แตะ "ต้องรีเช็ค" เพื่อดูงานที่เหลือ' : '🎉 รีเช็คครบทุกรายการแล้ว' })]));
+    /* ⭐ v2.41.1 งานของตัวเองครบแล้ว แต่งานกลางยังเหลือ → ชวนไปช่วยเก็บ ไม่ปล่อยตกหล่น (เจตนาหลัก: เด็กช่วยกันเก็บงานกลาง) */
+    var midPend = midKeys.filter(isPending);
+    if (filter === 'pending' && scope !== 'mid' && midPend.length) {
+      body.appendChild(el('div', { class: 'card', style: 'text-align:center;padding:16px 14px' }, [
+        el('div', { style: 'font-size:15px;margin-bottom:4px', text: '🎉 งานของคุณครบแล้ว' }),
+        el('div', { class: 'muted', style: 'font-size:13px;margin-bottom:10px', text: 'ยังมีงานกลางอีก ' + fmtNum(midPend.length) + ' รายการ ช่วยกันเก็บได้เลย' }),
+        el('button', { class: 'btn', style: 'margin:0', text: '🧺 ไปช่วยเก็บงานกลาง', onclick: function () { state.rcScanScope = 'mid'; state.rcScanFilter = 'pending'; renderRecheckScanner(admin); } }) ]));
+    } else {
+      body.appendChild(el('div', { class: 'card' }, [el('div', { class: 'muted', style: 'text-align:center;padding:14px',
+        text: filter === 'done' ? 'ยังไม่มีรายการที่ส่งคืน — แตะ "ต้องรีเช็ค" เพื่อดูงานที่เหลือ' : '🎉 รีเช็คครบทุกรายการแล้ว' })]));
+    }
     return;
   }
   var tByKey = {};
