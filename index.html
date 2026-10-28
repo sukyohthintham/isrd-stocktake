@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.41.4">
+<meta name="version" content="2.41.5">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.41.4</title>
+<title>ISRD Stocktake v2.41.5</title>
 
 <style>
 :root{
@@ -2024,7 +2024,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.41.4';
+var APP_VERSION = '2.41.5';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -14960,6 +14960,11 @@ function renderRecheckAdmin() {
   var sentN = Object.keys(rc).length, doneN = 0;
   Object.keys(rc).forEach(function (k) { if (rc[k].qty != null && rc[k].qty !== '') doneN++; });
   var canManage = canRecheckManage();
+  /* ⭐ v2.41.5 counter เปิดหน้ารีเช็คแล้วทะเบียนคนยังว่าง → โหลดให้ (ครั้งเดียว) เพื่อให้ dropdown มอบงานมีรายชื่อ */
+  if (canManage && !isAdmin() && !Object.keys(state.users || {}).length && !state._rcUsersTried) {
+    state._rcUsersTried = true;
+    refreshUsers().then(function () { renderRecheckAdmin(); });
+  }
 
   body.textContent = '';
   body.appendChild(el('div', { class: 'banner', style: 'background:#e0f2fe;color:#075985;border-color:#7dd3fc',
@@ -18216,7 +18221,8 @@ function activeAdminCount(excludeUid) {
 }
 
 function refreshUsers() {
-  if (!isAdmin()) return Promise.resolve({});
+  /* ⭐ v2.41.5 counter ที่มอบงานรีเช็คได้ (adjustCount) ต้องอ่านทะเบียนคนเพื่อเลือกมอบ — Rules /users .read = auth!=null เปิดให้อยู่แล้ว (เขียนยังจำกัด admin) */
+  if (!isAdmin() && !hasPerm('adjustCount')) return Promise.resolve({});
   return db.get('users').then(function (data) {
     state.users = data || {};
     return state.users;
@@ -20079,7 +20085,7 @@ function startApp() {
   refreshStatuses();
   refreshStoreTypes();
   refreshShopZones();
-  if (isAdmin()) refreshUsers().then(renderUsers);
+  if (isAdmin() || hasPerm('adjustCount')) refreshUsers().then(function () { if (isAdmin()) renderUsers(); });
 
   /* ระเบียนรอบนับต้องมาก่อน roundIndex — cycleStatus และ Rules อ่านจากตรงนี้
      ⭐ v2.32.0 LITE_MODE: cycles ดึงครั้งเดียว + รีเฟรชตอนเข้าหน้า Job/สรุป แทนเปิดสายค้าง
