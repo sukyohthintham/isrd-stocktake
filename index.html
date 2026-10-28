@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.41.1">
+<meta name="version" content="2.41.2">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.41.1</title>
+<title>ISRD Stocktake v2.41.2</title>
 
 <style>
 :root{
@@ -2024,7 +2024,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.41.1';
+var APP_VERSION = '2.41.2';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -15045,17 +15045,17 @@ function renderRecheckAdmin() {
 
   /* ⭐ v2.39 แผงติดตามรายคน — ค้างที่ใคร กี่ SKU · แตะการ์ดคนกางดู SKU ที่ค้าง + Location */
   if (canManage) {
-    var byP = {}, midN = 0;
+    var byP = {}, midKeys = [];
     list.forEach(function (r) {
       var it = rc[r.key]; if (!it || r._ghost) return;
       var who = it.assignTo || '';
-      if (!who) { midN++; return; }
+      if (!who) { midKeys.push(r); return; }
       var e = byP[who] || (byP[who] = { total: 0, done: 0, keys: [] });
       e.total++; e.keys.push(r);
       if (it.qty != null && it.qty !== '') e.done++;
     });
     var pnames = Object.keys(byP).sort(function (a, b) { return a.localeCompare(b, 'th'); });
-    if (pnames.length || midN) {
+    if (pnames.length || midKeys.length) {
       body.appendChild(el('div', { style: 'font-weight:800;font-size:13.5px;margin:4px 2px 8px;color:#0f766e', text: '👥 ติดตามรายคน (ค้างที่ใคร)' }));
       pnames.forEach(function (nm) {
         var e = byP[nm], left = e.total - e.done, pct = e.total ? Math.round(e.done / e.total * 100) : 0;
@@ -15089,9 +15089,34 @@ function renderRecheckAdmin() {
         }
         body.appendChild(card);
       });
-      if (midN) body.appendChild(el('div', { class: 'card', style: 'margin-bottom:8px;background:#fffbeb;border-color:#fcd34d' }, [
-        el('div', { style: 'font-weight:700;color:#b45309;font-size:13px', text: '🧺 งานกลาง (ยังไม่มอบ) — ' + fmtNum(midN) + ' SKU' }),
-        el('div', { class: 'muted', style: 'font-size:12px;margin-top:2px', text: 'เด็กทุกคนเห็น ใครว่างหยิบทำได้ กันตกหล่น' }) ]));
+      /* ⭐ v2.41.2 งานกลางแตะกางดูได้ว่าเป็น SKU อะไร ผลต่างเท่าไหร่ อยู่ไหน — กันสับสนกับ chips ด้านบน (ที่รวมของยังไม่ส่งด้วย) */
+      if (midKeys.length) {
+        var mOpen = !!state.rcMidOpen;
+        var mCard = el('div', { class: 'card', style: 'margin-bottom:8px;padding:0;overflow:hidden;background:#fffbeb;border-color:#fcd34d' });
+        var mHead = el('div', { style: 'padding:11px 13px;cursor:pointer' }, [
+          el('div', { style: 'font-weight:700;color:#b45309;font-size:13px', text: (mOpen ? '▼ ' : '▶ ') + '🧺 งานกลาง (ยังไม่มอบ) — ' + fmtNum(midKeys.length) + ' SKU' }),
+          el('div', { class: 'muted', style: 'font-size:12px;margin-top:2px', text: 'แตะดูรหัสที่อยู่งานกลาง · เด็กทุกคนเห็น ใครว่างหยิบทำได้ กันตกหล่น' }) ]);
+        mHead.onclick = function () { state.rcMidOpen = !mOpen; renderRecheckAdmin(); };
+        mCard.appendChild(mHead);
+        if (mOpen) {
+          var mDet = el('div', { style: 'border-top:1px solid #fcd34d;padding:4px 13px 10px' });
+          midKeys.slice().sort(function (a, b) {
+            if (a.diff !== b.diff) return a.diff - b.diff;
+            return String(a.code).localeCompare(String(b.code), 'th');
+          }).forEach(function (r) {
+            var it2 = rc[r.key], dn = it2 && it2.qty != null && it2.qty !== '';
+            var locTxt = r.location || (state.foundZones && state.foundZones[r.key] ? 'โซน ' + Object.keys(state.foundZones[r.key]).sort().join(',') : '');
+            mDet.appendChild(el('div', { class: 'row', style: 'justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px dashed #fcd34d;font-size:13px' }, [
+              el('div', {}, [
+                el('span', { style: 'display:inline-block;font-size:11px;font-weight:700;padding:1px 7px;border-radius:6px;margin-right:7px;' + (r.diff < 0 ? 'background:#fee2e2;color:#b91c1c' : 'background:#fef3c7;color:#b45309'), text: (r.diff > 0 ? '+' : '') + fmtNum(r.diff) }),
+                el('span', { style: 'font-weight:600', text: r.code }),
+                el('span', { class: 'muted', style: 'font-size:11.5px;margin-left:6px', text: locTxt }) ]),
+              el('span', { class: 'badge ' + (dn ? 'ok' : 'warn'), style: 'font-size:11px', text: dn ? '✓ เด็กนับคืนแล้ว' : 'รอนับ' }) ]));
+          });
+          mCard.appendChild(mDet);
+        }
+        body.appendChild(mCard);
+      }
     }
   }
 
