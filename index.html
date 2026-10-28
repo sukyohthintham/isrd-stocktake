@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.40.2">
+<meta name="version" content="2.41.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.40.2</title>
+<title>ISRD Stocktake v2.41.0</title>
 
 <style>
 :root{
@@ -2024,7 +2024,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.40.2';
+var APP_VERSION = '2.41.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -15348,19 +15348,23 @@ function renderRecheckScanner(admin) {
     return;
   }
   /* ⭐ v2.38.3 การ์ดสรุปคลิกได้ = แท็บกรอง "ต้องรีเช็ค" / "ส่งคืนแล้ว" กันลายตาเมื่อมีหลายสิบ SKU */
-  /* ⭐ v2.39 เด็กเห็น "งานของฉัน" ก่อน = SKU ที่มอบให้ตัวเอง + งานกลาง (ยังไม่มอบ) · สลับดู "ทั้งหมด" ได้ */
+  /* ⭐ v2.41 แยก 3 กลุ่มชัด: "งานของฉัน" = มอบให้เราเท่านั้น · "งานกลาง" = ยังไม่มอบใคร · "ทั้งหมด"
+     คืนงานจากใคร → assignTo ว่าง → ตัดออกจาก "งานของฉัน" ของคนนั้นทันที (เหลือ 0) ไปอยู่งานกลางแทน */
   var myName = state.counter || '';
-  var mineKeys = keys.filter(function (k) { var a = (rc[k] || {}).assignTo; return !a || a === myName; });
-  var scope = state.rcScanScope === 'all' ? 'all' : 'mine';
-  var vkeys = scope === 'all' ? keys : mineKeys;
-  if (keys.length > mineKeys.length || scope === 'all') {
+  var mineKeys = keys.filter(function (k) { return (rc[k] || {}).assignTo === myName; });
+  var midKeys = keys.filter(function (k) { return !(rc[k] || {}).assignTo; });
+  var hasAssign = keys.length > midKeys.length;   // รอบนี้มีการมอบงานไหม (ถ้าไม่มีก็ไม่ต้องโชว์แท็บ)
+  var scope = (state.rcScanScope === 'all' || state.rcScanScope === 'mid') ? state.rcScanScope : 'mine';
+  if (scope === 'mine' && !mineKeys.length && midKeys.length) scope = 'mid';   // ไม่มีงานมอบให้เรา → เปิดงานกลางเลย ไม่ให้จอว่าง
+  var vkeys = scope === 'all' ? keys : (scope === 'mid' ? midKeys : mineKeys);
+  if (hasAssign) {
     var seg = function (val, label, cnt) {
-      var sb = el('button', { class: 'btn sm' + (scope === val ? '' : ' grey'), style: 'flex:1;margin:0', text: label + ' (' + fmtNum(cnt) + ')' });
+      var sb = el('button', { class: 'btn sm' + (scope === val ? '' : ' grey'), style: 'flex:1;margin:0;padding:7px 3px', text: label + ' (' + fmtNum(cnt) + ')' });
       sb.onclick = function () { state.rcScanScope = val; renderRecheckScanner(admin); };
       return sb;
     };
     body.appendChild(el('div', { class: 'row', style: 'gap:6px;margin-bottom:10px' }, [
-      seg('mine', '👤 งานของฉัน', mineKeys.length), seg('all', 'ทั้งหมด', keys.length) ]));
+      seg('mine', '👤 งานฉัน', mineKeys.length), seg('mid', '🧺 งานกลาง', midKeys.length), seg('all', 'ทั้งหมด', keys.length) ]));
   }
   var isPending = function (k) { var it = rc[k]; return !(it.qty != null && it.qty !== '') || draft[k]; };
   var pendingKeys = vkeys.filter(isPending), doneKeys = vkeys.filter(function (k) { return !isPending(k); });
