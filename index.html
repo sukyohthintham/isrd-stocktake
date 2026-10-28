@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.40.0">
+<meta name="version" content="2.40.1">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.40.0</title>
+<title>ISRD Stocktake v2.40.1</title>
 
 <style>
 :root{
@@ -2024,7 +2024,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.40.0';
+var APP_VERSION = '2.40.1';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -15024,8 +15024,9 @@ function renderRecheckAdmin() {
         uSel.addEventListener('change', function () { gBtn.textContent = (uSel.value === '__unassign__' ? '↩ คืนงานกลาง ' : '✅ มอบ ') + fmtNum(selKeys.length) + ' SKU'; });
         gBtn.onclick = function () {
           if (!uSel.value) { toast('เลือกคนก่อน (หรือ "เอาออก" เพื่อคืนงานกลาง)', true); return; }
-          assignKeys(selKeys.slice(), uSel.value === '__unassign__' ? '' : uSel.value);
-          state.rcDiffSel = {};
+          var _keys = selKeys.slice(), _as = uSel.value === '__unassign__' ? '' : uSel.value;
+          state.rcDiffSel = {};                 /* ⭐ v2.40.1 ล้าง chip ก่อน assignKeys → renderRecheck ไม่ติดสีค้าง (CC note) */
+          assignKeys(_keys, _as);
         };
         panel.appendChild(el('div', { class: 'row', style: 'gap:7px' }, [ uSel, gBtn ]));
       } else {
