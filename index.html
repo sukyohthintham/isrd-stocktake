@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.38.3">
+<meta name="version" content="2.39.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.38.3</title>
+<title>ISRD Stocktake v2.39.0</title>
 
 <style>
 :root{
@@ -2024,7 +2024,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.38.3';
+var APP_VERSION = '2.39.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -14981,6 +14981,84 @@ function renderRecheckAdmin() {
     body.appendChild(el('div', { class: 'card' }, [el('div', { class: 'muted', text: '🎉 ไม่มีผลต่างในรอบนี้ — ไม่ต้องรีเช็ค' })]));
     return;
   }
+
+  /* ⭐ v2.39 มอบงานเป็นช่วง — เร็วสำหรับหลายสิบ SKU (ไม่ต้องกดทีละตัว) */
+  if (canManage) {
+    var users = assignableUsers();
+    var inStyle = 'width:62px;text-align:center;padding:6px;border:1px solid #cbd5e1;border-radius:7px;font-size:14px';
+    var fromIn = el('input', { type: 'number', value: '-99', style: inStyle });
+    var toIn = el('input', { type: 'number', value: '-1', style: inStyle });
+    var userSel = el('select', { style: 'flex:1;min-width:120px;padding:7px;border:1px solid #cbd5e1;border-radius:7px;font-size:13.5px;background:#fff' });
+    userSel.appendChild(el('option', { value: '', text: users.length ? '— เลือกคน —' : '(ยังไม่มีผู้ใช้ในสาขานี้)' }));
+    users.forEach(function (u) { userSel.appendChild(el('option', { value: u, text: u })); });
+    var goBtn = el('button', { class: 'btn sm', text: '✅ มอบงาน' });
+    goBtn.onclick = function () {
+      if (!userSel.value) { toast('เลือกคนที่จะมอบก่อน', true); return; }
+      assignByRange(Number(fromIn.value), Number(toIn.value), userSel.value);
+    };
+    var quick = function (label, f, t) {
+      var b = el('button', { class: 'btn sm grey', style: 'flex:1', text: label });
+      b.onclick = function () { fromIn.value = String(f); toIn.value = String(t); toast('ตั้งช่วงแล้ว — เลือกคนแล้วกด "มอบงาน"'); };
+      return b;
+    };
+    body.appendChild(el('div', { class: 'card', style: 'margin-bottom:12px;background:#f8fafc' }, [
+      el('div', { style: 'font-weight:700;font-size:13.5px;margin-bottom:8px', text: '📋 มอบงานเป็นช่วง (เลือกช่วงผลต่าง → มอบให้คนเดียวทีเดียว)' }),
+      el('div', { class: 'row', style: 'align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:8px' }, [
+        el('span', { class: 'muted', style: 'font-size:13px', text: 'ผลต่างจาก' }), fromIn,
+        el('span', { class: 'muted', style: 'font-size:13px', text: 'ถึง' }), toIn ]),
+      el('div', { class: 'row', style: 'align-items:center;gap:7px;margin-bottom:8px' }, [ userSel, goBtn ]),
+      el('div', { class: 'row', style: 'gap:7px' }, [
+        quick('⬇ ของขาดทั้งหมด', -99999, -1),
+        quick('⬆ ของเกินทั้งหมด', 1, 99999) ]) ]));
+  }
+
+  /* ⭐ v2.39 แผงติดตามรายคน — ค้างที่ใคร กี่ SKU · แตะการ์ดคนกางดู SKU ที่ค้าง + Location */
+  if (canManage) {
+    var byP = {}, midN = 0;
+    list.forEach(function (r) {
+      var it = rc[r.key]; if (!it || r._ghost) return;
+      var who = it.assignTo || '';
+      if (!who) { midN++; return; }
+      var e = byP[who] || (byP[who] = { total: 0, done: 0, keys: [] });
+      e.total++; e.keys.push(r);
+      if (it.qty != null && it.qty !== '') e.done++;
+    });
+    var pnames = Object.keys(byP).sort(function (a, b) { return a.localeCompare(b, 'th'); });
+    if (pnames.length || midN) {
+      body.appendChild(el('div', { style: 'font-weight:800;font-size:13.5px;margin:4px 2px 8px;color:#0f766e', text: '👥 ติดตามรายคน (ค้างที่ใคร)' }));
+      pnames.forEach(function (nm) {
+        var e = byP[nm], left = e.total - e.done, pct = e.total ? Math.round(e.done / e.total * 100) : 0;
+        var open = !!(state.rcPersonOpen && state.rcPersonOpen[nm]);
+        var card = el('div', { class: 'card', style: 'margin-bottom:8px;padding:0;overflow:hidden' });
+        var head = el('div', { class: 'row', style: 'justify-content:space-between;align-items:center;padding:11px 13px;cursor:pointer' }, [
+          el('div', {}, [
+            el('div', { style: 'font-weight:700', text: (open ? '▼ ' : '▶ ') + nm }),
+            el('div', { class: 'muted', style: 'font-size:12px', text: 'มอบ ' + fmtNum(e.total) + ' · เสร็จ ' + fmtNum(e.done) + (left ? ' · เหลือ ' + fmtNum(left) : ' · ครบแล้ว 🎉') }) ]),
+          el('span', { class: 'badge ' + (left ? 'warn' : 'ok'), text: left ? ('ค้าง ' + fmtNum(left)) : 'เสร็จ' }) ]);
+        head.onclick = function () { if (!state.rcPersonOpen) state.rcPersonOpen = {}; state.rcPersonOpen[nm] = !open; renderRecheckAdmin(); };
+        card.appendChild(head);
+        card.appendChild(el('div', { style: 'height:6px;background:#e2e8f0;margin:0 13px 10px;border-radius:999px;overflow:hidden' }, [
+          el('div', { style: 'height:100%;border-radius:999px;background:#15803d;width:' + pct + '%' }) ]));
+        if (open) {
+          var det = el('div', { style: 'border-top:1px solid #e2e8f0;padding:4px 13px 10px' });
+          e.keys.slice().sort(function (a, b) { return String(a.code).localeCompare(String(b.code), 'th'); }).forEach(function (r) {
+            var it2 = rc[r.key], dn = it2.qty != null && it2.qty !== '';
+            var locTxt = r.location || (state.foundZones && state.foundZones[r.key] ? 'โซน ' + Object.keys(state.foundZones[r.key]).sort().join(',') : '');
+            det.appendChild(el('div', { class: 'row', style: 'justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px dashed #e2e8f0;font-size:13px' }, [
+              el('div', {}, [ el('span', { style: 'font-weight:600', text: r.code }),
+                el('span', { class: 'muted', style: 'font-size:11.5px;margin-left:6px', text: locTxt }) ]),
+              el('span', { class: 'badge ' + (dn ? 'ok' : 'warn'), style: 'font-size:11px', text: dn ? '✓ ส่งแล้ว' : 'ยังไม่ส่ง' }) ]));
+          });
+          card.appendChild(det);
+        }
+        body.appendChild(card);
+      });
+      if (midN) body.appendChild(el('div', { class: 'card', style: 'margin-bottom:8px;background:#fffbeb;border-color:#fcd34d' }, [
+        el('div', { style: 'font-weight:700;color:#b45309;font-size:13px', text: '🧺 งานกลาง (ยังไม่มอบ) — ' + fmtNum(midN) + ' SKU' }),
+        el('div', { class: 'muted', style: 'font-size:12px;margin-top:2px', text: 'เด็กทุกคนเห็น ใครว่างหยิบทำได้ กันตกหล่น' }) ]));
+    }
+  }
+
   list.sort(function (a, b) { return String(a.code).localeCompare(String(b.code), 'th'); });
 
   /* ⭐ v2.38.2 แยก 3 สถานะกันลายตา + ไม่ซ่อน action ที่ยังค้าง:
@@ -15135,6 +15213,8 @@ function rcAdminCard(r, it, canManage) {
     if (_fz) locParts.push('โซนที่เก็บ ' + _fz);
     if (locParts.length) card.appendChild(el('div', { class: 'muted', style: 'font-size:12.5px;margin:-2px 0 4px;color:#475569', text: locParts.join('  ·  ') }));
   }
+  /* ⭐ v2.39 ป้ายบอกว่ามอบให้ใคร (ถ้ามอบแล้ว) */
+  if (it && it.assignTo) card.appendChild(el('div', { style: 'display:inline-block;font-size:11.5px;font-weight:700;color:#1d4ed8;background:#eff6ff;border:1px solid #bfdbfe;border-radius:999px;padding:2px 9px;margin-bottom:4px', text: '👤 มอบ: ' + it.assignTo }));
 
   if (it && it.qty != null && it.qty !== '') {
     var q = Number(it.qty), match = (q === r.sys);
@@ -15212,8 +15292,22 @@ function renderRecheckScanner(admin) {
     return;
   }
   /* ⭐ v2.38.3 การ์ดสรุปคลิกได้ = แท็บกรอง "ต้องรีเช็ค" / "ส่งคืนแล้ว" กันลายตาเมื่อมีหลายสิบ SKU */
+  /* ⭐ v2.39 เด็กเห็น "งานของฉัน" ก่อน = SKU ที่มอบให้ตัวเอง + งานกลาง (ยังไม่มอบ) · สลับดู "ทั้งหมด" ได้ */
+  var myName = state.counter || '';
+  var mineKeys = keys.filter(function (k) { var a = (rc[k] || {}).assignTo; return !a || a === myName; });
+  var scope = state.rcScanScope === 'all' ? 'all' : 'mine';
+  var vkeys = scope === 'all' ? keys : mineKeys;
+  if (keys.length > mineKeys.length || scope === 'all') {
+    var seg = function (val, label, cnt) {
+      var sb = el('button', { class: 'btn sm' + (scope === val ? '' : ' grey'), style: 'flex:1;margin:0', text: label + ' (' + fmtNum(cnt) + ')' });
+      sb.onclick = function () { state.rcScanScope = val; renderRecheckScanner(admin); };
+      return sb;
+    };
+    body.appendChild(el('div', { class: 'row', style: 'gap:6px;margin-bottom:10px' }, [
+      seg('mine', '👤 งานของฉัน', mineKeys.length), seg('all', 'ทั้งหมด', keys.length) ]));
+  }
   var isPending = function (k) { var it = rc[k]; return !(it.qty != null && it.qty !== '') || draft[k]; };
-  var pendingKeys = keys.filter(isPending), doneKeys = keys.filter(function (k) { return !isPending(k); });
+  var pendingKeys = vkeys.filter(isPending), doneKeys = vkeys.filter(function (k) { return !isPending(k); });
   var filter = state.rcScanFilter === 'done' ? 'done' : 'pending';
 
   var mkStat = function (n, label, color, key) {
@@ -15296,6 +15390,42 @@ function rcScannerCard(k, it, dr) {
 }
 
 /* ---------- actions (ล็อกสองชั้น: requirePerm + เช็ครอบยัง counting) ---------- */
+/* ⭐ v2.39 แบ่งงานรีเช็คตาม User — รายชื่อเด็กที่มอบได้ (active · ไม่ใช่ viewer · อยู่สาขารอบนี้) */
+function assignableUsers() {
+  var bc = jobBranchCode(currentJob()), seen = {}, out = [];
+  Object.keys(state.users || {}).forEach(function (uid) {
+    var u = state.users[uid] || {};
+    if (u.active === false) return;
+    if ((u.role || 'counter') === 'viewer') return;
+    var ub = normBranchCodes(u.branches || []);
+    if (ub.length && bc && ub.indexOf(bc) < 0) return;
+    var nm = u.name || uid;
+    if (seen[nm]) return; seen[nm] = 1; out.push(nm);
+  });
+  return out.sort(function (a, b) { return String(a).localeCompare(String(b), 'th'); });
+}
+
+/* มอบงานเป็นช่วงผลต่าง (diff from..to) ให้คนเดียว — ส่งรีเช็คให้เลยถ้ายังไม่ส่ง + ตั้ง assignTo
+   assignee '' = เอาการมอบออก (คืนเป็นงานกลาง) · เขียน rounds/{rid}/rechecks/{sku}/assignTo (admin เท่านั้นตาม Rules) */
+function assignByRange(from, to, assignee) {
+  if (!requirePerm('adjustCount', 'มอบงานไม่ได้')) return;
+  if (!rcRoundCounting()) { toast('รอบนี้ปิดแล้ว มอบงานไม่ได้', true); return; }
+  var rid = state.roundId, rc = rcMap(), rows = summaryData().rows;
+  var now = Date.now(), by = state.counter || 'ไม่ระบุ', p = {}, n = 0;
+  rows.forEach(function (r) {
+    if (r._ghost || r.diff === 0 || r.diff < from || r.diff > to) return;
+    var k = r.key, nm = r.name || k;
+    if (!rc[k]) { p[k + '/name'] = nm; p[k + '/sentBy'] = by; p[k + '/sentAt'] = now; rc[k] = { name: nm, sentBy: by, sentAt: now }; }
+    p[k + '/assignTo'] = assignee || null;
+    if (rc[k]) { if (assignee) rc[k].assignTo = assignee; else delete rc[k].assignTo; }
+    n++;
+  });
+  if (!n) { toast('ไม่มี SKU ที่ผลต่างอยู่ในช่วงนี้', true); return; }
+  enqueueWrite('rounds/' + rid + '/rechecks', p);
+  toast(assignee ? ('มอบ ' + fmtNum(n) + ' SKU ให้ ' + assignee + ' แล้ว') : ('ปลดการมอบ ' + fmtNum(n) + ' SKU (คืนเป็นงานกลาง)'));
+  renderRecheck(true);
+}
+
 /* ⭐ v2.38.2 ส่งรีเช็คทีเดียวหลาย SKU — เขียนรวดเดียว (enqueueWrite ก้อนเดียว) แล้ว render ครั้งเดียว */
 function sendRecheckBulk(keys) {
   if (!requirePerm('adjustCount', 'ส่งรีเช็คไม่ได้')) return;
@@ -15359,6 +15489,7 @@ function submitRecheck(k) {
 
 function reopenRecheck(k) {
   var it = rcMap()[k] || {};
+  state.rcScanFilter = 'pending';   /* ⭐ v2.39 กลับมาแก้ = การ์ดย้ายไปกลุ่ม "ต้องรีเช็ค" · สลับแท็บให้เห็นช่องกรอกเลย (CC note) */
   if (!state.recheckDraft) state.recheckDraft = {};
   state.recheckDraft[k] = { qty: (it.qty != null ? it.qty : ''), photo: '' };
   /* ดึงรูปเดิมมาตั้งเป็นร่าง (lazy) เผื่อเด็กแค่แก้จำนวน ไม่ต้องถ่ายใหม่ */
