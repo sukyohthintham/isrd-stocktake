@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.39.0">
+<meta name="version" content="2.39.2">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.39.0</title>
+<title>ISRD Stocktake v2.39.2</title>
 
 <style>
 :root{
@@ -2024,7 +2024,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.39.0';
+var APP_VERSION = '2.39.2';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -14991,10 +14991,12 @@ function renderRecheckAdmin() {
     var userSel = el('select', { style: 'flex:1;min-width:120px;padding:7px;border:1px solid #cbd5e1;border-radius:7px;font-size:13.5px;background:#fff' });
     userSel.appendChild(el('option', { value: '', text: users.length ? '— เลือกคน —' : '(ยังไม่มีผู้ใช้ในสาขานี้)' }));
     users.forEach(function (u) { userSel.appendChild(el('option', { value: u, text: u })); });
+    userSel.appendChild(el('option', { value: '__unassign__', text: '— เอาออก (คืนงานกลาง) —' }));
     var goBtn = el('button', { class: 'btn sm', text: '✅ มอบงาน' });
+    userSel.addEventListener('change', function () { goBtn.textContent = userSel.value === '__unassign__' ? '↩ คืนงานกลาง' : '✅ มอบงาน'; });
     goBtn.onclick = function () {
-      if (!userSel.value) { toast('เลือกคนที่จะมอบก่อน', true); return; }
-      assignByRange(Number(fromIn.value), Number(toIn.value), userSel.value);
+      if (!userSel.value) { toast('เลือกคนก่อน (หรือ "เอาออก" เพื่อคืนงานกลาง)', true); return; }
+      assignByRange(Number(fromIn.value), Number(toIn.value), userSel.value === '__unassign__' ? '' : userSel.value);
     };
     var quick = function (label, f, t) {
       var b = el('button', { class: 'btn sm grey', style: 'flex:1', text: label });
@@ -15039,6 +15041,11 @@ function renderRecheckAdmin() {
         card.appendChild(head);
         card.appendChild(el('div', { style: 'height:6px;background:#e2e8f0;margin:0 13px 10px;border-radius:999px;overflow:hidden' }, [
           el('div', { style: 'height:100%;border-radius:999px;background:#15803d;width:' + pct + '%' }) ]));
+        if (left) {
+          var unBtn = el('button', { class: 'btn sm grey block', style: 'margin:0 13px 10px', text: '↩ คืนงานค้าง ' + fmtNum(left) + ' SKU เป็นงานกลาง (ให้คนอื่นช่วย)' });
+          unBtn.onclick = function (ev) { ev.stopPropagation(); unassignPending(nm); };
+          card.appendChild(unBtn);
+        }
         if (open) {
           var det = el('div', { style: 'border-top:1px solid #e2e8f0;padding:4px 13px 10px' });
           e.keys.slice().sort(function (a, b) { return String(a.code).localeCompare(String(b.code), 'th'); }).forEach(function (r) {
@@ -15405,6 +15412,22 @@ function assignableUsers() {
   return out.sort(function (a, b) { return String(a).localeCompare(String(b), 'th'); });
 }
 
+/* ⭐ v2.39.1 คืน "งานที่ค้าง" (ยังไม่ส่งคืน) ของคนหนึ่งกลับเป็นงานกลาง — ใช้ตอนเด็กทำไม่ทัน กระจายงานใหม่
+   ปลดเฉพาะที่ยังไม่ส่งคืน (qty ว่าง) · ที่ส่งคืนแล้วคงป้ายเดิมไว้เป็นประวัติ */
+function unassignPending(name) {
+  if (!requirePerm('adjustCount', 'คืนงานไม่ได้')) return;
+  if (!rcRoundCounting()) { toast('รอบนี้ปิดแล้ว', true); return; }
+  var rid = state.roundId, rc = rcMap(), p = {}, n = 0;
+  Object.keys(rc).forEach(function (k) {
+    var it = rc[k];
+    if (it && it.assignTo === name && !(it.qty != null && it.qty !== '')) { p[k + '/assignTo'] = null; delete it.assignTo; n++; }
+  });
+  if (!n) { toast('ไม่มีงานค้างของ ' + name, true); return; }
+  enqueueWrite('rounds/' + rid + '/rechecks', p);
+  toast('คืนงานค้าง ' + fmtNum(n) + ' SKU ของ ' + name + ' เป็นงานกลางแล้ว — คนอื่นหยิบต่อได้');
+  renderRecheck(true);
+}
+
 /* มอบงานเป็นช่วงผลต่าง (diff from..to) ให้คนเดียว — ส่งรีเช็คให้เลยถ้ายังไม่ส่ง + ตั้ง assignTo
    assignee '' = เอาการมอบออก (คืนเป็นงานกลาง) · เขียน rounds/{rid}/rechecks/{sku}/assignTo (admin เท่านั้นตาม Rules) */
 function assignByRange(from, to, assignee) {
@@ -15415,12 +15438,18 @@ function assignByRange(from, to, assignee) {
   rows.forEach(function (r) {
     if (r._ghost || r.diff === 0 || r.diff < from || r.diff > to) return;
     var k = r.key, nm = r.name || k;
+    /* ⭐ v2.39.2 โหมดปลด (assignee ว่าง) ต้องไม่ "ส่งรีเช็คใหม่" และไม่แตะของที่ส่งคืนแล้ว — ตรงกับ unassignPending
+       กันแอดมินเผลอส่งของขาดทั้งช่วงให้เด็กไปนับโดยไม่ตั้งใจ (CC จับ) */
+    if (!assignee) {
+      if (!rc[k]) return;                                       // ยังไม่เคยส่ง = ไม่มีป้ายให้ปลด (ห้ามส่งใหม่)
+      if (rc[k].qty != null && rc[k].qty !== '') return;        // ส่งคืนแล้ว = คงป้ายเป็นประวัติ
+    }
     if (!rc[k]) { p[k + '/name'] = nm; p[k + '/sentBy'] = by; p[k + '/sentAt'] = now; rc[k] = { name: nm, sentBy: by, sentAt: now }; }
     p[k + '/assignTo'] = assignee || null;
     if (rc[k]) { if (assignee) rc[k].assignTo = assignee; else delete rc[k].assignTo; }
     n++;
   });
-  if (!n) { toast('ไม่มี SKU ที่ผลต่างอยู่ในช่วงนี้', true); return; }
+  if (!n) { toast(assignee ? 'ไม่มี SKU ที่ผลต่างอยู่ในช่วงนี้' : 'ไม่มีงานที่มอบไว้ในช่วงนี้', true); return; }
   enqueueWrite('rounds/' + rid + '/rechecks', p);
   toast(assignee ? ('มอบ ' + fmtNum(n) + ' SKU ให้ ' + assignee + ' แล้ว') : ('ปลดการมอบ ' + fmtNum(n) + ' SKU (คืนเป็นงานกลาง)'));
   renderRecheck(true);
