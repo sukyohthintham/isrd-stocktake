@@ -15131,6 +15131,17 @@ function renderRecheckAdmin() {
               el('span', { class: 'badge ' + (dn ? 'ok' : 'warn'), style: 'font-size:11px', text: dn ? '✓ เด็กนับคืนแล้ว' : 'รอนับ' }) ]));
           });
           mCard.appendChild(mDet);
+          /* ⭐ v2.41.4 มอบงานกลางทั้งชุดในที่เดียว — แยกจาก chips ผลต่าง (chips = "ส่งรีเช็ค", งานกลาง = "มอบงาน") */
+          var _mUsers = assignableUsers();
+          var mSel = el('select', { style: 'flex:1;min-width:120px;padding:7px;border:1px solid #cbd5e1;border-radius:7px;font-size:13.5px;background:#fff' });
+          mSel.appendChild(el('option', { value: '', text: _mUsers.length ? '— เลือกคนรับงานกลาง —' : '(ยังไม่มีผู้ใช้ในสาขานี้)' }));
+          _mUsers.forEach(function (u) { mSel.appendChild(el('option', { value: u, text: u })); });
+          var mBtn = el('button', { class: 'btn sm', text: '✅ มอบงานกลาง ' + fmtNum(midKeys.length) + ' SKU' });
+          mBtn.onclick = function () {
+            if (!mSel.value) { toast('เลือกคนรับงานก่อน', true); return; }
+            assignKeys(midKeys.map(function (r) { return r.key; }), mSel.value);
+          };
+          mCard.appendChild(el('div', { class: 'row', style: 'gap:7px;padding:10px 13px 12px;border-top:1px solid #fcd34d' }, [ mSel, mBtn ]));
         }
         body.appendChild(mCard);
       }
@@ -15395,11 +15406,11 @@ function renderRecheckScanner(admin) {
   var myName = state.counter || '';
   var mineKeys = keys.filter(function (k) { return (rc[k] || {}).assignTo === myName; });
   var midKeys = keys.filter(function (k) { return !(rc[k] || {}).assignTo; });
-  var hasAssign = (keys.length > midKeys.length) || midKeys.length > 0;   // โชว์แท็บเมื่อมีการมอบงาน "หรือ" มีงานกลาง — คืนงานกลับงานกลางแล้วต้องยังเห็นแท็บ (ไม่หาย)
+  var showTabs = keys.length > 0;   // มีรายการรีเช็คอย่างน้อย 1 ตัว = โชว์แท็บ งานฉัน/งานกลาง/ทั้งหมด (คืนงานกลับงานกลางแล้วแท็บไม่หาย)
   var scope = (state.rcScanScope === 'all' || state.rcScanScope === 'mid') ? state.rcScanScope : 'mine';
   if (scope === 'mine' && !mineKeys.length && midKeys.length) scope = 'mid';   // ไม่มีงานมอบให้เรา → เปิดงานกลางเลย ไม่ให้จอว่าง
   var vkeys = scope === 'all' ? keys : (scope === 'mid' ? midKeys : mineKeys);
-  if (hasAssign) {
+  if (showTabs) {
     var seg = function (val, label, cnt) {
       var sb = el('button', { class: 'btn sm' + (scope === val ? '' : ' grey'), style: 'flex:1;margin:0;padding:7px 3px', text: label + ' (' + fmtNum(cnt) + ')' });
       sb.onclick = function () { state.rcScanScope = val; renderRecheckScanner(admin); };
