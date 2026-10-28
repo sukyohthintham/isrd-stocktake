@@ -27,7 +27,7 @@ function check(name, ok, got) {
   else { fail++; console.log('  FAIL  ' + name + '  ->  ' + JSON.stringify(got)); }
 }
 
-const RULES_FILE = path.join(__dirname, '..', 'stocktake-rules-v2.1.3.json');
+const RULES_FILE = path.join(__dirname, '..', 'stocktake-rules-v2.1.4.json');
 const rules = JSON.parse(fs.readFileSync(RULES_FILE, 'utf8'));
 
 /* ---------- จำลองฐานข้อมูลเท่าที่กฎอ้างถึง ---------- */
@@ -712,6 +712,33 @@ check('ชุดผู้เขียน sold = systemQty ทุก role × ส�
   const ok = function (val) { return evalRule(v, { db: makeDb('admin', 'counting'), auth: { uid: 'u_me' }, incoming: val }); };
   check('sold/$sku .validate รับจำนวน ≥ 0', ok(0) && ok(3) && ok(2.5), v);
   check('sold/$sku .validate ปฏิเสธติดลบ / ข้อความ', !ok(-1) && !ok('2'), v);
+})();
+
+/* ---------- adjust: v2.38.0 แอดมินปรับ "ยิงจริง" รายตัว (เคสขายหลังนับ) ---------- */
+console.log('\n[10b] v2.38.0 — cycles/$cid/adjust (ปรับยิงจริงรายตัว)');
+check('มีโหนด adjust ใต้ cycles/$cycleId', !!(C.adjust && C.adjust['.write']), Object.keys(C));
+check('admin / counter เขียน adjust ได้ตอน counting',
+      canWriteCycle(C.adjust['.write'], 'admin', 'counting') && canWriteCycle(C.adjust['.write'], 'counter', 'counting'), 'A_C');
+check('custom + adjustCount เขียน adjust ได้ตอน counting',
+      canWriteCaps(C.adjust['.write'], ['adjustCount'], 'counting', null, 'counting') === true, 'adjustCount');
+check('⭐ adjust เขียนได้ตอน reviewing ด้วย (ต่างจาก sold — ใช้ตอน reconcile หลังปิด Job)',
+      canWriteCycle(C.adjust['.write'], 'counter', 'reviewing') === true, 'reviewing ok');
+check('scanner / viewer เขียน adjust ไม่ได้',
+      !canWriteCycle(C.adjust['.write'], 'scanner', 'counting') && !canWriteCycle(C.adjust['.write'], 'viewer', 'counting'), 'scanner/viewer');
+check('custom scan / importSysQty / ว่าง เขียน adjust ไม่ได้ (ต้อง adjustCount เท่านั้น)',
+      !canWriteCaps(C.adjust['.write'], ['scan'], 'counting', null, 'counting') &&
+      !canWriteCaps(C.adjust['.write'], ['importSysQty'], 'counting', null, 'counting') &&
+      !canWriteCaps(C.adjust['.write'], [], 'counting', null, 'counting'), 'custom');
+check('⭐ ปิดรอบ (closed) — admin ก็เขียน adjust ไม่ได้',
+      !canWriteCycle(C.adjust['.write'], 'admin', 'closed') && !canWriteCaps(C.adjust['.write'], ['adjustCount'], 'counting', null, 'closed'), 'closed');
+check('บัญชีถูกปิด (active=false) เขียน adjust ไม่ได้', canWriteInactive(C.adjust['.write'], 'admin') === false, 'inactive');
+(function () {
+  const v = C.adjust.$sku['.validate'];
+  const ok = function (val) { return evalRule(v, { db: makeDb('admin', 'counting'), auth: { uid: 'u_me' }, incoming: val }); };
+  check('adjust/$sku .validate รับ {val≥0}', ok({ val: 0 }) && ok({ val: 9 }), v);
+  check('adjust/$sku .validate ปฏิเสธ val ติดลบ', !ok({ val: -1 }), v);
+  check('adjust/$sku .validate ปฏิเสธไม่มี val', !ok({ reason: 'x' }), v);
+  check('adjust/$sku .validate รับ null (ลบการปรับ)', ok(null), v);
 })();
 
 /* ---------- 11. v2.37.0 — รีเช็ค: แยกสิทธิ์รายฟิลด์ + กัน XSS ที่รูป ---------- */

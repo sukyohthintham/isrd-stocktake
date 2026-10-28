@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.37.12">
+<meta name="version" content="2.38.2">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.37.12</title>
+<title>ISRD Stocktake v2.38.2</title>
 
 <style>
 :root{
@@ -2024,7 +2024,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.38.0';
+var APP_VERSION = '2.38.2';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -14982,7 +14982,44 @@ function renderRecheckAdmin() {
     return;
   }
   list.sort(function (a, b) { return String(a.code).localeCompare(String(b.code), 'th'); });
-  list.forEach(function (r) { body.appendChild(rcAdminCard(r, rc[r.key], canManage)); });
+
+  /* ⭐ v2.38.2 แยก 3 สถานะกันลายตา + ไม่ซ่อน action ที่ยังค้าง:
+     (1) ยังไม่รีเช็ค = ยังไม่ส่ง/ส่งแล้วรอเด็กนับคืน
+     (2) เด็กส่งคืนแล้ว รอแอดมินใช้ยอด = qty มาแล้วแต่ยัง !applied → กางไว้ (ปุ่ม "ใช้ยอดรีเช็ค" อยู่กลุ่มนี้ ห้ามซ่อน)
+     (3) ใช้ยอดแล้ว = applied → พับเก็บได้ (เสร็จจริง ไม่มี action เหลือ) */
+  var notYet = [], pendingUse = [], doneUsed = [], unsent = [];
+  list.forEach(function (r) {
+    var it = rc[r.key];
+    var returned = !!(it && it.qty != null && it.qty !== '');
+    if (!returned) notYet.push(r);
+    else if (!it.applied) pendingUse.push(r);
+    else doneUsed.push(r);
+    if (!it && r.diff !== 0 && !r._ghost) unsent.push(r.key);
+  });
+
+  if (canManage && unsent.length) {
+    var allBtn = el('button', { class: 'btn block', style: 'margin-bottom:12px;background:#2563eb', text: '📤 ส่งรีเช็คทั้งหมดที่ยังไม่ส่ง (' + fmtNum(unsent.length) + ' SKU)' });
+    allBtn.onclick = function () { sendRecheckBulk(unsent); };
+    body.appendChild(allBtn);
+  }
+
+  if (notYet.length) {
+    body.appendChild(el('div', { style: 'font-weight:800;font-size:14px;margin:4px 0 8px;color:#b45309', text: '⏳ ยังไม่รีเช็ค (เหลือ ' + fmtNum(notYet.length) + ' SKU)' }));
+    notYet.forEach(function (r) { body.appendChild(rcAdminCard(r, rc[r.key], canManage)); });
+  }
+
+  if (pendingUse.length) {
+    body.appendChild(el('div', { style: 'font-weight:800;font-size:14px;margin:12px 0 8px;color:#059669', text: '📥 เด็กส่งคืนแล้ว รอใช้ยอด (' + fmtNum(pendingUse.length) + ' SKU)' }));
+    pendingUse.forEach(function (r) { body.appendChild(rcAdminCard(r, rc[r.key], canManage)); });
+  }
+
+  if (doneUsed.length) {
+    var openDone = !!state.rcShowDone;
+    var head = el('button', { class: 'btn block grey', style: 'margin:12px 0 8px;text-align:left', text: (openDone ? '▼ ' : '▶ ') + '✅ ใช้ยอดแล้ว (' + fmtNum(doneUsed.length) + ' SKU)' });
+    head.onclick = function () { state.rcShowDone = !state.rcShowDone; renderRecheckAdmin(); };
+    body.appendChild(head);
+    if (openDone) doneUsed.forEach(function (r) { body.appendChild(rcAdminCard(r, rc[r.key], canManage)); });
+  }
 
   if (canManage) body.appendChild(rcZortCard());
 }
@@ -15090,6 +15127,14 @@ function rcAdminCard(r, it, canManage) {
     el('div', {}, [badge])]));
   if (!r._ghost) card.appendChild(el('div', { class: 'muted', style: 'margin:6px 0;font-size:13px',
     text: 'ควรเหลือ (ระบบ) ' + fmtNum(r.sys) + ' · ยิงจริง ' + fmtNum(r.act) + ' · ผลต่าง ' + (r.diff > 0 ? '+' : '') + fmtNum(r.diff) }));
+  /* ⭐ v2.38.2 Location ช่วยเด็กเดินไปหาของถูกจุด — ของ WH ใช้ Location คลัง · ของสาขาใช้โซนที่เก็บจริง (foundZone) */
+  if (!r._ghost) {
+    var locParts = [];
+    if (r.location) locParts.push('📍 ' + r.location);
+    var _fz = (state.foundZones && state.foundZones[k]) ? Object.keys(state.foundZones[k]).sort().join(', ') : '';
+    if (_fz) locParts.push('โซนที่เก็บ ' + _fz);
+    if (locParts.length) card.appendChild(el('div', { class: 'muted', style: 'font-size:12.5px;margin:-2px 0 4px;color:#475569', text: locParts.join('  ·  ') }));
+  }
 
   if (it && it.qty != null && it.qty !== '') {
     var q = Number(it.qty), match = (q === r.sys);
@@ -15117,6 +15162,23 @@ function rcAdminCard(r, it, canManage) {
       canManage ? el('button', { class: 'btn sm grey', text: 'ถอน', onclick: function () { cancelRecheck(k); } }) : null]));
   } else if (canManage) {
     card.appendChild(el('button', { class: 'btn sm', style: 'margin-top:4px', text: '🔁 ส่งรีเช็ค', onclick: function () { sendRecheck(k); } }));
+  }
+
+  /* ⭐ v2.38 ปรับ "ยิงจริง" เอง — เคสขายหลังเด็กนับ (เด็กนับถูกแล้ว ไม่ต้องให้นับใหม่)
+     แอดมินตั้งเลขหลังขายเอง + เหตุผล · ยอดเด็กนับเดิมเก็บเป็นหลักฐาน (actRaw) · ไหลเข้าไฟล์ Zort อัตโนมัติ */
+  if (!r._ghost && canManage) {
+    if (r.adj) {
+      card.appendChild(el('div', { style: 'margin-top:10px;padding:8px 11px;background:#f3e8ff;border:1px solid #d8b4fe;border-radius:9px;color:#7c3aed;font-size:12.5px;line-height:1.5' }, [
+        el('div', {}, [ el('b', { text: '✏️ ปรับยิงจริงเป็น ' + fmtNum(r.act) }),
+                        el('span', { text: '  (เด็กนับจริง ' + fmtNum(r.actRaw) + ' — เก็บเป็นหลักฐาน)' }) ]),
+        el('div', { style: 'opacity:.85;margin-top:2px', text: 'เหตุผล: ' + ((r.adj && r.adj.reason) || 'ไม่ระบุ') + (r.adj && r.adj.by ? ' · โดย ' + r.adj.by : '') })
+      ]));
+      card.appendChild(el('button', { class: 'btn sm grey', style: 'margin-top:6px', text: '↩ ยกเลิกการปรับ (กลับไปใช้ยอดเด็กนับ ' + fmtNum(r.actRaw) + ')', onclick: function () { clearActAdjust(r); } }));
+    } else if (r.diff !== 0) {
+      var adjB = el('button', { class: 'btn sm ghost', style: 'margin-top:6px', text: '✏️ ปรับยิงจริงเอง (ขายหลังนับ)' });
+      adjB.onclick = function () { openAdjustForm(r, adjB); };
+      card.appendChild(adjB);
+    }
   }
   return card;
 }
@@ -15208,6 +15270,25 @@ function rcScannerCard(k, it, dr) {
 }
 
 /* ---------- actions (ล็อกสองชั้น: requirePerm + เช็ครอบยัง counting) ---------- */
+/* ⭐ v2.38.2 ส่งรีเช็คทีเดียวหลาย SKU — เขียนรวดเดียว (enqueueWrite ก้อนเดียว) แล้ว render ครั้งเดียว */
+function sendRecheckBulk(keys) {
+  if (!requirePerm('adjustCount', 'ส่งรีเช็คไม่ได้')) return;
+  if (!rcRoundCounting()) { toast('รอบนี้ปิดแล้ว ส่งรีเช็คไม่ได้', true); return; }
+  keys = (keys || []).filter(Boolean);
+  if (!keys.length) { toast('ไม่มี SKU ที่ต้องส่ง', true); return; }
+  var rid = state.roundId, rows = summaryData().rows, nameOf = {};
+  rows.forEach(function (r) { nameOf[r.key] = r.name || r.key; });
+  var p = {}, now = Date.now(), by = state.counter || 'ไม่ระบุ';
+  keys.forEach(function (k) {
+    var nm = nameOf[k] || k;
+    p[k + '/name'] = nm; p[k + '/sentBy'] = by; p[k + '/sentAt'] = now;
+    rcMap()[k] = { name: nm, sentBy: by, sentAt: now };
+  });
+  enqueueWrite('rounds/' + rid + '/rechecks', p);
+  toast('ส่งรีเช็ค ' + fmtNum(keys.length) + ' SKU ให้เด็กนับใหม่แล้ว');
+  renderRecheck(true);
+}
+
 function sendRecheck(k) {
   if (!requirePerm('adjustCount', 'ส่งรีเช็คไม่ได้')) return;
   if (!rcRoundCounting()) { toast('รอบนี้ปิดแล้ว ส่งรีเช็คไม่ได้', true); return; }
