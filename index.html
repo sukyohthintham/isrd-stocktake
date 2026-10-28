@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.38.2">
+<meta name="version" content="2.38.3">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.38.2</title>
+<title>ISRD Stocktake v2.38.3</title>
 
 <style>
 :root{
@@ -2024,7 +2024,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.38.2';
+var APP_VERSION = '2.38.3';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -15211,12 +15211,30 @@ function renderRecheckScanner(admin) {
       text: '🎉 ยังไม่มีรายการให้รีเช็คตอนนี้' + (admin ? ' (ไปมุมมอง Admin กด "ส่งรีเช็ค" ก่อน)' : '') })]));
     return;
   }
-  var pending = keys.filter(function (k) { var it = rc[k]; return !(it.qty != null && it.qty !== '') || draft[k]; }).length;
+  /* ⭐ v2.38.3 การ์ดสรุปคลิกได้ = แท็บกรอง "ต้องรีเช็ค" / "ส่งคืนแล้ว" กันลายตาเมื่อมีหลายสิบ SKU */
+  var isPending = function (k) { var it = rc[k]; return !(it.qty != null && it.qty !== '') || draft[k]; };
+  var pendingKeys = keys.filter(isPending), doneKeys = keys.filter(function (k) { return !isPending(k); });
+  var filter = state.rcScanFilter === 'done' ? 'done' : 'pending';
+
+  var mkStat = function (n, label, color, key) {
+    var active = filter === key;
+    var c = el('div', { class: 'card', style: 'text-align:center;cursor:pointer;transition:.15s;' + (active ? 'outline:3px solid ' + color + ';' : 'opacity:.68;') }, [
+      el('div', { style: 'font-size:26px;font-weight:800;color:' + color, text: fmtNum(n) }),
+      el('div', { class: 'muted', text: label + (active ? ' ●' : '') })]);
+    c.onclick = function () { state.rcScanFilter = key; renderRecheckScanner(admin); };
+    return c;
+  };
   body.appendChild(el('div', { class: 'stats', style: 'margin-bottom:12px' }, [
-    el('div', { class: 'card', style: 'text-align:center' }, [el('div', { style: 'font-size:26px;font-weight:800;color:#b45309', text: fmtNum(pending) }), el('div', { class: 'muted', text: 'ต้องรีเช็ค' })]),
-    el('div', { class: 'card', style: 'text-align:center' }, [el('div', { style: 'font-size:26px;font-weight:800;color:#059669', text: fmtNum(keys.length - pending) }), el('div', { class: 'muted', text: 'ส่งคืนแล้ว' })])]));
-  keys.sort();
-  keys.forEach(function (k) { body.appendChild(rcScannerCard(k, rc[k], draft[k])); });
+    mkStat(pendingKeys.length, 'ต้องรีเช็ค', '#b45309', 'pending'),
+    mkStat(doneKeys.length, 'ส่งคืนแล้ว', '#059669', 'done')]));
+
+  var show = (filter === 'done' ? doneKeys : pendingKeys).slice().sort();
+  if (!show.length) {
+    body.appendChild(el('div', { class: 'card' }, [el('div', { class: 'muted', style: 'text-align:center;padding:14px',
+      text: filter === 'done' ? 'ยังไม่มีรายการที่ส่งคืน — แตะ "ต้องรีเช็ค" เพื่อดูงานที่เหลือ' : '🎉 รีเช็คครบทุกรายการแล้ว' })]));
+    return;
+  }
+  show.forEach(function (k) { body.appendChild(rcScannerCard(k, rc[k], draft[k])); });
 }
 
 function rcScannerCard(k, it, dr) {
@@ -15227,6 +15245,14 @@ function rcScannerCard(k, it, dr) {
     el('div', {}, [el('div', { style: 'font-weight:800;font-size:16px', text: k }),
       el('div', { class: 'muted', style: 'font-size:13px', text: it.name || '' })]),
     el('div', {}, [editing ? el('span', { class: 'badge warn', text: '⏳ รอรีเช็ค' }) : el('span', { class: 'badge ok', text: '✅ ส่งคืนแล้ว' })])]));
+
+  /* ⭐ v2.38.3 Location ในการ์ดเด็กด้วย — เด็กเป็นคนเดินไปนับของบนชั้น ต้องรู้ว่าของอยู่ไหน
+     ของ WH ใช้ Location คลัง (locationText) · ของสาขาใช้โซนที่เก็บจริง (foundZone) · ไม่ใช่ตัวเลขเป้า เด็กเห็นได้ */
+  var _loc = [];
+  var _lt = locationText(k); if (_lt) _loc.push('📍 ' + _lt);
+  var _fz = (state.foundZones && state.foundZones[k]) ? Object.keys(state.foundZones[k]).sort().join(', ') : '';
+  if (_fz) _loc.push('โซนที่เก็บ ' + _fz);
+  if (_loc.length) card.appendChild(el('div', { class: 'muted', style: 'font-size:12.5px;margin:4px 0 2px;color:#475569', text: _loc.join('  ·  ') }));
 
   if (editing) {
     var qInput = el('input', { type: 'number', inputmode: 'numeric', min: '0', placeholder: '?',
