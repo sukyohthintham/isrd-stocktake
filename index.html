@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.40.1">
+<meta name="version" content="2.40.2">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.40.1</title>
+<title>ISRD Stocktake v2.40.2</title>
 
 <style>
 :root{
@@ -2024,7 +2024,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.40.1';
+var APP_VERSION = '2.40.2';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -14997,7 +14997,11 @@ function renderRecheckAdmin() {
       var selKeys = [], selRows = [];
       diffVals.forEach(function (d) {
         var on = !!state.rcDiffSel[d], grp = byDiff[d];
-        var chip = el('button', { class: 'btn sm' + (on ? '' : ' grey'), style: 'padding:5px 11px', text: (d > 0 ? '+' : '') + d + ' · ' + fmtNum(grp.length) + ' SKU' });
+        var unsent = 0;
+        for (var gi = 0; gi < grp.length; gi++) { if (!rc[grp[gi].key]) unsent++; }
+        /* ⭐ v2.40.2 chip โชว์ "ยังไม่ส่ง" เป็นหลัก — ส่งครบแล้วจางลง + ติ๊ก ✓ (รู้ว่าไม่ต้องส่งซ้ำ) */
+        var chipText = (d > 0 ? '+' : '') + d + ' · ' + (unsent ? (fmtNum(unsent) + ' ใหม่') : ('✓ ส่งครบ ' + fmtNum(grp.length)));
+        var chip = el('button', { class: 'btn sm' + (on ? '' : ' grey'), style: 'padding:5px 11px' + (unsent ? '' : ';opacity:.55'), text: chipText });
         chip.onclick = function () { state.rcDiffSel[d] = !on; renderRecheckAdmin(); };
         chips.appendChild(chip);
         if (on) grp.forEach(function (r) { selKeys.push(r.key); selRows.push(r); });
@@ -15011,9 +15015,12 @@ function renderRecheckAdmin() {
       if (selKeys.length) {
         var box = el('div', { style: 'max-height:210px;overflow:auto;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:5px 10px;margin-bottom:10px' });
         selRows.sort(function (a, b) { return a.diff - b.diff || String(a.code).localeCompare(String(b.code), 'th'); }).forEach(function (r) {
+          var sent = !!rc[r.key];
           box.appendChild(el('div', { style: 'display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 0;border-bottom:1px dashed #f1f5f9;font-size:12.5px' }, [
             el('div', {}, [ el('span', { style: 'font-weight:600', text: r.code }), el('span', { class: 'muted', style: 'margin-left:6px', text: r.name || '' }) ]),
-            el('span', { class: 'badge ' + (r.diff > 0 ? 'warn' : 'red'), style: 'font-size:11px', text: (r.diff > 0 ? '+' : '') + r.diff }) ]));
+            el('div', { style: 'display:flex;gap:5px;align-items:center;flex:0 0 auto' }, [
+              el('span', { class: 'badge ' + (sent ? 'ok' : 'warn'), style: 'font-size:10px', text: sent ? '✓ ส่งแล้ว' : 'ยังไม่ส่ง' }),
+              el('span', { class: 'badge ' + (r.diff > 0 ? 'warn' : 'red'), style: 'font-size:11px', text: (r.diff > 0 ? '+' : '') + r.diff }) ]) ]));
         });
         panel.appendChild(box);
         var uSel = el('select', { style: 'flex:1;min-width:120px;padding:7px;border:1px solid #cbd5e1;border-radius:7px;font-size:13.5px;background:#fff' });
