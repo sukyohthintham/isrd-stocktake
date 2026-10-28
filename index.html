@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.41.2">
+<meta name="version" content="2.41.4">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.41.2</title>
+<title>ISRD Stocktake v2.41.4</title>
 
 <style>
 :root{
@@ -2024,7 +2024,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.41.2';
+var APP_VERSION = '2.41.4';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -14992,16 +14992,33 @@ function renderRecheckAdmin() {
       if (!state.rcDiffSel) state.rcDiffSel = {};
       var panel = el('div', { class: 'card', style: 'margin-bottom:12px;background:#f8fafc' });
       panel.appendChild(el('div', { style: 'font-weight:700;font-size:13.5px', text: '📋 มอบงานตามผลต่าง' }));
-      panel.appendChild(el('div', { class: 'muted', style: 'font-size:12px;margin:2px 0 8px', text: 'แตะค่าผลต่างที่ต้องการ (เลือกได้หลายค่า) → เห็น SKU ทั้งหมด → มอบทั้งชุด' }));
+      panel.appendChild(el('div', { class: 'muted', style: 'font-size:12px;margin:2px 0 6px', text: 'แตะค่าผลต่างที่ต้องการ (เลือกได้หลายค่า) → เห็น SKU ทั้งหมด → มอบทั้งชุด' }));
+      /* ⭐ v2.41.4 คำอธิบายสีสถานะ chip — รู้ทันทีว่าอันไหนต้องส่ง อันไหนอยู่งานกลางแล้ว อันไหนมอบไปแล้ว */
+      panel.appendChild(el('div', { style: 'display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11px;color:#64748b;margin-bottom:9px' }, [
+        el('span', { text: '⬛ ยังไม่ส่ง = กดเพื่อเลือกส่ง' }),
+        el('span', { style: 'color:#b45309', text: '🧺 อยู่งานกลางแล้ว (รอมอบ)' }),
+        el('span', { style: 'opacity:.6', text: '✓ มอบให้เด็กแล้ว' }) ]));
       var chips = el('div', { style: 'display:flex;flex-wrap:wrap;gap:6px;margin-bottom:9px' });
       var selKeys = [], selRows = [];
       diffVals.forEach(function (d) {
         var on = !!state.rcDiffSel[d], grp = byDiff[d];
-        var unsent = 0;
-        for (var gi = 0; gi < grp.length; gi++) { if (!rc[grp[gi].key]) unsent++; }
-        /* ⭐ v2.40.2 chip โชว์ "ยังไม่ส่ง" เป็นหลัก — ส่งครบแล้วจางลง + ติ๊ก ✓ (รู้ว่าไม่ต้องส่งซ้ำ) */
-        var chipText = (d > 0 ? '+' : '') + d + ' · ' + (unsent ? (fmtNum(unsent) + ' ใหม่') : ('✓ ส่งครบ ' + fmtNum(grp.length)));
-        var chip = el('button', { class: 'btn sm' + (on ? '' : ' grey'), style: 'padding:5px 11px' + (unsent ? '' : ';opacity:.55'), text: chipText });
+        var unsent = 0, pool = 0, assigned = 0;
+        for (var gi = 0; gi < grp.length; gi++) {
+          var _it = rc[grp[gi].key];
+          if (!_it) unsent++; else if (!_it.assignTo) pool++; else assigned++;
+        }
+        /* ⭐ v2.41.4 chip 3 สถานะ: ยังไม่ส่ง(เข้ม กดส่ง) · อยู่งานกลาง(เหลือง) · มอบแล้ว(จาง) — ผสมได้ในกลุ่มเดียว */
+        var _parts = [];
+        if (unsent) _parts.push(fmtNum(unsent) + ' ใหม่');
+        if (pool) _parts.push('🧺' + fmtNum(pool));
+        if (assigned) _parts.push('✓' + fmtNum(assigned));
+        var chipText = (d > 0 ? '+' : '') + d + ' · ' + _parts.join(' · ');
+        var _st;
+        if (on) _st = '';                                                               // เลือกอยู่ = สีไฮไลต์ปกติ
+        else if (unsent) _st = '';                                                       // ยังมีของต้องส่ง = เข้ม
+        else if (pool) _st = ';background:#fef3c7;border-color:#fcd34d;color:#b45309';    // อยู่งานกลาง = เหลือง
+        else _st = ';opacity:.5';                                                        // มอบหมดแล้ว = จาง
+        var chip = el('button', { class: 'btn sm' + (on ? '' : ' grey'), style: 'padding:5px 11px' + _st, text: chipText });
         chip.onclick = function () { state.rcDiffSel[d] = !on; renderRecheckAdmin(); };
         chips.appendChild(chip);
         if (on) grp.forEach(function (r) { selKeys.push(r.key); selRows.push(r); });
@@ -15378,7 +15395,7 @@ function renderRecheckScanner(admin) {
   var myName = state.counter || '';
   var mineKeys = keys.filter(function (k) { return (rc[k] || {}).assignTo === myName; });
   var midKeys = keys.filter(function (k) { return !(rc[k] || {}).assignTo; });
-  var hasAssign = keys.length > midKeys.length;   // รอบนี้มีการมอบงานไหม (ถ้าไม่มีก็ไม่ต้องโชว์แท็บ)
+  var hasAssign = (keys.length > midKeys.length) || midKeys.length > 0;   // โชว์แท็บเมื่อมีการมอบงาน "หรือ" มีงานกลาง — คืนงานกลับงานกลางแล้วต้องยังเห็นแท็บ (ไม่หาย)
   var scope = (state.rcScanScope === 'all' || state.rcScanScope === 'mid') ? state.rcScanScope : 'mine';
   if (scope === 'mine' && !mineKeys.length && midKeys.length) scope = 'mid';   // ไม่มีงานมอบให้เรา → เปิดงานกลางเลย ไม่ให้จอว่าง
   var vkeys = scope === 'all' ? keys : (scope === 'mid' ? midKeys : mineKeys);
