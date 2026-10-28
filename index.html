@@ -2024,7 +2024,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.37.12';
+var APP_VERSION = '2.38.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -3740,6 +3740,14 @@ function loadCycleSold(cid) {
   });
 }
 
+/* ⭐ v2.38 ค่าปรับ "ยิงจริง" รายตัวของรอบ (แอดมินกดปรับ) — โหลดคู่กับ sold ทุกจุด */
+function loadCycleAdjust(cid) {
+  if (!cid) return Promise.resolve({});
+  return onceInflight('adjust:' + cid, function () {
+    return db.getQuiet('cycles/' + cid + '/adjust').then(function (data) { return data || {}; }).catch(function () { return {}; });
+  });
+}
+
 function loadCycleSystemQty(cid) {
   if (!cid) return Promise.resolve({});
   /* ⭐ ยอดระบบของรอบเป็นก้อนใหญ่และทุกการ์ดในรอบเรียกพร้อมกัน — ยิงจริงใบเดียวพอ
@@ -4296,6 +4304,7 @@ var state = {
   systemQty: {},         // ยอดระบบ "หลังหักขายออก" = ควรเหลือ (ที่ทุกหน้าใช้เทียบ)
   systemQtyRaw: {},      // ⭐ ยอดระบบตั้งต้นจริงจากไฟล์ (ไม่หักขาย — หลักฐาน/โชว์)
   sold: {},              // ⭐ ขายออกระหว่างนับ (ต่อ SKU)
+  adjust: {},            // ⭐ v2.38 ปรับ "ยิงจริง" รายตัว (แอดมินกดปรับ · กรณีขายหลังนับ) sync ที่ cycles/{cid}/adjust/{key} = {val,reason,by,at,raw}
   zones: {},
   counts: {},            // key -> ยอดรวม (ผลรวม delta)
   scanQty: {},           // key -> ยอดที่มาจากการยิง
@@ -9086,22 +9095,26 @@ function summaryData() {
                          !!(unknownInfo && unknownInfo.discarded))) return;
     var price = Number(p[priceField]) || 0;      // ยังไม่กรอกต้นทุน = คิดเป็น 0
     var bucket = p.type === 'notProduct' ? 'notProduct' : 'product';
+    /* ⭐ v2.38 ae = "ยิงจริงที่ใช้เทียบ/ปรับ Zort" — ถ้าแอดมินปรับยอดตัวนี้ไว้ ใช้ค่าที่ปรับ (กรณีขายหลังนับ)
+       act ดิบ (ยอดเด็กนับ) ยังใช้เช็คแถวผี + เก็บเป็นหลักฐาน · ae ไหลเข้าผลต่าง/สกอร์บอร์ด/Excel/ไฟล์ Zort */
+    var _adj = state.adjust[key];
+    var ae = (_adj && _adj.val != null) ? (Number(_adj.val) || 0) : act;
 
     [groups[bucket], groups.total].forEach(function (g) {
       g.sysQty += sys;
-      g.actQty += act;
+      g.actQty += ae;
       g.skuTotal++;
-      if (act === sys) g.skuMatch++;
-      else if (act < sys) g.skuShort++;
+      if (ae === sys) g.skuMatch++;
+      else if (ae < sys) g.skuShort++;
       else g.skuOver++;
       /* นับเป็นชิ้นด้วย: ตรงกันกี่ชิ้น ขาดกี่ชิ้น เกินกี่ชิ้น */
-      g.pcMatch += Math.min(sys, act);
-      g.pcShort += Math.max(0, sys - act);
-      g.pcOver += Math.max(0, act - sys);
+      g.pcMatch += Math.min(sys, ae);
+      g.pcShort += Math.max(0, sys - ae);
+      g.pcOver += Math.max(0, ae - sys);
       g.sysValue += sys * price;
-      g.actValue += act * price;
-      g.shortValue += Math.max(0, sys - act) * price;
-      g.overValue += Math.max(0, act - sys) * price;
+      g.actValue += ae * price;
+      g.shortValue += Math.max(0, sys - ae) * price;
+      g.overValue += Math.max(0, ae - sys) * price;
     });
 
     rows.push({
@@ -9116,7 +9129,7 @@ function summaryData() {
          ไม่ known = "ไม่มีในระบบ" (ของไม่รู้ที่มา) */
       inRound: state.systemQty[key] !== undefined,
       known: !!state.products[key],
-      sys: sys, act: act, diff: act - sys, price: price,
+      sys: sys, act: ae, diff: ae - sys, actRaw: act, adj: (_adj || null), price: price,
       sold: Number(state.sold[key]) || 0,
       sysRaw: (state.systemQtyRaw[key] !== undefined ? (Number(state.systemQtyRaw[key]) || 0) : sys),
       scanQty: Number(state.scanQty[key]) || 0,
@@ -9147,12 +9160,13 @@ function loadCycleRaw(cid) {
         return { id: id, scans: r[0] || {}, reasons: r[1] || {} };
       });
     })),
-    loadCycleSold(cid)
+    loadCycleSold(cid),
+    loadCycleAdjust(cid)
   ]).then(function (res) {
     /* ⭐ หักขายที่ประตูรอบรวมด้วย ให้ตรงกับหน้าสรุปราย Job */
-    var raw = res[0] || {}, sold = res[2] || {}, should = {};
+    var raw = res[0] || {}, sold = res[2] || {}, adjust = res[3] || {}, should = {};
     Object.keys(raw).forEach(function (k) { should[k] = Math.max(0, (Number(raw[k]) || 0) - (Number(sold[k]) || 0)); });
-    return { sys: should, sysRaw: raw, sold: sold, jobs: res[1] };
+    return { sys: should, sysRaw: raw, sold: sold, adjust: adjust, jobs: res[1] };
   });
 }
 
@@ -9247,7 +9261,7 @@ function remarkEditableHere(key) {
 
 /* ทำให้หน้าตาเหมือน summaryData() เป๊ะ เพื่อให้ตาราง/กราฟ/Excel ใช้โค้ดชุดเดิมได้หมด
    manualMap ใส่หรือไม่ใส่ก็ได้ — ไม่ใส่แปลว่าไม่รู้ที่มา ให้ถือว่ามาจากการยิงทั้งหมด */
-function summaryDataFrom(sysMap, countMap, jobsPerSku, manualMap, sysRawMap, soldMap) {
+function summaryDataFrom(sysMap, countMap, jobsPerSku, manualMap, sysRawMap, soldMap, adjMap) {
   var priceField = state.priceField;
   var groups = { product: blankGroup(), notProduct: blankGroup(), total: blankGroup() };
   var keys = {};
@@ -9270,16 +9284,18 @@ function summaryDataFrom(sysMap, countMap, jobsPerSku, manualMap, sysRawMap, sol
     var price = Number(p[priceField]) || 0;
     var bucket = p.type === 'notProduct' ? 'notProduct' : 'product';
 
+    var _adj = (adjMap || {})[key];                                                     /* ⭐ v2.38 ปรับยิงจริงรายตัว */
+    var ae = (_adj && _adj.val != null) ? (Number(_adj.val) || 0) : act;
     [groups[bucket], groups.total].forEach(function (g) {
-      g.sysQty += sys; g.actQty += act; g.skuTotal++;
-      if (act === sys) g.skuMatch++; else if (act < sys) g.skuShort++; else g.skuOver++;
-      g.pcMatch += Math.min(sys, act);
-      g.pcShort += Math.max(0, sys - act);
-      g.pcOver += Math.max(0, act - sys);
+      g.sysQty += sys; g.actQty += ae; g.skuTotal++;
+      if (ae === sys) g.skuMatch++; else if (ae < sys) g.skuShort++; else g.skuOver++;
+      g.pcMatch += Math.min(sys, ae);
+      g.pcShort += Math.max(0, sys - ae);
+      g.pcOver += Math.max(0, ae - sys);
       g.sysValue += sys * price;
-      g.actValue += act * price;
-      g.shortValue += Math.max(0, sys - act) * price;
-      g.overValue += Math.max(0, act - sys) * price;
+      g.actValue += ae * price;
+      g.shortValue += Math.max(0, sys - ae) * price;
+      g.overValue += Math.max(0, ae - sys) * price;
     });
 
     var manual =Number((manualMap || {})[key]) || 0;
@@ -9290,7 +9306,7 @@ function summaryDataFrom(sysMap, countMap, jobsPerSku, manualMap, sysRawMap, sol
          known / inRound (ของมาผิดสาขา · ไม่มีในระบบ) จะว่างเปล่าเงียบ ๆ ตอนดูยอดรวม */
       inRound: sysMap[key] !== undefined,
       known: !!state.products[key],
-      sys: sys, act: act, diff: act - sys, price: price,
+      sys: sys, act: ae, diff: ae - sys, actRaw: act, adj: (_adj || null), price: price,
       sold: Number((soldMap || {})[key]) || 0,
       sysRaw: (sysRawMap && sysRawMap[key] != null) ? (Number(sysRawMap[key]) || 0) : sys,
       scanQty: act - manual, manualQty: manual,
@@ -9558,6 +9574,42 @@ function sumCardRow(r, kind, group) {
     if (locked) addBtn.title = blockedMessage();
     else addBtn.onclick = function (ev) { ev.stopPropagation(); addFromSummary(r, kind, group); };
     row.appendChild(addBtn);
+
+    /* ⭐ v2.38 ปรับ "ยิงจริง" รายตัว — กรณีขายหลังเด็กนับ/รีเช็ค ยอดเด็กยังเก็บเป็นหลักฐาน
+       เขียนที่ cycles/{cid}/adjust ไม่แตะยอดยิงของเด็ก · ปรับได้แม้ใบปิดแล้ว (ใช้ตอน reconcile ปลายวัน) */
+    if (r.adj) {
+      var badge = document.createElement('div');
+      badge.className = 'adjust-badge';
+      badge.setAttribute('data-adjusted', r.code || r.key);
+      badge.style.cssText = 'margin-top:10px;padding:8px 11px;background:#f3e8ff;border:1px solid #d8b4fe;border-radius:9px;color:#7c3aed;font-size:12.5px;line-height:1.5;';
+      var bl1 = document.createElement('div');
+      var b1 = document.createElement('b'); b1.textContent = '✏️ ปรับยิงจริงเป็น ' + fmtNum(r.act);
+      bl1.appendChild(b1);
+      bl1.appendChild(document.createTextNode('  (เด็กนับจริง ' + fmtNum(r.actRaw) + ' — เก็บเป็นหลักฐาน)'));
+      badge.appendChild(bl1);
+      var bl2 = document.createElement('div'); bl2.style.cssText = 'opacity:.85;margin-top:2px;';
+      bl2.textContent = 'เหตุผล: ' + (r.adj.reason || 'ไม่ระบุ') + (r.adj.by ? ' · โดย ' + r.adj.by : '');
+      badge.appendChild(bl2);
+      row.appendChild(badge);
+
+      var undoBtn = document.createElement('button');
+      undoBtn.type = 'button';
+      undoBtn.className = 'btn grey block sm';
+      undoBtn.style.marginTop = '6px';
+      undoBtn.setAttribute('data-unadjust', r.code || r.key);
+      undoBtn.textContent = '↩ ยกเลิกการปรับ (กลับไปใช้ยอดเด็กนับ ' + fmtNum(r.actRaw) + ')';
+      undoBtn.onclick = function (ev) { ev.stopPropagation(); clearActAdjust(r); };
+      row.appendChild(undoBtn);
+    } else {
+      var adjBtn = document.createElement('button');
+      adjBtn.type = 'button';
+      adjBtn.className = 'btn ghost block sm';
+      adjBtn.style.marginTop = '8px';
+      adjBtn.setAttribute('data-adjustact', r.code || r.key);
+      adjBtn.textContent = '✏️ ปรับยิงจริง (เช่น ขายหลังนับ)';
+      adjBtn.onclick = function (ev) { ev.stopPropagation(); openAdjustForm(r, this); };
+      row.appendChild(adjBtn);
+    }
   }
     return row;
 }
@@ -9570,6 +9622,91 @@ function sumCardRow(r, kind, group) {
    ทางแก้เดิมคือให้คนไปเปิดใบนั้นก่อน ซึ่งรอบใหญ่มีสิบกว่าใบ ไล่เปิดทีละใบไม่ไหว
 
    ตอนนี้จึงโชว์ยอดแยกรายใบให้เลือกหักเองได้ตรงจุด */
+
+/* ---------- ⭐ v2.38 ปรับ "ยิงจริง" รายตัว (ออปชัน 2: แอดมินปรับทีละ SKU) ----------
+   เคส "ขายหลังเด็กนับ": เด็กนับ 12 ถูก ณ ตอนนับ แล้วมีขายออก 3 ตัวหลังนับ ยอดจริงเหลือ 9 = Zort
+   แต่ระบบโชว์ผลต่าง +3 (เกินปลอม) เพราะเทียบยิงจริงดิบ 12 กับควรเหลือ 9
+   วิธีแก้ที่ปลอดภัยสุด: แอดมินปรับ "ยิงจริง" ของ SKU นั้นเป็น 9 พร้อมเหตุผล — เฉพาะตัวที่เป็นปัญหา
+   · ยอดเด็กนับ (12) ไม่ถูกแก้ เก็บเป็น actRaw หลักฐาน
+   · เก็บ val/reason/by/at/raw ที่ cycles/{cid}/adjust/{key} ไม่แตะ scan ของ Job (ปรับได้แม้ใบปิด)
+   · ae ที่ประตูเดียวจะหยิบค่าปรับไปแทน → ผลต่าง/สกอร์บอร์ด/Excel/ไฟล์ Zort ตรงกันหมดอัตโนมัติ */
+function openAdjustForm(r, btn) {
+  var row = btn.parentNode;
+  btn.style.display = 'none';
+  var box = document.createElement('div');
+  box.className = 'adjust-form';
+  box.setAttribute('data-adjustform', r.code || r.key);
+  box.style.cssText = 'margin-top:8px;padding:11px;border:1px dashed #14b8a6;border-radius:10px;background:#f0fdfa;';
+
+  var rl = document.createElement('div');
+  rl.style.cssText = 'font-size:12px;font-weight:700;margin-bottom:4px;';
+  rl.textContent = 'เหตุผลที่ปรับ';
+  box.appendChild(rl);
+  var sel = document.createElement('select');
+  sel.style.cssText = 'width:100%;padding:7px;border:1px solid #cbd5e1;border-radius:8px;margin-bottom:9px;font-size:13px;background:#fff;';
+  ['ขายหลังรีเช็ค', 'ของย้ายโซน', 'นับคลาดเคลื่อน', 'อื่นๆ'].forEach(function (o) {
+    var op = document.createElement('option'); op.value = o; op.textContent = o; sel.appendChild(op);
+  });
+  box.appendChild(sel);
+
+  var vl = document.createElement('div');
+  vl.style.cssText = 'font-size:12px;font-weight:700;margin-bottom:4px;';
+  vl.textContent = 'ยิงจริงใหม่ (เลขนี้คือตัวที่ใช้ปรับ Zort)';
+  box.appendChild(vl);
+  var inp = document.createElement('input');
+  inp.type = 'number'; inp.min = '0'; inp.value = String(r.sys);
+  inp.style.cssText = 'width:92px;padding:7px;border:1px solid #cbd5e1;border-radius:8px;font-size:16px;font-weight:800;text-align:center;';
+  box.appendChild(inp);
+  var hint = document.createElement('span');
+  hint.className = 'muted';
+  hint.style.cssText = 'font-size:11.5px;margin-left:9px;';
+  hint.textContent = 'เด็กนับ ' + fmtNum(r.actRaw) + ' · ควรเหลือ ' + fmtNum(r.sys);
+  box.appendChild(hint);
+
+  var bar = document.createElement('div');
+  bar.style.cssText = 'margin-top:11px;display:flex;gap:8px;';
+  var ok = document.createElement('button');
+  ok.type = 'button'; ok.className = 'btn sm'; ok.textContent = '✓ ยืนยันปรับ';
+  ok.onclick = function (ev) {
+    ev.stopPropagation();
+    var v = Number(inp.value);
+    if (!isFinite(v) || v < 0) { toast('กรอกจำนวนไม่ถูกต้อง', true); return; }
+    applyActAdjust(r, v, sel.value);
+  };
+  var cancel = document.createElement('button');
+  cancel.type = 'button'; cancel.className = 'btn grey sm'; cancel.textContent = 'ยกเลิก';
+  cancel.onclick = function (ev) { ev.stopPropagation(); box.remove(); btn.style.display = ''; };
+  bar.appendChild(ok); bar.appendChild(cancel);
+  box.appendChild(bar);
+  row.appendChild(box);
+}
+
+function applyActAdjust(r, val, reason) {
+  if (!hasPerm('adjustCount')) { toast(roleBlockMessage('ปรับยอดไม่ได้'), true); return; }
+  var cid = cycleOf(currentJob());
+  if (!cid) { toast('ไม่พบรอบนับของใบที่เปิดอยู่', true); return; }
+  var rec = { val: val, reason: reason || '', by: state.counter || 'ไม่ระบุ', at: Date.now(), raw: Number(r.actRaw) || 0 };
+  state.adjust[r.key] = rec;
+  var patch = {}; patch[r.key] = rec;
+  db.update('cycles/' + cid + '/adjust', patch);
+  state.cycleData = null;            /* ยอดรวม/เอกสาร/Excel/Zort ต้องคิดใหม่ */
+  dropCycleStats(cid);               /* สกอร์บอร์ด/ภาพรวมต้องคิดใหม่ */
+  toast('ปรับยิงจริง "' + (r.code || r.key) + '" เป็น ' + fmtNum(val) + ' แล้ว (เด็กนับ ' + fmtNum(rec.raw) + ' ยังอยู่เป็นหลักฐาน)');
+  if (typeof renderSummary === 'function') renderSummary();
+}
+
+function clearActAdjust(r) {
+  if (!hasPerm('adjustCount')) { toast(roleBlockMessage('ยกเลิกการปรับไม่ได้'), true); return; }
+  var cid = cycleOf(currentJob());
+  if (!cid) { toast('ไม่พบรอบนับของใบที่เปิดอยู่', true); return; }
+  delete state.adjust[r.key];
+  var patch = {}; patch[r.key] = null;
+  db.update('cycles/' + cid + '/adjust', patch);
+  state.cycleData = null;
+  dropCycleStats(cid);
+  toast('ยกเลิกการปรับ "' + (r.code || r.key) + '" แล้ว — กลับไปใช้ยอดเด็กนับ');
+  if (typeof renderSummary === 'function') renderSummary();
+}
 
 function jobCodeOf(id) { return (state.roundIndex[id] || {}).jobCode || id; }
 
@@ -11310,7 +11447,7 @@ function ensureCycleData() {
     var raw = buildCycleData(parts);
     state.cycleData = {
       cid: cid, raw: raw, at: Date.now(),
-      data: summaryDataFrom(raw.sys, raw.counts, raw.jobsPerSku, raw.manual, raw.sysRaw, raw.sold)
+      data: summaryDataFrom(raw.sys, raw.counts, raw.jobsPerSku, raw.manual, raw.sysRaw, raw.sold, raw.adjust)
     };
     return state.cycleData;
   });
@@ -12892,9 +13029,10 @@ function loadCycleStats(cid) {
   return Promise.all([
     loadCycleSystemQty(cid),
     Promise.all(ids.map(loadJobStats)),
-    loadCycleSold(cid)
+    loadCycleSold(cid),
+    loadCycleAdjust(cid)
   ]).then(function (res) {
-    var rawSys = res[0] || {}, parts = res[1] || [], soldMap = res[2] || {};
+    var rawSys = res[0] || {}, parts = res[1] || [], soldMap = res[2] || {}, adjMap = res[3] || {};
     /* ⭐ หักขาย → สกอร์บอร์ด/ภาพรวมใช้ "ควรเหลือ" ตรงกับหน้าสรุป */
     var sys = {};
     Object.keys(rawSys).forEach(function (k) { sys[k] = Math.max(0, (Number(rawSys[k]) || 0) - (Number(soldMap[k]) || 0)); });
@@ -12906,6 +13044,8 @@ function loadCycleStats(cid) {
       Object.keys(p.discarded || {}).forEach(function (k) { discarded[k] = 1; });
       if (p.lastTs > lastTs) lastTs = p.lastTs;
     });
+    /* ⭐ v2.38 แอดมินปรับยิงจริงรายตัว → ทับยอดนับ ให้สกอร์บอร์ด/ภาพรวมใช้ค่าหลังปรับ */
+    Object.keys(adjMap).forEach(function (k) { var a = adjMap[k]; if (a && a.val != null) counts[k] = Number(a.val) || 0; });
 
     var keys = {};
     Object.keys(sys).forEach(function (k) { keys[k] = 1; });
@@ -15320,7 +15460,7 @@ function exportJobsExcel(ids, cycleLabel) {
     var byCycle = {};
     parts.forEach(function (p) {
       var cid = cycleOf(state.roundIndex[p.id]);
-      var c = byCycle[cid] || (byCycle[cid] = { cid: cid, sys: p.sys, counts: {},
+      var c = byCycle[cid] || (byCycle[cid] = { cid: cid, sys: p.sys, counts: {}, adjust: p.adjust || {},
                                                 foundZones: {}, stockTypes: {}, jobs: [] });
       Object.keys(p.counts).forEach(function (k) { c.counts[k] = (c.counts[k] || 0) + p.counts[k]; });
       Object.keys(p.foundZones || {}).forEach(function (k) {
@@ -15348,7 +15488,7 @@ function exportJobsExcel(ids, cycleLabel) {
     cids.forEach(function (cid) {
       var c = byCycle[cid];
       var job0 = state.roundIndex[c.jobs[0].id] || {};
-      var d = summaryDataFrom(c.sys, c.counts, null);
+      var d = summaryDataFrom(c.sys, c.counts, null, null, null, null, c.adjust);
       var g = d.groups.total;
       var scanned = d.rows.filter(function (r) { return r.act !== 0; }).length;
       summary.push([
@@ -15448,10 +15588,16 @@ function loadJobsRaw(ids) {
     });
     return sysCache[cid];
   }
+  var adjCache = {};
+  function adjOf(cid) {
+    if (!adjCache[cid]) adjCache[cid] = loadCycleAdjust(cid);
+    return adjCache[cid];
+  }
   return Promise.all(ids.map(function (id) {
     return Promise.all([
       sysOf(cycleOf(state.roundIndex[id])),
-      db.get('rounds/' + id + '/scans')
+      db.get('rounds/' + id + '/scans'),
+      adjOf(cycleOf(state.roundIndex[id]))
     ]).then(function (res) {
       var counts = {};
       var foundZones = {};
@@ -15472,7 +15618,7 @@ function loadJobsRaw(ids) {
         sm[st] = (sm[st] || 0) + (Number(rec.delta) || 0);
       });
       return { id: id, sys: res[0] || {}, counts: counts,
-               foundZones: foundZones, stockTypes: stockTypes };
+               foundZones: foundZones, stockTypes: stockTypes, adjust: res[2] || {} };
     });
   }));
 }
@@ -16394,11 +16540,12 @@ function refreshZones() {
 function refreshSystemQty() {
   if (!state.roundId) return Promise.resolve();
   var id = state.roundId, cid = state.cycleId;
-  return Promise.all([loadCycleSystemQty(cid), loadCycleSold(cid)]).then(function (res) {
+  return Promise.all([loadCycleSystemQty(cid), loadCycleSold(cid), loadCycleAdjust(cid)]).then(function (res) {
     if (state.roundId !== id) return;
     var raw = res[0] || {}, sold = res[1] || {};
     state.systemQtyRaw = raw;
     state.sold = sold;
+    state.adjust = res[2] || {};
     /* ⭐ หัก "ขายออก" ที่ประตูเดียว → ทุกหน้าใช้ "ควรเหลือ" เหมือนกัน (ไม่แตะสูตรรายหน้า) */
     var should = {};
     Object.keys(raw).forEach(function (k) { should[k] = Math.max(0, (Number(raw[k]) || 0) - (Number(sold[k]) || 0)); });
@@ -16686,6 +16833,7 @@ function selectRound(id) {
   state.systemQty = {};
   state.systemQtyRaw = {};
   state.sold = {};
+  state.adjust = {};
   state.rechecks = {};
   state.recheckDraft = {};
   state.rcPhotoCache = {};
