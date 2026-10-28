@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.39.2">
+<meta name="version" content="2.40.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.39.2</title>
+<title>ISRD Stocktake v2.40.0</title>
 
 <style>
 :root{
@@ -2024,7 +2024,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.39.2';
+var APP_VERSION = '2.40.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -5129,7 +5129,7 @@ var ROLE_HELP = {
 var CAP_GROUPS = [
   { label: 'งานนับ', caps: [
     { key: 'scan',         label: 'ยิงบาร์โค้ด',           help: 'ยิงและใส่หมายเหตุใน Job ที่กำลังนับ' },
-    { key: 'seeSystemQty', label: 'เห็นยอดระบบตอนยิง',      help: 'ไม่ติ๊ก = นับแบบไม่เห็นเฉลย กันยิงให้ครบตามที่ระบบบอก' },
+    { key: 'seeSystemQty', label: 'เห็นยอดระบบ (ตอนยิง+รีเช็ค)', help: 'ไม่ติ๊ก = นับแบบไม่เห็นเฉลย (blind) กันยิง/รีเช็คให้ครบตามที่ระบบบอก · ติ๊ก = เห็นควรเหลือ/ยิงจริง/ผลต่าง (เหมาะกับเด็กคลัง)' },
     { key: 'createJob',    label: 'สร้าง Job',             help: 'เปิดรอบนับใหม่ของสาขา' },
     { key: 'closeJob',     label: 'ส่งตรวจสอบ / ปิด Job',   help: 'เปลี่ยนสถานะรอบนับ' },
     { key: 'approveRecheck', label: 'อนุมัติขอแก้รีเช็ค',     help: 'เปิดสิทธิ์ให้เด็กแก้ยอดรีเช็คที่ส่งคืนแล้วได้อีกครั้ง' }
@@ -14982,36 +14982,57 @@ function renderRecheckAdmin() {
     return;
   }
 
-  /* ⭐ v2.39 มอบงานเป็นช่วง — เร็วสำหรับหลายสิบ SKU (ไม่ต้องกดทีละตัว) */
+  /* ⭐ v2.40 มอบงานแบบ Filter ผลต่าง (เหมือน Excel): แตะค่าผลต่างจริง → เห็น SKU ทั้งหมด → มอบทั้งชุด */
   if (canManage) {
     var users = assignableUsers();
-    var inStyle = 'width:62px;text-align:center;padding:6px;border:1px solid #cbd5e1;border-radius:7px;font-size:14px';
-    var fromIn = el('input', { type: 'number', value: '-99', style: inStyle });
-    var toIn = el('input', { type: 'number', value: '-1', style: inStyle });
-    var userSel = el('select', { style: 'flex:1;min-width:120px;padding:7px;border:1px solid #cbd5e1;border-radius:7px;font-size:13.5px;background:#fff' });
-    userSel.appendChild(el('option', { value: '', text: users.length ? '— เลือกคน —' : '(ยังไม่มีผู้ใช้ในสาขานี้)' }));
-    users.forEach(function (u) { userSel.appendChild(el('option', { value: u, text: u })); });
-    userSel.appendChild(el('option', { value: '__unassign__', text: '— เอาออก (คืนงานกลาง) —' }));
-    var goBtn = el('button', { class: 'btn sm', text: '✅ มอบงาน' });
-    userSel.addEventListener('change', function () { goBtn.textContent = userSel.value === '__unassign__' ? '↩ คืนงานกลาง' : '✅ มอบงาน'; });
-    goBtn.onclick = function () {
-      if (!userSel.value) { toast('เลือกคนก่อน (หรือ "เอาออก" เพื่อคืนงานกลาง)', true); return; }
-      assignByRange(Number(fromIn.value), Number(toIn.value), userSel.value === '__unassign__' ? '' : userSel.value);
-    };
-    var quick = function (label, f, t) {
-      var b = el('button', { class: 'btn sm grey', style: 'flex:1', text: label });
-      b.onclick = function () { fromIn.value = String(f); toIn.value = String(t); toast('ตั้งช่วงแล้ว — เลือกคนแล้วกด "มอบงาน"'); };
-      return b;
-    };
-    body.appendChild(el('div', { class: 'card', style: 'margin-bottom:12px;background:#f8fafc' }, [
-      el('div', { style: 'font-weight:700;font-size:13.5px;margin-bottom:8px', text: '📋 มอบงานเป็นช่วง (เลือกช่วงผลต่าง → มอบให้คนเดียวทีเดียว)' }),
-      el('div', { class: 'row', style: 'align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:8px' }, [
-        el('span', { class: 'muted', style: 'font-size:13px', text: 'ผลต่างจาก' }), fromIn,
-        el('span', { class: 'muted', style: 'font-size:13px', text: 'ถึง' }), toIn ]),
-      el('div', { class: 'row', style: 'align-items:center;gap:7px;margin-bottom:8px' }, [ userSel, goBtn ]),
-      el('div', { class: 'row', style: 'gap:7px' }, [
-        quick('⬇ ของขาดทั้งหมด', -99999, -1),
-        quick('⬆ ของเกินทั้งหมด', 1, 99999) ]) ]));
+    var byDiff = {};
+    list.forEach(function (r) { if (!r._ghost && r.diff !== 0) { (byDiff[r.diff] || (byDiff[r.diff] = [])).push(r); } });
+    var diffVals = Object.keys(byDiff).map(Number).sort(function (a, b) { return a - b; });
+    if (diffVals.length) {
+      if (!state.rcDiffSel) state.rcDiffSel = {};
+      var panel = el('div', { class: 'card', style: 'margin-bottom:12px;background:#f8fafc' });
+      panel.appendChild(el('div', { style: 'font-weight:700;font-size:13.5px', text: '📋 มอบงานตามผลต่าง' }));
+      panel.appendChild(el('div', { class: 'muted', style: 'font-size:12px;margin:2px 0 8px', text: 'แตะค่าผลต่างที่ต้องการ (เลือกได้หลายค่า) → เห็น SKU ทั้งหมด → มอบทั้งชุด' }));
+      var chips = el('div', { style: 'display:flex;flex-wrap:wrap;gap:6px;margin-bottom:9px' });
+      var selKeys = [], selRows = [];
+      diffVals.forEach(function (d) {
+        var on = !!state.rcDiffSel[d], grp = byDiff[d];
+        var chip = el('button', { class: 'btn sm' + (on ? '' : ' grey'), style: 'padding:5px 11px', text: (d > 0 ? '+' : '') + d + ' · ' + fmtNum(grp.length) + ' SKU' });
+        chip.onclick = function () { state.rcDiffSel[d] = !on; renderRecheckAdmin(); };
+        chips.appendChild(chip);
+        if (on) grp.forEach(function (r) { selKeys.push(r.key); selRows.push(r); });
+      });
+      panel.appendChild(chips);
+      var pick = function (label, fn) { var b = el('button', { class: 'btn sm grey', style: 'flex:1', text: label }); b.onclick = fn; return b; };
+      panel.appendChild(el('div', { class: 'row', style: 'gap:6px;margin-bottom:10px' }, [
+        pick('เลือกของขาด', function () { diffVals.forEach(function (d) { if (d < 0) state.rcDiffSel[d] = true; }); renderRecheckAdmin(); }),
+        pick('เลือกของเกิน', function () { diffVals.forEach(function (d) { if (d > 0) state.rcDiffSel[d] = true; }); renderRecheckAdmin(); }),
+        pick('ล้าง', function () { state.rcDiffSel = {}; renderRecheckAdmin(); }) ]));
+      if (selKeys.length) {
+        var box = el('div', { style: 'max-height:210px;overflow:auto;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:5px 10px;margin-bottom:10px' });
+        selRows.sort(function (a, b) { return a.diff - b.diff || String(a.code).localeCompare(String(b.code), 'th'); }).forEach(function (r) {
+          box.appendChild(el('div', { style: 'display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 0;border-bottom:1px dashed #f1f5f9;font-size:12.5px' }, [
+            el('div', {}, [ el('span', { style: 'font-weight:600', text: r.code }), el('span', { class: 'muted', style: 'margin-left:6px', text: r.name || '' }) ]),
+            el('span', { class: 'badge ' + (r.diff > 0 ? 'warn' : 'red'), style: 'font-size:11px', text: (r.diff > 0 ? '+' : '') + r.diff }) ]));
+        });
+        panel.appendChild(box);
+        var uSel = el('select', { style: 'flex:1;min-width:120px;padding:7px;border:1px solid #cbd5e1;border-radius:7px;font-size:13.5px;background:#fff' });
+        uSel.appendChild(el('option', { value: '', text: users.length ? '— เลือกคน —' : '(ยังไม่มีผู้ใช้ในสาขานี้)' }));
+        users.forEach(function (u) { uSel.appendChild(el('option', { value: u, text: u })); });
+        uSel.appendChild(el('option', { value: '__unassign__', text: '— เอาออก (คืนงานกลาง) —' }));
+        var gBtn = el('button', { class: 'btn sm', text: '✅ มอบ ' + fmtNum(selKeys.length) + ' SKU' });
+        uSel.addEventListener('change', function () { gBtn.textContent = (uSel.value === '__unassign__' ? '↩ คืนงานกลาง ' : '✅ มอบ ') + fmtNum(selKeys.length) + ' SKU'; });
+        gBtn.onclick = function () {
+          if (!uSel.value) { toast('เลือกคนก่อน (หรือ "เอาออก" เพื่อคืนงานกลาง)', true); return; }
+          assignKeys(selKeys.slice(), uSel.value === '__unassign__' ? '' : uSel.value);
+          state.rcDiffSel = {};
+        };
+        panel.appendChild(el('div', { class: 'row', style: 'gap:7px' }, [ uSel, gBtn ]));
+      } else {
+        panel.appendChild(el('div', { class: 'muted', style: 'font-size:12.5px;text-align:center;padding:3px', text: '↑ แตะค่าผลต่างด้านบนเพื่อเลือก SKU' }));
+      }
+      body.appendChild(panel);
+    }
   }
 
   /* ⭐ v2.39 แผงติดตามรายคน — ค้างที่ใคร กี่ SKU · แตะการ์ดคนกางดู SKU ที่ค้าง + Location */
@@ -15066,6 +15087,8 @@ function renderRecheckAdmin() {
     }
   }
 
+  body.appendChild(rcSearchBox());
+
   list.sort(function (a, b) { return String(a.code).localeCompare(String(b.code), 'th'); });
 
   /* ⭐ v2.38.2 แยก 3 สถานะกันลายตา + ไม่ซ่อน action ที่ยังค้าง:
@@ -15107,6 +15130,7 @@ function renderRecheckAdmin() {
   }
 
   if (canManage) body.appendChild(rcZortCard());
+  rcApplySearch(body);
 }
 
 /* ====== เฟส 3: สร้างไฟล์ปรับยอดเข้า Zort (v2.37.5) ======
@@ -15203,6 +15227,7 @@ function rcZortCard() {
 
 function rcAdminCard(r, it, canManage) {
   var k = r.key, card = el('div', { class: 'card', style: 'margin-bottom:10px' });
+  card.setAttribute('data-sku', r.code || k); card.setAttribute('data-name', r.name || '');
   var badge = r.diff > 0 ? el('span', { class: 'badge warn', text: 'เกิน ' + r.diff })
     : (r.diff < 0 ? el('span', { class: 'badge red', text: 'ขาด ' + Math.abs(r.diff) })
       : el('span', { class: 'badge ok', text: 'ตรง' }));
@@ -15288,6 +15313,22 @@ function rcThumb(k, at) {
   return img;
 }
 
+/* ⭐ v2.40 ช่องค้นหา SKU/ชื่อ — กรองด้วย DOM (ซ่อน/แสดงการ์ด) ไม่ re-render ทั้งหน้า → โฟกัสไม่หลุดตอนพิมพ์ */
+function rcSearchBox() {
+  var inp = el('input', { type: 'text', value: state.rcSearch || '', placeholder: '🔍 ค้นหา SKU / ชื่อสินค้า',
+    style: 'width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px;margin-bottom:10px;box-sizing:border-box;font-size:14px' });
+  inp.addEventListener('input', function () { state.rcSearch = inp.value; rcApplySearch($('recheckBody')); });
+  return inp;
+}
+function rcApplySearch(container) {
+  if (!container) return;
+  var q = (state.rcSearch || '').trim().toLowerCase();
+  Array.prototype.forEach.call(container.querySelectorAll('[data-sku]'), function (c) {
+    var hay = (c.getAttribute('data-sku') + ' ' + (c.getAttribute('data-name') || '')).toLowerCase();
+    c.style.display = (!q || hay.indexOf(q) >= 0) ? '' : 'none';
+  });
+}
+
 /* ---------- ฝั่งเด็กหน้าร้าน ---------- */
 function renderRecheckScanner(admin) {
   var body = $('recheckBody'), rc = rcMap(), draft = state.recheckDraft, keys = Object.keys(rc);
@@ -15328,6 +15369,7 @@ function renderRecheckScanner(admin) {
   body.appendChild(el('div', { class: 'stats', style: 'margin-bottom:12px' }, [
     mkStat(pendingKeys.length, 'ต้องรีเช็ค', '#b45309', 'pending'),
     mkStat(doneKeys.length, 'ส่งคืนแล้ว', '#059669', 'done')]));
+  body.appendChild(rcSearchBox());
 
   var show = (filter === 'done' ? doneKeys : pendingKeys).slice().sort();
   if (!show.length) {
@@ -15335,13 +15377,17 @@ function renderRecheckScanner(admin) {
       text: filter === 'done' ? 'ยังไม่มีรายการที่ส่งคืน — แตะ "ต้องรีเช็ค" เพื่อดูงานที่เหลือ' : '🎉 รีเช็คครบทุกรายการแล้ว' })]));
     return;
   }
-  show.forEach(function (k) { body.appendChild(rcScannerCard(k, rc[k], draft[k])); });
+  var tByKey = {};
+  if (hasPerm('seeSystemQty')) { try { summaryData().rows.forEach(function (rr) { tByKey[rr.key] = rr; }); } catch (e) {} }
+  show.forEach(function (k) { body.appendChild(rcScannerCard(k, rc[k], draft[k], tByKey[k])); });
+  rcApplySearch(body);
 }
 
-function rcScannerCard(k, it, dr) {
+function rcScannerCard(k, it, dr, r) {
   var editing = dr || !(it.qty != null && it.qty !== '');
   dr = dr || {};
   var card = el('div', { class: 'card', style: 'margin-bottom:10px' });
+  card.setAttribute('data-sku', k); card.setAttribute('data-name', it.name || '');
   card.appendChild(el('div', { class: 'row', style: 'justify-content:space-between;align-items:flex-start' }, [
     el('div', {}, [el('div', { style: 'font-weight:800;font-size:16px', text: k }),
       el('div', { class: 'muted', style: 'font-size:13px', text: it.name || '' })]),
@@ -15354,6 +15400,8 @@ function rcScannerCard(k, it, dr) {
   var _fz = (state.foundZones && state.foundZones[k]) ? Object.keys(state.foundZones[k]).sort().join(', ') : '';
   if (_fz) _loc.push('โซนที่เก็บ ' + _fz);
   if (_loc.length) card.appendChild(el('div', { class: 'muted', style: 'font-size:12.5px;margin:4px 0 2px;color:#475569', text: _loc.join('  ·  ') }));
+  /* ⭐ v2.40 เด็กคลังที่มีสิทธิ์ seeSystemQty เห็นเป้าในรีเช็ค · เด็กหน้าร้าน (scan อย่างเดียว) ไม่เห็น (blind count) */
+  if (r && hasPerm('seeSystemQty')) card.appendChild(el('div', { style: 'font-size:12.5px;margin:2px 0;color:#334155;font-weight:600', text: 'ควรเหลือ (ระบบ) ' + fmtNum(r.sys) + ' · ยิงจริง ' + fmtNum(r.act) + ' · ผลต่าง ' + (r.diff > 0 ? '+' : '') + fmtNum(r.diff) }));
 
   if (editing) {
     var qInput = el('input', { type: 'number', inputmode: 'numeric', min: '0', placeholder: '?',
@@ -15428,31 +15476,36 @@ function unassignPending(name) {
   renderRecheck(true);
 }
 
-/* มอบงานเป็นช่วงผลต่าง (diff from..to) ให้คนเดียว — ส่งรีเช็คให้เลยถ้ายังไม่ส่ง + ตั้ง assignTo
-   assignee '' = เอาการมอบออก (คืนเป็นงานกลาง) · เขียน rounds/{rid}/rechecks/{sku}/assignTo (admin เท่านั้นตาม Rules) */
-function assignByRange(from, to, assignee) {
+/* มอบ/ปลดงานรีเช็คตาม "รายการ SKU" ที่เลือก — ส่งรีเช็คให้เลยถ้ายังไม่ส่ง + ตั้ง assignTo
+   assignee '' = ปลดการมอบ (คืนงานกลาง): แตะเฉพาะที่มอบไว้แล้ว+ยังไม่ส่งคืน ไม่ส่งรีเช็คใหม่ · เขียน admin เท่านั้นตาม Rules */
+function assignKeys(keys, assignee) {
   if (!requirePerm('adjustCount', 'มอบงานไม่ได้')) return;
   if (!rcRoundCounting()) { toast('รอบนี้ปิดแล้ว มอบงานไม่ได้', true); return; }
-  var rid = state.roundId, rc = rcMap(), rows = summaryData().rows;
+  var rid = state.roundId, rc = rcMap(), rows = summaryData().rows, nameOf = {};
+  rows.forEach(function (r) { nameOf[r.key] = r.name || r.key; });
   var now = Date.now(), by = state.counter || 'ไม่ระบุ', p = {}, n = 0;
-  rows.forEach(function (r) {
-    if (r._ghost || r.diff === 0 || r.diff < from || r.diff > to) return;
-    var k = r.key, nm = r.name || k;
-    /* ⭐ v2.39.2 โหมดปลด (assignee ว่าง) ต้องไม่ "ส่งรีเช็คใหม่" และไม่แตะของที่ส่งคืนแล้ว — ตรงกับ unassignPending
-       กันแอดมินเผลอส่งของขาดทั้งช่วงให้เด็กไปนับโดยไม่ตั้งใจ (CC จับ) */
+  (keys || []).forEach(function (k) {
     if (!assignee) {
       if (!rc[k]) return;                                       // ยังไม่เคยส่ง = ไม่มีป้ายให้ปลด (ห้ามส่งใหม่)
+      if (!rc[k].assignTo) return;                              // ไม่มีป้ายอยู่แล้ว = ไม่นับ
       if (rc[k].qty != null && rc[k].qty !== '') return;        // ส่งคืนแล้ว = คงป้ายเป็นประวัติ
     }
+    var nm = nameOf[k] || k;
     if (!rc[k]) { p[k + '/name'] = nm; p[k + '/sentBy'] = by; p[k + '/sentAt'] = now; rc[k] = { name: nm, sentBy: by, sentAt: now }; }
     p[k + '/assignTo'] = assignee || null;
     if (rc[k]) { if (assignee) rc[k].assignTo = assignee; else delete rc[k].assignTo; }
     n++;
   });
-  if (!n) { toast(assignee ? 'ไม่มี SKU ที่ผลต่างอยู่ในช่วงนี้' : 'ไม่มีงานที่มอบไว้ในช่วงนี้', true); return; }
+  if (!n) { toast(assignee ? 'ไม่มี SKU ที่เลือก' : 'ไม่มีงานที่มอบไว้ในชุดนี้', true); return; }
   enqueueWrite('rounds/' + rid + '/rechecks', p);
   toast(assignee ? ('มอบ ' + fmtNum(n) + ' SKU ให้ ' + assignee + ' แล้ว') : ('ปลดการมอบ ' + fmtNum(n) + ' SKU (คืนเป็นงานกลาง)'));
   renderRecheck(true);
+}
+
+/* มอบตามช่วงผลต่าง (ยังใช้โดยเทส/ภายใน) — รวบ keys ในช่วงแล้วส่งเข้า assignKeys */
+function assignByRange(from, to, assignee) {
+  var keys = summaryData().rows.filter(function (r) { return !r._ghost && r.diff !== 0 && r.diff >= from && r.diff <= to; }).map(function (r) { return r.key; });
+  assignKeys(keys, assignee);
 }
 
 /* ⭐ v2.38.2 ส่งรีเช็คทีเดียวหลาย SKU — เขียนรวดเดียว (enqueueWrite ก้อนเดียว) แล้ว render ครั้งเดียว */
