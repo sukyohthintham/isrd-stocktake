@@ -701,6 +701,52 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
   check('[SC3] stray + qty=null + ไม่มีร่าง/คำขอ → ซ่อน (ขยะหลุดรอบ v2.41.6)', !rSC.seen.XJNKE, rSC.seen);
   check('[SC4] ไม่ stray (A001) → เห็นปกติ', rSC.seen.A001, rSC.seen);
 
+  // ---------- [RP] v2.43.17 เปิดให้แก้ (reopenOk) = งานค้าง "ต้องรีเช็ค" ฝั่งเด็ก ----------
+  console.log('\n[RP] reopenOk กลับมาเป็นงานค้าง (v2.43.17)');
+  const rRP = await page.evaluate(() => {
+    var stats = function () {
+      var s = document.getElementById('recheckBody').querySelector('.stats');
+      return s ? Array.prototype.map.call(s.children, function (c) { return c.firstChild.textContent; }) : null;
+    };
+    var segN = function (label) {
+      var t = __btns().filter(function (x) { return x.indexOf(label) >= 0; })[0] || '';
+      var m = t.match(/\((\d+)\)/); return m ? Number(m[1]) : null;
+    };
+    var view = function (filter) {
+      state.rcScanFilter = filter; renderRecheckScanner(false);
+      return { text: __bodyText(), stats: stats(), mine: segN('งานฉัน'), mid: segN('งานกลาง'), all: segN('ทั้งหมด') };
+    };
+    var o = {};
+    // RP1 งานของฉัน: RPXA นับคืนแล้ว + reopenOk · RPXB นับคืนแล้วปกติ
+    __seed('scanner'); state.rcScanScope = 'mine';
+    state.rechecks = { RPXA: { name: 'เปิดให้แก้', sentAt: 1, qty: 5, by: 'หนึ่ง', at: 5, reopenOk: true, assignTo: 'หนึ่ง' },
+                       RPXB: { name: 'ส่งคืนปกติ', sentAt: 1, qty: 6, by: 'หนึ่ง', at: 5, assignTo: 'หนึ่ง' } };
+    window.__rcDb = state.rechecks;
+    o.p1 = view('pending'); o.d1 = view('done');
+    // RP2 งานกลาง (ไม่มี assignTo) + reopenOk
+    __seed('scanner'); state.rcScanScope = 'mine';
+    state.rechecks = { RPXM: { name: 'งานกลางเปิดแก้', sentAt: 1, qty: 26, by: 'เด็ก', at: 5, reopenOk: true },
+                       RPXN: { name: 'งานกลางส่งแล้ว', sentAt: 1, qty: 3, by: 'เด็ก', at: 5 } };
+    window.__rcDb = state.rechecks;
+    o.p2 = view('pending'); o.scope2 = state.rcScanScope;
+    // allowReopen ไม่เขียน assignTo
+    __seed('admin');
+    state.rechecks = { RPXM: { name: 'งานกลางเปิดแก้', sentAt: 1, qty: 26, by: 'เด็ก', at: 5, reopenReq: true } };
+    __calls.enqueue = []; allowReopen('RPXM');
+    o.allow = { patch: (__calls.enqueue[0] || {}).patch || null, it: rcMap().RPXM };
+    state.rcScanFilter = null; state.rcScanScope = null;
+    return o;
+  });
+  check('[RP1] นับคืนแล้ว + reopenOk → อยู่ "ต้องรีเช็ค" · stat ต้องรีเช็ค 1 / ส่งคืนแล้ว 1',
+    rRP.p1.text.indexOf('RPXA') >= 0 && rRP.p1.text.indexOf('RPXB') < 0 && rRP.p1.stats && rRP.p1.stats.join() === '1,1', rRP.p1);
+  check('[RP1] นับคืนแล้วไม่มี reopenOk (RPXB) ยังอยู่ "ส่งคืนแล้ว" · RPXA ไม่อยู่ในนั้น',
+    rRP.d1.text.indexOf('RPXB') >= 0 && rRP.d1.text.indexOf('RPXA') < 0, rRP.d1);
+  check('[RP1] ปุ่ม "งานฉัน" นับ reopenOk (1)', rRP.p1.mine === 1, rRP.p1);
+  check('[RP2] งานกลาง + reopenOk → seg งานกลาง 1 · ทั้งหมด 1 (ไม่หายทุก scope)', rRP.p2.mid === 1 && rRP.p2.all === 1, rRP.p2);
+  check('[RP2] การ์ด RPXM อยู่ "ต้องรีเช็ค" · stat ต้องรีเช็ค 1', rRP.p2.text.indexOf('RPXM') >= 0 && rRP.p2.stats && rRP.p2.stats[0] === '1', rRP.p2);
+  check('[RP2] allowReopen เขียนแค่ reopenOk ไม่เขียน assignTo · งานกลางยังไม่มีเจ้าของ',
+    !!rRP.allow.patch && Object.keys(rRP.allow.patch).join() === 'RPXM/reopenOk' && rRP.allow.it.reopenOk === true && !rRP.allow.it.assignTo, rRP.allow);
+
   // ---------- [L] v2.43.11 ใช้ยอดรีเช็ค = ล็อกยอดเป็น adjust (src=recheck) ----------
   // A001 ควรเหลือ 12 · เด็กนับ 9 · รีเช็คได้ 24 → ae ต้องยึด 24 แม้ยอดดิบเปลี่ยนทีหลัง
   console.log('\n[L] ล็อกยอดรีเช็คผ่าน adjust (v2.43.11)');

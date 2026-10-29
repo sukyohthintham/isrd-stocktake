@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.43.16">
+<meta name="version" content="2.43.17">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.43.16</title>
+<title>ISRD Stocktake v2.43.17</title>
 
 <style>
 :root{
@@ -2024,7 +2024,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.43.16';
+var APP_VERSION = '2.43.17';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -15576,7 +15576,7 @@ function renderRecheckScanner(admin) {
   var midKeys = keys.filter(function (k) { return !(rc[k] || {}).assignTo; });
   /* ⭐ v2.43.8 helpers ย้ายขึ้นก่อน seg — ให้ปุ่ม scope นับเฉพาะ "งานที่ต้องรีเช็คจริง" (ไม่รวม "ตรงแล้ว" / ส่งคืนแล้ว)
      ให้ตัวเลขบนปุ่มตรงกับการ์ด "ต้องรีเช็ค" */
-  var isPending = function (k) { var it = rc[k]; return !(it.qty != null && it.qty !== '') || draft[k]; };
+  var isPending = function (k) { var it = rc[k]; return !(it.qty != null && it.qty !== '') || draft[k] || !!it.reopenOk; };   /* ⭐ v2.43.17 "เปิดให้แก้" (reopenOk) = งานค้าง ต้องรีเช็ค ไม่ใช่ "ส่งคืนแล้ว" — เด็กจะเห็นเป็นงานค้างทันที */
   var _sumRows = {}; try { summaryData().rows.forEach(function (r) { _sumRows[r.key] = r; }); } catch (e) {}
   var _isOkNow = function (k) { var r = _sumRows[k]; return !!r && r.diff === 0; };
   var _okTest = function (k) { var it = rc[k]; return !(it.qty != null && it.qty !== '') && !draft[k] && _isOkNow(k); };
@@ -15930,6 +15930,7 @@ function allowReopen(k) {
   if (!requirePerm('approveRecheck', 'อนุมัติขอแก้รีเช็คไม่ได้')) return;
   if (!rcRoundCounting()) { toast('รอบนี้ปิดแล้ว อนุมัติไม่ได้', true); return; }
   var rid = state.roundId, pr = {}; pr[k + '/reopenOk'] = true;   /* ไม่เขียน reopenReq=false: ผู้มีแค่สิทธิ์ approveRecheck (ไม่มี scan) เขียน reopenReq ไม่ได้ จะทำให้ PATCH ตกทั้งก้อน · UI/Rules ดู reopenOk เป็นหลัก · submitRecheck ล้างทั้งคู่ตอนส่งใหม่ */
+  /* ⭐ v2.43.17 เปิดให้แก้ → คง assignTo เดิม (งานกลางก็คงเป็นงานกลาง ใครก็หยิบแก้) · การนับเป็น "ต้องรีเช็ค" ทำที่ isPending (รวม reopenOk) → โผล่ใน scope เดิมของมัน */
   enqueueWrite('rounds/' + rid + '/rechecks', pr);
   var it = rcMap()[k]; if (it) { it.reopenOk = true; }
   toast('เปิดสิทธิ์ให้เด็กแก้ไขแล้ว ✓');
