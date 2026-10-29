@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.43.5">
+<meta name="version" content="2.43.6">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.43.5</title>
+<title>ISRD Stocktake v2.43.6</title>
 
 <style>
 :root{
@@ -2024,7 +2024,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.43.5';
+var APP_VERSION = '2.43.6';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -15530,7 +15530,17 @@ function renderRecheckScanner(admin) {
       seg('mine', '👤 งานฉัน', mineKeys.length), seg('mid', '🧺 งานกลาง', midKeys.length), seg('all', 'ทั้งหมด', keys.length) ]));
   }
   var isPending = function (k) { var it = rc[k]; return !(it.qty != null && it.qty !== '') || draft[k]; };
-  var pendingKeys = vkeys.filter(isPending), doneKeys = vkeys.filter(function (k) { return !isPending(k); });
+  /* ⭐ v2.43.6 "ตรงแล้ว" = ยังไม่นับ + ผลต่างกลับมา 0 (เช่นหลัง re-import ยอดใหม่) — เด็กข้ามได้ ไม่ต้องรีเช็ค
+     ระบบรู้ diff จาก summaryData แม้เด็ก blind (ไม่เผยตัวเลขเป้า) · summaryData ว่าง/ยังไม่โหลด → okKeys ว่าง ไม่ false positive */
+  var _sumRows = {}; try { summaryData().rows.forEach(function (r) { _sumRows[r.key] = r; }); } catch (e) {}
+  var _isOkNow = function (k) { var r = _sumRows[k]; return !!r && r.diff === 0; };
+  /* ⭐ v2.43.6 "ตรงแล้ว" เฉพาะที่ "ยังไม่เคยส่งคืน" + "ไม่มีร่างที่กำลังแก้" — ไม่งั้นการ์ดที่เด็กขออนุมัติแก้ (reopen ตั้ง draft)
+     หรือพิมพ์จำนวนค้างไว้ แล้วบังเอิญ diff=0 จะหลุดไปกลุ่มเขียวที่ไม่มีช่องกรอก → แก้/ส่งใหม่ไม่ได้ */
+  var _okTest = function (k) { var it = rc[k]; return !(it.qty != null && it.qty !== '') && !draft[k] && _isOkNow(k); };
+  var _pendingAll = vkeys.filter(isPending);
+  var okKeys = _pendingAll.filter(_okTest);
+  var pendingKeys = _pendingAll.filter(function (k) { return !_okTest(k); });
+  var doneKeys = vkeys.filter(function (k) { return !isPending(k); });
   var filter = state.rcScanFilter === 'done' ? 'done' : 'pending';
 
   var mkStat = function (n, label, color, key) {
@@ -15564,9 +15574,23 @@ function renderRecheckScanner(admin) {
     }
     return;
   }
-  var tByKey = {};
-  if (hasPerm('seeSystemQty')) { try { summaryData().rows.forEach(function (rr) { tByKey[rr.key] = rr; }); } catch (e) {} }
-  show.forEach(function (k) { body.appendChild(rcScannerCard(k, rc[k], draft[k], tByKey[k])); });
+  show.forEach(function (k) { body.appendChild(rcScannerCard(k, rc[k], draft[k], hasPerm('seeSystemQty') ? _sumRows[k] : undefined)); });
+  /* ⭐ v2.43.6 กลุ่ม "ตรงแล้ว ไม่ต้องรีเช็ค" — เด็กเห็นว่าข้ามได้ (ยอดกลับมาตรงแล้ว) · ไม่ลบข้อมูล เผื่อผลต่างกลับมาก็เด้งกลับเป็นงานเอง */
+  if (filter === 'pending' && okKeys.length) {
+    var _okOpen = !!state.rcOkOpen;
+    var _okH = el('button', { class: 'btn sm block', style: 'margin:14px 0 6px;background:#dcfce7;color:#15803d;text-align:left;font-weight:700', text: (_okOpen ? '▼ ' : '▶ ') + '✅ ตรงแล้ว ไม่ต้องรีเช็ค (' + fmtNum(okKeys.length) + ')' });
+    _okH.onclick = function () { state.rcOkOpen = !_okOpen; renderRecheckScanner(admin); };
+    body.appendChild(_okH);
+    if (_okOpen) {
+      okKeys.slice().sort(function (a, b) { return locCompare(locationText(a), locationText(b)) || String(a).localeCompare(String(b), 'th'); }).forEach(function (k) {
+        var _it = rc[k], _lt = locationText(k);
+        body.appendChild(el('div', { class: 'card', 'data-sku': k, 'data-name': (_it.name || ''), style: 'margin-bottom:6px;background:#f0fdf4;border-color:#bbf7d0;padding:9px 12px' }, [
+          el('div', { style: 'font-weight:600;font-size:14px', text: k }),
+          el('div', { class: 'muted', style: 'font-size:12.5px', text: (_it.name || '') }),
+          el('div', { style: 'font-size:12px;color:#15803d;margin-top:2px', text: (_lt ? '📍 ' + _lt + ' · ' : '') + '✅ ยอดตรงแล้ว ข้ามได้' }) ]));
+      });
+    }
+  }
   rcApplySearch(body);
 }
 
