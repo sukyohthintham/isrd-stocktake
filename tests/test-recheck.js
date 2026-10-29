@@ -871,6 +871,59 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
   check('[RS5] ทุกตัวโดนเด็กส่งระหว่างกล่องเปิด → ไม่เขียน patch + toast เตือน',
     rRS5.d.patch === null && badToast(rRS5.d) && rRS5.d.rc.B002.qty === 7, rRS5.d);
 
+  // ---------- [RF] v2.43.20 ปุ่มส่งรีเช็คใหม่รายตัว → เปิดฟอร์มเลือกคนก่อน ----------
+  console.log('\n[RF] ฟอร์มเลือกคนก่อนส่งรีเช็คใหม่รายตัว (v2.43.20)');
+  const rRF = await page.evaluate(() => {
+    var origBulk = window.resendRecheckBulk, origOne = window.resendRecheck, calls = [];
+    window.resendRecheckBulk = function (keys, who) { calls.push({ fn: 'bulk', keys: keys, who: who }); };
+    window.resendRecheck = function (k) { calls.push({ fn: 'one', k: k }); };
+    var body = function () { return document.getElementById('recheckBody'); };
+    var btnBy = function (pred) { return Array.prototype.filter.call(body().querySelectorAll('button'), function (b) { return pred(b.textContent); })[0] || null; };
+    var cardBtn = function () { return btnBy(function (t) { return t.indexOf('🔁 ส่งรีเช็คใหม่อีกรอบ (ยังต่าง') === 0; }); };
+    var open = function () {
+      __seed('admin'); state.adjust = {};
+      state.users = { u1: { name: 'เด็กเอ', role: 'scanner', active: true, branches: ['B1'] },
+                      u2: { name: 'เด็กบี', role: 'scanner', active: true, branches: ['B1'] } };
+      state.rechecks = { A001: { name: 'ชื่อ A001', sentAt: 1, qty: 10, by: 'เด็ก', at: 5, applied: true, assignTo: 'เด็กเอ' } };
+      window.__rcDb = state.rechecks; state.rcAdminTab = 'done'; renderRecheckAdmin();
+      var b = cardBtn(); if (b) b.click(); return b;
+    };
+    var o = {};
+    try {
+      var b = open();
+      var chipTexts = Array.prototype.map.call(body().querySelectorAll('button'), function (x) { return x.textContent; });
+      var keep = btnBy(function (t) { return t === '↩ คงคนเดิม'; });
+      o.rf1 = { hadBtn: !!b, btnHidden: !!b && b.style.display === 'none', callsAfterClick: calls.length,
+                keep: !!keep, keepDefault: !!keep && !/\bgrey\b/.test(keep.className),
+                chipA: chipTexts.indexOf('เด็กเอ') >= 0, chipB: chipTexts.indexOf('เด็กบี') >= 0,
+                send: chipTexts.indexOf('✅ ส่งรีเช็คใหม่') >= 0, cancel: chipTexts.indexOf('ยกเลิก') >= 0 };
+      // RF2a เลือกเด็กบี → ส่ง
+      calls = []; btnBy(function (t) { return t === 'เด็กบี'; }).click();
+      var chipOn = !/\bgrey\b/.test(btnBy(function (t) { return t === 'เด็กบี'; }).className);
+      var keepOff = /\bgrey\b/.test(btnBy(function (t) { return t === '↩ คงคนเดิม'; }).className);
+      btnBy(function (t) { return t === '✅ ส่งรีเช็คใหม่'; }).click();
+      o.pick = { calls: calls.slice(), chipOn: chipOn, keepOff: keepOff };
+      // RF2b ไม่เลือก (คงคนเดิม) → ส่ง
+      open(); calls = []; btnBy(function (t) { return t === '✅ ส่งรีเช็คใหม่'; }).click();
+      o.keep = { calls: calls.slice() };
+      // RF2c ยกเลิก → ฟอร์มหาย ปุ่มกลับมา ไม่เรียกอะไร
+      var b2 = open(); calls = []; btnBy(function (t) { return t === 'ยกเลิก'; }).click();
+      o.cancel = { calls: calls.slice(), formGone: !btnBy(function (t) { return t === '✅ ส่งรีเช็คใหม่'; }), btnBack: !!b2 && b2.style.display === '' };
+    } finally { window.resendRecheckBulk = origBulk; window.resendRecheck = origOne; }
+    return o;
+  });
+  check('[RF1] กดปุ่มการ์ด → เปิดฟอร์ม ไม่ส่งทันที (ไม่เรียก resendRecheck / resendRecheckBulk) · ปุ่มเดิมซ่อน',
+    rRF.rf1.hadBtn && rRF.rf1.btnHidden && rRF.rf1.callsAfterClick === 0, rRF.rf1);
+  check('[RF1] ฟอร์มมี "↩ คงคนเดิม" (ค่าเริ่ม) + chip เด็กเอ/เด็กบี + "✅ ส่งรีเช็คใหม่" + "ยกเลิก"',
+    rRF.rf1.keep && rRF.rf1.keepDefault && rRF.rf1.chipA && rRF.rf1.chipB && rRF.rf1.send && rRF.rf1.cancel, rRF.rf1);
+  check('[RF2] เลือกเด็กบี → ส่ง → resendRecheckBulk(["A001"], ["เด็กบี"]) · chip ติด คงคนเดิมดับ',
+    rRF.pick.calls.length === 1 && rRF.pick.calls[0].fn === 'bulk' && JSON.stringify(rRF.pick.calls[0].keys) === '["A001"]'
+      && JSON.stringify(rRF.pick.calls[0].who) === '["เด็กบี"]' && rRF.pick.chipOn && rRF.pick.keepOff, rRF.pick);
+  check('[RF2] คงคนเดิม → ส่ง → resendRecheckBulk(["A001"], [])',
+    rRF.keep.calls.length === 1 && rRF.keep.calls[0].fn === 'bulk' && JSON.stringify(rRF.keep.calls[0].who) === '[]', rRF.keep);
+  check('[RF2] ยกเลิก → ฟอร์มหาย ปุ่มกลับมา ไม่เรียกอะไร', rRF.cancel.calls.length === 0 && rRF.cancel.formGone && rRF.cancel.btnBack, rRF.cancel);
+  check('[RF] resendRecheck รายตัวแบบเก่ายังอยู่ (ไม่ถูกลบ)', await page.evaluate(() => typeof resendRecheck === 'function'));
+
   // ---------- [L] v2.43.11 ใช้ยอดรีเช็ค = ล็อกยอดเป็น adjust (src=recheck) ----------
   // A001 ควรเหลือ 12 · เด็กนับ 9 · รีเช็คได้ 24 → ae ต้องยึด 24 แม้ยอดดิบเปลี่ยนทีหลัง
   console.log('\n[L] ล็อกยอดรีเช็คผ่าน adjust (v2.43.11)');

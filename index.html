@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.43.19">
+<meta name="version" content="2.43.20">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.43.19</title>
+<title>ISRD Stocktake v2.43.20</title>
 
 <style>
 :root{
@@ -2024,7 +2024,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.43.19';
+var APP_VERSION = '2.43.20';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -15481,7 +15481,7 @@ function rcAdminCard(r, it, canManage) {
     if (it.applied) {
       /* ⭐ v2.43.11 ใช้ยอดแล้ว = ล็อกยอด (adjust src=recheck) · ae=q เสมอ ไม่ถูกยอดดิบทับ */
       card.appendChild(el('div', { class: 'badge ok', style: 'margin-top:4px', text: '✓ ปรับยอดนับเป็น ' + fmtNum(q) + ' แล้ว (ล็อกยอดไว้)' }));
-      if (canManage && !match) card.appendChild(el('button', { class: 'btn sm block', style: 'margin-top:6px;background:#b45309;color:#fff', text: '🔁 ส่งรีเช็คใหม่อีกรอบ (ยังต่าง ' + (q - r.sys > 0 ? '+' : '') + fmtNum(q - r.sys) + ')', onclick: function () { resendRecheck(k); } }));
+      if (canManage && !match) card.appendChild(el('button', { class: 'btn sm block', style: 'margin-top:6px;background:#b45309;color:#fff', text: '🔁 ส่งรีเช็คใหม่อีกรอบ (ยังต่าง ' + (q - r.sys > 0 ? '+' : '') + fmtNum(q - r.sys) + ')', onclick: function () { openResendForm(k, r, this); } }));
     }
     else if (!r._ghost && canManage) card.appendChild(el('div', { class: 'row', style: 'gap:8px;margin-top:6px' }, [
       el('button', { class: 'btn sm', text: '✅ ใช้ยอดรีเช็คนี้ (ปรับยอดนับ)', onclick: function () { applyRecheck(k); } }),
@@ -15892,6 +15892,33 @@ function resendRecheckBulk(keys, assignees) {
 
 /* ⭐ v2.43.10 ส่งรีเช็คใหม่อีกรอบ — เคสใช้ยอดแล้วแต่ diff ยังไม่ 0 อยากให้เด็กนับซ้ำ
    ล้าง qty/applied/reopen ทั้งฐาน+จอ (null=ลบ field) · คง assignTo คนที่มอบไว้ · ไม่แตะยอดนับ (เด็กนับทับใหม่แล้ว apply ใหม่) */
+/* ⭐ v2.43.20 ฟอร์มเลือกคนก่อนส่งรีเช็คใหม่รายตัว (แทนเด้งส่งทันที) — คงคนเดิม หรือเลือกคนอื่น */
+function openResendForm(k, r, btn) {
+  var row = btn.parentNode;
+  btn.style.display = 'none';
+  var box = el('div', { style: 'margin-top:8px;padding:11px;border:1px dashed #f59e0b;border-radius:10px;background:#fff7ed' });
+  box.appendChild(el('div', { style: 'font-size:12.5px;font-weight:700;margin-bottom:6px;color:#b45309', text: '🔁 ส่งรีเช็คใหม่ — มอบให้ใครนับ?' }));
+  var users = assignableUsers();
+  var sel = null, chips = [];
+  var uc = el('div', { style: 'display:flex;flex-wrap:wrap;gap:6px;margin-bottom:9px' });
+  var mk = function (val, label) {
+    var c = el('button', { class: 'btn sm grey', style: 'padding:5px 11px', text: label });
+    c.addEventListener('click', function () { sel = val; chips.forEach(function (x) { x.el.className = 'btn sm' + (x.val === sel ? '' : ' grey'); }); });
+    chips.push({ el: c, val: val }); uc.appendChild(c); return c;
+  };
+  mk(null, '↩ คงคนเดิม');
+  users.forEach(function (u) { mk(u, u); });
+  chips[0].el.className = 'btn sm';   /* default = คงคนเดิม */
+  box.appendChild(uc);
+  if (!users.length) box.appendChild(el('div', { class: 'muted', style: 'font-size:12px;margin-bottom:8px', text: '(สาขานี้ยังไม่มีรายชื่อเด็ก — ส่งคงคนเดิมได้)' }));
+  var send = el('button', { class: 'btn sm block', style: 'background:#b45309;color:#fff', text: '✅ ส่งรีเช็คใหม่' });
+  send.addEventListener('click', function () { box.remove(); resendRecheckBulk([k], sel ? [sel] : []); });
+  var cancel = el('button', { class: 'btn sm grey block', style: 'margin-top:6px', text: 'ยกเลิก' });
+  cancel.addEventListener('click', function () { box.remove(); btn.style.display = ''; });
+  box.appendChild(send); box.appendChild(cancel);
+  row.appendChild(box);
+}
+
 function resendRecheck(k) {
   if (!requirePerm('adjustCount', 'ส่งรีเช็คใหม่ไม่ได้')) return;
   if (!rcRoundCounting()) { toast('รอบนี้ปิดแล้ว ส่งรีเช็คใหม่ไม่ได้', true); return; }
