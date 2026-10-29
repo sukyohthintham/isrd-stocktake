@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.43.10">
+<meta name="version" content="2.43.11">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.43.10</title>
+<title>ISRD Stocktake v2.43.11</title>
 
 <style>
 :root{
@@ -2024,7 +2024,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.43.10';
+var APP_VERSION = '2.43.11';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -9595,7 +9595,7 @@ function sumCardRow(r, kind, group) {
 
     /* ⭐ v2.38 ปรับ "ยิงจริง" รายตัว — กรณีขายหลังเด็กนับ/รีเช็ค ยอดเด็กยังเก็บเป็นหลักฐาน
        เขียนที่ cycles/{cid}/adjust ไม่แตะยอดยิงของเด็ก · ปรับได้แม้ใบปิดแล้ว (ใช้ตอน reconcile ปลายวัน) */
-    if (r.adj) {
+    if (r.adj && r.adj.src !== 'recheck') {
       var badge = document.createElement('div');
       badge.className = 'adjust-badge';
       badge.setAttribute('data-adjusted', r.code || r.key);
@@ -15445,8 +15445,8 @@ function rcAdminCard(r, it, canManage) {
         el('div', { class: 'muted', style: 'font-size:13px' + (match ? ';color:#059669' : ';color:#dc2626'),
           text: 'เทียบใหม่: ' + fmtNum(q) + ' vs ควรเหลือ ' + fmtNum(r.sys) + ' → ' + (match ? 'ตรงแล้ว' : 'ยังต่าง ' + (q - r.sys > 0 ? '+' : '') + fmtNum(q - r.sys)) })])]));
     if (it.applied) {
-      card.appendChild(el('div', { class: 'badge ok', style: 'margin-top:4px', text: '✓ ปรับยอดนับเป็น ' + fmtNum(q) + ' แล้ว' }));
-      /* ⭐ v2.43.10 ใช้ยอดแล้วแต่ยังต่าง → หัวหน้าส่งกลับให้เด็กรีเช็คใหม่อีกรอบได้ (ล้างยอดรีเช็คเดิม · ยอดนับที่ปรับไว้คงเดิม) */
+      /* ⭐ v2.43.11 ใช้ยอดแล้ว = ล็อกยอด (adjust src=recheck) · ae=q เสมอ ไม่ถูกยอดดิบทับ */
+      card.appendChild(el('div', { class: 'badge ok', style: 'margin-top:4px', text: '✓ ปรับยอดนับเป็น ' + fmtNum(q) + ' แล้ว (ล็อกยอดไว้)' }));
       if (canManage && !match) card.appendChild(el('button', { class: 'btn sm block', style: 'margin-top:6px;background:#b45309;color:#fff', text: '🔁 ส่งรีเช็คใหม่อีกรอบ (ยังต่าง ' + (q - r.sys > 0 ? '+' : '') + fmtNum(q - r.sys) + ')', onclick: function () { resendRecheck(k); } }));
     }
     else if (!r._ghost && canManage) card.appendChild(el('div', { class: 'row', style: 'gap:8px;margin-top:6px' }, [
@@ -15470,7 +15470,7 @@ function rcAdminCard(r, it, canManage) {
   /* ⭐ v2.38 ปรับ "ยิงจริง" เอง — เคสขายหลังเด็กนับ (เด็กนับถูกแล้ว ไม่ต้องให้นับใหม่)
      แอดมินตั้งเลขหลังขายเอง + เหตุผล · ยอดเด็กนับเดิมเก็บเป็นหลักฐาน (actRaw) · ไหลเข้าไฟล์ Zort อัตโนมัติ */
   if (!r._ghost && canManage) {
-    if (r.adj) {
+    if (r.adj && r.adj.src !== 'recheck') {
       card.appendChild(el('div', { style: 'margin-top:10px;padding:8px 11px;background:#f3e8ff;border:1px solid #d8b4fe;border-radius:9px;color:#7c3aed;font-size:12.5px;line-height:1.5' }, [
         el('div', {}, [ el('b', { text: '✏️ ปรับยิงจริงเป็น ' + fmtNum(r.act) }),
                         el('span', { text: '  (เด็กนับจริง ' + fmtNum(r.actRaw) + ' — เก็บเป็นหลักฐาน)' }) ]),
@@ -15826,6 +15826,7 @@ function resendRecheck(k) {
     p[k + '/qty'] = null; p[k + '/by'] = null; p[k + '/at'] = null;
     p[k + '/applied'] = null; p[k + '/reopenOk'] = null; p[k + '/reopenReq'] = null;
     enqueueWrite('rounds/' + rid + '/rechecks', p);
+    unlockRecheckAdjust(k);   /* ⭐ v2.43.11 ส่งใหม่ = ล้างค่าล็อกยอดเดิม */
     var nw = { name: name, sentBy: (state.counter || 'ไม่ระบุ'), sentAt: now };
     if (old.assignTo) nw.assignTo = old.assignTo;   /* คงคนที่มอบไว้ */
     rcMap()[k] = nw;
@@ -15909,10 +15910,36 @@ function cancelRecheck(k) {
     var rid = state.roundId;
     var p = {}; p[k] = null; enqueueWrite('rounds/' + rid + '/rechecks', p);
     var pp = {}; pp[k] = null; enqueueWrite('recheckPhotos/' + rid, pp);
+    unlockRecheckAdjust(k);   /* ⭐ v2.43.11 ถอนรีเช็ค = ล้างค่าล็อกยอดเดิม */
     delete rcMap()[k]; if (state.recheckDraft) delete state.recheckDraft[k];
     toast('ถอนรีเช็ค ' + k + ' แล้ว');
     renderRecheck(true);
   });
+}
+
+/* ⭐ v2.43.11 ล็อกยอด "ใช้ยอดรีเช็ค" เป็นค่า adjust (src=recheck) → ae ยึดค่านี้เสมอ
+   ไม่ถูกยอดดิบ (ยิง/กรอก) ที่เปลี่ยนทีหลังทับ · ยึดการปรับล่าสุด: ปรับใหม่เขียนทับ adjust เดิม */
+function lockRecheckAdjust(k, qty) {
+  var cid = cycleOf(currentJob());
+  if (!cid) return false;
+  var rec = { val: Number(qty) || 0, reason: 'ใช้ยอดรีเช็ค', by: state.counter || 'ไม่ระบุ', at: Date.now(), raw: Number(qty) || 0, src: 'recheck' };
+  if (!state.adjust) state.adjust = {};
+  state.adjust[k] = rec;
+  var patch = {}; patch[k] = rec;
+  db.update('cycles/' + cid + '/adjust', patch);
+  state.cycleData = null; dropCycleStats(cid);
+  return true;
+}
+/* ล้างค่าล็อกของตัวนี้ — เฉพาะที่มาจากรีเช็ค (src=recheck) ไม่ยุ่งค่าปรับ "ขายหลังนับ" · ใช้ตอนส่งรีเช็คใหม่/ถอน */
+function unlockRecheckAdjust(k) {
+  var cur = (state.adjust || {})[k];
+  if (!cur || cur.src !== 'recheck') return;
+  var cid = cycleOf(currentJob());
+  if (!cid) return;
+  delete state.adjust[k];
+  var patch = {}; patch[k] = null;
+  db.update('cycles/' + cid + '/adjust', patch);
+  state.cycleData = null; dropCycleStats(cid);
 }
 
 function applyRecheck(k) {
@@ -15925,6 +15952,7 @@ function applyRecheck(k) {
   if (!found) { toast('ไม่พบ SKU นี้ในรอบ', true); return; }
   var delta = qn - cur;
   if (delta !== 0) writeScan(k, delta, 'manual', 'รีเช็ค: ปรับยอดนับเป็น ' + qn + ' (เดิม ' + cur + ')');
+  lockRecheckAdjust(k, qn);   /* ⭐ v2.43.11 ล็อกยอด = ยึดค่ารีเช็คล่าสุด */
   var p = {}; p[k + '/applied'] = true; enqueueWrite('rounds/' + state.roundId + '/rechecks', p);
   it.applied = true;
   toast('ปรับยอดนับ ' + k + ' เป็น ' + qn + ' แล้ว ✓');
@@ -15937,7 +15965,7 @@ function applyRecheckBulk(keys) {
   if (!rcRoundCounting()) { toast('รอบนี้ปิดแล้ว ปรับยอดไม่ได้', true); return; }
   var rows = summaryData().rows, actBy = {};
   rows.forEach(function (r) { actBy[r.key] = r.act; });
-  var rc = rcMap(), p = {}, n = 0;
+  var rc = rcMap(), p = {}, n = 0, adjPatch = {}, _now = Date.now(), _cid = cycleOf(currentJob());
   (keys || []).forEach(function (k) {
     var it = rc[k]; if (!it) return;
     var qn = Number(it.qty); if (isNaN(qn)) return;
@@ -15946,8 +15974,10 @@ function applyRecheckBulk(keys) {
     var delta = qn - actBy[k];
     if (delta !== 0) writeScan(k, delta, 'manual', 'รีเช็ค: ปรับยอดนับเป็น ' + qn + ' (เดิม ' + actBy[k] + ')');
     p[k + '/applied'] = true; it.applied = true; n++;
+    if (_cid) { var rec = { val: qn, reason: 'ใช้ยอดรีเช็ค', by: state.counter || 'ไม่ระบุ', at: _now, raw: qn, src: 'recheck' }; if (!state.adjust) state.adjust = {}; state.adjust[k] = rec; adjPatch[k] = rec; }
   });
   if (!n) { toast('ไม่มีรายการให้ใช้ยอด', true); return; }
+  if (_cid && Object.keys(adjPatch).length) { db.update('cycles/' + _cid + '/adjust', adjPatch); state.cycleData = null; dropCycleStats(_cid); }   /* ⭐ v2.43.11 ล็อกยอดรวดเดียว */
   enqueueWrite('rounds/' + state.roundId + '/rechecks', p);
   toast('ใช้ยอดรีเช็ค ' + fmtNum(n) + ' รายการแล้ว ✓');
   renderRecheck(true);

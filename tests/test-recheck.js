@@ -415,6 +415,75 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
       && rR.patch['A001/reopenReq'] === null && !('A001/assignTo' in rR.patch) && rR.patch['A001/sentAt'] > 1,
     { path: rR.path, patch: rR.patch });
 
+  // ---------- [L] v2.43.11 ใช้ยอดรีเช็ค = ล็อกยอดเป็น adjust (src=recheck) ----------
+  // A001 ควรเหลือ 12 · เด็กนับ 9 · รีเช็คได้ 24 → ae ต้องยึด 24 แม้ยอดดิบเปลี่ยนทีหลัง
+  console.log('\n[L] ล็อกยอดรีเช็คผ่าน adjust (v2.43.11)');
+  const rL = await page.evaluate(async () => {
+    var orig = db.update, upd = [];
+    db.update = function (path, patch) { upd.push({ path: path, patch: JSON.parse(JSON.stringify(patch)) }); return Promise.resolve(); };
+    var aeOf = function (k) { var rows = summaryData().rows; for (var i = 0; i < rows.length; i++) if (rows[i].key === k) return rows[i].act; return null; };
+    var adjUpd = function () { return upd.filter(function (u) { return u.path === 'cycles/C1/adjust'; }); };
+    var out = {};
+    try {
+      // L1 apply qty=24
+      __seed('admin'); state.adjust = {};
+      state.rechecks = { A001: { name: 'ชื่อ A001', sentAt: 1, qty: 24, by: 'เด็ก', at: 5 } };
+      upd = []; applyRecheck('A001');
+      var a = state.adjust.A001 || {};
+      out.l1 = { val: a.val, src: a.src, ae: aeOf('A001'), upd: adjUpd() };
+      // L2 ยอดดิบเปลี่ยนเป็น 99 หลัง apply → ae ยังเป็น 24
+      state.counts.A001 = 99; state.scanQty.A001 = 99;
+      out.l2 = { ae: aeOf('A001') };
+      // L3 resend → ปลดล็อก · apply ใหม่ได้ค่าใหม่
+      upd = []; resendRecheck('A001');
+      await new Promise(function (res) { setTimeout(res, 30); });
+      out.l3a = { has: 'A001' in state.adjust, ae: aeOf('A001'), upd: adjUpd() };
+      rcMap().A001.qty = 30; rcMap().A001.by = 'เด็ก'; rcMap().A001.at = 9;
+      upd = []; applyRecheck('A001');
+      out.l3b = { val: (state.adjust.A001 || {}).val, src: (state.adjust.A001 || {}).src, ae: aeOf('A001') };
+      // L4 การ์ดรีเช็ค + หน้าสรุป: src=recheck ไม่ขึ้นกล่องม่วง · adjust ธรรมดายังขึ้น
+      var rowOf = function (k) { return summaryData().rows.filter(function (r) { return r.key === k; })[0]; };
+      __seed('admin');
+      state.adjust = { A001: { val: 12, reason: 'ใช้ยอดรีเช็ค', by: 'หนึ่ง', at: 1, raw: 12, src: 'recheck' } };
+      state.rechecks = { A001: { name: 'ชื่อ A001', sentAt: 1, qty: 12, by: 'เด็ก', at: 5, applied: true } };
+      state.rcAdminTab = 'done'; renderRecheckAdmin();
+      var recCard = __bodyText().indexOf('ปรับยิงจริงเป็น') >= 0;
+      var recSum = !!sumCardRow(rowOf('A001'), 'short', 'product').querySelector('.adjust-badge');
+      __seed('admin');
+      state.adjust = { A001: { val: 7, reason: 'ขายหลังนับ', by: 'หนึ่ง', at: 1, raw: 9 } };
+      state.rechecks = {}; state.rcAdminTab = null; renderRecheckAdmin();
+      var manCard = __bodyText().indexOf('ปรับยิงจริงเป็น') >= 0;
+      var manSum = !!sumCardRow(rowOf('A001'), 'short', 'product').querySelector('.adjust-badge');
+      out.l4 = { recCard: recCard, recSum: recSum, manCard: manCard, manSum: manSum };
+      // L5 applyRecheckBulk หลาย SKU → adjust ก้อนเดียว ทุกตัว src=recheck
+      __seed('admin'); state.adjust = {};
+      state.rechecks = { A001: { name: 'ชื่อ A001', sentAt: 1, qty: 12, by: 'เด็ก', at: 5 },
+                         B002: { name: 'ชื่อ B002', sentAt: 1, qty: 8, by: 'เด็ก', at: 5 } };
+      upd = []; applyRecheckBulk(['A001', 'B002']);
+      out.l5 = { upd: adjUpd(), a: state.adjust.A001, b: state.adjust.B002, aeA: aeOf('A001'), aeB: aeOf('B002') };
+    } finally { db.update = orig; state.adjust = {}; }
+    return out;
+  });
+  check('[L1] applyRecheck qty=24 → state.adjust.A001 = {val:24, src:recheck}', rL.l1.val === 24 && rL.l1.src === 'recheck', rL.l1);
+  check('[L1] summaryData ae (r.act) = 24', rL.l1.ae === 24, rL.l1.ae);
+  check('[L1] เขียน cycles/C1/adjust {A001:{val:24,src:recheck}} ครั้งเดียว',
+    rL.l1.upd.length === 1 && rL.l1.upd[0].patch.A001.val === 24 && rL.l1.upd[0].patch.A001.src === 'recheck', rL.l1.upd);
+  check('[L2] ยอดดิบเปลี่ยนเป็น 99 หลัง apply → ae ยังยึด 24 (ไม่ถูกทับ)', rL.l2.ae === 24, rL.l2);
+  check('[L3] resendRecheck → ปลดล็อก (state.adjust.A001 หาย · ae กลับเป็นยอดดิบ 99)', !rL.l3a.has && rL.l3a.ae === 99, rL.l3a);
+  check('[L3] resendRecheck → ฐานล้าง adjust ด้วย {A001:null}',
+    rL.l3a.upd.length === 1 && rL.l3a.upd[0].patch.A001 === null, rL.l3a.upd);
+  check('[L3] applyRecheck รอบใหม่ qty=30 → ล็อกค่าใหม่ 30 · ae = 30',
+    rL.l3b.val === 30 && rL.l3b.src === 'recheck' && rL.l3b.ae === 30, rL.l3b);
+  check('[L4] adjust src=recheck → การ์ดรีเช็คไม่ขึ้นกล่องม่วง "ปรับยิงจริง"', !rL.l4.recCard, rL.l4);
+  check('[L4] adjust src=recheck → หน้าสรุปไม่ขึ้น .adjust-badge', !rL.l4.recSum, rL.l4);
+  check('[L4] adjust ธรรมดา (ขายหลังนับ) → การ์ดรีเช็คยังขึ้นกล่องม่วง (regression)', rL.l4.manCard, rL.l4);
+  check('[L4] adjust ธรรมดา (ขายหลังนับ) → หน้าสรุปยังขึ้น .adjust-badge (regression)', rL.l4.manSum, rL.l4);
+  check('[L5] applyRecheckBulk 2 SKU → เขียน cycles/C1/adjust ก้อนเดียวมีทั้ง A001+B002',
+    rL.l5.upd.length === 1 && Object.keys(rL.l5.upd[0].patch).sort().join() === 'A001,B002', rL.l5.upd);
+  check('[L5] ทุกตัว src=recheck · val ตรงยอดรีเช็ค · ae ตาม',
+    rL.l5.a && rL.l5.a.src === 'recheck' && rL.l5.a.val === 12 && rL.l5.b && rL.l5.b.src === 'recheck' && rL.l5.b.val === 8
+      && rL.l5.aeA === 12 && rL.l5.aeB === 8, rL.l5);
+
   console.log('\n[10] ไม่มี error');
   check('ไม่มี page error', errors.length === 0, errors.slice(0, 5));
 
