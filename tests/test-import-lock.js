@@ -231,7 +231,7 @@ const OVERWRITE_LABEL = '📄 เขียนทับยอดระบบเ�
   const src = require('fs').readFileSync(require('./_env').APP_FILE, 'utf8');
   check('⭐ selectRound ล้าง importUnlocked จริง',
         /* v2.37.0 แทรก systemQtyRaw / sold / adjust / rechecks / recheckDraft คั่นกลางได้ — ยังเป็นท่อนล้าง state ชุดเดียวกัน */
-        /state\.systemQty = \{\};(?:\s*\n\s*state\.(?:systemQtyRaw|sold|adjust|rechecks|recheckDraft|rcPhotoCache) = \{\};)*\s*\n\s*state\.importUnlocked = false;/.test(src), 'selectRound');
+        /state\.systemQty = \{\};(?:\s*\n\s*state\.\w+ = (?:\{\}|null|\[\]|'');[^\n]*)*\s*\n\s*state\.importUnlocked = false;/.test(src), 'selectRound');
   check('doImport ล็อกกลับหลังเขียนสำเร็จ',
         /applyImport\(state\.cycleId, result\)\.then\(function \(diff\) \{[\s\S]{0,220}state\.importUnlocked = false;/.test(src),
         'doImport');

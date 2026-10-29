@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.41.5">
+<meta name="version" content="2.41.7">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.41.5</title>
+<title>ISRD Stocktake v2.41.7</title>
 
 <style>
 :root{
@@ -2024,7 +2024,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.41.5';
+var APP_VERSION = '2.41.7';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -14868,6 +14868,17 @@ var RC_PHOTO_MAX = 640, RC_PHOTO_Q = 0.55, RC_PHOTO_PREFIX = 'data:image/jpeg;ba
 function isRecheckAdmin() { return hasPerm('viewSummary'); }     /* เข้าแท็บ + ดูผล (cap ฝั่งแสดงผล) */
 function canRecheckManage() { return hasPerm('adjustCount'); }   /* ส่ง/ถอน/ใช้ยอด (แก้ยอดที่นับแล้ว) */
 function rcMap() { return state.rechecks || (state.rechecks = {}); }
+
+/* ⭐ v2.41.6 "รีเช็คหลุดรอบ" = SKU ที่หายจากรอบจริง หลัง re-import ไฟล์ยอดใหม่ (ไม่มีทั้งยอดระบบดิบ systemQtyRaw และยอดยิง counts)
+   - ตัดสินจาก systemQtyRaw + counts ไม่ใช่ summaryData() → กันแถวผี 0/0 (ของเกินที่ใช้ยอดแล้ว) และของขาด (ระบบมี ยิง 0) ไม่ให้ถูกนับผิด
+   - เฉพาะเมื่อยอดระบบของรอบนี้โหลดครบแล้ว (sysLoadedFor===cycleId) ไม่งั้นคืน {} = ไม่ตัดสิน (กัน false positive ช่วง async โหลด)
+   - ใช้ === undefined (ไม่ใช่ ||0) เพื่อให้ counts[k]=0 (เคยยิง/ใช้ยอดแล้ว) นับว่า "อยู่ในรอบ" ไม่หลุด */
+function rcStrayMap() {
+  if (!state.sysLoadedFor || state.sysLoadedFor !== state.cycleId) return {};
+  var raw = state.systemQtyRaw || {}, cnt = state.counts || {}, rc = rcMap(), out = {};
+  Object.keys(rc).forEach(function (k) { if (raw[k] === undefined && cnt[k] === undefined) out[k] = 1; });
+  return out;
+}
 function rcPhotoOk(v) { return typeof v === 'string' && v.indexOf(RC_PHOTO_PREFIX) === 0 && v.length < RC_PHOTO_MAXLEN; }
 function rcRoundCounting() { var r = (state.roundIndex || {})[state.roundId]; return !!r && r.status === 'counting'; }
 
@@ -14954,11 +14965,12 @@ function renderRecheckAdmin() {
   var body = $('recheckBody'), rc = rcMap(), rows = summaryData().rows;
   var byKey = {}; rows.forEach(function (r) { byKey[r.key] = r; });
   var list = rows.filter(function (r) { return r.diff !== 0 || rc[r.key]; });
-  Object.keys(rc).forEach(function (k) {
-    if (!byKey[k]) list.push({ key: k, code: k, name: (rc[k].name || k), sys: 0, act: 0, diff: 0, _ghost: true });
-  });
-  var sentN = Object.keys(rc).length, doneN = 0;
-  Object.keys(rc).forEach(function (k) { if (rc[k].qty != null && rc[k].qty !== '') doneN++; });
+  /* ⭐ v2.41.6 SKU ที่หลุดจากรอบ (re-import ไฟล์ยอดใหม่แล้วยอดเดิมหาย) = ขยะรีเช็คค้าง ไม่มีอะไรให้รีเช็คจริง
+     ไม่ดึงเข้าลิสต์/ไม่นับ (กันเลขเพี้ยน + กินช่องงานกลาง) · เก็บคีย์ไว้ให้แถบแจ้ง (ไม่มีปุ่มลบ — ไม่แตะข้อมูลที่เด็กนับ) */
+  var _stray = rcStrayMap();
+  var rcGhostKeys = Object.keys(rc).filter(function (k) { return _stray[k]; });
+  var sentN = Object.keys(rc).length - rcGhostKeys.length, doneN = 0;
+  Object.keys(rc).forEach(function (k) { if (!_stray[k] && rc[k].qty != null && rc[k].qty !== '') doneN++; });
   var canManage = canRecheckManage();
   /* ⭐ v2.41.5 counter เปิดหน้ารีเช็คแล้วทะเบียนคนยังว่าง → โหลดให้ (ครั้งเดียว) เพื่อให้ dropdown มอบงานมีรายชื่อ */
   if (canManage && !isAdmin() && !Object.keys(state.users || {}).length && !state._rcUsersTried) {
@@ -14981,6 +14993,13 @@ function renderRecheckAdmin() {
     stat(list.filter(function (r) { return r.diff !== 0; }).length, 'ผลต่าง ≠ 0'),
     stat(sentN, 'ส่งรีเช็คแล้ว', '#2563eb'),
     stat(doneN, 'เด็กรีเช็คคืน', '#059669')]));
+
+  /* ⭐ v2.41.6 แจ้งเฉย ๆ ว่ามีรีเช็คค้างนอกรอบ (SKU หายหลัง re-import ยอด) — ระบบไม่นับรวมแล้ว แต่ "ไม่ลบข้อมูล"
+     (เก็บ qty+รูปที่เด็กนับไว้ ตามกฎ "ห้ามลบยอดที่นับแล้ว") · ถ้าต้องเก็บกวาดจริง ทำเป็นเครื่องมือแยกที่มีสำเนา purgeLog ภายหลัง */
+  if (canManage && rcGhostKeys.length) {
+    body.appendChild(el('div', { class: 'card', style: 'margin-bottom:10px;background:#fffbeb;border-color:#fde68a' }, [
+      el('div', { style: 'font-size:12px;color:#92400e', text: 'ℹ️ มีรีเช็คเก่า ' + fmtNum(rcGhostKeys.length) + ' รายการที่ SKU หลุดจากรอบ (ยอดระบบหายหลังนำเข้าไฟล์ยอดใหม่) — ระบบไม่นับรวมในตัวเลขแล้ว · ข้อมูลและรูปที่เด็กนับไว้ยังเก็บครบ ไม่ได้ลบ' }) ]));
+  }
 
   if (!list.length) {
     body.appendChild(el('div', { class: 'card' }, [el('div', { class: 'muted', text: '🎉 ไม่มีผลต่างในรอบนี้ — ไม่ต้องรีเช็ค' })]));
@@ -15102,10 +15121,13 @@ function renderRecheckAdmin() {
           e.keys.slice().sort(function (a, b) { return String(a.code).localeCompare(String(b.code), 'th'); }).forEach(function (r) {
             var it2 = rc[r.key], dn = it2.qty != null && it2.qty !== '';
             var locTxt = r.location || (state.foundZones && state.foundZones[r.key] ? 'โซน ' + Object.keys(state.foundZones[r.key]).sort().join(',') : '');
-            det.appendChild(el('div', { class: 'row', style: 'justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px dashed #e2e8f0;font-size:13px' }, [
-              el('div', {}, [ el('span', { style: 'font-weight:600', text: r.code }),
-                el('span', { class: 'muted', style: 'font-size:11.5px;margin-left:6px', text: locTxt }) ]),
-              el('span', { class: 'badge ' + (dn ? 'ok' : 'warn'), style: 'font-size:11px', text: dn ? '✓ ส่งแล้ว' : 'ยังไม่ส่ง' }) ]));
+            /* ⭐ v2.41.7 ใส่ชื่อสินค้า + จำนวนที่เด็กนับคืน (ไม่ใช่แค่รหัส+สถานะ) — หัวหน้าดูได้เลยว่าแต่ละตัวนับมาเท่าไหร่ */
+            det.appendChild(el('div', { class: 'row', style: 'justify-content:space-between;align-items:center;gap:10px;padding:6px 0;border-bottom:1px dashed #e2e8f0;font-size:13px' }, [
+              el('div', { style: 'min-width:0' }, [
+                el('div', {}, [ el('span', { style: 'font-weight:600', text: r.code }),
+                  (r.name ? el('span', { class: 'muted', style: 'font-size:12px;margin-left:6px', text: r.name }) : null) ]),
+                (locTxt ? el('div', { class: 'muted', style: 'font-size:11px;color:#475569', text: '📍 ' + locTxt }) : null) ]),
+              el('span', { class: 'badge ' + (dn ? 'ok' : 'warn'), style: 'font-size:11px;flex:0 0 auto;white-space:nowrap', text: dn ? ('✓ นับ ' + fmtNum(Number(it2.qty)) + ' ชิ้น') : 'ยังไม่ส่ง' }) ]));
           });
           card.appendChild(det);
         }
@@ -15188,9 +15210,12 @@ function renderRecheckAdmin() {
   }
 
   if (doneUsed.length) {
-    var openDone = !!state.rcShowDone;
-    var head = el('button', { class: 'btn block grey', style: 'margin:12px 0 8px;text-align:left', text: (openDone ? '▼ ' : '▶ ') + '✅ ใช้ยอดแล้ว (' + fmtNum(doneUsed.length) + ' SKU)' });
-    head.onclick = function () { state.rcShowDone = !state.rcShowDone; renderRecheckAdmin(); };
+    /* ⭐ v2.41.7 ถ้างานรีเช็คเสร็จครบ (ไม่มีค้าง + ไม่มีรอใช้ยอด) กางกลุ่ม "ใช้ยอดแล้ว" เองเลย
+       ไม่งั้นหัวหน้าเปิดมาเจอจอว่าง นึกว่าข้อมูลหาย · เว้นแต่กดพับเอง (rcShowDone === false) */
+    var allDone = !notYet.length && !pendingUse.length;
+    var openDone = (state.rcShowDone == null) ? allDone : !!state.rcShowDone;
+    var head = el('button', { class: 'btn block grey', style: 'margin:12px 0 8px;text-align:left', text: (openDone ? '▼ ' : '▶ ') + '✅ ใช้ยอดแล้ว (' + fmtNum(doneUsed.length) + ' SKU) — แตะดูยอดที่เด็กนับ + รูป' });
+    head.onclick = function () { state.rcShowDone = !openDone; renderRecheckAdmin(); };
     body.appendChild(head);
     if (openDone) doneUsed.forEach(function (r) { body.appendChild(rcAdminCard(r, rc[r.key], canManage)); });
   }
@@ -15398,6 +15423,10 @@ function rcApplySearch(container) {
 /* ---------- ฝั่งเด็กหน้าร้าน ---------- */
 function renderRecheckScanner(admin) {
   var body = $('recheckBody'), rc = rcMap(), draft = state.recheckDraft, keys = Object.keys(rc);
+  /* ⭐ v2.41.6 กรองเฉพาะ SKU ที่หลุดจากรอบจริง (ไม่มีทั้งยอดระบบดิบ+ยอดยิง) — ตัดสินจาก systemQtyRaw+counts ไม่ใช่ summaryData
+     → ของขาด (ระบบมี ยิง 0) ยังอยู่ · ช่วงยอดระบบยังโหลดไม่เสร็จจะไม่กรอง (rcStrayMap คืน {}) กันงานหายจากจอ */
+  var _stray = rcStrayMap();
+  keys = keys.filter(function (k) { return !_stray[k]; });
   body.textContent = '';
   body.appendChild(el('div', { class: 'banner', text: '📷 รีเช็คของที่ถูกส่งมา — นับของจริงบนชั้น ใส่จำนวนที่นับได้ แล้วถ่ายรูปของจริงแนบเป็นหลักฐาน ก่อนส่งคืน' }));
   if (!keys.length) {
@@ -16949,9 +16978,11 @@ function refreshSystemQty() {
     var should = {};
     Object.keys(raw).forEach(function (k) { should[k] = Math.max(0, (Number(raw[k]) || 0) - (Number(sold[k]) || 0)); });
     state.systemQty = should;
+    state.sysLoadedFor = cid;   // ⭐ v2.41.6 ยอดระบบรอบนี้โหลดครบแล้ว — ใช้ตัดสิน "รีเช็คหลุดรอบ" ได้อย่างปลอดภัย
     renderStart();
     if (state.page === 'summary') renderSummary();
     if (state.page === 'doc') renderDoc();
+    if (state.page === 'recheck') renderRecheck(true);   // ⭐ v2.41.6 ฝั่งรีเช็ค: พอยอดระบบมา วาดใหม่ให้เลขตรง (กันค้าง "ครบแล้ว" ปลอม)
   }).catch(function () { /* ใช้ค่าเดิมไปก่อน */ });
 }
 
@@ -17231,6 +17262,8 @@ function selectRound(id) {
   state.zones = {};
   state.systemQty = {};
   state.systemQtyRaw = {};
+  state.sysLoadedFor = null;   // ⭐ v2.41.6 เปลี่ยน Job = ยอดระบบยังไม่โหลด ห้ามตัดสิน "หลุดรอบ" จนกว่าจะโหลดเสร็จ
+  state._rcStraySnap = null; clearTimeout(state._rcScanRedraw);   // ⭐ v2.41.6 ล้าง snapshot/timer วาดหน้ารีเช็คของ Job เดิม
   state.sold = {};
   state.adjust = {};
   state.rechecks = {};
@@ -17271,6 +17304,22 @@ function selectRound(id) {
     state.unsub.push(db.subscribeChildren('rounds/' + id + '/scans', function (scanId, rec) {
       if (!applyScanRecord(scanId, rec)) return;
       if (state.page === 'scan') renderScanTotals();
+      /* ⭐ v2.41.6 ยอดยิง (counts) ทยอยมาหลังเปิดแอป → ของเกิน (ระบบไม่มีคีย์ · ยิงเกิน) ที่ถูกซ่อนชั่วคราวช่วงโหลด
+         กลับมาแสดงเมื่อ counts ครบ · subscribe นี้รับ scan ของ "ทุกเครื่อง" ระหว่าง counting จึงต้องกันวาดรัว ๆ:
+         (a) ข้ามถ้ากำลังพิมพ์/ส่ง/แท็บซ่อน (เหมือน poll v2.37.8 — ไม่ให้ช่องกรอกหลุดโฟกัส/คีย์บอร์ดหุบ)
+         (b) วาดเฉพาะเมื่อ "ชุดหลุดรอบ" เปลี่ยนจริง — scan ปกติของคนอื่นไม่เปลี่ยนชุดนี้ จึงไม่วาด (เลี่ยง summaryData รัว ๆ) */
+      else if (state.page === 'recheck') {
+        clearTimeout(state._rcScanRedraw);
+        state._rcScanRedraw = setTimeout(function () {
+          if (state.page !== 'recheck' || document.hidden || state.rcBusy) return;
+          var ae = document.activeElement;
+          if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) return;
+          var snap = Object.keys(rcStrayMap()).sort().join(',');
+          if (snap === state._rcStraySnap) return;   // ชุดหลุดรอบไม่เปลี่ยน = ไม่ต้องวาด
+          state._rcStraySnap = snap;
+          renderRecheck(true);
+        }, 500);
+      }
     }));
 
     /* ⭐ v2.32.0 LITE_MODE: unknown ดึงครั้งเดียวตอนเข้ารอบ (ไม่เปิดสายค้าง) — ของเครื่องตัวเองรู้จาก local อยู่แล้ว */
