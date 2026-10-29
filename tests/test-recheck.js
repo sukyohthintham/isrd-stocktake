@@ -769,6 +769,108 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
   check('[RP2] allowReopen เขียนแค่ reopenOk ไม่เขียน assignTo · งานกลางยังไม่มีเจ้าของ',
     !!rRP.allow.patch && Object.keys(rRP.allow.patch).join() === 'RPXM/reopenOk' && rRP.allow.it.reopenOk === true && !rRP.allow.it.assignTo, rRP.allow);
 
+  // ---------- [RS] v2.43.19 ส่งรีเช็คใหม่อีกรอบแบบหลายตัว + มอบคน ----------
+  console.log('\n[RS] ส่งรีเช็คใหม่อีกรอบหลายตัว (v2.43.19)');
+  const rRS = await page.evaluate(async () => {
+    var seedRS = function () {
+      __seed('admin'); state.adjust = {};
+      state.rechecks = {
+        A001: { name: 'ชื่อ A001', sentAt: 1, qty: 10, by: 'เด็ก', at: 5, applied: true, reopenOk: true, reopenReq: true, assignTo: 'เด็ก1' },
+        B002: { name: 'ชื่อ B002', sentAt: 1, qty: 10, by: 'เด็ก', at: 5, applied: true },
+        C003: { name: 'ชื่อ C003', sentAt: 1, qty: 4, by: 'เด็ก', at: 5, applied: true, assignTo: 'เด็ก2' } };
+      window.__rcDb = state.rechecks;
+      state.adjust = { A001: { val: 10, src: 'recheck' }, B002: { val: 10, reason: 'ขายหลังนับ' } };
+    };
+    var run = async function (keys, who) {
+      var orig = db.update, upd = [];
+      db.update = function (path, patch) { upd.push({ path: path, patch: JSON.parse(JSON.stringify(patch)) }); return Promise.resolve(); };
+      __calls.enqueue = []; __calls.scan = [];
+      try { resendRecheckBulk(keys, who); await new Promise(function (res) { setTimeout(res, 30); }); }
+      finally { db.update = orig; }
+      return { patch: (__calls.enqueue.filter(function (x) { return x.path === 'rounds/R1/rechecks'; })[0] || {}).patch || null,
+               rc: JSON.parse(JSON.stringify(rcMap())), adjA: 'A001' in state.adjust, adjB: !!state.adjust.B002,
+               adjUpd: upd.filter(function (u) { return u.path === 'cycles/C1/adjust'; }), scan: __calls.scan.length };
+    };
+    var o = {};
+    seedRS(); o.rs1 = await run(['A001', 'B002', 'C003'], ['เด็ก9']);
+    seedRS(); o.rs2 = await run(['A001', 'B002', 'C003'], []);
+    seedRS(); o.rs3 = await run(['A001', 'B002', 'C003'], ['คนA', 'คนB']);
+    // RS4 แผง chips: เลือก diff -2 (A001) → ปุ่มโผล่ · ไม่เลือกคน = (คงคนเดิม) · เลือกคน = โชว์ชื่อ
+    var btnOf = function () { return __btns().filter(function (t) { return t.indexOf('ส่งรีเช็คใหม่อีกรอบ') >= 0 && t.indexOf('ตัว') >= 0; }); };
+    seedRS(); state.users = { u9: { name: 'เด็ก9', role: 'scanner', active: true, branches: ['B1'] } };
+    state.rcDiffSel = {}; state.rcAssignSel = {}; renderRecheckAdmin(); o.rs4none = btnOf();
+    state.rcDiffSel = { '-2': true }; state.rcAssignSel = {}; renderRecheckAdmin(); o.rs4keep = btnOf();   // A001 ae=10 (ล็อก) vs 12 → -2
+    state.rcDiffSel = { '-2': true }; state.rcAssignSel = { 'เด็ก9': true }; renderRecheckAdmin(); o.rs4who = btnOf();
+    state.rcDiffSel = {}; state.rcAssignSel = {}; state.adjust = {};
+    return o;
+  });
+  var cleared = function (it) { return it && it.qty === undefined && it.by === undefined && it.at === undefined && it.applied === undefined && it.reopenOk === undefined && it.reopenReq === undefined && it.sentAt > 1; };
+  var pNulls = function (p, k) { return !!p && [ 'qty', 'by', 'at', 'applied', 'reopenOk', 'reopenReq' ].every(function (f) { return p[k + '/' + f] === null; }) && p[k + '/sentAt'] > 1; };
+  check('[RS1] มอบคนเดียว → ทุกตัว assignTo = เด็ก9 (ฐาน + จอ)',
+    ['A001', 'B002', 'C003'].every(function (k) { return rRS.rs1.patch[k + '/assignTo'] === 'เด็ก9' && rRS.rs1.rc[k].assignTo === 'เด็ก9'; }), rRS.rs1);
+  check('[RS1] ล้าง qty/by/at/applied/reopen เป็น null · sentAt ใหม่ (ฐาน + จอ)',
+    ['A001', 'B002', 'C003'].every(function (k) { return pNulls(rRS.rs1.patch, k) && cleared(rRS.rs1.rc[k]); }), rRS.rs1);
+  check('[RS1] ปลดล็อก adjust src=recheck (A001) · ไม่แตะค่าปรับขายหลังนับ (B002) · ไม่แตะยอดนับ',
+    !rRS.rs1.adjA && rRS.rs1.adjB && rRS.rs1.adjUpd.length === 1 && rRS.rs1.adjUpd[0].patch.A001 === null && rRS.rs1.scan === 0, rRS.rs1);
+  check('[RS2] ไม่เลือกคน → คนเดิม (A001 เด็ก1 · C003 เด็ก2) · งานกลาง (B002) assignTo=null คงงานกลาง',
+    rRS.rs2.patch['A001/assignTo'] === 'เด็ก1' && rRS.rs2.patch['C003/assignTo'] === 'เด็ก2' && rRS.rs2.patch['B002/assignTo'] === null
+      && rRS.rs2.rc.A001.assignTo === 'เด็ก1' && !rRS.rs2.rc.B002.assignTo && rRS.rs2.rc.C003.assignTo === 'เด็ก2', rRS.rs2.patch);
+  check('[RS3] 2 คน → round-robin A001→คนA · B002→คนB · C003→คนA',
+    rRS.rs3.patch['A001/assignTo'] === 'คนA' && rRS.rs3.patch['B002/assignTo'] === 'คนB' && rRS.rs3.patch['C003/assignTo'] === 'คนA', rRS.rs3.patch);
+  check('[RS4] ยังไม่เลือก chip → ไม่มีปุ่มส่งใหม่หลายตัว', rRS.rs4none.length === 0, rRS.rs4none);
+  check('[RS4] เลือก chip -2 ไม่เลือกคน → "🔁 ส่งรีเช็คใหม่อีกรอบ 1 ตัว (คงคนเดิม)"',
+    rRS.rs4keep.length === 1 && /ส่งรีเช็คใหม่อีกรอบ 1 ตัว \(คงคนเดิม\)/.test(rRS.rs4keep[0]), rRS.rs4keep);
+  check('[RS4] เลือกคน → ปุ่มโชว์ชื่อ "→ เด็ก9"', rRS.rs4who.length === 1 && rRS.rs4who[0].indexOf('→ เด็ก9') >= 0, rRS.rs4who);
+
+  // ---------- [RS5] ห้ามล้างยอดเด็กที่ "รอใช้ยอด" (qty + !applied) — ยังไม่ลง scan ล้างแล้วหาย ----------
+  const rRS5 = await page.evaluate(async () => {
+    var origAsk = window.ask, resolveAsk;
+    var seed5 = function (rc) { __seed('admin'); state.adjust = {}; state.rechecks = rc; window.__rcDb = rc; };
+    var run = async function (keys, who, during) {
+      window.ask = function () { return new Promise(function (r) { resolveAsk = r; }); };
+      __calls.enqueue = []; __calls.toast = [];
+      resendRecheckBulk(keys, who);
+      var asked = typeof resolveAsk === 'function';
+      if (during) during();
+      if (resolveAsk) resolveAsk(true);
+      await new Promise(function (res) { setTimeout(res, 30); });
+      var p = (__calls.enqueue.filter(function (x) { return x.path === 'rounds/R1/rechecks'; })[0] || {}).patch || null;
+      var r = { asked: asked, patch: p, rc: JSON.parse(JSON.stringify(rcMap())), toasts: __calls.toast.slice() };
+      resolveAsk = null; return r;
+    };
+    var o = {};
+    try {
+      // a) ชุดผสม: A001 ใช้ยอดแล้ว · B002 รอใช้ยอด (เด็กนับ 11) · C003 ยังไม่เคยส่ง
+      seed5({ A001: { name: 'a', sentAt: 1, qty: 10, by: 'เด็ก', at: 5, applied: true },
+              B002: { name: 'b', sentAt: 1, qty: 11, by: 'เด็ก', at: 5 } });
+      o.a = await run(['A001', 'B002', 'C003'], ['เด็ก9']);
+      // b) ทุกตัวรอใช้ยอด → ไม่ถามด้วยซ้ำ ไม่เขียนอะไร
+      seed5({ A001: { name: 'a', sentAt: 1, qty: 10, by: 'เด็ก', at: 5 }, B002: { name: 'b', sentAt: 1, qty: 11, by: 'เด็ก', at: 5 } });
+      o.b = await run(['A001', 'B002'], []);
+      // c) เด็กส่งยอด B002 ระหว่างกล่องยืนยันเปิด → post-filter ข้าม
+      seed5({ A001: { name: 'a', sentAt: 1, qty: 10, by: 'เด็ก', at: 5, applied: true }, B002: { name: 'b', sentAt: 1 } });
+      o.c = await run(['A001', 'B002'], [], function () { rcMap().B002.qty = 7; rcMap().B002.by = 'เด็ก'; rcMap().B002.at = 9; });
+      // d) ทุกตัวโดนเด็กส่งยอดระหว่างกล่องเปิด → ไม่เขียน patch + toast
+      seed5({ B002: { name: 'b', sentAt: 1 } });
+      o.d = await run(['B002'], [], function () { rcMap().B002.qty = 7; });
+    } finally { window.ask = origAsk; }
+    return o;
+  });
+  var badToast = function (r) { return r.toasts.some(function (t) { return t.bad; }); };
+  check('[RS5] รอใช้ยอด (B002 qty 11) ถูกข้าม: ไม่มี B002/* ใน patch · ยอด 11 ยังอยู่',
+    !!rRS5.a.patch && !Object.keys(rRS5.a.patch).some(function (k) { return k.indexOf('B002/') === 0; })
+      && rRS5.a.rc.B002.qty === 11 && rRS5.a.rc.B002.by === 'เด็ก', rRS5.a);
+  check('[RS5] ชุดเดียวกัน: A001 (ใช้ยอดแล้ว) + C003 (ยังไม่ส่ง) ส่งใหม่ได้ · มอบเด็ก9 ทั้งคู่',
+    rRS5.a.patch['A001/qty'] === null && rRS5.a.patch['A001/assignTo'] === 'เด็ก9' && rRS5.a.patch['C003/sentAt'] > 1 && rRS5.a.patch['C003/assignTo'] === 'เด็ก9', rRS5.a.patch);
+  check('[RS5] toast บอก "ข้าม 1 ตัวที่ยังรอใช้ยอด"', rRS5.a.toasts.some(function (t) { return /ข้าม 1 ตัวที่ยังรอใช้ยอด/.test(t.m); }), rRS5.a.toasts);
+  check('[RS5] ทุกตัวรอใช้ยอด → ไม่เปิดกล่องยืนยัน · ไม่เขียน patch · toast เตือน',
+    !rRS5.b.asked && rRS5.b.patch === null && badToast(rRS5.b) && rRS5.b.rc.A001.qty === 10 && rRS5.b.rc.B002.qty === 11, rRS5.b);
+  check('[RS5] เด็กส่งยอดระหว่างกล่องเปิด → post-filter ข้าม B002 (ยอด 7 ยังอยู่) · A001 ยังส่งได้',
+    !!rRS5.c.patch && !Object.keys(rRS5.c.patch).some(function (k) { return k.indexOf('B002/') === 0; })
+      && rRS5.c.patch['A001/qty'] === null && rRS5.c.rc.B002.qty === 7, rRS5.c);
+  check('[RS5] ทุกตัวโดนเด็กส่งระหว่างกล่องเปิด → ไม่เขียน patch + toast เตือน',
+    rRS5.d.patch === null && badToast(rRS5.d) && rRS5.d.rc.B002.qty === 7, rRS5.d);
+
   // ---------- [L] v2.43.11 ใช้ยอดรีเช็ค = ล็อกยอดเป็น adjust (src=recheck) ----------
   // A001 ควรเหลือ 12 · เด็กนับ 9 · รีเช็คได้ 24 → ae ต้องยึด 24 แม้ยอดดิบเปลี่ยนทีหลัง
   console.log('\n[L] ล็อกยอดรีเช็คผ่าน adjust (v2.43.11)');

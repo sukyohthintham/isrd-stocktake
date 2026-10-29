@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.43.18">
+<meta name="version" content="2.43.19">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.43.18</title>
+<title>ISRD Stocktake v2.43.19</title>
 
 <style>
 :root{
@@ -2024,7 +2024,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.43.18';
+var APP_VERSION = '2.43.19';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -15121,6 +15121,11 @@ function renderRecheckAdmin() {
           };
           panel.appendChild(el('div', { class: 'row', style: 'gap:7px' }, [ gBtn ]));
         }
+        /* ⭐ v2.43.19 ส่งรีเช็ครอบใหม่ตาม diff ที่เลือก + มอบคนที่เลือก (หรือคงคนเดิม) — ใช้ตอนส่งรอบ 2+ (ของที่ใช้ยอดไปแล้วแต่ยังต่าง) */
+        var _rsPick = Object.keys(state.rcAssignSel || {}).filter(function (u) { return state.rcAssignSel[u]; });
+        var rsBtn = el('button', { class: 'btn sm block', style: 'margin:7px 0 0;background:#b45309;color:#fff', text: '🔁 ส่งรีเช็คใหม่อีกรอบ ' + fmtNum(selKeys.length) + ' ตัว' + (_rsPick.length ? ' → ' + _rsPick.join(', ') : ' (คงคนเดิม)') });
+        rsBtn.onclick = function () { var _k = selKeys.slice(), _as = _rsPick.slice(); state.rcDiffSel = {}; state.rcAssignSel = {}; resendRecheckBulk(_k, _as); };
+        panel.appendChild(rsBtn);
         /* ⭐ v2.43.7 ปุ่มคืนงานกลางอยู่นอก if(users) — มีงานที่มอบไว้ก็คืนได้เสมอ แม้สาขาไม่มีผู้ใช้ให้เลือก (CC note) */
         var uBtn = el('button', { class: 'btn sm grey block', style: 'margin:7px 0 0', text: '↩ คืนงานกลาง' });
         uBtn.onclick = function () { var _k = selKeys.slice(); state.rcDiffSel = {}; state.rcAssignSel = {}; assignKeys(_k, ''); };
@@ -15843,6 +15848,46 @@ function sendRecheck(k) {
   rcMap()[k] = { name: name, sentBy: (state.counter || 'ไม่ระบุ'), sentAt: Date.now() };
   toast('ส่งให้เด็กรีเช็คแล้ว: ' + k);
   renderRecheck(true);
+}
+
+/* ⭐ v2.43.19 ส่งรีเช็ครอบใหม่ทีเดียวหลายตัว (เลือกตาม diff) + มอบคนที่เลือก (round-robin) หรือคงคนเดิม
+   ล้าง qty/applied/reopen + ส่งใหม่ (ทั้งตัวที่เคยส่งแล้วและยังไม่เคยส่ง) · ปลดล็อก adjust · ไม่แตะยอดนับ (เด็กนับทับใหม่) */
+function resendRecheckBulk(keys, assignees) {
+  if (!requirePerm('adjustCount', 'ส่งรีเช็คไม่ได้')) return;
+  if (!rcRoundCounting()) { toast('รอบนี้ปิดแล้ว ส่งรีเช็คไม่ได้', true); return; }
+  var seen = {}, list = (keys || []).filter(function (k) { if (seen[k]) return false; seen[k] = 1; return true; });
+  if (!list.length) { toast('ยังไม่ได้เลือก SKU', true); return; }
+  var who = (assignees || []).slice();
+  /* ⭐ v2.43.19 กันลบยอดที่นับไปแล้ว: ตัวที่เด็กนับคืนแล้วแต่ยังไม่ใช้ยอด (returned && !applied) — ยอดยังไม่ลง scan ล้างแล้วหาย (กฎบ้าน) → ข้าม */
+  var _rc0 = rcMap();
+  var sendable = list.filter(function (k) { var it = _rc0[k]; return !(it && it.qty != null && it.qty !== '' && !it.applied); });
+  var skipPre = list.length - sendable.length;
+  if (!sendable.length) { toast('ตัวที่เลือกมียอดเด็กรอใช้ยอดอยู่ — กด "ใช้ยอด" ก่อนถึงส่งรีเช็คใหม่ได้', true); return; }
+  var msg = 'ส่ง ' + fmtNum(sendable.length) + ' ตัวให้เด็กนับใหม่ · ล้างยอดรีเช็คเดิม' + (who.length ? ' · มอบให้ ' + who.join(', ') : ' · คงคนเดิม') + (skipPre ? ' · ข้าม ' + fmtNum(skipPre) + ' ตัวที่ยังรอใช้ยอด' : '');
+  ask('ส่งรีเช็คใหม่อีกรอบ?', msg, 'ส่งใหม่').then(function (ok) {
+    if (!ok) return;
+    var rid = state.roundId, now = Date.now(), rc = rcMap(), p = {}, nameBy = {}, skipped = 0;
+    /* re-check หลังยืนยัน — กันเด็กส่งยอดระหว่างกล่องเปิด (poll 8 วิ เหมือน v2.43.16) */
+    var send = list.filter(function (k) { var it = rc[k]; if (it && it.qty != null && it.qty !== '' && !it.applied) { skipped++; return false; } return true; });
+    if (!send.length) { toast('ไม่มีรายการให้ส่งใหม่ — ตัวที่เลือกมียอดเด็กรอใช้ยอดอยู่', true); renderRecheck(true); return; }
+    try { summaryData().rows.forEach(function (r) { nameBy[r.key] = r.name; }); } catch (e) {}
+    send.forEach(function (k, i) {
+      var old = rc[k] || {}, name = old.name || nameBy[k] || k;
+      var assignee = who.length ? who[i % who.length] : (old.assignTo || null);
+      p[k + '/name'] = name; p[k + '/sentBy'] = state.counter || 'ไม่ระบุ'; p[k + '/sentAt'] = now;
+      p[k + '/qty'] = null; p[k + '/by'] = null; p[k + '/at'] = null;
+      p[k + '/applied'] = null; p[k + '/reopenOk'] = null; p[k + '/reopenReq'] = null;
+      p[k + '/assignTo'] = assignee || null;
+      unlockRecheckAdjust(k);
+      var nw = { name: name, sentBy: (state.counter || 'ไม่ระบุ'), sentAt: now };
+      if (assignee) nw.assignTo = assignee;
+      rc[k] = nw;
+      if (state.recheckDraft) delete state.recheckDraft[k];
+    });
+    enqueueWrite('rounds/' + rid + '/rechecks', p);
+    toast('ส่งรีเช็คใหม่ ' + fmtNum(send.length) + ' ตัวแล้ว — เด็กนับใหม่ได้เลย' + (skipped ? ' · ข้าม ' + fmtNum(skipped) + ' ตัวที่ยังรอใช้ยอด' : ''));
+    renderRecheck(true);
+  });
 }
 
 /* ⭐ v2.43.10 ส่งรีเช็คใหม่อีกรอบ — เคสใช้ยอดแล้วแต่ diff ยังไม่ 0 อยากให้เด็กนับซ้ำ
