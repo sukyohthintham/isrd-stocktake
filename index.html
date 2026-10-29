@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.43.2">
+<meta name="version" content="2.43.3">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.43.2</title>
+<title>ISRD Stocktake v2.43.3</title>
 
 <style>
 :root{
@@ -2024,7 +2024,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.43.2';
+var APP_VERSION = '2.43.3';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -6554,7 +6554,7 @@ function locCompare(a, b) {
     if (av === undefined) return -1;
     if (bv === undefined) return 1;
     if (/^\d/.test(av) && /^\d/.test(bv)) { var d = Number(av) - Number(bv); if (d) return d; }
-    else { var c = av.localeCompare(bv, 'th'); if (c) return c; }
+    else { var c = av.localeCompare(bv, 'th', { sensitivity: 'base' }); if (c) return c; }   /* ⭐ v2.43.3 ไม่แยกพิมพ์เล็ก/ใหญ่ — 'a1' กับ 'A1' โซนเดียวกัน (ข้อมูลจริงมี Location พิมพ์เล็กปน) */
   }
   return 0;
 }
