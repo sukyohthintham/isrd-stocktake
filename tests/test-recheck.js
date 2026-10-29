@@ -415,6 +415,53 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
       && rR.patch['A001/reopenReq'] === null && !('A001/assignTo' in rR.patch) && rR.patch['A001/sentAt'] > 1,
     { path: rR.path, patch: rR.patch });
 
+  // ---------- [RO] v2.43.12 แท็บ "🙋 ขอแก้ไข" — เด็กขอแก้ยอด รออนุมัติ ----------
+  // A001 = ส่งคืน+ใช้ยอดแล้ว แต่เด็กขอแก้ (reopenReq) · B002 = ส่งคืนแล้ว รอใช้ยอด
+  console.log('\n[RO] แท็บขอแก้ไข (v2.43.12)');
+  const rRO = await page.evaluate(() => {
+    var cards = function () {
+      return Array.prototype.map.call(document.getElementById('recheckBody').querySelectorAll('.card[data-sku]'),
+        function (c) { return c.getAttribute('data-sku'); });
+    };
+    var hasTab = function () { return __btns().some(function (t) { return t.indexOf('🙋 ขอแก้ไข') >= 0; }); };
+    var seedRO = function (a001) {
+      __seed('admin');
+      state.rechecks = { A001: Object.assign({ name: 'ชื่อ A001', sentAt: 1, qty: 12, by: 'เด็ก', at: 5, applied: true }, a001),
+                         B002: { name: 'ชื่อ B002', sentAt: 1, qty: 11, by: 'เด็ก', at: 5, applied: false } };
+      window.__rcDb = state.rechecks;
+    };
+    // วาดทุกแท็บ จดว่าแท็บจริงที่วาด (หลัง fallback) มีการ์ดอะไร
+    var sweep = function (a001) {
+      var out = {};
+      ['reopen', 'notyet', 'pending', 'done'].forEach(function (t) {
+        seedRO(a001); state.rcAdminTab = t; renderRecheckAdmin();
+        out[t] = { tab: state.rcAdminTab, cards: cards() };
+      });
+      return out;
+    };
+    var o = {};
+    o.s1 = sweep({ reopenReq: true });
+    seedRO({ reopenReq: true }); renderRecheckAdmin(); o.tab1 = hasTab();
+    seedRO({ reopenReq: true }); state.rcAdminTab = null; renderRecheckAdmin(); o.def2 = state.rcAdminTab;
+    o.s3 = sweep({ reopenReq: true, reopenOk: true });
+    seedRO({ reopenReq: true, reopenOk: true }); renderRecheckAdmin(); o.tab3 = hasTab();
+    seedRO({}); state.rcAdminTab = null; renderRecheckAdmin(); o.def4 = state.rcAdminTab; o.tab4 = hasTab();
+    o.s4 = sweep({});
+    return o;
+  });
+  var inTabs = function (s, sku) { return Object.keys(s).filter(function (t) { return s[t].tab === t && s[t].cards.indexOf(sku) >= 0; }); };
+  check('[RO1] reopenReq=true ไม่มี reopenOk → A001 อยู่แท็บ reopen เท่านั้น (ไม่อยู่ pending/done)',
+    inTabs(rRO.s1, 'A001').join() === 'reopen', rRO.s1);
+  check('[RO1] B002 (รอใช้ยอด) ไม่ถูกดึงเข้าแท็บ reopen', inTabs(rRO.s1, 'B002').join() === 'pending', rRO.s1);
+  check('[RO1] มีคำขอ → แท็บ "🙋 ขอแก้ไข" โผล่', rRO.tab1, rRO.tab1);
+  check('[RO2] มีคำขอ + rcAdminTab=null → default = reopen', rRO.def2 === 'reopen', rRO.def2);
+  check('[RO3] reopenOk=true (อนุมัติแล้ว) → A001 กลับไปแท็บ done ไม่อยู่ reopen',
+    inTabs(rRO.s3, 'A001').join() === 'done' && rRO.s3.reopen.tab !== 'reopen', rRO.s3);
+  check('[RO3] อนุมัติแล้ว → แท็บขอแก้ไขหายไป', !rRO.tab3, rRO.tab3);
+  check('[RO4] ไม่มี reopenReq → ไม่มีแท็บขอแก้ไข · default ไม่ใช่ reopen · ตั้ง reopen ไว้ก็ fallback',
+    !rRO.tab4 && rRO.def4 !== 'reopen' && rRO.s4.reopen.tab !== 'reopen' && inTabs(rRO.s4, 'A001').join() === 'done',
+    { tab4: rRO.tab4, def4: rRO.def4, s4: rRO.s4 });
+
   // ---------- [L] v2.43.11 ใช้ยอดรีเช็ค = ล็อกยอดเป็น adjust (src=recheck) ----------
   // A001 ควรเหลือ 12 · เด็กนับ 9 · รีเช็คได้ 24 → ae ต้องยึด 24 แม้ยอดดิบเปลี่ยนทีหลัง
   console.log('\n[L] ล็อกยอดรีเช็คผ่าน adjust (v2.43.11)');

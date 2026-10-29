@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.43.11">
+<meta name="version" content="2.43.12">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.43.11</title>
+<title>ISRD Stocktake v2.43.12</title>
 
 <style>
 :root{
@@ -2024,7 +2024,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.43.11';
+var APP_VERSION = '2.43.12';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -15252,11 +15252,12 @@ function renderRecheckAdmin() {
      (1) ยังไม่รีเช็ค = ยังไม่ส่ง/ส่งแล้วรอเด็กนับคืน
      (2) เด็กส่งคืนแล้ว รอแอดมินใช้ยอด = qty มาแล้วแต่ยัง !applied → กางไว้ (ปุ่ม "ใช้ยอดรีเช็ค" อยู่กลุ่มนี้ ห้ามซ่อน)
      (3) ใช้ยอดแล้ว = applied → พับเก็บได้ (เสร็จจริง ไม่มี action เหลือ) */
-  var notYet = [], pendingUse = [], doneUsed = [], unsent = [];
+  var notYet = [], pendingUse = [], doneUsed = [], unsent = [], reopenReqList = [];
   list.forEach(function (r) {
     var it = rc[r.key];
     var returned = !!(it && it.qty != null && it.qty !== '');
-    if (!returned) notYet.push(r);
+    if (it && it.reopenReq && !it.reopenOk && !r._ghost) reopenReqList.push(r);   /* ⭐ v2.43.12 เด็กขอแก้ยอด รออนุมัติ = แยกกลุ่ม (ดึงออกจาก รอใช้ยอด/ใช้ยอดแล้ว) */
+    else if (!returned) notYet.push(r);
     else if (!it.applied) pendingUse.push(r);
     else doneUsed.push(r);
     if (!it && r.diff !== 0 && !r._ghost) unsent.push(r.key);
@@ -15269,16 +15270,18 @@ function renderRecheckAdmin() {
   }
 
   /* ⭐ v2.43.9 แยกแท็บ รอเช็ค / รอใช้ยอด / ใช้ยอดแล้ว — กันเลื่อนยาว (notYet อาจหลายร้อย กว่าจะถึงรอใช้ยอด) */
-  var _tabN = { notyet: notYet.length, pending: pendingUse.length, done: doneUsed.length };
+  var _tabN = { reopen: reopenReqList.length, notyet: notYet.length, pending: pendingUse.length, done: doneUsed.length };
   if (state.rcAdminTab == null || !_tabN[state.rcAdminTab]) {
-    state.rcAdminTab = pendingUse.length ? 'pending' : (notYet.length ? 'notyet' : 'done');
+    /* ⭐ v2.43.12 มีเด็กขอแก้ยอด = เด้งไปแท็บนั้นก่อน (เร่งด่วนสุด ต้องอนุมัติ) */
+    state.rcAdminTab = reopenReqList.length ? 'reopen' : (pendingUse.length ? 'pending' : (notYet.length ? 'notyet' : 'done'));
   }
-  if (notYet.length || pendingUse.length || doneUsed.length) {
+  if (reopenReqList.length || notYet.length || pendingUse.length || doneUsed.length) {
     var _tabDef = [
       { k: 'notyet', t: '⏳ รอเช็ค', c: '#b45309' },
       { k: 'pending', t: '📥 รอใช้ยอด', c: '#059669' },
       { k: 'done', t: '✅ ใช้ยอดแล้ว', c: '#6b7280' }
     ];
+    if (reopenReqList.length) _tabDef.unshift({ k: 'reopen', t: '🙋 ขอแก้ไข', c: '#dc2626' });   /* ⭐ v2.43.12 โชว์เฉพาะเมื่อมีคำขอ · ซ้ายสุด สีแดงเด่น */
     var _tabWrap = el('div', { style: 'display:flex;gap:6px;margin:14px 0 10px' });
     _tabDef.forEach(function (d) {
       var on = state.rcAdminTab === d.k;
@@ -15289,6 +15292,12 @@ function renderRecheckAdmin() {
       _tabWrap.appendChild(b);
     });
     body.appendChild(_tabWrap);
+  }
+
+  if (state.rcAdminTab === 'reopen' && reopenReqList.length) {
+    body.appendChild(el('div', { style: 'font-weight:800;font-size:14px;margin:4px 0 8px;color:#dc2626', text: '🙋 เด็กขอแก้ไขยอด — รออนุมัติ (' + fmtNum(reopenReqList.length) + ' SKU)' }));
+    body.appendChild(el('div', { class: 'muted', style: 'font-size:12.5px;margin:-2px 0 8px', text: 'กด "🔓 อนุญาตให้แก้" ในการ์ด เด็กจะส่งยอดใหม่ได้ (ต้องมีสิทธิ์อนุมัติรีเช็ค)' }));
+    reopenReqList.forEach(function (r) { body.appendChild(rcAdminCard(r, rc[r.key], canManage)); });
   }
 
   if (state.rcAdminTab === 'notyet' && notYet.length) {
