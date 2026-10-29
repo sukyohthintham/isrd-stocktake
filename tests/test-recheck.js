@@ -43,7 +43,7 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
       state.counts = {}; state.scanQty = {}; state.manualQty = {}; state.unknownKeys = {};
       state.unknown = {}; state.manualLog = []; state.scanLog = []; state.zones = {};
       state.transfers = {}; state.locations = { offline: {}, online: {} }; state.locationSet = 'offline';
-      state.rechecks = {}; state.recheckDraft = {}; state.recheckView = 'admin';
+      state.rechecks = {}; state.recheckDraft = {}; state.recheckView = 'admin'; state.rcAdminTab = null;   // v2.43.9 แท็บ admin จำค่าไว้ — reset ทุก seed กันค้างข้ามเทส
       var add = function (code, sys, act) {
         state.products[code] = { code: code, name: 'ชื่อ ' + code, category: 'ห',
                                  type: 'product', costPrice: 10, sellPrice: 10 };
@@ -350,6 +350,34 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
   check('enqueueWrite rechecks → stamp rcLastLocalAt (กัน poll ทับ local)', r12.stamped, r12);
   check('enqueueWrite path อื่น (scans) ไม่ stamp', r12.noStampOther, r12);
   check('startRecheckPoll ตั้ง timer · stopRecheckPoll เคลียร์', r12.started && r12.stopped, r12);
+
+  // ---------- [T] v2.43.9 แท็บ admin รอเช็ค / รอใช้ยอด / ใช้ยอดแล้ว ----------
+  // A001 = เด็กส่งคืนแล้ว ยังไม่ใช้ยอด (รอใช้ยอด) · B002 = ส่งแล้ว ยังไม่นับ (รอเช็ค)
+  console.log('\n[T] แท็บ admin (v2.43.9)');
+  const rT = await page.evaluate(() => {
+    var seedTabs = function () {
+      __seed('admin');
+      state.rechecks = { A001: { name: 'ชื่อ A001', sentAt: 1, qty: 12, by: 'เด็ก', applied: false },
+                         B002: { name: 'ชื่อ B002', sentAt: 1 } };
+      window.__rcDb = state.rechecks;
+    };
+    var cards = function () {
+      return Array.prototype.map.call(document.getElementById('recheckBody').querySelectorAll('.card[data-sku]'),
+        function (c) { return c.getAttribute('data-sku'); });
+    };
+    seedTabs(); renderRecheckAdmin();
+    var t1 = state.rcAdminTab;
+    var c2 = cards(), b2 = __btns();
+    seedTabs(); state.rcAdminTab = 'done'; renderRecheckAdmin();
+    var t3 = state.rcAdminTab;
+    return { t1: t1, c2: c2, b2: b2, t3: t3 };
+  });
+  check('[T1] ค่าเริ่ม (rcAdminTab=null) มีทั้งรอเช็ค+รอใช้ยอด → ลงแท็บ pending', rT.t1 === 'pending', rT.t1);
+  check('[T2] แท็บ pending วาดการ์ดรอใช้ยอด (A001) + มีปุ่ม "ใช้ยอดรีเช็ค"',
+    rT.c2.indexOf('A001') >= 0 && rT.b2.some(t => t.indexOf('ใช้ยอดรีเช็ค') >= 0), { cards: rT.c2, btns: rT.b2 });
+  check('[T2] แท็บ pending ไม่วาดการ์ดรอเช็ค (B002) — แยกกลุ่มจริง', rT.c2.indexOf('B002') < 0, rT.c2);
+  check('[T3] ตั้งแท็บ done แต่ว่าง → fallback ไป pending/notyet (ไม่ค้างจอโล่ง)',
+    rT.t3 === 'pending' || rT.t3 === 'notyet', rT.t3);
 
   console.log('\n[10] ไม่มี error');
   check('ไม่มี page error', errors.length === 0, errors.slice(0, 5));

@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.43.8">
+<meta name="version" content="2.43.9">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.43.8</title>
+<title>ISRD Stocktake v2.43.9</title>
 
 <style>
 :root{
@@ -2024,7 +2024,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.43.8';
+var APP_VERSION = '2.43.9';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -15268,12 +15268,35 @@ function renderRecheckAdmin() {
     body.appendChild(allBtn);
   }
 
-  if (notYet.length) {
+  /* ⭐ v2.43.9 แยกแท็บ รอเช็ค / รอใช้ยอด / ใช้ยอดแล้ว — กันเลื่อนยาว (notYet อาจหลายร้อย กว่าจะถึงรอใช้ยอด) */
+  var _tabN = { notyet: notYet.length, pending: pendingUse.length, done: doneUsed.length };
+  if (state.rcAdminTab == null || !_tabN[state.rcAdminTab]) {
+    state.rcAdminTab = pendingUse.length ? 'pending' : (notYet.length ? 'notyet' : 'done');
+  }
+  if (notYet.length || pendingUse.length || doneUsed.length) {
+    var _tabDef = [
+      { k: 'notyet', t: '⏳ รอเช็ค', c: '#b45309' },
+      { k: 'pending', t: '📥 รอใช้ยอด', c: '#059669' },
+      { k: 'done', t: '✅ ใช้ยอดแล้ว', c: '#6b7280' }
+    ];
+    var _tabWrap = el('div', { style: 'display:flex;gap:6px;margin:14px 0 10px' });
+    _tabDef.forEach(function (d) {
+      var on = state.rcAdminTab === d.k;
+      var b = el('button', { class: 'btn', style: 'flex:1;padding:9px 3px;font-size:12.5px;font-weight:800;line-height:1.3;'
+        + (on ? 'background:' + d.c + ';color:#fff' : 'background:#f1f5f9;color:#64748b'),
+        text: d.t + ' (' + fmtNum(_tabN[d.k]) + ')' });
+      b.onclick = function () { state.rcAdminTab = d.k; renderRecheckAdmin(); };
+      _tabWrap.appendChild(b);
+    });
+    body.appendChild(_tabWrap);
+  }
+
+  if (state.rcAdminTab === 'notyet' && notYet.length) {
     body.appendChild(el('div', { style: 'font-weight:800;font-size:14px;margin:4px 0 8px;color:#b45309', text: '⏳ ยังไม่รีเช็ค (เหลือ ' + fmtNum(notYet.length) + ' SKU)' }));
     notYet.forEach(function (r) { body.appendChild(rcAdminCard(r, rc[r.key], canManage)); });
   }
 
-  if (pendingUse.length) {
+  if (state.rcAdminTab === 'pending' && pendingUse.length) {
     body.appendChild(el('div', { style: 'font-weight:800;font-size:14px;margin:12px 0 8px;color:#059669', text: '📥 เด็กส่งคืนแล้ว รอใช้ยอด (' + fmtNum(pendingUse.length) + ' SKU)' }));
     /* ⭐ v2.43.0 ใช้ยอดทั้งหมดทีเดียว — ไม่ต้องไล่กดทีละตัว */
     if (canManage && pendingUse.length > 1) {
@@ -15288,15 +15311,9 @@ function renderRecheckAdmin() {
     pendingUse.forEach(function (r) { body.appendChild(rcAdminCard(r, rc[r.key], canManage)); });
   }
 
-  if (doneUsed.length) {
-    /* ⭐ v2.41.7 ถ้างานรีเช็คเสร็จครบ (ไม่มีค้าง + ไม่มีรอใช้ยอด) กางกลุ่ม "ใช้ยอดแล้ว" เองเลย
-       ไม่งั้นหัวหน้าเปิดมาเจอจอว่าง นึกว่าข้อมูลหาย · เว้นแต่กดพับเอง (rcShowDone === false) */
-    var allDone = !notYet.length && !pendingUse.length;
-    var openDone = (state.rcShowDone == null) ? allDone : !!state.rcShowDone;
-    var head = el('button', { class: 'btn block grey', style: 'margin:12px 0 8px;text-align:left', text: (openDone ? '▼ ' : '▶ ') + '✅ ใช้ยอดแล้ว (' + fmtNum(doneUsed.length) + ' SKU) — แตะดูยอดที่เด็กนับ + รูป' });
-    head.onclick = function () { state.rcShowDone = !openDone; renderRecheckAdmin(); };
-    body.appendChild(head);
-    if (openDone) doneUsed.forEach(function (r) { body.appendChild(rcAdminCard(r, rc[r.key], canManage)); });
+  if (state.rcAdminTab === 'done' && doneUsed.length) {
+    body.appendChild(el('div', { style: 'font-weight:800;font-size:14px;margin:4px 0 8px;color:#6b7280', text: '✅ ใช้ยอดแล้ว (' + fmtNum(doneUsed.length) + ' SKU) — ยอดที่เด็กนับ + รูป' }));
+    doneUsed.forEach(function (r) { body.appendChild(rcAdminCard(r, rc[r.key], canManage)); });
   }
 
   if (canManage) body.appendChild(rcZortCard());
