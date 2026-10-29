@@ -571,6 +571,136 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
   check('[OV4] stub ยังไม่นับ + ไม่ขอแก้ → ไม่ถูกดึง (ขยะหลุดรอบคงซ่อน)', tabsOf(rOV.ov4, 'K4').length === 0
     && !Object.keys(rOV.ov4).some(function (t) { return rOV.ov4[t].cards.indexOf('K4') >= 0; }), rOV.ov4);
 
+  // ---------- [OK] v2.43.15 ส่งรีเช็คแล้วแต่ยอดกลับมาตรง (diff=0) เด็กยังไม่นับ → แยกออกจาก "รอเช็ค" + เคลียร์รวดเดียว ----------
+  // A001 diff -3 (ยังต่าง) · C003 diff 0 (ตรงแล้ว) — ทั้งคู่ส่งรีเช็คแล้ว เด็กยังไม่นับ
+  console.log('\n[OK] ตัวกลับมาตรง (v2.43.15)');
+  const rOK = await page.evaluate(async () => {
+    var cards = function () {
+      return Array.prototype.map.call(document.getElementById('recheckBody').querySelectorAll('.card[data-sku]'),
+        function (c) { return c.getAttribute('data-sku'); });
+    };
+    var okBtnText = function () { return __btns().filter(function (t) { return t.indexOf('ตัวที่กลับมาตรงแล้ว') >= 0; })[0] || null; };
+    var seedOK = function () {
+      __seed('admin'); state.adjust = {};
+      state.rechecks = { A001: { name: 'ชื่อ A001', sentAt: 1 }, C003: { name: 'ชื่อ C003', sentAt: 1 },
+                         B002: { name: 'ชื่อ B002', sentAt: 1, qty: 8, by: 'เด็ก', at: 5 } };
+      window.__rcDb = state.rechecks;
+    };
+    var o = {};
+    seedOK(); state.rcAdminTab = 'notyet'; renderRecheckAdmin();
+    o.ok1 = { tab: state.rcAdminTab, cards: cards(), btn: okBtnText(),
+              notyetBtn: __btns().filter(function (t) { return t.indexOf('⏳ รอเช็ค') >= 0; })[0] || null };
+    var sweep = {};
+    ['notyet', 'pending', 'done'].forEach(function (t) {
+      seedOK(); state.rcAdminTab = t; renderRecheckAdmin(); sweep[t] = { tab: state.rcAdminTab, cards: cards() };
+    });
+    o.sweep = sweep;
+    // OK3 clearRecheckBulk — C003 มีล็อก adjust ค้าง (จำลอง) ต้องถูกปลด · ยอดนับไม่ถูกแตะ
+    seedOK();
+    state.adjust = { C003: { val: 5, src: 'recheck' }, A001: { val: 7, reason: 'ขายหลังนับ' } };
+    var orig = db.update, upd = [];
+    db.update = function (path, patch) { upd.push({ path: path, patch: JSON.parse(JSON.stringify(patch)) }); return Promise.resolve(); };
+    var countsBefore = JSON.stringify(state.counts);
+    __calls.enqueue = []; __calls.scan = [];
+    try {
+      clearRecheckBulk(['C003']);
+      await new Promise(function (res) { setTimeout(res, 30); });
+    } finally { db.update = orig; }
+    o.ok3 = { enq: __calls.enqueue.slice(), upd: upd, rcKeys: Object.keys(rcMap()).sort(),
+              adjC: 'C003' in state.adjust, adjA: !!state.adjust.A001, scan: __calls.scan.length,
+              countsSame: JSON.stringify(state.counts) === countsBefore };
+    state.adjust = {};
+    return o;
+  });
+  var tabsOK = function (s, sku) { return Object.keys(s).filter(function (t) { return s[t].tab === t && s[t].cards.indexOf(sku) >= 0; }); };
+  check('[OK1] ส่งแล้ว + diff≠0 + ยังไม่นับ (A001) → อยู่แท็บรอเช็ค · นับในป้าย "รอเช็ค"',
+    tabsOK(rOK.sweep, 'A001').join() === 'notyet' && /⏳ รอเช็ค.*1/.test(rOK.ok1.notyetBtn || ''), rOK.ok1);
+  check('[OK2] ส่งแล้ว + diff=0 + ยังไม่นับ (C003) → ไม่อยู่แท็บไหน (ไม่นับเป็นงานรอเช็ค)',
+    tabsOK(rOK.sweep, 'C003').length === 0, rOK.sweep);
+  check('[OK2] ปุ่ม "✅ เคลียร์ 1 ตัวที่กลับมาตรงแล้ว" โผล่', /เคลียร์ 1 ตัวที่กลับมาตรงแล้ว/.test(rOK.ok1.btn || ''), rOK.ok1.btn);
+  check('[OK2] ตัวที่เด็กนับคืนแล้ว (B002 qty=8 ตรง) ยังอยู่รอใช้ยอด ไม่หลุดไปกลุ่มตรงแล้ว',
+    tabsOK(rOK.sweep, 'B002').join() === 'pending', rOK.sweep);
+  var okEnq = function (path) { var e = rOK.ok3.enq.filter(function (x) { return x.path === path; })[0]; return e ? e.patch : null; };
+  check('[OK3] clearRecheckBulk → rounds/R1/rechecks {C003:null} + recheckPhotos/R1 {C003:null}',
+    !!okEnq('rounds/R1/rechecks') && okEnq('rounds/R1/rechecks').C003 === null && Object.keys(okEnq('rounds/R1/rechecks')).join() === 'C003'
+      && !!okEnq('recheckPhotos/R1') && okEnq('recheckPhotos/R1').C003 === null, rOK.ok3.enq);
+  check('[OK3] ลบออกจาก rcMap local (เหลือ A001,B002)', rOK.ok3.rcKeys.join() === 'A001,B002', rOK.ok3.rcKeys);
+  check('[OK3] ปลดล็อก adjust src=recheck ของ C003 (ฐาน {C003:null}) · ไม่แตะ adjust ขายหลังนับของ A001',
+    !rOK.ok3.adjC && rOK.ok3.adjA && rOK.ok3.upd.length === 1 && rOK.ok3.upd[0].patch.C003 === null, rOK.ok3);
+  check('[OK3] ไม่แตะยอดนับ (ไม่มี writeScan · counts เท่าเดิม)', rOK.ok3.scan === 0 && rOK.ok3.countsSame, rOK.ok3);
+
+  // ---------- [OK4] เด็กส่งยอดเข้ามา "ระหว่างกล่องยืนยันเปิด" → ตัวนั้นต้องไม่ถูกลบ ----------
+  // C003 + D004 = diff 0 ส่งรีเช็คแล้ว ยังไม่นับ · ระหว่างรอยืนยัน poll ดึงยอดที่เด็กส่งคืนของ C003 มา
+  const rOK4 = await page.evaluate(async () => {
+    var origAsk = window.ask, resolveAsk;
+    var seed4 = function () {
+      __seed('admin'); state.adjust = {};
+      state.products.D004 = { code: 'D004', name: 'ชื่อ D004', category: 'ห', type: 'product', costPrice: 10, sellPrice: 10 };
+      state.systemQty.D004 = 4; state.systemQtyRaw.D004 = 4; state.counts.D004 = 4; state.scanQty.D004 = 4;
+      state.rechecks = { C003: { name: 'ชื่อ C003', sentAt: 1 }, D004: { name: 'ชื่อ D004', sentAt: 1 } };
+      window.__rcDb = state.rechecks;
+    };
+    var run = async function (touch) {
+      window.ask = function () { return new Promise(function (r) { resolveAsk = r; }); };
+      __calls.enqueue = []; __calls.toast = [];
+      clearRecheckBulk(['C003', 'D004']);           // กล่องยืนยันเปิดค้าง
+      touch();                                       // ระหว่างนั้นเด็กแตะข้อมูล
+      resolveAsk(true); await new Promise(function (res) { setTimeout(res, 30); });
+      var rc = (__calls.enqueue.filter(function (x) { return x.path === 'rounds/R1/rechecks'; })[0] || {}).patch || null;
+      var ph = (__calls.enqueue.filter(function (x) { return x.path === 'recheckPhotos/R1'; })[0] || {}).patch || null;
+      return { rc: rc, ph: ph, keys: Object.keys(rcMap()).sort(), c003: rcMap().C003 || null,
+               toastBad: __calls.toast.some(function (t) { return t.bad; }) };
+    };
+    var o = {};
+    try {
+      seed4();
+      o.a = await run(function () { rcMap().C003.qty = 5; rcMap().C003.by = 'เด็ก'; rcMap().C003.at = 9; });
+      seed4();
+      o.b = await run(function () { rcMap().C003.qty = 5; rcMap().D004.reopenReq = true; });
+      seed4();
+      o.c = await run(function () { state.counts.D004 = 6; state.scanQty.D004 = 6; rcMap().C003.qty = 5; });   // D004 ยอดเปลี่ยน diff≠0
+    } finally { window.ask = origAsk; }
+    return o;
+  });
+  check('[OK4] C003 ที่เด็กส่งคืนระหว่างรอยืนยัน → ไม่มี {C003:null} ทั้ง rechecks และรูป · ยอด qty=5 ยังอยู่',
+    !!rOK4.a.rc && !('C003' in rOK4.a.rc) && !!rOK4.a.ph && !('C003' in rOK4.a.ph) && rOK4.a.c003 && rOK4.a.c003.qty === 5, rOK4.a);
+  check('[OK4] D004 (ยัง diff 0 + ยังไม่นับ) ยังถูกเคลียร์ได้', rOK4.a.rc && rOK4.a.rc.D004 === null && rOK4.a.ph.D004 === null
+    && rOK4.a.keys.join() === 'C003', rOK4.a);
+  check('[OK4] ทุกตัวโดนแตะ (ส่งยอด/ขอแก้) → ไม่เขียน {k:null} เลย + toast แจ้ง', rOK4.b.rc === null && rOK4.b.ph === null
+    && rOK4.b.toastBad && rOK4.b.keys.join() === 'C003,D004', rOK4.b);
+  check('[OK4] ยอดเปลี่ยนจน diff≠0 ระหว่างรอยืนยัน → ไม่ถูกเคลียร์', rOK4.c.rc === null && rOK4.c.keys.indexOf('D004') >= 0, rOK4.c);
+
+  // ---------- [SC] v2.43.16 ฝั่งเด็กเห็นของเกิน/หลุดรอบที่ยังมีงานค้าง (renderRecheckScanner) ----------
+  // stray = ไม่อยู่ systemQtyRaw + ไม่อยู่ counts (ยอดระบบรอบนี้โหลดครบแล้ว → rcStrayMap ทำงาน)
+  console.log('\n[SC] เด็กเห็นของเกินที่ยังมีงานค้าง (v2.43.16)');
+  const rSC = await page.evaluate(() => {
+    __seed('scanner'); state.sysLoadedFor = 'C1';
+    state.rechecks = {
+      XQTYA: { name: 'นับแล้ว', sentAt: 1, qty: 26, by: 'หนึ่ง', at: 5 },
+      XROKB: { name: 'เปิดให้แก้', sentAt: 1, reopenOk: true },   // ไม่มี qty → คุมเงื่อนไข reopenOk ตรง ๆ
+      XRRQC: { name: 'ขอแก้', sentAt: 1, reopenReq: true },        // ไม่มี qty → คุมเงื่อนไข reopenReq ตรง ๆ
+      XDRFD: { name: 'มีร่าง', sentAt: 1 },
+      XJNKE: { name: 'ขยะหลุดรอบ', sentAt: 1 },
+      A001: { name: 'ชื่อ A001', sentAt: 1 } };
+    window.__rcDb = state.rechecks;
+    state.recheckDraft = { XDRFD: { qty: '2' } };
+    var stray = rcStrayMap();
+    /* ตัวที่ส่งคืนแล้วอยู่ตัวกรอง "ส่งคืนแล้ว" (done) · ที่เหลืออยู่ "ต้องรีเช็ค" → วาดทั้งสองแล้วรวมกัน */
+    state.rcScanScope = 'all';
+    state.rcScanFilter = 'pending'; renderRecheckScanner(false); var t = __bodyText();
+    state.rcScanFilter = 'done'; renderRecheckScanner(false); t += '\n' + __bodyText();
+    var seen = {}; ['XQTYA', 'XROKB', 'XRRQC', 'XDRFD', 'XJNKE', 'A001'].forEach(function (k) { seen[k] = t.indexOf(k) >= 0; });
+    state.recheckDraft = {}; state.sysLoadedFor = null; state.rcScanFilter = null; state.rcScanScope = null;
+    return { stray: Object.keys(stray).sort(), seen: seen };
+  });
+  check('[SC] เตรียม: X* เป็น stray ทั้ง 5 ตัว · A001 ไม่ใช่', rSC.stray.join() === 'XDRFD,XJNKE,XQTYA,XROKB,XRRQC', rSC.stray);
+  check('[SC1] stray + เด็กนับแล้ว (qty) → เด็กเห็น', rSC.seen.XQTYA, rSC.seen);
+  check('[SC2] stray + reopenOk → เด็กเห็น', rSC.seen.XROKB, rSC.seen);
+  check('[SC2] stray + reopenReq → เด็กเห็น', rSC.seen.XRRQC, rSC.seen);
+  check('[SC2] stray + มีร่างกำลังกรอก → เด็กเห็น', rSC.seen.XDRFD, rSC.seen);
+  check('[SC3] stray + qty=null + ไม่มีร่าง/คำขอ → ซ่อน (ขยะหลุดรอบ v2.41.6)', !rSC.seen.XJNKE, rSC.seen);
+  check('[SC4] ไม่ stray (A001) → เห็นปกติ', rSC.seen.A001, rSC.seen);
+
   // ---------- [L] v2.43.11 ใช้ยอดรีเช็ค = ล็อกยอดเป็น adjust (src=recheck) ----------
   // A001 ควรเหลือ 12 · เด็กนับ 9 · รีเช็คได้ 24 → ae ต้องยึด 24 แม้ยอดดิบเปลี่ยนทีหลัง
   console.log('\n[L] ล็อกยอดรีเช็คผ่าน adjust (v2.43.11)');

@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.43.14">
+<meta name="version" content="2.43.16">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.43.14</title>
+<title>ISRD Stocktake v2.43.16</title>
 
 <style>
 :root{
@@ -2024,7 +2024,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.43.14';
+var APP_VERSION = '2.43.16';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -15252,12 +15252,12 @@ function renderRecheckAdmin() {
      (1) ยังไม่รีเช็ค = ยังไม่ส่ง/ส่งแล้วรอเด็กนับคืน
      (2) เด็กส่งคืนแล้ว รอแอดมินใช้ยอด = qty มาแล้วแต่ยัง !applied → กางไว้ (ปุ่ม "ใช้ยอดรีเช็ค" อยู่กลุ่มนี้ ห้ามซ่อน)
      (3) ใช้ยอดแล้ว = applied → พับเก็บได้ (เสร็จจริง ไม่มี action เหลือ) */
-  var notYet = [], pendingUse = [], doneUsed = [], unsent = [], reopenReqList = [];
+  var notYet = [], pendingUse = [], doneUsed = [], unsent = [], reopenReqList = [], rcOkBack = [];
   list.forEach(function (r) {
     var it = rc[r.key];
     var returned = !!(it && it.qty != null && it.qty !== '');
     if (it && it.reopenReq && !it.reopenOk && !r._ghost) reopenReqList.push(r);   /* ⭐ v2.43.12 เด็กขอแก้ยอด รออนุมัติ = แยกกลุ่ม (ดึงออกจาก รอใช้ยอด/ใช้ยอดแล้ว) */
-    else if (!returned) notYet.push(r);
+    else if (!returned) { if (r.diff === 0 && !r._ghost) rcOkBack.push(r); else notYet.push(r); }   /* ⭐ v2.43.15 ส่งรีเช็คแล้วแต่ diff กลับมา 0 (ยิงเพิ่ม/แก้จนตรง) + เด็กยังไม่นับ = ไม่ต้องเช็ค แยกออกจาก "รอเช็ค" */
     else if (!it.applied) pendingUse.push(r);
     else doneUsed.push(r);
     if (!it && r.diff !== 0 && !r._ghost) unsent.push(r.key);
@@ -15281,6 +15281,12 @@ function renderRecheckAdmin() {
     var allBtn = el('button', { class: 'btn block', style: 'margin-bottom:12px;background:#2563eb', text: '📤 ส่งรีเช็คทั้งหมดที่ยังไม่ส่ง (' + fmtNum(unsent.length) + ' SKU)' });
     allBtn.onclick = function () { sendRecheckBulk(unsent); };
     body.appendChild(allBtn);
+  }
+  /* ⭐ v2.43.15 ตัวที่ส่งรีเช็คไปแล้วแต่ยอดกลับมาตรง (diff=0) เด็กยังไม่นับ = ไม่ต้องเช็ค · ปุ่มเคลียร์ออกจากคิวทีเดียว (ยอดตรงอยู่แล้ว เข้า Zort ปกติ) */
+  if (canManage && rcOkBack.length) {
+    var okBtn = el('button', { class: 'btn block', style: 'margin-bottom:12px;background:#059669', text: '✅ เคลียร์ ' + fmtNum(rcOkBack.length) + ' ตัวที่กลับมาตรงแล้ว ออกจากคิวรีเช็ค (ยอดตรงอยู่แล้ว ไม่ต้องเช็ค)' });
+    okBtn.onclick = function () { clearRecheckBulk(rcOkBack.map(function (r) { return r.key; })); };
+    body.appendChild(okBtn);
   }
 
   /* ⭐ v2.43.9 แยกแท็บ รอเช็ค / รอใช้ยอด / ใช้ยอดแล้ว — กันเลื่อนยาว (notYet อาจหลายร้อย กว่าจะถึงรอใช้ยอด) */
@@ -15549,7 +15555,12 @@ function renderRecheckScanner(admin) {
   /* ⭐ v2.41.6 กรองเฉพาะ SKU ที่หลุดจากรอบจริง (ไม่มีทั้งยอดระบบดิบ+ยอดยิง) — ตัดสินจาก systemQtyRaw+counts ไม่ใช่ summaryData
      → ของขาด (ระบบมี ยิง 0) ยังอยู่ · ช่วงยอดระบบยังโหลดไม่เสร็จจะไม่กรอง (rcStrayMap คืน {}) กันงานหายจากจอ */
   var _stray = rcStrayMap();
-  keys = keys.filter(function (k) { return !_stray[k]; });
+  keys = keys.filter(function (k) {
+    if (!_stray[k]) return true;
+    /* ⭐ v2.43.16 ของเกิน/หลุดรอบ แต่เด็กนับแล้ว/กำลังแก้/เปิดให้แก้ = ของจริงที่ต้องทำต่อ ไม่ใช่ขยะ → ต้องเห็น (ตรงกับ admin v2.43.14) */
+    var it = rc[k] || {};
+    return (it.qty != null && it.qty !== '') || !!draft[k] || !!it.reopenOk || !!it.reopenReq;
+  });
   body.textContent = '';
   body.appendChild(el('div', { class: 'banner', text: '📷 รีเช็คของที่ถูกส่งมา — นับของจริงบนชั้น ใส่จำนวนที่นับได้ แล้วถ่ายรูปของจริงแนบเป็นหลักฐาน ก่อนส่งคืน' }));
   if (!keys.length) {
@@ -15923,6 +15934,34 @@ function allowReopen(k) {
   var it = rcMap()[k]; if (it) { it.reopenOk = true; }
   toast('เปิดสิทธิ์ให้เด็กแก้ไขแล้ว ✓');
   renderRecheck(true);
+}
+
+/* ⭐ v2.43.15 เคลียร์รีเช็คทีเดียวหลายตัว — ใช้กับ "ตัวที่กลับมาตรงแล้ว" (diff=0) ที่ไม่ต้องเช็ค
+   ลบออกจากคิว rounds/{rid}/rechecks + รูป · ไม่แตะยอดนับ (ตรงอยู่แล้ว) · ปลดล็อก adjust ถ้ามี */
+function clearRecheckBulk(keys) {
+  if (!requirePerm('adjustCount', 'เคลียร์รีเช็คไม่ได้')) return;
+  if (!rcRoundCounting()) { toast('รอบนี้ปิดแล้ว เคลียร์ไม่ได้', true); return; }
+  if (!keys || !keys.length) return;
+  ask('เคลียร์ตัวที่กลับมาตรงแล้ว?', 'เอา ' + fmtNum(keys.length) + ' ตัวที่ผลต่างกลับมา 0 ออกจากคิวรีเช็ค · ยอดตรงอยู่แล้ว ไม่กระทบยอดจริง', 'เคลียร์').then(function (ok) {
+    if (!ok) return;
+    /* ⭐ เช็คซ้ำจากข้อมูลล่าสุด“หลังกดยืนยัน” — กันกรณีเด็กส่งยอด/รูปเข้ามาระหว่างรอยืนยัน (poll 8 วิ) → จะได้ไม่ลบยอดที่เด็กเพิ่งนับ (กฎบ้าน ห้ามลบยอดที่นับแล้ว) */
+    var diffBy = {}; try { summaryData().rows.forEach(function (r) { diffBy[r.key] = r.diff; }); } catch (e) {}
+    keys = keys.filter(function (k) {
+      var it = rcMap()[k];
+      return it && !(it.qty != null && it.qty !== '') && !it.reopenReq && !it.reopenOk && diffBy[k] === 0;
+    });
+    if (!keys.length) { toast('ไม่มีรายการให้เคลียร์แล้ว (มีเด็กส่งยอดเข้ามา/ยอดเปลี่ยน)', true); renderRecheck(true); return; }
+    var rid = state.roundId, p = {}, pp = {};
+    keys.forEach(function (k) {
+      p[k] = null; pp[k] = null;
+      delete rcMap()[k]; if (state.recheckDraft) delete state.recheckDraft[k];
+      unlockRecheckAdjust(k);
+    });
+    enqueueWrite('rounds/' + rid + '/rechecks', p);
+    enqueueWrite('recheckPhotos/' + rid, pp);
+    toast('เคลียร์ ' + fmtNum(keys.length) + ' ตัวที่ตรงแล้ว ออกจากคิวรีเช็ค');
+    renderRecheck(true);
+  });
 }
 
 function cancelRecheck(k) {
