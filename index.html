@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.43.7">
+<meta name="version" content="2.43.8">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.43.7</title>
+<title>ISRD Stocktake v2.43.8</title>
 
 <style>
 :root{
@@ -2024,7 +2024,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.43.7';
+var APP_VERSION = '2.43.8';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -15519,6 +15519,13 @@ function renderRecheckScanner(admin) {
   var myName = state.counter || '';
   var mineKeys = keys.filter(function (k) { return (rc[k] || {}).assignTo === myName; });
   var midKeys = keys.filter(function (k) { return !(rc[k] || {}).assignTo; });
+  /* ⭐ v2.43.8 helpers ย้ายขึ้นก่อน seg — ให้ปุ่ม scope นับเฉพาะ "งานที่ต้องรีเช็คจริง" (ไม่รวม "ตรงแล้ว" / ส่งคืนแล้ว)
+     ให้ตัวเลขบนปุ่มตรงกับการ์ด "ต้องรีเช็ค" */
+  var isPending = function (k) { var it = rc[k]; return !(it.qty != null && it.qty !== '') || draft[k]; };
+  var _sumRows = {}; try { summaryData().rows.forEach(function (r) { _sumRows[r.key] = r; }); } catch (e) {}
+  var _isOkNow = function (k) { var r = _sumRows[k]; return !!r && r.diff === 0; };
+  var _okTest = function (k) { var it = rc[k]; return !(it.qty != null && it.qty !== '') && !draft[k] && _isOkNow(k); };
+  var _needRc = function (k) { return isPending(k) && !_okTest(k); };   // ยังไม่ทำ + ไม่ใช่ตรงแล้ว = ต้องรีเช็คจริง
   var showTabs = keys.length > 0;   // มีรายการรีเช็คอย่างน้อย 1 ตัว = โชว์แท็บ งานฉัน/งานกลาง/ทั้งหมด (คืนงานกลับงานกลางแล้วแท็บไม่หาย)
   var scope = (state.rcScanScope === 'all' || state.rcScanScope === 'mid') ? state.rcScanScope : 'mine';
   if (scope === 'mine' && !mineKeys.length && midKeys.length) scope = 'mid';   // ไม่มีงานมอบให้เรา → เปิดงานกลางเลย ไม่ให้จอว่าง
@@ -15530,16 +15537,9 @@ function renderRecheckScanner(admin) {
       return sb;
     };
     body.appendChild(el('div', { class: 'row', style: 'gap:6px;margin-bottom:10px' }, [
-      seg('mine', '👤 งานฉัน', mineKeys.length), seg('mid', '🧺 งานกลาง', midKeys.length), seg('all', 'ทั้งหมด', keys.length) ]));
+      seg('mine', '👤 งานฉัน', mineKeys.filter(_needRc).length), seg('mid', '🧺 งานกลาง', midKeys.filter(_needRc).length), seg('all', 'ทั้งหมด', keys.filter(_needRc).length) ]));
   }
-  var isPending = function (k) { var it = rc[k]; return !(it.qty != null && it.qty !== '') || draft[k]; };
-  /* ⭐ v2.43.6 "ตรงแล้ว" = ยังไม่นับ + ผลต่างกลับมา 0 (เช่นหลัง re-import ยอดใหม่) — เด็กข้ามได้ ไม่ต้องรีเช็ค
-     ระบบรู้ diff จาก summaryData แม้เด็ก blind (ไม่เผยตัวเลขเป้า) · summaryData ว่าง/ยังไม่โหลด → okKeys ว่าง ไม่ false positive */
-  var _sumRows = {}; try { summaryData().rows.forEach(function (r) { _sumRows[r.key] = r; }); } catch (e) {}
-  var _isOkNow = function (k) { var r = _sumRows[k]; return !!r && r.diff === 0; };
-  /* ⭐ v2.43.6 "ตรงแล้ว" เฉพาะที่ "ยังไม่เคยส่งคืน" + "ไม่มีร่างที่กำลังแก้" — ไม่งั้นการ์ดที่เด็กขออนุมัติแก้ (reopen ตั้ง draft)
-     หรือพิมพ์จำนวนค้างไว้ แล้วบังเอิญ diff=0 จะหลุดไปกลุ่มเขียวที่ไม่มีช่องกรอก → แก้/ส่งใหม่ไม่ได้ */
-  var _okTest = function (k) { var it = rc[k]; return !(it.qty != null && it.qty !== '') && !draft[k] && _isOkNow(k); };
+  /* ⭐ v2.43.6 "ตรงแล้ว" = ยังไม่ส่งคืน + ไม่มีร่าง + diff=0 (helpers ย้ายขึ้นด้านบนแล้ว) */
   var _pendingAll = vkeys.filter(isPending);
   var okKeys = _pendingAll.filter(_okTest);
   var pendingKeys = _pendingAll.filter(function (k) { return !_okTest(k); });
