@@ -447,6 +447,20 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
     seedRO({ reopenReq: true, reopenOk: true }); renderRecheckAdmin(); o.tab3 = hasTab();
     seedRO({}); state.rcAdminTab = null; renderRecheckAdmin(); o.def4 = state.rcAdminTab; o.tab4 = hasTab();
     o.s4 = sweep({});
+    // v2.43.18 เด็กส่งยอดใหม่แล้ว → submitRecheck ล้าง flag (false) + applied=false → กลับรอใช้ยอด แท็บขอแก้ไขหาย
+    o.s3b = sweep({ reopenReq: false, reopenOk: false, applied: false, qty: 13 });
+    seedRO({ reopenReq: false, reopenOk: false, applied: false, qty: 13 }); renderRecheckAdmin(); o.tab3b = hasTab();
+    // [RA1] มีแถว + qty + reopenOk (ไม่มี reopenReq) + ยังไม่ใช้ยอด → ขอแก้ไข ไม่ใช่รอใช้ยอด
+    o.ra1 = sweep({ applied: false, reopenOk: true });
+    // [RA2] stub ไม่มีแถว + reopenOk → ขอแก้ไข · stub นับคืนปกติ → รอใช้ยอด
+    o.ra2 = {};
+    ['reopen', 'notyet', 'pending', 'done'].forEach(function (t) {
+      __seed('admin');
+      state.rechecks = { Z888: { name: 'ของเกินเปิดแก้', sentAt: 1, qty: 26, by: 'เด็ก', at: 5, reopenOk: true },
+                         Z777: { name: 'ของเกินส่งคืน', sentAt: 1, qty: 4, by: 'เด็ก', at: 5 } };
+      window.__rcDb = state.rechecks; state.rcAdminTab = t; renderRecheckAdmin();
+      o.ra2[t] = { tab: state.rcAdminTab, cards: cards() };
+    });
     return o;
   });
   var inTabs = function (s, sku) { return Object.keys(s).filter(function (t) { return s[t].tab === t && s[t].cards.indexOf(sku) >= 0; }); };
@@ -455,9 +469,17 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
   check('[RO1] B002 (รอใช้ยอด) ไม่ถูกดึงเข้าแท็บ reopen', inTabs(rRO.s1, 'B002').join() === 'pending', rRO.s1);
   check('[RO1] มีคำขอ → แท็บ "🙋 ขอแก้ไข" โผล่', rRO.tab1, rRO.tab1);
   check('[RO2] มีคำขอ + rcAdminTab=null → default = reopen', rRO.def2 === 'reopen', rRO.def2);
-  check('[RO3] reopenOk=true (อนุมัติแล้ว) → A001 กลับไปแท็บ done ไม่อยู่ reopen',
-    inTabs(rRO.s3, 'A001').join() === 'done' && rRO.s3.reopen.tab !== 'reopen', rRO.s3);
-  check('[RO3] อนุมัติแล้ว → แท็บขอแก้ไขหายไป', !rRO.tab3, rRO.tab3);
+  check('[RO3] อนุมัติแล้ว (reopenOk=true) → A001 ยังอยู่แท็บขอแก้ไข (รอเด็กส่งยอดใหม่) · ไม่อยู่ done',
+    inTabs(rRO.s3, 'A001').join() === 'reopen', rRO.s3);
+  check('[RO3] อนุมัติแล้ว → แท็บขอแก้ไขยังโผล่ (จนกว่าเด็กส่งใหม่)', rRO.tab3, rRO.tab3);
+  check('[RO3] เด็กส่งใหม่ (submitRecheck ล้าง flag เป็น false) → กลับไปรอใช้ยอด · แท็บขอแก้ไขหาย',
+    inTabs(rRO.s3b, 'A001').join() === 'pending' && !rRO.tab3b, { s3b: rRO.s3b, tab3b: rRO.tab3b });
+  check('[RA1] มีแถว + qty + reopenOk + ยังไม่ใช้ยอด → แท็บขอแก้ไขเท่านั้น (ไม่อยู่รอใช้ยอด)',
+    inTabs(rRO.ra1, 'A001').join() === 'reopen' && inTabs(rRO.ra1, 'B002').join() === 'pending', rRO.ra1);
+  check('[RA2] stub ไม่มีแถว + reopenOk → แท็บขอแก้ไข · stub นับคืนปกติ → รอใช้ยอด',
+    inTabs(rRO.ra2, 'Z888').join() === 'reopen' && inTabs(rRO.ra2, 'Z777').join() === 'pending', rRO.ra2);
+  check('[RA3] ใช้ยอดแล้ว + เด็กขอแก้ (applied+reopenReq) → แท็บขอแก้ไข ไม่จมในใช้ยอดแล้ว',
+    inTabs(rRO.s1, 'A001').join() === 'reopen' && !(rRO.s1.done.tab === 'done' && rRO.s1.done.cards.indexOf('A001') >= 0), rRO.s1);
   check('[RO4] ไม่มี reopenReq → ไม่มีแท็บขอแก้ไข · default ไม่ใช่ reopen · ตั้ง reopen ไว้ก็ fallback',
     !rRO.tab4 && rRO.def4 !== 'reopen' && rRO.s4.reopen.tab !== 'reopen' && inTabs(rRO.s4, 'A001').join() === 'done',
     { tab4: rRO.tab4, def4: rRO.def4, s4: rRO.s4 });

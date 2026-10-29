@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.43.17">
+<meta name="version" content="2.43.18">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.43.17</title>
+<title>ISRD Stocktake v2.43.18</title>
 
 <style>
 :root{
@@ -2024,7 +2024,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.43.17';
+var APP_VERSION = '2.43.18';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -15256,7 +15256,7 @@ function renderRecheckAdmin() {
   list.forEach(function (r) {
     var it = rc[r.key];
     var returned = !!(it && it.qty != null && it.qty !== '');
-    if (it && it.reopenReq && !it.reopenOk && !r._ghost) reopenReqList.push(r);   /* ⭐ v2.43.12 เด็กขอแก้ยอด รออนุมัติ = แยกกลุ่ม (ดึงออกจาก รอใช้ยอด/ใช้ยอดแล้ว) */
+    if (it && (it.reopenReq || it.reopenOk) && !r._ghost) reopenReqList.push(r);   /* ⭐ v2.43.12/18 เด็กขอแก้ (reopenReq รออนุมัติ) หรือ เปิดให้แก้แล้ว (reopenOk รอส่งใหม่) = แท็บ "ขอแก้ไข" เสมอ — รวมเคสเด็กขอแก้ตัวที่ใช้ยอดไปแล้ว (applied) · reopen เป็น transient (submitRecheck/resendRecheck ล้าง) */
     else if (!returned) { if (r.diff === 0 && !r._ghost) rcOkBack.push(r); else notYet.push(r); }   /* ⭐ v2.43.15 ส่งรีเช็คแล้วแต่ diff กลับมา 0 (ยิงเพิ่ม/แก้จนตรง) + เด็กยังไม่นับ = ไม่ต้องเช็ค แยกออกจาก "รอเช็ค" */
     else if (!it.applied) pendingUse.push(r);
     else doneUsed.push(r);
@@ -15269,7 +15269,7 @@ function renderRecheckAdmin() {
     var it = rc[k];
     if (!it || byKey[k]) return;   /* มีแถวสรุปแล้ว (จับใน list ข้างบน) */
     var returned = it.qty != null && it.qty !== '';
-    var asking = it.reopenReq && !it.reopenOk;
+    var asking = !!(it.reopenReq || it.reopenOk);   /* ⭐ v2.43.18 reopen = แท็บขอแก้เสมอ (รวม applied+reopenReq) */
     if (!returned && !asking) return;   /* ยังไม่นับ + ไม่ขอแก้ = คงซ่อน (ขยะหลุดรอบ) */
     var stub = { key: k, code: k, name: it.name || k, sys: 0, act: Number(it.qty) || 0, diff: Number(it.qty) || 0, actRaw: Number(it.qty) || 0, _ghost: false, adj: null, location: locationText(k), assignTo: it.assignTo };
     if (asking) reopenReqList.push(stub);
