@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.41.7">
+<meta name="version" content="2.42.1">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.41.7</title>
+<title>ISRD Stocktake v2.42.1</title>
 
 <style>
 :root{
@@ -2024,7 +2024,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.41.7';
+var APP_VERSION = '2.42.1';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -14994,6 +14994,13 @@ function renderRecheckAdmin() {
     stat(sentN, 'ส่งรีเช็คแล้ว', '#2563eb'),
     stat(doneN, 'เด็กรีเช็คคืน', '#059669')]));
 
+  /* ⭐ v2.42.0 ปุ่มออกรายงานรีเช็ค (HTML พร้อมรูป → พิมพ์/เซฟ PDF) · ใช้ได้แม้รอบปิดแล้ว (ดูย้อนหลัง) */
+  if (canManage && Object.keys(rc).length) {
+    var rptBtn = el('button', { class: 'btn sm block', style: 'margin:0 0 12px;background:#475569', text: '📄 ออกรายงานรีเช็ค (พิมพ์/PDF พร้อมรูป)' });
+    rptBtn.onclick = function () { exportRecheckReport(); };
+    body.appendChild(rptBtn);
+  }
+
   /* ⭐ v2.41.6 แจ้งเฉย ๆ ว่ามีรีเช็คค้างนอกรอบ (SKU หายหลัง re-import ยอด) — ระบบไม่นับรวมแล้ว แต่ "ไม่ลบข้อมูล"
      (เก็บ qty+รูปที่เด็กนับไว้ ตามกฎ "ห้ามลบยอดที่นับแล้ว") · ถ้าต้องเก็บกวาดจริง ทำเป็นเครื่องมือแยกที่มีสำเนา purgeLog ภายหลัง */
   if (canManage && rcGhostKeys.length) {
@@ -15741,6 +15748,82 @@ function applyRecheck(k) {
   it.applied = true;
   toast('ปรับยอดนับ ' + k + ' เป็น ' + qn + ' แล้ว ✓');
   renderRecheck(true);
+}
+
+/* ⭐ v2.42.0 รายงานรีเช็ค (HTML → พิมพ์/เซฟ PDF) พร้อมรูปหลักฐาน — ใช้ได้ทั้งรอบที่กำลังทำและรอบที่ปิดแล้ว (ดูย้อนหลัง)
+   รวมทุก SKU ที่มีการรีเช็ค (ยกเว้นตัวหลุดรอบ) · รูปดึงจาก recheckPhotos/{rid} (base64) ฝังในหน้าเลย ไม่ต้องต่อเน็ตซ้ำ */
+var RC_REPORT_CSS = 'body{font-family:-apple-system,"Segoe UI",Tahoma,sans-serif;margin:16px;color:#0f172a;font-size:12.5px}' +
+  'h1{font-size:18px;margin:0 0 4px}.meta{color:#64748b;font-size:12px;margin-bottom:3px}' +
+  '.bar{position:sticky;top:0;background:#fff;padding:8px 0 10px}' +
+  '.bar button{font-size:14px;padding:8px 18px;border:0;border-radius:8px;background:#0f766e;color:#fff;cursor:pointer}' +
+  'table{width:100%;border-collapse:collapse;margin-top:10px}' +
+  'th,td{border:1px solid #e2e8f0;padding:5px 7px;text-align:left;vertical-align:top}' +
+  'th{background:#f1f5f9;font-size:11px;white-space:nowrap}' +
+  '.sku{font-weight:700;white-space:nowrap}.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}' +
+  '.big{font-weight:700;font-size:13px}.ok{color:#15803d}.short{color:#b91c1c}.over{color:#b45309}.wait{color:#b45309}' +
+  '.when{font-size:11px;color:#64748b;white-space:nowrap}' +
+  '.photo img{width:88px;height:88px;object-fit:cover;border-radius:6px;border:1px solid #cbd5e1;display:block}' +
+  '.nophoto{color:#94a3b8;font-size:11px}tr{page-break-inside:avoid}' +
+  '@media print{.bar{display:none}body{margin:0}@page{size:A4 landscape;margin:9mm}}';
+
+function exportRecheckReport() {
+  if (!canRecheckManage()) { toast('ไม่มีสิทธิ์ออกรายงาน', true); return; }
+  var rid = state.roundId; if (!rid) { toast('ยังไม่ได้เลือกรอบ', true); return; }
+  var job = (state.roundIndex || {})[rid] || {}, rc = rcMap();
+  if (!Object.keys(rc).length) { toast('รอบนี้ยังไม่มีรายการรีเช็ค', true); return; }
+  /* ⭐ v2.42.1 เปิดหน้าต่างทันทีตอนกด (ยังอยู่ใน user gesture) กันมือถือบล็อก popup — แล้วค่อยเขียนเนื้อหาหลังรูปโหลดเสร็จ */
+  var w = window.open('', '_blank');
+  if (!w) { toast('เบราว์เซอร์บล็อกหน้าต่าง — อนุญาต popup ของเว็บนี้แล้วลองใหม่', true); return; }
+  try { w.document.write('<!doctype html><meta charset="utf-8"><body style="font:15px sans-serif;padding:24px;color:#334155">⏳ กำลังเตรียมรายงานรีเช็ค…</body>'); } catch (e) {}
+  toast('กำลังเตรียมรายงาน…');
+  db.getQuiet('recheckPhotos/' + rid).then(function (photos) {
+    photos = photos || {};
+    var byKey = {}; try { summaryData().rows.forEach(function (r) { byKey[r.key] = r; }); } catch (e) {}
+    var stray = rcStrayMap();
+    var keys = Object.keys(rc).filter(function (k) { return !stray[k]; }).sort(function (a, b) {
+      return String((byKey[a] || {}).code || a).localeCompare(String((byKey[b] || {}).code || b), 'th');
+    });
+    if (!keys.length) { try { w.close(); } catch (e) {} toast('ไม่มีรายการรีเช็คให้ออกรายงาน', true); return; }
+    var esc = function (v) { return String(v == null ? '' : v).replace(/[&<>"]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]; }); };
+    /* ⭐ v2.42.1 กัน XSS ที่รูป: ตรวจเข้มว่าเป็น data:image/jpeg;base64,<ตัวอักษร base64 ล้วน> เท่านั้น (rcPhotoOk เดิมหลวม — เช็คแค่ prefix+ความยาว)
+       เด็ก scanner เขียน recheckPhotos ได้ ถ้าใส่ ." onerror=... จะหลุด attribute ตอนต่อ HTML string → ตัดทิ้งก่อน + esc(ph) ซ้ำอีกชั้น */
+    var phStrict = function (v) { return typeof v === 'string' && v.length < 400000 && /^data:image\/jpeg;base64,[A-Za-z0-9+\/=]+$/.test(v); };
+    var done = 0;
+    var tbody = keys.map(function (k) {
+      var it = rc[k] || {}, r = byKey[k] || {};
+      var dn = it.qty != null && it.qty !== '';
+      if (dn) done++;
+      var q = dn ? Number(it.qty) : null;
+      var nd = (dn && r.sys != null) ? (q - r.sys) : null;
+      var ph = photos[k];
+      var when = it.at ? new Date(it.at).toLocaleString('th-TH') : '';
+      return '<tr>' +
+        '<td class="sku">' + esc(r.code || k) + '</td>' +
+        '<td>' + esc(r.name || '') + '</td>' +
+        '<td>' + esc(r.location || '') + '</td>' +
+        '<td class="num">' + (r.sys == null ? '-' : fmtNum(r.sys)) + '</td>' +
+        '<td class="num">' + (r.act == null ? '-' : fmtNum(r.act)) + '</td>' +
+        '<td class="num big">' + (dn ? fmtNum(q) : '<span class="wait">รอนับ</span>') + '</td>' +
+        '<td class="num ' + (nd === 0 ? 'ok' : nd < 0 ? 'short' : nd > 0 ? 'over' : '') + '">' + (nd == null ? '-' : (nd > 0 ? '+' : '') + fmtNum(nd)) + '</td>' +
+        '<td>' + (it.applied ? '✓ ใช้ยอดแล้ว' : dn ? 'รอใช้ยอด' : '-') + '</td>' +
+        '<td>' + esc(it.by || '') + '</td>' +
+        '<td class="when">' + esc(when) + '</td>' +
+        '<td class="photo">' + (phStrict(ph) ? '<img src="' + esc(ph) + '">' : '<span class="nophoto">ไม่มีรูป</span>') + '</td>' +
+      '</tr>';
+    }).join('');
+    var title = 'รายงานรีเช็ค · ' + (job.name || rid);
+    var closed = rcRoundCounting() ? '' : ' · (รอบปิดแล้ว — ดูย้อนหลัง)';
+    var html = '<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
+      '<title>' + esc(title) + '</title><style>' + RC_REPORT_CSS + '</style></head><body>' +
+      '<div class="bar"><button onclick="window.print()">🖨️ พิมพ์ / บันทึกเป็น PDF</button></div>' +
+      '<h1>📋 ' + esc(title) + '</h1>' +
+      '<div class="meta">' + esc((job.branchCode || '') + ' · ' + jobBranchName(job)) + esc(closed) + '</div>' +
+      '<div class="meta">ออกรายงาน ' + esc(new Date().toLocaleString('th-TH')) + ' · รีเช็คทั้งหมด ' + fmtNum(keys.length) + ' SKU · เด็กนับคืนแล้ว ' + fmtNum(done) + ' SKU</div>' +
+      '<table><thead><tr><th>SKU</th><th>ชื่อสินค้า</th><th>Location</th><th>ควรเหลือ</th><th>ยิงจริงเดิม</th><th>ยอดรีเช็ค</th><th>ผลต่างใหม่</th><th>สถานะ</th><th>คนนับ</th><th>เวลา</th><th>รูปหลักฐาน</th></tr></thead>' +
+      '<tbody>' + tbody + '</tbody></table></body></html>';
+    w.document.open(); w.document.write(html); w.document.close();
+    toast('ออกรายงานแล้ว ' + fmtNum(keys.length) + ' SKU ✓');
+  }).catch(function () { try { w.close(); } catch (e) {} toast('ดึงรูปไม่สำเร็จ ลองใหม่อีกครั้ง', true); });
 }
 
 function pickRecheckPhoto(k, input) {
