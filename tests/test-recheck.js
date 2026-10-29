@@ -492,6 +492,85 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
     rRO5.cards.filter(function (k) { return k === 'A001'; }).length === 1
       && rRO5.cards.filter(function (k) { return k === 'Z999'; }).length === 1 && rRO5.text, rRO5);
 
+  // ---------- [OV] v2.43.14 ของเจอจริง แต่ยอดระบบ 0 / ไม่มีแถวสรุป (แถวผี 0/0 ถูกตัด) ----------
+  // Z999 = ไม่อยู่ Master/ไฟล์ยอด · Y888 = อยู่ Master ยอดระบบ 0 ไม่มียอดยิง → ทั้งคู่ไม่มีแถว
+  console.log('\n[OV] ใช้ยอดรีเช็คของที่ไม่มีแถวสรุป (v2.43.14)');
+  const rOV = await page.evaluate(() => {
+    var orig = db.update, upd = [];
+    db.update = function (path, patch) { upd.push({ path: path, patch: JSON.parse(JSON.stringify(patch)) }); return Promise.resolve(); };
+    var cards = function () {
+      return Array.prototype.map.call(document.getElementById('recheckBody').querySelectorAll('.card[data-sku]'),
+        function (c) { return c.getAttribute('data-sku'); });
+    };
+    var rowOf = function (k) { return summaryData().rows.filter(function (r) { return r.key === k; })[0] || null; };
+    /* writeScan ถูก stub ไว้ → จำลองยอดยิงลง counts ตาม delta ที่สั่งเขียน */
+    var landScans = function () { __calls.scan.forEach(function (s) { state.counts[s.k] = (Number(state.counts[s.k]) || 0) + s.d; state.scanQty[s.k] = state.counts[s.k]; }); };
+    var seedOV = function (rc) {
+      __seed('admin'); state.adjust = {};
+      state.products.Y888 = { code: 'Y888', name: 'ชื่อ Y888', category: 'ห', type: 'product', costPrice: 10, sellPrice: 10 };
+      state.systemQty.Y888 = 0; state.systemQtyRaw.Y888 = 0;
+      state.rechecks = rc; window.__rcDb = rc;
+    };
+    var o = {};
+    try {
+      // OV1 ไม่มีแถว + เด็กนับ 26 (ยังไม่ใช้ยอด ไม่ขอแก้) → รอใช้ยอด
+      seedOV({ Z999: { name: 'ของเกินระบบ', sentAt: 1, qty: 26, by: 'เด็ก', at: 5 } });
+      o.pre = { z: rowOf('Z999'), y: rowOf('Y888') };
+      state.rcAdminTab = 'pending'; renderRecheckAdmin();
+      o.ov1 = { tab: state.rcAdminTab, cards: cards(),
+                pendBtn: __btns().some(function (t) { return t.indexOf('📥 รอใช้ยอด') >= 0; }) };
+      // OV2 applyRecheck → writeScan +26 (cur=0) → มีแถว act=26 · ล็อก adjust 26
+      __calls.scan = []; __calls.toast = []; upd = [];
+      applyRecheck('Z999');
+      o.ov2 = { scan: __calls.scan.slice(), toast: __calls.toast.slice(), applied: rcMap().Z999.applied,
+                adj: state.adjust.Z999 || null };
+      landScans();
+      var zr = rowOf('Z999'); o.ov2.row = zr ? { act: zr.act, sys: zr.sys, diff: zr.diff } : null;
+      // OV3 bulk: Z999 (ไม่อยู่ระบบ) + Y888 (ระบบ 0) + A001 (มีแถว act 9) → ยอด = qty ทุกตัว
+      seedOV({ Z999: { name: 'ของเกินระบบ', sentAt: 1, qty: 26, by: 'เด็ก', at: 5 },
+               Y888: { name: 'ชื่อ Y888', sentAt: 1, qty: 5, by: 'เด็ก', at: 5 },
+               A001: { name: 'ชื่อ A001', sentAt: 1, qty: 12, by: 'เด็ก', at: 5 } });
+      __calls.scan = []; upd = [];
+      applyRecheckBulk(['Z999', 'Y888', 'A001']);
+      var sc = {}; __calls.scan.forEach(function (s) { sc[s.k] = s.d; });
+      landScans();
+      o.ov3 = { scan: sc, applied: ['Z999', 'Y888', 'A001'].map(function (k) { return rcMap()[k].applied === true; }),
+                act: ['Z999', 'Y888', 'A001'].map(function (k) { var r = rowOf(k); return r ? r.act : null; }),
+                adj: ['Z999', 'Y888', 'A001'].map(function (k) { var a = state.adjust[k] || {}; return a.src + ':' + a.val; }) };
+      // OV4 แยกกลุ่ม stub ตามสถานะ · ยังไม่นับ+ไม่ขอแก้ = ซ่อน
+      var rc4 = { K1: { name: 'k1', sentAt: 1, qty: 3, by: 'เด็ก', at: 5 },
+                  K2: { name: 'k2', sentAt: 1, qty: 4, by: 'เด็ก', at: 5, applied: true },
+                  K3: { name: 'k3', sentAt: 1, qty: 6, by: 'เด็ก', at: 5, reopenReq: true },
+                  K4: { name: 'k4', sentAt: 1 } };
+      var sweep = {};
+      ['reopen', 'notyet', 'pending', 'done'].forEach(function (t) {
+        seedOV(JSON.parse(JSON.stringify(rc4))); state.rcAdminTab = t; renderRecheckAdmin();
+        sweep[t] = { tab: state.rcAdminTab, cards: cards() };
+      });
+      o.ov4 = sweep;
+    } finally { db.update = orig; state.adjust = {}; }
+    return o;
+  });
+  var tabsOf = function (s, sku) { return Object.keys(s).filter(function (t) { return s[t].tab === t && s[t].cards.indexOf(sku) >= 0; }); };
+  check('[OV] เตรียม: Z999 (ไม่อยู่ระบบ) + Y888 (ระบบ 0 ไม่มียอด) ไม่มีแถวสรุป', rOV.pre.z === null && rOV.pre.y === null, rOV.pre);
+  check('[OV1] ไม่มีแถว + เด็กนับ 26 → อยู่แท็บรอใช้ยอด (pending) · แท็บ "📥 รอใช้ยอด" โผล่',
+    rOV.ov1.tab === 'pending' && rOV.ov1.cards.indexOf('Z999') >= 0 && rOV.ov1.pendBtn, rOV.ov1);
+  check('[OV2] applyRecheck ไม่มีแถว → ไม่เด้ง "ไม่พบ SKU" · writeScan +26 (cur=0) mode manual',
+    rOV.ov2.scan.length === 1 && rOV.ov2.scan[0].k === 'Z999' && rOV.ov2.scan[0].d === 26 && rOV.ov2.scan[0].m === 'manual'
+      && !rOV.ov2.toast.some(function (t) { return t.bad; }) && rOV.ov2.applied === true, rOV.ov2);
+  check('[OV2] เหตุผลในแถว scan บอกว่าเดิมไม่มีในรอบ', /เดิม ไม่มีในรอบ/.test((rOV.ov2.scan[0] || {}).r || ''), rOV.ov2.scan);
+  check('[OV2] หลังใช้ยอด → มีแถวสรุป act=26 (เกิน +26) · ล็อก adjust src=recheck val=26',
+    !!rOV.ov2.row && rOV.ov2.row.act === 26 && rOV.ov2.row.diff === 26 && rOV.ov2.adj && rOV.ov2.adj.src === 'recheck' && rOV.ov2.adj.val === 26, rOV.ov2);
+  check('[OV3] applyRecheckBulk รวมตัวไม่มีแถว → delta Z999 +26 · Y888 +5 (base 0) · A001 +3 (12-9)',
+    rOV.ov3.scan.Z999 === 26 && rOV.ov3.scan.Y888 === 5 && rOV.ov3.scan.A001 === 3, rOV.ov3);
+  check('[OV3] ทุกตัว applied · ยอดหลังใช้ = qty (26/5/12) · ล็อก recheck ครบ',
+    rOV.ov3.applied.every(Boolean) && rOV.ov3.act.join() === '26,5,12' && rOV.ov3.adj.join() === 'recheck:26,recheck:5,recheck:12', rOV.ov3);
+  check('[OV4] stub นับแล้วยังไม่ใช้ → pending', tabsOf(rOV.ov4, 'K1').join() === 'pending', rOV.ov4);
+  check('[OV4] stub ใช้ยอดแล้ว → done', tabsOf(rOV.ov4, 'K2').join() === 'done', rOV.ov4);
+  check('[OV4] stub ขอแก้ → reopen', tabsOf(rOV.ov4, 'K3').join() === 'reopen', rOV.ov4);
+  check('[OV4] stub ยังไม่นับ + ไม่ขอแก้ → ไม่ถูกดึง (ขยะหลุดรอบคงซ่อน)', tabsOf(rOV.ov4, 'K4').length === 0
+    && !Object.keys(rOV.ov4).some(function (t) { return rOV.ov4[t].cards.indexOf('K4') >= 0; }), rOV.ov4);
+
   // ---------- [L] v2.43.11 ใช้ยอดรีเช็ค = ล็อกยอดเป็น adjust (src=recheck) ----------
   // A001 ควรเหลือ 12 · เด็กนับ 9 · รีเช็คได้ 24 → ae ต้องยึด 24 แม้ยอดดิบเปลี่ยนทีหลัง
   console.log('\n[L] ล็อกยอดรีเช็คผ่าน adjust (v2.43.11)');

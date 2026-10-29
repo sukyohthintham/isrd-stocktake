@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.43.13">
+<meta name="version" content="2.43.14">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.43.13</title>
+<title>ISRD Stocktake v2.43.14</title>
 
 <style>
 :root{
@@ -2024,7 +2024,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.43.13';
+var APP_VERSION = '2.43.14';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -15262,13 +15262,19 @@ function renderRecheckAdmin() {
     else doneUsed.push(r);
     if (!it && r.diff !== 0 && !r._ghost) unsent.push(r.key);
   });
-  /* ⭐ v2.43.13 คำขอแก้ไขของ SKU ที่ "ไม่มีแถวสรุป" (ของเกิน/ไม่อยู่ระบบสาขานี้ · ยอดหลัก 0) — list สร้างจาก rows เลยตกหล่น
-     ดึงจาก rc ตรง ๆ สร้างแถว stub จากยอดที่เด็กรีเช็ค เพื่อให้คำขอขึ้นแท็บ "ขอแก้ไข" ไม่หาย */
+  /* ⭐ v2.43.14 ของที่ "ไม่มีแถวสรุป" (ของเกิน/ไม่อยู่ไฟล์ยอดสาขา · ยอดหลัก 0 = แถวผี 0/0 ถูกตัด) แต่มี recheck
+     เด็กนับแล้ว (returned) หรือขอแก้ → สร้าง stub เข้ากลุ่มตามสถานะ ให้ admin กดใช้ยอด/อนุมัติได้ (ใช้ยอดจะสร้างยอดเข้า Job → มีแถวเกิน)
+     ยังไม่นับ + ไม่ขอแก้ = ขยะรีเช็คหลุดรอบ (v2.41.6) → คงซ่อน ไม่ดึง */
   Object.keys(rc).forEach(function (k) {
     var it = rc[k];
-    if (!(it && it.reopenReq && !it.reopenOk)) return;
-    if (byKey[k]) return;   /* มีแถวสรุปแล้ว (จับใน list ข้างบนไปแล้ว) */
-    reopenReqList.push({ key: k, code: k, name: it.name || k, sys: 0, act: Number(it.qty) || 0, diff: Number(it.qty) || 0, actRaw: Number(it.qty) || 0, _ghost: false, adj: null, location: locationText(k), assignTo: it.assignTo });
+    if (!it || byKey[k]) return;   /* มีแถวสรุปแล้ว (จับใน list ข้างบน) */
+    var returned = it.qty != null && it.qty !== '';
+    var asking = it.reopenReq && !it.reopenOk;
+    if (!returned && !asking) return;   /* ยังไม่นับ + ไม่ขอแก้ = คงซ่อน (ขยะหลุดรอบ) */
+    var stub = { key: k, code: k, name: it.name || k, sys: 0, act: Number(it.qty) || 0, diff: Number(it.qty) || 0, actRaw: Number(it.qty) || 0, _ghost: false, adj: null, location: locationText(k), assignTo: it.assignTo };
+    if (asking) reopenReqList.push(stub);
+    else if (!it.applied) pendingUse.push(stub);
+    else doneUsed.push(stub);
   });
 
   if (canManage && unsent.length) {
@@ -15966,9 +15972,9 @@ function applyRecheck(k) {
   if (isNaN(qn)) { toast('ยังไม่มียอดรีเช็ค', true); return; }
   var rows = summaryData().rows, cur = 0, found = false;
   for (var i = 0; i < rows.length; i++) { if (rows[i].key === k) { cur = rows[i].act; found = true; break; } }
-  if (!found) { toast('ไม่พบ SKU นี้ในรอบ', true); return; }
+  /* ⭐ v2.43.14 ไม่มีแถว = ของเกิน/ไม่อยู่ไฟล์ยอดสาขา (ยอดหลัก 0 = แถวผี ถูกตัด) · เด็กรีเช็คเจอจริง → สร้างยอดยิงเข้า Job (cur=0) ให้มีแถวเกิน */
   var delta = qn - cur;
-  if (delta !== 0) writeScan(k, delta, 'manual', 'รีเช็ค: ปรับยอดนับเป็น ' + qn + ' (เดิม ' + cur + ')');
+  if (delta !== 0) writeScan(k, delta, 'manual', 'รีเช็ค: ปรับยอดนับเป็น ' + qn + ' (เดิม ' + (found ? cur : 'ไม่มีในรอบ') + ')');
   lockRecheckAdjust(k, qn);   /* ⭐ v2.43.11 ล็อกยอด = ยึดค่ารีเช็คล่าสุด */
   var p = {}; p[k + '/applied'] = true; enqueueWrite('rounds/' + state.roundId + '/rechecks', p);
   it.applied = true;
@@ -15987,9 +15993,9 @@ function applyRecheckBulk(keys) {
     var it = rc[k]; if (!it) return;
     var qn = Number(it.qty); if (isNaN(qn)) return;
     if (it.applied) return;
-    if (actBy[k] === undefined) return;   // ไม่อยู่ในรอบแล้ว ข้าม (ปลอดภัย)
-    var delta = qn - actBy[k];
-    if (delta !== 0) writeScan(k, delta, 'manual', 'รีเช็ค: ปรับยอดนับเป็น ' + qn + ' (เดิม ' + actBy[k] + ')');
+    var _base = (actBy[k] === undefined) ? 0 : actBy[k];   /* ⭐ v2.43.14 ของเกินไม่มีแถว → เริ่มจาก 0 สร้างยอดเข้า Job */
+    var delta = qn - _base;
+    if (delta !== 0) writeScan(k, delta, 'manual', 'รีเช็ค: ปรับยอดนับเป็น ' + qn + ' (เดิม ' + _base + ')');
     p[k + '/applied'] = true; it.applied = true; n++;
     if (_cid) { var rec = { val: qn, reason: 'ใช้ยอดรีเช็ค', by: state.counter || 'ไม่ระบุ', at: _now, raw: qn, src: 'recheck' }; if (!state.adjust) state.adjust = {}; state.adjust[k] = rec; adjPatch[k] = rec; }
   });
