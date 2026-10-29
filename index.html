@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.43.12">
+<meta name="version" content="2.43.13">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.43.12</title>
+<title>ISRD Stocktake v2.43.13</title>
 
 <style>
 :root{
@@ -2024,7 +2024,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.43.12';
+var APP_VERSION = '2.43.13';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -15261,6 +15261,14 @@ function renderRecheckAdmin() {
     else if (!it.applied) pendingUse.push(r);
     else doneUsed.push(r);
     if (!it && r.diff !== 0 && !r._ghost) unsent.push(r.key);
+  });
+  /* ⭐ v2.43.13 คำขอแก้ไขของ SKU ที่ "ไม่มีแถวสรุป" (ของเกิน/ไม่อยู่ระบบสาขานี้ · ยอดหลัก 0) — list สร้างจาก rows เลยตกหล่น
+     ดึงจาก rc ตรง ๆ สร้างแถว stub จากยอดที่เด็กรีเช็ค เพื่อให้คำขอขึ้นแท็บ "ขอแก้ไข" ไม่หาย */
+  Object.keys(rc).forEach(function (k) {
+    var it = rc[k];
+    if (!(it && it.reopenReq && !it.reopenOk)) return;
+    if (byKey[k]) return;   /* มีแถวสรุปแล้ว (จับใน list ข้างบนไปแล้ว) */
+    reopenReqList.push({ key: k, code: k, name: it.name || k, sys: 0, act: Number(it.qty) || 0, diff: Number(it.qty) || 0, actRaw: Number(it.qty) || 0, _ghost: false, adj: null, location: locationText(k), assignTo: it.assignTo });
   });
 
   if (canManage && unsent.length) {

@@ -462,6 +462,36 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
     !rRO.tab4 && rRO.def4 !== 'reopen' && rRO.s4.reopen.tab !== 'reopen' && inTabs(rRO.s4, 'A001').join() === 'done',
     { tab4: rRO.tab4, def4: rRO.def4, s4: rRO.s4 });
 
+  // ---------- [RO5] v2.43.13 ขอแก้ไขของ SKU ที่ "ไม่มีแถวสรุป" (ของเกิน/ไม่อยู่ระบบสาขานี้) ----------
+  // Z999 ไม่อยู่ products/systemQty/counts → ไม่มีใน summaryData().rows · มีแค่ใน rc (เด็กนับคืน 26 แล้วขอแก้)
+  console.log('\n[RO5] ขอแก้ไข SKU ที่ไม่มีแถวสรุป (v2.43.13)');
+  const rRO5 = await page.evaluate(() => {
+    var errs = [];
+    __seed('admin');
+    state.rechecks = { Z999: { name: 'ของเกินระบบ', sentAt: 1, qty: 26, by: 'เด็ก', at: 5, reopenReq: true },
+                       A001: { name: 'ชื่อ A001', sentAt: 1, qty: 12, by: 'เด็ก', at: 5, applied: true, reopenReq: true } };
+    window.__rcDb = state.rechecks;
+    var noRow = !summaryData().rows.some(function (r) { return r.key === 'Z999'; });
+    state.rcAdminTab = null;
+    try { renderRecheckAdmin(); } catch (e) { errs.push(String(e && e.message || e)); }
+    var cards = Array.prototype.map.call(document.getElementById('recheckBody').querySelectorAll('.card[data-sku]'),
+      function (c) { return c.getAttribute('data-sku'); });
+    var zc = document.getElementById('recheckBody').querySelector('.card[data-sku="Z999"]');
+    var zt = zc ? zc.textContent : '';
+    return { noRow: noRow, tab: state.rcAdminTab, errs: errs, cards: cards,
+             zOk: !!zc && Array.prototype.some.call(zc.querySelectorAll('div'), function (d) { return !d.children.length && d.textContent === 'Z999'; }) && zt.indexOf('ของเกินระบบ') >= 0 && zt.indexOf('เกิน 26') >= 0 && zt.indexOf('ควรเหลือ (ระบบ) 0 · ยิงจริง 26 · ผลต่าง +26') >= 0 && !/undefined|NaN/.test(zt), zt: zt.slice(0, 240),
+             hasTab: __btns().some(function (t) { return t.indexOf('🙋 ขอแก้ไข') >= 0; }),
+             text: __bodyText().indexOf('ขอแก้ไขยอด — รออนุมัติ (2 SKU)') >= 0 };
+  });
+  check('[RO5] เตรียม: Z999 ไม่มีแถวใน summaryData().rows', rRO5.noRow, rRO5);
+  check('[RO5a] Z999 (ไม่มีแถวสรุป) เข้าแท็บ reopen · แท็บ "🙋 ขอแก้ไข" โผล่ · เปิดมาที่แท็บนี้',
+    rRO5.hasTab && rRO5.tab === 'reopen' && rRO5.cards.indexOf('Z999') >= 0, rRO5);
+  check('[RO5b] การ์ด stub วาดได้ไม่ error', rRO5.errs.length === 0, rRO5.errs);
+  check('[RO5b] การ์ด stub โชว์รหัส+ชื่อ+เกิน 26+ควรเหลือ 0 ไม่มี undefined/NaN (stub มีฟิลด์ครบ)', rRO5.zOk, rRO5.zt);
+  check('[RO5c] A001 (มีแถวสรุป) ก็เข้าด้วย · ไม่ซ้ำ (การ์ดละ 1 ใบ · หัวข้อ 2 SKU)',
+    rRO5.cards.filter(function (k) { return k === 'A001'; }).length === 1
+      && rRO5.cards.filter(function (k) { return k === 'Z999'; }).length === 1 && rRO5.text, rRO5);
+
   // ---------- [L] v2.43.11 ใช้ยอดรีเช็ค = ล็อกยอดเป็น adjust (src=recheck) ----------
   // A001 ควรเหลือ 12 · เด็กนับ 9 · รีเช็คได้ 24 → ae ต้องยึด 24 แม้ยอดดิบเปลี่ยนทีหลัง
   console.log('\n[L] ล็อกยอดรีเช็คผ่าน adjust (v2.43.11)');
