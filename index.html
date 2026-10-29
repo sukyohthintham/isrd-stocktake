@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.42.1">
+<meta name="version" content="2.42.2">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.42.1</title>
+<title>ISRD Stocktake v2.42.2</title>
 
 <style>
 :root{
@@ -2024,7 +2024,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.42.1';
+var APP_VERSION = '2.42.2';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -14984,15 +14984,21 @@ function renderRecheckAdmin() {
       ? '👔 ฝั่ง Admin — กด "ส่งรีเช็ค" เฉพาะตัวที่อยากให้เด็กนับใหม่ · เด็กเห็นแค่ SKU (ไม่เห็นเป้า) · พอเด็กนับคืน เห็นยอดใหม่+รูปที่นี่ แล้วกด "ใช้ยอดรีเช็ค" ปรับยอดนับได้เลย'
       : '👀 โหมดดูอย่างเดียว — ต้องมีสิทธิ์ "แก้ยอดที่นับแล้ว" (adjustCount) จึงจะส่ง/ถอน/ปรับยอดได้' }));
 
-  function stat(n, label, color) {
+  function stat(n, label, color, sub) {
     return el('div', { class: 'card', style: 'text-align:center' }, [
       el('div', { style: 'font-size:26px;font-weight:800' + (color ? ';color:' + color : ''), text: fmtNum(n) }),
-      el('div', { class: 'muted', text: label })]);
+      el('div', { class: 'muted', text: label }),
+      (sub ? el('div', { class: 'muted', style: 'font-size:10.5px;margin-top:1px', text: sub }) : null)]);
   }
+  /* ⭐ v2.42.2 โชว์ทั้ง "จำนวน SKU" และ "จำนวนชิ้น" — 589 คือ SKU ที่ผลต่าง≠0 (= ขาด+เกิน SKU ในหน้าสรุป)
+     ส่วนชิ้นด้านล่างเทียบกับ ขาด(ชิ้น)/เกิน(ชิ้น) ในหน้าสรุปได้ตรง · กันสับสนว่าเลขเดียวเป็นทั้ง SKU และชิ้น */
+  var _diffRows = list.filter(function (r) { return r.diff !== 0; });
+  var _shortPc = 0, _overPc = 0;
+  _diffRows.forEach(function (r) { if (r.diff < 0) _shortPc += -r.diff; else _overPc += r.diff; });
   body.appendChild(el('div', { class: 'stats', style: 'margin-bottom:12px' }, [
-    stat(list.filter(function (r) { return r.diff !== 0; }).length, 'ผลต่าง ≠ 0'),
-    stat(sentN, 'ส่งรีเช็คแล้ว', '#2563eb'),
-    stat(doneN, 'เด็กรีเช็คคืน', '#059669')]));
+    stat(_diffRows.length, 'ผลต่าง ≠ 0 (SKU)', null, 'ขาด ' + fmtNum(_shortPc) + ' · เกิน ' + fmtNum(_overPc) + ' ชิ้น'),
+    stat(sentN, 'ส่งรีเช็คแล้ว (SKU)', '#2563eb'),
+    stat(doneN, 'เด็กรีเช็คคืน (SKU)', '#059669')]));
 
   /* ⭐ v2.42.0 ปุ่มออกรายงานรีเช็ค (HTML พร้อมรูป → พิมพ์/เซฟ PDF) · ใช้ได้แม้รอบปิดแล้ว (ดูย้อนหลัง) */
   if (canManage && Object.keys(rc).length) {
