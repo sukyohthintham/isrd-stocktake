@@ -379,6 +379,42 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
   check('[T3] ตั้งแท็บ done แต่ว่าง → fallback ไป pending/notyet (ไม่ค้างจอโล่ง)',
     rT.t3 === 'pending' || rT.t3 === 'notyet', rT.t3);
 
+  // ---------- [R] v2.43.10 ส่งรีเช็คใหม่อีกรอบ (ใช้ยอดแล้วแต่ยังต่าง) ----------
+  // A001 ควรเหลือ 12 · qty=10 = ยังต่าง → มีปุ่ม · qty=12 = ตรง → ไม่มีปุ่ม
+  console.log('\n[R] ส่งรีเช็คใหม่อีกรอบ (v2.43.10)');
+  const rR = await page.evaluate(async () => {
+    var hasResend = function () { return __btns().some(function (t) { return t.indexOf('ส่งรีเช็คใหม่อีกรอบ') >= 0; }); };
+    __seed('admin');
+    state.rechecks = { A001: { name: 'ชื่อ A001', sentAt: 1, qty: 10, by: 'เด็ก', at: 5, applied: true, assignTo: 'เด็ก1' } };
+    state.rcAdminTab = 'done'; renderRecheckAdmin();
+    var r1 = { tab: state.rcAdminTab, btn: hasResend(), btns: __btns() };
+    __seed('admin');
+    state.rechecks = { A001: { name: 'ชื่อ A001', sentAt: 1, qty: 12, by: 'เด็ก', at: 5, applied: true } };
+    state.rcAdminTab = 'done'; renderRecheckAdmin();
+    var r2 = { tab: state.rcAdminTab, btn: hasResend() };
+    __seed('admin');
+    state.rechecks = { A001: { name: 'ชื่อ A001', sentAt: 1, qty: 10, by: 'เด็ก', at: 5, applied: true,
+                               reopenOk: true, reopenReq: true, assignTo: 'เด็ก1' } };
+    __calls.enqueue = [];
+    resendRecheck('A001');
+    await new Promise(function (res) { setTimeout(res, 30); });   // ask() เป็น Promise
+    var it = rcMap().A001 || {}, pt = (__calls.enqueue[0] || {}).patch || {};
+    return { r1: r1, r2: r2,
+      it: it, patch: pt, path: (__calls.enqueue[0] || {}).path };
+  });
+  check('[R1] ใช้ยอดแล้ว + ยังต่าง (10 vs 12) → แท็บ done มีปุ่ม "🔁 ส่งรีเช็คใหม่อีกรอบ"', rR.r1.tab === 'done' && rR.r1.btn, rR.r1);
+  check('[R2] ใช้ยอดแล้ว + ตรง (12 vs 12) → ไม่มีปุ่มส่งรีเช็คใหม่', rR.r2.tab === 'done' && !rR.r2.btn, rR.r2);
+  check('[R3] resendRecheck → state ไม่มี qty/applied/by/at/reopen แล้ว',
+    rR.it.qty === undefined && rR.it.applied === undefined && rR.it.by === undefined && rR.it.at === undefined
+      && rR.it.reopenOk === undefined && rR.it.reopenReq === undefined, rR.it);
+  check('[R3] resendRecheck → sentAt ใหม่ (> เดิม)', rR.it.sentAt > 1, rR.it.sentAt);
+  check('[R3] resendRecheck → คง assignTo คนเดิม (ไม่หลุดเป็นงานกลาง)', rR.it.assignTo === 'เด็ก1', rR.it);
+  check('[R3] DB patch ล้างด้วย null (qty/applied/by/at/reopen) + ไม่แตะ assignTo',
+    rR.path === 'rounds/R1/rechecks' && rR.patch['A001/qty'] === null && rR.patch['A001/applied'] === null
+      && rR.patch['A001/by'] === null && rR.patch['A001/at'] === null && rR.patch['A001/reopenOk'] === null
+      && rR.patch['A001/reopenReq'] === null && !('A001/assignTo' in rR.patch) && rR.patch['A001/sentAt'] > 1,
+    { path: rR.path, patch: rR.patch });
+
   console.log('\n[10] ไม่มี error');
   check('ไม่มี page error', errors.length === 0, errors.slice(0, 5));
 
