@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.43.0">
+<meta name="version" content="2.43.1">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.43.0</title>
+<title>ISRD Stocktake v2.43.1</title>
 
 <style>
 :root{
@@ -2024,7 +2024,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.43.0';
+var APP_VERSION = '2.43.1';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -15077,19 +15077,34 @@ function renderRecheckAdmin() {
               el('span', { class: 'badge ' + (r.diff > 0 ? 'warn' : 'red'), style: 'font-size:11px', text: (r.diff > 0 ? '+' : '') + r.diff }) ]) ]));
         });
         panel.appendChild(box);
-        var uSel = el('select', { style: 'flex:1;min-width:120px;padding:7px;border:1px solid #cbd5e1;border-radius:7px;font-size:13.5px;background:#fff' });
-        uSel.appendChild(el('option', { value: '', text: users.length ? '— เลือกคน —' : '(ยังไม่มีผู้ใช้ในสาขานี้)' }));
-        users.forEach(function (u) { uSel.appendChild(el('option', { value: u, text: u })); });
-        uSel.appendChild(el('option', { value: '__unassign__', text: '— เอาออก (คืนงานกลาง) —' }));
-        var gBtn = el('button', { class: 'btn sm', text: '✅ มอบ ' + fmtNum(selKeys.length) + ' SKU' });
-        uSel.addEventListener('change', function () { gBtn.textContent = (uSel.value === '__unassign__' ? '↩ คืนงานกลาง ' : '✅ มอบ ') + fmtNum(selKeys.length) + ' SKU'; });
-        gBtn.onclick = function () {
-          if (!uSel.value) { toast('เลือกคนก่อน (หรือ "เอาออก" เพื่อคืนงานกลาง)', true); return; }
-          var _keys = selKeys.slice(), _as = uSel.value === '__unassign__' ? '' : uSel.value;
-          state.rcDiffSel = {};                 /* ⭐ v2.40.1 ล้าง chip ก่อน assignKeys → renderRecheck ไม่ติดสีค้าง (CC note) */
-          assignKeys(_keys, _as);
-        };
-        panel.appendChild(el('div', { class: 'row', style: 'gap:7px' }, [ uSel, gBtn ]));
+        /* ⭐ v2.43.1 เลือกคนได้หลายคน (แตะชื่อเพื่อเลือก/ยกเลิก) → มอบแล้วแบ่ง SKU เท่า ๆ กันให้ทุกคนช่วยกัน */
+        if (!state.rcAssignSel) state.rcAssignSel = {};
+        if (!users.length) {
+          panel.appendChild(el('div', { class: 'muted', style: 'font-size:12.5px;text-align:center;padding:4px', text: '(ยังไม่มีผู้ใช้ในสาขานี้)' }));
+        } else {
+          var _pick = [];
+          var _uc = el('div', { style: 'display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px' });
+          users.forEach(function (u) {
+            var on = !!state.rcAssignSel[u]; if (on) _pick.push(u);
+            var c = el('button', { class: 'btn sm' + (on ? '' : ' grey'), style: 'padding:5px 12px', text: (on ? '✓ ' : '') + u });
+            c.onclick = function () { state.rcAssignSel[u] = !on; renderRecheckAdmin(); };
+            _uc.appendChild(c);
+          });
+          panel.appendChild(_uc);
+          var _per = _pick.length ? Math.ceil(selKeys.length / _pick.length) : 0;
+          var gBtn = el('button', { class: 'btn sm', style: 'flex:2', text: _pick.length <= 1
+            ? ('✅ มอบ ' + fmtNum(selKeys.length) + ' SKU' + (_pick.length === 1 ? ' ให้ ' + _pick[0] : ''))
+            : ('✅ มอบแบ่ง ' + fmtNum(selKeys.length) + ' SKU ให้ ' + fmtNum(_pick.length) + ' คน (คนละ ~' + fmtNum(_per) + ')') });
+          gBtn.onclick = function () {
+            if (!_pick.length) { toast('แตะเลือกคนก่อน (เลือกได้หลายคน)', true); return; }
+            var _keys = selKeys.slice(), _as = _pick.slice();
+            state.rcDiffSel = {}; state.rcAssignSel = {};   /* ล้าง chip + คนที่เลือก กัน renderRecheck ติดค้าง */
+            assignKeysMulti(_keys, _as);
+          };
+          var uBtn = el('button', { class: 'btn sm grey', style: 'flex:1', text: '↩ คืนงานกลาง' });
+          uBtn.onclick = function () { var _k = selKeys.slice(); state.rcDiffSel = {}; state.rcAssignSel = {}; assignKeys(_k, ''); };
+          panel.appendChild(el('div', { class: 'row', style: 'gap:7px' }, [ gBtn, uBtn ]));
+        }
       } else {
         panel.appendChild(el('div', { class: 'muted', style: 'font-size:12.5px;text-align:center;padding:3px', text: '↑ แตะค่าผลต่างด้านบนเพื่อเลือก SKU' }));
       }
@@ -15641,6 +15656,32 @@ function assignKeys(keys, assignee) {
   if (!n) { toast(assignee ? 'ไม่มี SKU ที่เลือก' : 'ไม่มีงานที่มอบไว้ในชุดนี้', true); return; }
   enqueueWrite('rounds/' + rid + '/rechecks', p);
   toast(assignee ? ('มอบ ' + fmtNum(n) + ' SKU ให้ ' + assignee + ' แล้ว') : ('ปลดการมอบ ' + fmtNum(n) + ' SKU (คืนเป็นงานกลาง)'));
+  renderRecheck(true);
+}
+
+/* ⭐ v2.43.1 มอบงานแบ่งให้หลายคนช่วยกัน — แบ่ง SKU เท่า ๆ กันแบบวน (round-robin) · เลือกคนเดียว = ใช้ assignKeys เดิม
+   เช่น 117 SKU เลือก 3 คน → คนละ ~39 · ส่งรีเช็คให้ตัวที่ยังไม่ส่งด้วย (เหมือน assignKeys) */
+function assignKeysMulti(keys, assignees) {
+  if (!requirePerm('adjustCount', 'มอบงานไม่ได้')) return;
+  if (!rcRoundCounting()) { toast('รอบนี้ปิดแล้ว มอบงานไม่ได้', true); return; }
+  assignees = (assignees || []).filter(Boolean);
+  if (!assignees.length) { toast('เลือกคนก่อน', true); return; }
+  if (assignees.length === 1) { assignKeys(keys, assignees[0]); return; }
+  keys = (keys || []).filter(Boolean);
+  if (!keys.length) { toast('ไม่มี SKU ที่เลือก', true); return; }
+  var rid = state.roundId, rc = rcMap(), rows = summaryData().rows, nameOf = {};
+  rows.forEach(function (r) { nameOf[r.key] = r.name || r.key; });
+  var now = Date.now(), by = state.counter || 'ไม่ระบุ', p = {}, n = 0, cnt = {};
+  keys.forEach(function (k, i) {
+    var who = assignees[i % assignees.length];
+    var nm = nameOf[k] || k;
+    if (!rc[k]) { p[k + '/name'] = nm; p[k + '/sentBy'] = by; p[k + '/sentAt'] = now; rc[k] = { name: nm, sentBy: by, sentAt: now }; }
+    p[k + '/assignTo'] = who; rc[k].assignTo = who;
+    cnt[who] = (cnt[who] || 0) + 1; n++;
+  });
+  enqueueWrite('rounds/' + rid + '/rechecks', p);
+  var sum = assignees.map(function (a) { return a + ' ' + fmtNum(cnt[a] || 0); }).join(' · ');
+  toast('มอบ ' + fmtNum(n) + ' SKU แบ่งให้ ' + fmtNum(assignees.length) + ' คน — ' + sum);
   renderRecheck(true);
 }
 
