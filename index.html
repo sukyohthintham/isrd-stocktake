@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.42.2">
+<meta name="version" content="2.43.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.42.2</title>
+<title>ISRD Stocktake v2.43.0</title>
 
 <style>
 :root{
@@ -2024,7 +2024,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.42.2';
+var APP_VERSION = '2.43.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -15219,6 +15219,16 @@ function renderRecheckAdmin() {
 
   if (pendingUse.length) {
     body.appendChild(el('div', { style: 'font-weight:800;font-size:14px;margin:12px 0 8px;color:#059669', text: '📥 เด็กส่งคืนแล้ว รอใช้ยอด (' + fmtNum(pendingUse.length) + ' SKU)' }));
+    /* ⭐ v2.43.0 ใช้ยอดทั้งหมดทีเดียว — ไม่ต้องไล่กดทีละตัว */
+    if (canManage && pendingUse.length > 1) {
+      var _applyAll = el('button', { class: 'btn block', style: 'margin:0 0 10px;background:#059669', text: '✅ ใช้ยอดรีเช็คทั้งหมด ' + fmtNum(pendingUse.length) + ' รายการ (ปรับยอดนับทีเดียว)' });
+      _applyAll.onclick = function () {
+        ask('ใช้ยอดรีเช็คทั้งหมด?', 'ปรับยอดนับ ' + fmtNum(pendingUse.length) + ' รายการ ตามที่เด็กรีเช็คคืนมา', 'ใช้ยอดทั้งหมด').then(function (ok) {
+          if (ok) applyRecheckBulk(pendingUse.map(function (r) { return r.key; }));
+        });
+      };
+      body.appendChild(_applyAll);
+    }
     pendingUse.forEach(function (r) { body.appendChild(rcAdminCard(r, rc[r.key], canManage)); });
   }
 
@@ -15509,9 +15519,20 @@ function rcScannerCard(k, it, dr, r) {
   dr = dr || {};
   var card = el('div', { class: 'card', style: 'margin-bottom:10px' });
   card.setAttribute('data-sku', k); card.setAttribute('data-name', it.name || '');
-  card.appendChild(el('div', { class: 'row', style: 'justify-content:space-between;align-items:flex-start' }, [
-    el('div', {}, [el('div', { style: 'font-weight:800;font-size:16px', text: k }),
-      el('div', { class: 'muted', style: 'font-size:13px', text: it.name || '' })]),
+  /* ⭐ v2.43.0 รูปสินค้าในการ์ดเด็ก — ช่วยหาของง่าย · แตะรูปเพื่อซูมขยาย (imageBox lazy + showRecheckImg) */
+  var _prod = (state.products || {})[k] || {}, _pthumb = null;
+  if (_prod.imageUrl) {
+    _pthumb = imageBox(_prod.imageUrl);
+    _pthumb.style.width = '54px'; _pthumb.style.height = '54px'; _pthumb.style.borderRadius = '8px';
+    _pthumb.style.cursor = 'zoom-in'; _pthumb.style.border = '1px solid #e2e8f0';
+    _pthumb.title = 'แตะเพื่อขยายรูป';
+    _pthumb.addEventListener('click', function () { showRecheckImg(_prod.imageUrl); });
+  }
+  card.appendChild(el('div', { class: 'row', style: 'justify-content:space-between;align-items:flex-start;gap:10px' }, [
+    el('div', { class: 'row', style: 'gap:10px;align-items:flex-start;min-width:0' }, [
+      _pthumb,
+      el('div', { style: 'min-width:0' }, [el('div', { style: 'font-weight:800;font-size:16px', text: k }),
+        el('div', { class: 'muted', style: 'font-size:13px', text: it.name || '' })]) ]),
     el('div', {}, [editing ? el('span', { class: 'badge warn', text: '⏳ รอรีเช็ค' }) : el('span', { class: 'badge ok', text: '✅ ส่งคืนแล้ว' })])]));
 
   /* ⭐ v2.38.3 Location ในการ์ดเด็กด้วย — เด็กเป็นคนเดินไปนับของบนชั้น ต้องรู้ว่าของอยู่ไหน
@@ -15756,6 +15777,28 @@ function applyRecheck(k) {
   renderRecheck(true);
 }
 
+/* ⭐ v2.43.0 ใช้ยอดรีเช็ครวดเดียวหลายตัว — กดทีเดียวแทนไล่กดทีละ SKU · เฉพาะที่เด็กส่งคืนแล้ว+ยังไม่ใช้ยอด+ยังอยู่ในรอบ */
+function applyRecheckBulk(keys) {
+  if (!requirePerm('adjustCount', 'ปรับยอดนับไม่ได้')) return;
+  if (!rcRoundCounting()) { toast('รอบนี้ปิดแล้ว ปรับยอดไม่ได้', true); return; }
+  var rows = summaryData().rows, actBy = {};
+  rows.forEach(function (r) { actBy[r.key] = r.act; });
+  var rc = rcMap(), p = {}, n = 0;
+  (keys || []).forEach(function (k) {
+    var it = rc[k]; if (!it) return;
+    var qn = Number(it.qty); if (isNaN(qn)) return;
+    if (it.applied) return;
+    if (actBy[k] === undefined) return;   // ไม่อยู่ในรอบแล้ว ข้าม (ปลอดภัย)
+    var delta = qn - actBy[k];
+    if (delta !== 0) writeScan(k, delta, 'manual', 'รีเช็ค: ปรับยอดนับเป็น ' + qn + ' (เดิม ' + actBy[k] + ')');
+    p[k + '/applied'] = true; it.applied = true; n++;
+  });
+  if (!n) { toast('ไม่มีรายการให้ใช้ยอด', true); return; }
+  enqueueWrite('rounds/' + state.roundId + '/rechecks', p);
+  toast('ใช้ยอดรีเช็ค ' + fmtNum(n) + ' รายการแล้ว ✓');
+  renderRecheck(true);
+}
+
 /* ⭐ v2.42.0 รายงานรีเช็ค (HTML → พิมพ์/เซฟ PDF) พร้อมรูปหลักฐาน — ใช้ได้ทั้งรอบที่กำลังทำและรอบที่ปิดแล้ว (ดูย้อนหลัง)
    รวมทุก SKU ที่มีการรีเช็ค (ยกเว้นตัวหลุดรอบ) · รูปดึงจาก recheckPhotos/{rid} (base64) ฝังในหน้าเลย ไม่ต้องต่อเน็ตซ้ำ */
 var RC_REPORT_CSS = 'body{font-family:-apple-system,"Segoe UI",Tahoma,sans-serif;margin:16px;color:#0f172a;font-size:12.5px}' +
@@ -15855,7 +15898,7 @@ function pickRecheckPhoto(k, input) {
 }
 
 function showRecheckImg(src) {
-  if (!rcPhotoOk(src)) return;
+  if (!src) return;   /* ⭐ v2.43.0 รับทั้ง base64 (รูปรีเช็ค) และ URL (รูปสินค้า) — ตั้งผ่าน img.src property ปลอดภัย ไม่ใช่ HTML string */
   var ov = document.getElementById('rcImgOverlay');
   if (!ov) {
     ov = document.createElement('div'); ov.id = 'rcImgOverlay';
