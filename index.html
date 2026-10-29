@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.43.1">
+<meta name="version" content="2.43.2">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.43.1</title>
+<title>ISRD Stocktake v2.43.2</title>
 
 <style>
 :root{
@@ -2024,7 +2024,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.43.1';
+var APP_VERSION = '2.43.2';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -6539,6 +6539,24 @@ function locationText(key) {
   var l = locationOf(key);
   if (!l) return '';
   return [l.pick, l.refill].filter(Boolean).join(' / ');
+}
+
+/* ⭐ v2.43.2 เรียง Location แบบ natural (เลขเป็นเลข ไม่ใช่ string) — A1-2-1 มาก่อน A1-10-1, โซน A→M เรียงล่างขึ้นบน
+   น้องเดินเก็บเรียงชั้นได้ · ไม่มี Location = ไปท้ายสุด */
+function locCompare(a, b) {
+  a = String(a == null ? '' : a); b = String(b == null ? '' : b);
+  if (!a && !b) return 0;
+  if (!a) return 1;
+  if (!b) return -1;
+  var ax = a.match(/\d+|\D+/g) || [], bx = b.match(/\d+|\D+/g) || [];
+  for (var i = 0; i < Math.max(ax.length, bx.length); i++) {
+    var av = ax[i], bv = bx[i];
+    if (av === undefined) return -1;
+    if (bv === undefined) return 1;
+    if (/^\d/.test(av) && /^\d/.test(bv)) { var d = Number(av) - Number(bv); if (d) return d; }
+    else { var c = av.localeCompare(bv, 'th'); if (c) return c; }
+  }
+  return 0;
 }
 
 /* โซนของสินค้า = ตัวอักษรหน้าตัวเลขตัวแรกของ Location หยิบ
@@ -15205,7 +15223,8 @@ function renderRecheckAdmin() {
 
   body.appendChild(rcSearchBox());
 
-  list.sort(function (a, b) { return String(a.code).localeCompare(String(b.code), 'th'); });
+  /* ⭐ v2.43.2 เรียงตาม Location (natural) ให้ตรงกับฝั่งเด็ก · Location เท่ากัน/ไม่มี → เรียงรหัส */
+  list.sort(function (a, b) { return locCompare(a.location, b.location) || String(a.code).localeCompare(String(b.code), 'th'); });
 
   /* ⭐ v2.38.2 แยก 3 สถานะกันลายตา + ไม่ซ่อน action ที่ยังค้าง:
      (1) ยังไม่รีเช็ค = ยังไม่ส่ง/ส่งแล้วรอเด็กนับคืน
@@ -15508,7 +15527,10 @@ function renderRecheckScanner(admin) {
     mkStat(doneKeys.length, 'ส่งคืนแล้ว', '#059669', 'done')]));
   body.appendChild(rcSearchBox());
 
-  var show = (filter === 'done' ? doneKeys : pendingKeys).slice().sort();
+  /* ⭐ v2.43.2 เรียงการ์ดรีเช็คตาม Location (natural) — น้องเดินเก็บเรียงชั้น A→M · Location เท่ากัน/ไม่มี → เรียง SKU */
+  var show = (filter === 'done' ? doneKeys : pendingKeys).slice().sort(function (a, b) {
+    return locCompare(locationText(a), locationText(b)) || String(a).localeCompare(String(b), 'th');
+  });
   if (!show.length) {
     /* ⭐ v2.41.1 งานของตัวเองครบแล้ว แต่งานกลางยังเหลือ → ชวนไปช่วยเก็บ ไม่ปล่อยตกหล่น (เจตนาหลัก: เด็กช่วยกันเก็บงานกลาง) */
     var midPend = midKeys.filter(isPending);
