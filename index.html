@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.43.3">
+<meta name="version" content="2.43.4">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.43.3</title>
+<title>ISRD Stocktake v2.43.4</title>
 
 <style>
 :root{
@@ -2024,7 +2024,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.43.3';
+var APP_VERSION = '2.43.4';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -15130,6 +15130,61 @@ function renderRecheckAdmin() {
     }
   }
 
+  /* ⭐ v2.43.4 panel "มอบงานกลาง" แยกต่างหาก (คู่กับ panel มอบงานตามผลต่าง) — ดูง่าย ไม่ต้องกางการ์ดในแผงติดตาม
+     งานกลาง = SKU ที่ส่งรีเช็คแล้วแต่ยังไม่มอบใคร · แตะเลือกหลายคน → แบ่งเท่า ๆ กัน */
+  if (canManage) {
+    var midRows = list.filter(function (r) { var it = rc[r.key]; return it && !it.assignTo && !r._ghost; });
+    if (midRows.length) {
+      if (!state.rcMidSel) state.rcMidSel = {};
+      var mp = el('div', { class: 'card', style: 'margin-bottom:12px;background:#fffbeb;border-color:#fcd34d' });
+      mp.appendChild(el('div', { style: 'font-weight:700;font-size:13.5px;color:#b45309', text: '🧺 มอบงานกลาง (' + fmtNum(midRows.length) + ' SKU)' }));
+      mp.appendChild(el('div', { class: 'muted', style: 'font-size:12px;margin:2px 0 8px', text: 'ของที่ส่งรีเช็คแล้วแต่ยังไม่มอบใคร · แตะเลือกคน (หลายคนได้) → แบ่งมอบเท่า ๆ กัน' }));
+      var mUsers = assignableUsers();
+      if (!mUsers.length) {
+        mp.appendChild(el('div', { class: 'muted', style: 'font-size:12.5px;text-align:center;padding:3px', text: '(ยังไม่มีผู้ใช้ในสาขานี้)' }));
+      } else {
+        var _mpick = [];
+        var muc = el('div', { style: 'display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px' });
+        mUsers.forEach(function (u) {
+          var on = !!state.rcMidSel[u]; if (on) _mpick.push(u);
+          var c = el('button', { class: 'btn sm' + (on ? '' : ' grey'), style: 'padding:5px 12px', text: (on ? '✓ ' : '') + u });
+          c.onclick = function () { state.rcMidSel[u] = !on; renderRecheckAdmin(); };
+          muc.appendChild(c);
+        });
+        mp.appendChild(muc);
+        var _mper = _mpick.length ? Math.ceil(midRows.length / _mpick.length) : 0;
+        var mBtn = el('button', { class: 'btn sm block', style: 'margin:0;background:#059669', text: _mpick.length <= 1
+          ? ('✅ มอบงานกลาง ' + fmtNum(midRows.length) + ' SKU' + (_mpick.length === 1 ? ' ให้ ' + _mpick[0] : ''))
+          : ('✅ มอบแบ่ง ' + fmtNum(midRows.length) + ' SKU ให้ ' + fmtNum(_mpick.length) + ' คน (คนละ ~' + fmtNum(_mper) + ')') });
+        mBtn.onclick = function () {
+          if (!_mpick.length) { toast('แตะเลือกคนก่อน (เลือกได้หลายคน)', true); return; }
+          var _k = midRows.map(function (r) { return r.key; }), _as = _mpick.slice();
+          state.rcMidSel = {};
+          assignKeysMulti(_k, _as);
+        };
+        mp.appendChild(mBtn);
+      }
+      var _mOpen = !!state.rcMidOpen;
+      var _mTog = el('button', { class: 'btn sm grey block', style: 'margin:8px 0 0', text: (_mOpen ? '▼ ' : '▶ ') + 'ดูรายการงานกลาง ' + fmtNum(midRows.length) + ' SKU' });
+      _mTog.onclick = function () { state.rcMidOpen = !_mOpen; renderRecheckAdmin(); };
+      mp.appendChild(_mTog);
+      if (_mOpen) {
+        var _mdet = el('div', { style: 'border-top:1px solid #fcd34d;margin-top:8px;padding-top:4px' });
+        midRows.slice().sort(function (a, b) { return locCompare(a.location, b.location) || String(a.code).localeCompare(String(b.code), 'th'); }).forEach(function (r) {
+          var it2 = rc[r.key], dn = it2 && it2.qty != null && it2.qty !== '';
+          _mdet.appendChild(el('div', { class: 'row', style: 'justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px dashed #fcd34d;font-size:13px' }, [
+            el('div', {}, [
+              el('span', { style: 'display:inline-block;font-size:11px;font-weight:700;padding:1px 7px;border-radius:6px;margin-right:7px;' + (r.diff < 0 ? 'background:#fee2e2;color:#b91c1c' : 'background:#fef3c7;color:#b45309'), text: (r.diff > 0 ? '+' : '') + fmtNum(r.diff) }),
+              el('span', { style: 'font-weight:600', text: r.code }),
+              el('span', { class: 'muted', style: 'font-size:11.5px;margin-left:6px', text: r.location || '' }) ]),
+            el('span', { class: 'badge ' + (dn ? 'ok' : 'warn'), style: 'font-size:11px', text: dn ? '✓ เด็กนับคืนแล้ว' : 'รอนับ' }) ]));
+        });
+        mp.appendChild(_mdet);
+      }
+      body.appendChild(mp);
+    }
+  }
+
   /* ⭐ v2.39 แผงติดตามรายคน — ค้างที่ใคร กี่ SKU · แตะการ์ดคนกางดู SKU ที่ค้าง + Location */
   if (canManage) {
     var byP = {}, midKeys = [];
@@ -15142,7 +15197,7 @@ function renderRecheckAdmin() {
       if (it.qty != null && it.qty !== '') e.done++;
     });
     var pnames = Object.keys(byP).sort(function (a, b) { return a.localeCompare(b, 'th'); });
-    if (pnames.length || midKeys.length) {
+    if (pnames.length) {   /* ⭐ v2.43.4 งานกลางย้ายไป panel แยกด้านบนแล้ว · ติดตามรายคนโชว์เฉพาะคนที่ถูกมอบ */
       body.appendChild(el('div', { style: 'font-weight:800;font-size:13.5px;margin:4px 2px 8px;color:#0f766e', text: '👥 ติดตามรายคน (ค้างที่ใคร)' }));
       pnames.forEach(function (nm) {
         var e = byP[nm], left = e.total - e.done, pct = e.total ? Math.round(e.done / e.total * 100) : 0;
@@ -15180,44 +15235,7 @@ function renderRecheckAdmin() {
         body.appendChild(card);
       });
       /* ⭐ v2.41.2 งานกลางแตะกางดูได้ว่าเป็น SKU อะไร ผลต่างเท่าไหร่ อยู่ไหน — กันสับสนกับ chips ด้านบน (ที่รวมของยังไม่ส่งด้วย) */
-      if (midKeys.length) {
-        var mOpen = !!state.rcMidOpen;
-        var mCard = el('div', { class: 'card', style: 'margin-bottom:8px;padding:0;overflow:hidden;background:#fffbeb;border-color:#fcd34d' });
-        var mHead = el('div', { style: 'padding:11px 13px;cursor:pointer' }, [
-          el('div', { style: 'font-weight:700;color:#b45309;font-size:13px', text: (mOpen ? '▼ ' : '▶ ') + '🧺 งานกลาง (ยังไม่มอบ) — ' + fmtNum(midKeys.length) + ' SKU' }),
-          el('div', { class: 'muted', style: 'font-size:12px;margin-top:2px', text: 'แตะดูรหัสที่อยู่งานกลาง · เด็กทุกคนเห็น ใครว่างหยิบทำได้ กันตกหล่น' }) ]);
-        mHead.onclick = function () { state.rcMidOpen = !mOpen; renderRecheckAdmin(); };
-        mCard.appendChild(mHead);
-        if (mOpen) {
-          var mDet = el('div', { style: 'border-top:1px solid #fcd34d;padding:4px 13px 10px' });
-          midKeys.slice().sort(function (a, b) {
-            if (a.diff !== b.diff) return a.diff - b.diff;
-            return String(a.code).localeCompare(String(b.code), 'th');
-          }).forEach(function (r) {
-            var it2 = rc[r.key], dn = it2 && it2.qty != null && it2.qty !== '';
-            var locTxt = r.location || (state.foundZones && state.foundZones[r.key] ? 'โซน ' + Object.keys(state.foundZones[r.key]).sort().join(',') : '');
-            mDet.appendChild(el('div', { class: 'row', style: 'justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px dashed #fcd34d;font-size:13px' }, [
-              el('div', {}, [
-                el('span', { style: 'display:inline-block;font-size:11px;font-weight:700;padding:1px 7px;border-radius:6px;margin-right:7px;' + (r.diff < 0 ? 'background:#fee2e2;color:#b91c1c' : 'background:#fef3c7;color:#b45309'), text: (r.diff > 0 ? '+' : '') + fmtNum(r.diff) }),
-                el('span', { style: 'font-weight:600', text: r.code }),
-                el('span', { class: 'muted', style: 'font-size:11.5px;margin-left:6px', text: locTxt }) ]),
-              el('span', { class: 'badge ' + (dn ? 'ok' : 'warn'), style: 'font-size:11px', text: dn ? '✓ เด็กนับคืนแล้ว' : 'รอนับ' }) ]));
-          });
-          mCard.appendChild(mDet);
-          /* ⭐ v2.41.4 มอบงานกลางทั้งชุดในที่เดียว — แยกจาก chips ผลต่าง (chips = "ส่งรีเช็ค", งานกลาง = "มอบงาน") */
-          var _mUsers = assignableUsers();
-          var mSel = el('select', { style: 'flex:1;min-width:120px;padding:7px;border:1px solid #cbd5e1;border-radius:7px;font-size:13.5px;background:#fff' });
-          mSel.appendChild(el('option', { value: '', text: _mUsers.length ? '— เลือกคนรับงานกลาง —' : '(ยังไม่มีผู้ใช้ในสาขานี้)' }));
-          _mUsers.forEach(function (u) { mSel.appendChild(el('option', { value: u, text: u })); });
-          var mBtn = el('button', { class: 'btn sm', text: '✅ มอบงานกลาง ' + fmtNum(midKeys.length) + ' SKU' });
-          mBtn.onclick = function () {
-            if (!mSel.value) { toast('เลือกคนรับงานก่อน', true); return; }
-            assignKeys(midKeys.map(function (r) { return r.key; }), mSel.value);
-          };
-          mCard.appendChild(el('div', { class: 'row', style: 'gap:7px;padding:10px 13px 12px;border-top:1px solid #fcd34d' }, [ mSel, mBtn ]));
-        }
-        body.appendChild(mCard);
-      }
+      /* ⭐ v2.43.4 การ์ดงานกลางเดิมย้ายไปเป็น panel "มอบงานกลาง" แยกด้านบนแล้ว (เลือกหลายคน+แบ่งได้) */
     }
   }
 
