@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#1e3a8a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ISRD คลัง">
+<title>ISRD คลังสินค้า — เลือกโปรแกรม</title>
+<style>
+:root{--ink:#0f172a;--sub:#64748b;--line:#e2e8f0}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;min-height:100%;font-family:"Prompt",system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink);
+  background:linear-gradient(170deg,#1e3a8a 0%,#2563eb 42%,#eef2f7 42%,#eef2f7 100%);background-attachment:fixed}
+.wrap{max-width:460px;margin:0 auto;padding:30px 18px 40px;min-height:100vh}
+.head{color:#fff;text-align:center;padding:14px 8px 26px}
+.logo{width:72px;height:72px;border-radius:22px;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.28);
+  display:flex;align-items:center;justify-content:center;font-size:38px;margin:0 auto 14px}
+.head h1{margin:0;font-size:22px;font-weight:600}
+.head p{margin:6px 0 0;font-size:13px;opacity:.9}
+.tiles{display:grid;gap:16px}
+.tile{display:flex;align-items:center;gap:16px;background:#fff;border:1px solid var(--line);border-radius:22px;
+  padding:20px;text-decoration:none;color:inherit;box-shadow:0 10px 26px rgba(15,23,42,.12);transition:transform .12s,box-shadow .12s}
+.tile:active{transform:scale(.98);box-shadow:0 6px 16px rgba(15,23,42,.14)}
+.ic{width:64px;height:64px;border-radius:18px;display:flex;align-items:center;justify-content:center;font-size:32px;flex-shrink:0;color:#fff}
+.ic.st{background:linear-gradient(145deg,#6366f1,#4338ca)}
+.ic.pp{background:linear-gradient(145deg,#2563eb,#0ea5e9)}
+.tile h2{margin:0;font-size:19px;font-weight:600}
+.tile p{margin:4px 0 0;color:var(--sub);font-size:13px;line-height:1.45}
+.go{margin-left:auto;color:#cbd5e1;font-size:26px;font-weight:300}
+.sub-row{display:flex;gap:10px;margin-top:4px}
+.mini{flex:1;display:flex;align-items:center;justify-content:center;gap:7px;background:#fff;border:1px solid var(--line);border-radius:14px;
+  padding:12px;text-decoration:none;color:#334155;font-size:13px;font-weight:500;box-shadow:0 4px 12px rgba(15,23,42,.06)}
+.mini:active{transform:scale(.98)}
+.note{margin-top:22px;background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;border-radius:14px;padding:12px 14px;font-size:12px;line-height:1.5}
+.foot{text-align:center;color:#94a3b8;font-size:11px;margin-top:22px}
+.secttl{color:#64748b;font-size:12px;font-weight:600;margin:22px 2px 10px;letter-spacing:.3px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <div class="logo">📦</div>
+    <h1>ISRD คลังสินค้า</h1>
+    <p>เลือกโปรแกรมที่จะใช้งาน</p>
+  </div>
+
+  <div class="tiles">
+    <a class="tile" href="https://sukyohthintham.github.io/isrd-stocktake/">
+      <div class="ic st">🔢</div>
+      <div><h2>Stock Take</h2><p>นับสต๊อก · ยิงบาร์โค้ด · รีเช็ค</p></div>
+      <div class="go">›</div>
+    </a>
+    <a class="tile" href="https://inspiration-dashboard.vercel.app/dashboard/pickpack-work">
+      <div class="ic pp">🚚</div>
+      <div><h2>Pick &amp; Pack</h2><p>หยิบ/รีเช็คสินค้าส่ง Shop · งานของน้อง</p></div>
+      <div class="go">›</div>
+    </a>
+  </div>
+
+  <div class="secttl">สำหรับหัวหน้า / แอดมิน</div>
+  <div class="sub-row">
+    <a class="mini" href="https://inspiration-dashboard.vercel.app/dashboard/pickpack">🧑‍💼 แจกงาน</a>
+    <a class="mini" href="https://inspiration-dashboard.vercel.app/dashboard/pickpack-report">📊 สรุปผลงาน</a>
+  </div>
+
+  <div class="note">
+    🔑 เข้าโปรแกรมแล้วล็อกอินของแต่ละโปรแกรมครั้งแรกครั้งเดียว — ครั้งต่อไปกดจากหน้านี้เข้าได้เลย ไม่ต้องล็อกอินซ้ำ (บนมือถือเครื่องเดิม)<br>
+    📲 กด "เพิ่มไปยังหน้าโฮม / Add to Home Screen" เพื่อใช้เหมือนแอป
+  </div>
+
+  <div class="foot">ISRD Warehouse Hub · Inspiration Design Co., Ltd.</div>
+</div>
+</body>
+</html>
