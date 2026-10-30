@@ -7,6 +7,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="ISRD คลัง">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <title>ISRD คลังสินค้า — เลือกโปรแกรม</title>
 <style>
 :root{--ink:#0f172a;--sub:#64748b;--line:#e2e8f0}
@@ -46,6 +49,12 @@ html,body{margin:0;padding:0;min-height:100%;font-family:"Prompt",system-ui,-app
     <p>เลือกโปรแกรมที่จะใช้งาน</p>
   </div>
 
+  <div id="installcard" style="display:none;margin:0 0 18px;background:#fff;border:1px solid var(--line);border-radius:18px;padding:14px 16px;box-shadow:0 8px 20px rgba(15,23,42,.1)">
+    <div style="font-weight:600;font-size:15px">📲 ติดตั้งเป็นแอปในเครื่อง</div>
+    <div id="installmsg" style="color:var(--sub);font-size:12.5px;margin:4px 0 10px;line-height:1.5">เปิดเต็มจอ ไม่มีแถบเบราว์เซอร์ เหมือนแอปจริง</div>
+    <button id="installbtn" style="width:100%;background:#1e3a8a;color:#fff;border:none;border-radius:12px;padding:12px;font-size:15px;font-weight:600;font-family:inherit">⬇️ ติดตั้งแอป</button>
+  </div>
+
   <div class="tiles">
     <a class="tile" href="https://sukyohthintham.github.io/isrd-stocktake/">
       <div class="ic st">🔢</div>
@@ -72,5 +81,32 @@ html,body{margin:0;padding:0;min-height:100%;font-family:"Prompt",system-ui,-app
 
   <div class="foot">ISRD Warehouse Hub · Inspiration Design Co., Ltd.</div>
 </div>
+<script>
+(function () {
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
+  }
+  var card = document.getElementById('installcard');
+  var btn = document.getElementById('installbtn');
+  var msg = document.getElementById('installmsg');
+  var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+  if (standalone) return;                 // ติดตั้งไปแล้ว ไม่ต้องโชว์
+  var isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent || '');
+  var deferred = null;
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault(); deferred = e; card.style.display = 'block';   // Android/Chrome
+  });
+  btn.addEventListener('click', function () {
+    if (!deferred) return;
+    deferred.prompt();
+    deferred.userChoice.then(function () { deferred = null; card.style.display = 'none'; });
+  });
+  if (isIOS) {                            // iOS ไม่มีปุ่มติดตั้งอัตโนมัติ → บอกวิธี
+    card.style.display = 'block';
+    btn.style.display = 'none';
+    msg.innerHTML = 'บน iPhone/iPad: กดปุ่ม <b>แชร์</b> ⬆️ ด้านล่างจอ แล้วเลือก <b>“เพิ่มไปยังหน้าจอโฮม”</b> — จะได้ไอคอนแอปเปิดเต็มจอ';
+  }
+})();
+</script>
 </body>
 </html>
