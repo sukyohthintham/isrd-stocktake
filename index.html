@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.43.24">
+<meta name="version" content="2.43.25">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.43.24</title>
+<title>ISRD Stocktake v2.43.25</title>
 
 <style>
 :root{
@@ -2024,7 +2024,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.43.24';
+var APP_VERSION = '2.43.25';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -6043,7 +6043,7 @@ var THUMB_TIMEOUT_MS = 15000;         // ดาวน์โหลด + decode + 
    ถ้าใช้คีย์เดิมเครื่องที่เคยพิมพ์ไว้จะหยิบรูปที่ครอปแล้วมาใช้ต่อไม่รู้จบ */
 var THUMB_STORE_KEY = 'isrd_thumbs_v2';
 var THUMB_STORE_CAP = 2500000;        // ~2.5 MB ใน localStorage
-var IMAGE_PROXY = 'https://inspiration-dashboard.netlify.app/api/image-proxy?url=';
+var IMAGE_PROXY = 'https://inspiration-dashboard.netlify.app/api/image-proxy?w=240&q=60&url=';
 
 var thumbCache = Object.create(null);      // url -> data:image/jpeg;base64,...
 var thumbDirty = false;
