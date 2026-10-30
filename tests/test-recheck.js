@@ -993,6 +993,33 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
     rL.l5.a && rL.l5.a.src === 'recheck' && rL.l5.a.val === 12 && rL.l5.b && rL.l5.b.src === 'recheck' && rL.l5.b.val === 8
       && rL.l5.aeA === 12 && rL.l5.aeB === 8, rL.l5);
 
+  // ---------- [RD] ของที่ลบทิ้ง (discarded) ไม่หลุดเข้ารีเช็ค (v2.43.22-23) ----------
+  console.log('\n[RD] discarded ไม่เข้ารีเช็ค');
+  await page.evaluate(() => {
+    __seed('scanner');
+    state.unknownKeys = { JUNK: { value: 'JUNK', qty: 1, discarded: true }, KEEP: { value: 'KEEP', qty: 1 } };
+    state.rechecks = { JUNK: { name: 'JUNK', sentAt: 1 }, KEEP: { name: 'KEEP', sentAt: 1 } };
+    renderRecheckScanner(false);
+  });
+  let rRD = await page.evaluate(() => __bodyText());
+  check('[RD] เด็กไม่เห็นตัวที่ลบทิ้ง (JUNK)', rRD.indexOf('JUNK') < 0, rRD.slice(0, 100));
+  check('[RD] เด็กยังเห็นตัวปกติ (KEEP)', rRD.indexOf('KEEP') >= 0, rRD.slice(0, 100));
+  await page.evaluate(() => {
+    __seed('admin');
+    state.unknownKeys = { JUNK: { value: 'JUNK', qty: 1, discarded: true } };
+    state.rechecks = { JUNK: { name: 'JUNK', sentAt: 1, qty: 1, by: 'เด็ก' } };
+    renderRecheckAdmin();
+  });
+  check('[RD] admin ไม่ขึ้นตัวที่ลบทิ้ง (stub)', await page.evaluate(() => __bodyText().indexOf('JUNK') < 0));
+  await page.evaluate(() => {
+    __seed('admin');
+    state.unknownKeys = { JUNK: { value: 'JUNK', qty: 1, discarded: true } };
+    state.rechecks = {}; __calls.enqueue = []; __calls.toast = [];
+    sendRecheckBulk(['JUNK']);
+  });
+  let rRDs = await page.evaluate(() => ({ enq: __calls.enqueue.length }));
+  check('[RD] sendRecheckBulk ไม่เขียนตัวที่ลบทิ้ง', rRDs.enq === 0, rRDs);
+
   console.log('\n[10] ไม่มี error');
   check('ไม่มี page error', errors.length === 0, errors.slice(0, 5));
 

@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.43.22">
+<meta name="version" content="2.43.23">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.43.22</title>
+<title>ISRD Stocktake v2.43.23</title>
 
 <style>
 :root{
@@ -2024,7 +2024,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.43.22';
+var APP_VERSION = '2.43.23';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -15875,7 +15875,7 @@ function resendRecheckBulk(keys, assignees) {
   var who = (assignees || []).slice();
   /* ⭐ v2.43.19 กันลบยอดที่นับไปแล้ว: ตัวที่เด็กนับคืนแล้วแต่ยังไม่ใช้ยอด (returned && !applied) — ยอดยังไม่ลง scan ล้างแล้วหาย (กฎบ้าน) → ข้าม */
   var _rc0 = rcMap();
-  var sendable = list.filter(function (k) { var it = _rc0[k]; return !(it && it.qty != null && it.qty !== '' && !it.applied); });
+  var sendable = list.filter(function (k) { var it = _rc0[k]; return !rcDiscarded(k) && !(it && it.qty != null && it.qty !== '' && !it.applied); });
   var skipPre = list.length - sendable.length;
   if (!sendable.length) { toast('ตัวที่เลือกมียอดเด็กรอใช้ยอดอยู่ — กด "ใช้ยอด" ก่อนถึงส่งรีเช็คใหม่ได้', true); return; }
   var msg = 'ส่ง ' + fmtNum(sendable.length) + ' ตัวให้เด็กนับใหม่ · ล้างยอดรีเช็คเดิม' + (who.length ? ' · มอบให้ ' + who.join(', ') : ' · คงคนเดิม') + (skipPre ? ' · ข้าม ' + fmtNum(skipPre) + ' ตัวที่ยังรอใช้ยอด' : '');
@@ -16118,6 +16118,7 @@ function applyRecheckBulk(keys) {
   var rc = rcMap(), p = {}, n = 0, adjPatch = {}, _now = Date.now(), _cid = cycleOf(currentJob());
   (keys || []).forEach(function (k) {
     var it = rc[k]; if (!it) return;
+    if (rcDiscarded(k)) return;   /* v2.43.23 กันใช้ยอดของที่ลบทิ้ง */
     var qn = Number(it.qty); if (isNaN(qn)) return;
     if (it.applied) return;
     var _base = (actBy[k] === undefined) ? 0 : actBy[k];   /* ⭐ v2.43.14 ของเกินไม่มีแถว → เริ่มจาก 0 สร้างยอดเข้า Job */
