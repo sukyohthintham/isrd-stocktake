@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.43.21">
+<meta name="version" content="2.43.22">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.43.21</title>
+<title>ISRD Stocktake v2.43.22</title>
 
 <style>
 :root{
@@ -2024,7 +2024,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.43.21';
+var APP_VERSION = '2.43.22';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -14909,6 +14909,7 @@ function rcStrayMap() {
   Object.keys(rc).forEach(function (k) { if (raw[k] === undefined && cnt[k] === undefined) out[k] = 1; });
   return out;
 }
+function rcDiscarded(k) { var u = state.unknownKeys && state.unknownKeys[k]; return !!(u && u.discarded); }
 function rcPhotoOk(v) { return typeof v === 'string' && v.indexOf(RC_PHOTO_PREFIX) === 0 && v.length < RC_PHOTO_MAXLEN; }
 function rcRoundCounting() { var r = (state.roundIndex || {})[state.roundId]; return !!r && r.status === 'counting'; }
 
@@ -15285,6 +15286,7 @@ function renderRecheckAdmin() {
   Object.keys(rc).forEach(function (k) {
     var it = rc[k];
     if (!it || byKey[k]) return;   /* มีแถวสรุปแล้ว (จับใน list ข้างบน) */
+    if (rcDiscarded(k)) return;   /* v2.43.22 ลบทิ้งแล้ว = ขยะ ไม่ขึ้นรีเช็ค admin */
     var returned = it.qty != null && it.qty !== '';
     var asking = !!(it.reopenReq || it.reopenOk);   /* ⭐ v2.43.18 reopen = แท็บขอแก้เสมอ (รวม applied+reopenReq) */
     if (!returned && !asking) return;   /* ยังไม่นับ + ไม่ขอแก้ = คงซ่อน (ขยะหลุดรอบ) */
@@ -15573,6 +15575,7 @@ function renderRecheckScanner(admin) {
      → ของขาด (ระบบมี ยิง 0) ยังอยู่ · ช่วงยอดระบบยังโหลดไม่เสร็จจะไม่กรอง (rcStrayMap คืน {}) กันงานหายจากจอ */
   var _stray = rcStrayMap();
   keys = keys.filter(function (k) {
+    if (rcDiscarded(k)) return false;   /* v2.43.22 ของที่ลบทิ้ง (ขยะ/ยิงหลุด) ไม่ต้องให้เด็กรีเช็ค */
     if (!_stray[k]) return true;
     /* ⭐ v2.43.16 ของเกิน/หลุดรอบ แต่เด็กนับแล้ว/กำลังแก้/เปิดให้แก้ = ของจริงที่ต้องทำต่อ ไม่ใช่ขยะ → ต้องเห็น (ตรงกับ admin v2.43.14) */
     var it = rc[k] || {};
@@ -15835,7 +15838,7 @@ function assignByRange(from, to, assignee) {
 function sendRecheckBulk(keys) {
   if (!requirePerm('adjustCount', 'ส่งรีเช็คไม่ได้')) return;
   if (!rcRoundCounting()) { toast('รอบนี้ปิดแล้ว ส่งรีเช็คไม่ได้', true); return; }
-  keys = (keys || []).filter(Boolean);
+  keys = (keys || []).filter(Boolean).filter(function (k) { return !rcDiscarded(k); });   /* v2.43.22 กันส่งของที่ลบทิ้ง */
   if (!keys.length) { toast('ไม่มี SKU ที่ต้องส่ง', true); return; }
   var rid = state.roundId, rows = summaryData().rows, nameOf = {};
   rows.forEach(function (r) { nameOf[r.key] = r.name || r.key; });
