@@ -195,6 +195,22 @@ function check(name, ok, got) {
         r6.doc.indexOf('9999999999999') >= 0, r6.doc);
   check('แต่หลุดจากรายการที่ต้องจัดการแล้ว', r6.pending === 1, r6.pending);
 
+  /* ---------- 6b. ของที่มีในไฟล์ยอดระบบจริง (ยิงพลาดเป็น unknown) ต้องไม่อยู่ในเอกสาร (v2.43.21) ---------- */
+  console.log('\n[6b] ของที่มีในระบบจริง ไม่ขึ้นเอกสาร "ไม่มีในระบบ"');
+  const r6b = await page.evaluate(() => {
+    window.__seed('admin');
+    /* BAD2 เป็น SKU ที่อยู่ในไฟล์ยอดระบบสาขา + เป็นสินค้าในระบบ — ถูกยิงพลาดเป็น unknown (เคส NTPL0038LY00FF 271/271) */
+    state.systemQty.BAD2 = 7;
+    state.products.BAD2 = { code: '9999999999999', name: 'ของในระบบ', type: 'product' };
+    return { doc: window.__docUnknownCodes(), pending: unknownPending() };
+  });
+  check('ของที่มีในไฟล์ยอดระบบ ไม่อยู่ในเอกสารไม่มีในระบบ',
+        r6b.doc.indexOf('9999999999999') < 0, r6b.doc);
+  check('ตัวที่ไม่มีในไฟล์ยอดจริง (8850) ยังอยู่ครบ',
+        r6b.doc.indexOf('8850999999999') >= 0, r6b.doc);
+  check('เอกสารกับชิปสรุปตรงกัน (เหลือ 1 = 8850)',
+        r6b.doc.length === 1 && r6b.pending === 1, { doc: r6b.doc, pending: r6b.pending });
+
   /* ---------- 7. ปุ่มที่ 3 ในแท็บบาร์โค้ดใหม่ ---------- */
   console.log('\n[7] ปุ่มที่ 3 ในแท็บ "บาร์โค้ดใหม่" (Master)');
   const r7 = await page.evaluate(() => {

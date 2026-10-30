@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.43.20">
+<meta name="version" content="2.43.21">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.43.20</title>
+<title>ISRD Stocktake v2.43.21</title>
 
 <style>
 :root{
@@ -2024,7 +2024,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.2 — เก็บ edge: queueSave คืน false→ยิงตรง · submitRecheck ยอดลง Job เดิมเสมอแม้เปลี่ยน Job · rcBusy ใน state */
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
-var APP_VERSION = '2.43.20';
+var APP_VERSION = '2.43.21';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -4651,6 +4651,17 @@ function unknownRows(includeResolved) {
 }
 
 function unknownPending() { return unknownRows(false).length; }
+
+/* ของที่จริง ๆ อยู่ในไฟล์ยอดระบบสาขา (systemQty/Raw มีคีย์นี้) = เป็นของในระบบ ถูกยิงพลาดเป็น unknown เฉย ๆ
+   (เช่น ยิงก่อน Master โหลด) ต่างจากตัวที่ไม่มีในไฟล์ยอดแล้วเอาไปผูก/สร้างเป็นสินค้า (ยังเป็นหลักฐานของนอกระบบ) */
+function unknownInSystem(r) {
+  var sysMap = (state.systemQtyRaw && Object.keys(state.systemQtyRaw).length)
+    ? state.systemQtyRaw : (state.systemQty || {});
+  if (sysMap[r.key] !== undefined) return true;
+  if (!state.scanIndex) buildScanIndex();
+  var pk = state.scanIndex && state.scanIndex.get(String(r.value).toUpperCase());
+  return !!(pk && sysMap[pk] !== undefined);
+}
 
 /* ใช้ในชุดทดสอบเพื่อยืนยันว่าบาร์โค้ดสำรองถูกใส่เข้า index แล้วจริง */
 function scanIndexHas(value) {
@@ -11357,7 +11368,8 @@ function buildUnknownDocTable() {
   /* ตัวที่ถูกสั่งลบทิ้งไม่ต้องอยู่ในเอกสาร — มันคือของที่ยิงหลุด ไม่ใช่ของที่เจอบนชั้นจริง
      ต่างจากตัวที่ผูก/สร้างเป็นสินค้าแล้ว ซึ่งคงไว้เป็นหลักฐานว่าเจออะไรและจัดการยังไง
      (ประวัติการลบยังอยู่ครบในชีท "ประวัติการนับ" ของไฟล์ Excel) */
-  var rows = unknownRows(true).filter(function (r) { return !r.discarded; });
+  /* v2.43.21: ตัดตัวที่จริง ๆ อยู่ในไฟล์ยอดระบบสาขา (systemQty มีคีย์นี้) ออก — ยิงพลาดเป็น unknown แต่เป็นของในระบบ (เช่น NTPL0038LY00FF 271/271) ไม่ใช่ของนอกระบบ ให้ตรงกับชิปสรุป · ตัวที่ผูก/สร้างสินค้าใหม่ (ไม่อยู่ไฟล์ยอด) ยังคงเป็นหลักฐานตามเดิม */
+  var rows = unknownRows(true).filter(function (r) { return !r.discarded && !unknownInSystem(r); });
   if (!rows.length) return null;
 
   var box = document.createElement('div');
