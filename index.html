@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.44.0">
+<meta name="version" content="2.44.1">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.44.0</title>
+<title>ISRD Stocktake v2.44.1</title>
 
 <style>
 :root{
@@ -2064,7 +2064,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
 /* ⭐ v2.44.0 — ชุบชีวิต presence (ผู้ใช้ออนไลน์ + เตะออก) จาก presence-hold v2.33.0 · Rules v2.1.5 เพิ่มโหนด presence */
-var APP_VERSION = '2.44.0';
+var APP_VERSION = '2.44.1';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -6270,6 +6270,18 @@ function loadLazyImage(box, done) {
   };
   img.onerror = function () {
     if (settled) return;
+    /* ⭐ v2.44.1 โหลดตรงจาก CDN ไม่ได้ (zort ไม่มี CORS / บาง network บล็อก / rate-limit ตอนโหลดหลายรูป)
+       → ลองผ่าน proxy (ดึงฝั่ง server) ก่อนยอมแพ้ · เครื่องที่ไม่มี cache จะได้รูปแทนรูปแตก */
+    if (!img.__viaProxy && IMAGE_PROXY && /^https?:/.test(url) && url.indexOf(IMAGE_PROXY) !== 0) {
+      img.__viaProxy = true;
+      clearTimeout(timer);
+      timer = setTimeout(function () {
+        if (settled) return; settled = true; img.onload = img.onerror = null; img.src = '';
+        markNoImage(box, 'timeout'); finish();
+      }, 8000);   /* proxy + Image CDN รอบแรกอาจช้ากว่า CDN ตรง ให้เวลามากขึ้น */
+      img.src = IMAGE_PROXY + encodeURIComponent(url);
+      return;
+    }
     settled = true;
     clearTimeout(timer);
     markNoImage(box, 'error');
@@ -10498,12 +10510,20 @@ function renderSummary() {
 function loadReportRechecks() {
   var ids = cycleScope().multi ? jobsInCycle(cycleOf(currentJob())) : [state.roundId];
   state.reportRechecks = {};
+  state.reportRecheckMeta = {};   /* ⭐ v2.44.1 เก็บผู้รีเช็ค+เวลา (by/at) สำหรับคอลัมน์ "ผู้รีเช็ค" + ชีต "ประวัติการรีเช็ค" */
+  state.reportRecheckRows = [];
   return Promise.all(ids.filter(Boolean).map(function (id) {
+    var jobCode = (state.roundIndex[id] || {}).jobCode || id;
     return db.getQuiet('rounds/' + id + '/rechecks').then(function (rc) {
       if (!rc) return;
       Object.keys(rc).forEach(function (k) {
-        var q = rc[k] && rc[k].qty;
-        if (q != null && q !== '') state.reportRechecks[k] = Number(q);
+        var it = rc[k]; if (!it) return;
+        var q = it.qty;
+        if (q != null && q !== '') {
+          state.reportRechecks[k] = Number(q);
+          state.reportRecheckMeta[k] = { by: it.by || '', at: it.at || 0 };
+          state.reportRecheckRows.push({ key: k, job: jobCode, qty: Number(q), by: it.by || '', at: it.at || 0, applied: !!it.applied });
+        }
       });
     }).catch(function () {});
   }));
@@ -10545,6 +10565,12 @@ function recheckQtyOf(k) {
   var it = (state.rechecks || {})[k];
   return (it && it.qty != null && it.qty !== '') ? Number(it.qty) : '';
 }
+/* ⭐ v2.44.1 ชื่อผู้ที่รีเช็ค SKU นี้ (ว่างถ้าไม่มี) — คอลัมน์ "ผู้รีเช็ค" ชีตรายสินค้า */
+function recheckByOf(k) {
+  if (state.reportRecheckMeta && state.reportRecheckMeta[k]) return state.reportRecheckMeta[k].by || '';
+  var it = (state.rechecks || {})[k];
+  return (it && it.qty != null && it.qty !== '' && it.by) ? it.by : '';
+}
 
 function buildSummaryExcel(data) {
   var round = state.roundIndex[state.roundId] || { name: 'stocktake' };
@@ -10573,7 +10599,7 @@ function buildSummaryExcel(data) {
   /* คอลัมน์หมายเหตุ (v2.7.4) — ไฟล์ของหน้าเอกสารมีมาตั้งแต่เดิม ไฟล์นี้เพิ่งได้
      ทั้งสองไฟล์อ่านจาก reasons/{key} ก้อนเดียวกัน ตัวเลขกับข้อความจึงตรงกันเสมอ */
   var s2 = [['รหัสสินค้า', 'ชื่อสินค้า', 'Location', 'โซนที่เก็บ', 'ประเภทที่นับ', 'Status', 'หน่วย', 'ประเภท',
-             'ตั้งต้น', 'ขายออก', 'คงเหลือ', 'ยิงจริง', 'ผลต่าง', 'เด็กรีเช็คส่งกลับมา',
+             'ตั้งต้น', 'ขายออก', 'คงเหลือ', 'ยิงจริง', 'ผลต่าง', 'เด็กรีเช็คส่งกลับมา', 'ผู้รีเช็ค',
              'จากการยิง', 'จากการกรอกมือ', priceLabel, 'มูลค่าระบบ', 'มูลค่าจริง', 'ผลต่างมูลค่า',
              'หมายเหตุ']];
 
@@ -10632,7 +10658,7 @@ function buildSummaryExcel(data) {
     s2.push([r.code, r.name, r.location || '', fzZones(r.key), stTypes(r.key),
              r.status || DEFAULT_STATUS, r.unit,
              r.type === 'notProduct' ? 'Not Product' : 'Product',
-             r.sysRaw, r.sold, r.sys, r.act, r.diff, recheckQtyOf(r.key),
+             r.sysRaw, r.sold, r.sys, r.act, r.diff, recheckQtyOf(r.key), recheckByOf(r.key),
              r.scanQty, r.manualQty, r.price,
              Math.round(r.sys * r.price * 100) / 100, Math.round(r.act * r.price * 100) / 100,
              Math.round((r.act - r.sys) * r.price * 100) / 100,
@@ -10679,11 +10705,24 @@ function buildSummaryExcel(data) {
   var s4 = [UNKNOWN_HEAD.slice()];
   unknownRows(true).forEach(function (u, i) { s4.push(unknownExcelRow(u, i)); });
 
+  /* ⭐ v2.44.1 ชีต "ประวัติการรีเช็ค" — ใครรีเช็ค SKU ไหน เมื่อไหร่ ได้เท่าไหร่ ใช้ยอดหรือยัง (ตรวจย้อนหลังได้) */
+  var _rcByKey = {}; data.rows.forEach(function (r) { _rcByKey[r.key] = r; });
+  var s5 = [['วันเวลา', 'Job', 'รหัสสินค้า', 'ชื่อสินค้า', 'ผู้รีเช็ค', 'รีเช็คได้', 'ควรเหลือ (ระบบ)', 'ผลต่าง', 'สถานะ']];
+  (state.reportRecheckRows || []).slice().sort(function (a, b) { return (b.at || 0) - (a.at || 0); }).forEach(function (rr) {
+    var r = _rcByKey[rr.key] || {};
+    var sys = (r.sys != null) ? r.sys : '';
+    var diff = (r.sys != null) ? (rr.qty - r.sys) : '';
+    s5.push([fmtTime(rr.at), rr.job, r.code || rr.key, r.name || '', rr.by || '-',
+             rr.qty, sys, diff, rr.applied ? 'ใช้ยอดแล้ว' : 'รอใช้ยอด']);
+  });
+  if (s5.length === 1) s5.push(['— ยังไม่มีการรีเช็คในรอบนี้ —']);
+
   var blob = buildXlsx([
     { name: 'สรุป', rows: s1, widths: [16, 12, 12, 13, 10, 10, 10, 14, 14, 14, 14, 14] },
     /* v2.21.0 — แทรกความกว้างของ "ประเภทที่นับ" (16) เป็นตัวที่ 5 ต่อจากโซนที่เก็บ
        จำนวนช่องต้องเท่าจำนวนคอลัมน์เสมอ ไม่งั้นความกว้างเลื่อนไปทั้งแถว */
-    { name: 'รายสินค้า', rows: s2, widths: [18, 34, 16, 22, 16, 18, 10, 12, 12, 12, 12, 12, 10, 16, 11, 14, 12, 14, 14, 14, 30] },
+    { name: 'รายสินค้า', rows: s2, widths: [18, 34, 16, 22, 16, 18, 10, 12, 12, 12, 12, 12, 10, 16, 14, 11, 14, 12, 14, 14, 14, 30] },
+    { name: 'ประวัติการรีเช็ค', rows: s5, widths: [22, 16, 18, 36, 16, 12, 14, 12, 14] },
     { name: 'ประวัติการนับ', rows: s3,
       widths: histAll ? [22, 16, 18, 36, 16, 14, 10, 13, 22, 24]
                       : [22, 18, 36, 16, 14, 10, 13, 22, 24] },
@@ -15532,7 +15571,7 @@ function rcAdminCard(r, it, canManage) {
       rcThumb(k, it.at),
       el('div', {}, [
         el('div', {}, ['✅ เด็กนับรีเช็คได้ ', el('b', { style: 'font-size:17px', text: fmtNum(q) }), ' ชิ้น ',
-          el('span', { class: 'muted', style: 'font-size:12px', text: 'โดย ' + (it.by || '-') })]),
+          el('span', { class: 'muted', style: 'font-size:12px', text: 'โดย ' + (it.by || '-') + (it.at ? ' · 🕐 ' + timeHM(it.at) + ' น.' : '') })]),
         el('div', { class: 'muted', style: 'font-size:13px' + (match ? ';color:#059669' : ';color:#dc2626'),
           text: 'เทียบใหม่: ' + fmtNum(q) + ' vs ควรเหลือ ' + fmtNum(r.sys) + ' → ' + (match ? 'ตรงแล้ว' : 'ยังต่าง ' + (q - r.sys > 0 ? '+' : '') + fmtNum(q - r.sys)) })])]));
     if (it.applied) {
@@ -15598,9 +15637,10 @@ function rcThumb(k, at) {
 /* ⭐ v2.40 ช่องค้นหา SKU/ชื่อ — กรองด้วย DOM (ซ่อน/แสดงการ์ด) ไม่ re-render ทั้งหน้า → โฟกัสไม่หลุดตอนพิมพ์ */
 function rcSearchBox() {
   var inp = el('input', { type: 'text', value: state.rcSearch || '', placeholder: '🔍 ค้นหา SKU / ชื่อสินค้า',
-    style: 'width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px;margin-bottom:10px;box-sizing:border-box;font-size:14px' });
+    style: 'width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px;box-sizing:border-box;font-size:14px' });
   inp.addEventListener('input', function () { state.rcSearch = inp.value; rcApplySearch($('recheckBody')); });
-  return inp;
+  /* ⭐ v2.44.1 ติดหนึบบนจอ (sticky) — เลื่อนลิสต์ยาวแค่ไหนก็ยังพิมพ์ค้นหาได้ ไม่ต้อง scroll ขึ้น/พึ่ง Ctrl+F */
+  return el('div', { style: 'position:sticky;top:var(--topbar-h,0px);z-index:20;background:#f1f5f9;padding:8px 0 10px;margin:0 0 4px' }, [inp]);
 }
 function rcApplySearch(container) {
   if (!container) return;

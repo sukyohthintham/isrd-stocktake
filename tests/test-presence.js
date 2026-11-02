@@ -5,7 +5,7 @@
    ห้ามใช้ db.subscribe เด็ดขาด (EventSource = กิน connection = ทำลาย LITE_MODE v2.32.0)
 
    กติกาที่ต้องได้:
-     [1]  เวอร์ชัน 2.44.0 ครบ 3 จุด · โหลดแอปไม่มี error
+     [1]  เวอร์ชันตรงกันครบ 3 จุด (ไม่ล็อกเลข) · โหลดแอปไม่มี error
      [2]  presencePatch มีฟิลด์ครบ และ "ไม่มี kickAt" (ไม่งั้นทับคำสั่งเตะ)
      [3]  tick: kickAt > sessionStart = เตะ · kickAt < sessionStart = ไม่เตะ (เข้าใหม่ต้องไม่โดนซ้ำ)
      [4]  tick: autoKick ปิด = ไม่เตะ · เปิด + idle เกิน = เตะ · มีคิวค้าง = รอส่งก่อน
@@ -278,8 +278,9 @@ function check(name, ok, got) {
   });
 
   console.log('\n[1] เวอร์ชัน + โหลดแอป');
-  check('เวอร์ชัน 2.44.0 ครบ 3 จุด',
-        r.ver[0] === '2.44.0' && /v2\.44\.0/.test(r.ver[1]) && r.ver[2] === '2.44.0', r.ver);
+  /* ไม่ล็อกเลขตายตัว — เลขเปลี่ยนทุกครั้งที่ bump · เช็คแค่ 3 จุดตรงกันเอง (meta · title · APP_VERSION) */
+  check('เวอร์ชันตรงกันครบ 3 จุด',
+        !!r.ver[0] && r.ver[0] === r.ver[2] && r.ver[1] === 'ISRD Stocktake v' + r.ver[0], r.ver);
 
   console.log('\n[2] presencePatch');
   check('ไม่มี kickAt ใน heartbeat', r.patchNoKick, r.patchKeys);
