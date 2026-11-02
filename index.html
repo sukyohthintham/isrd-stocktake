@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.44.3">
+<meta name="version" content="2.44.4">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.44.3</title>
+<title>ISRD Stocktake v2.44.4</title>
 
 <style>
 :root{
@@ -2064,7 +2064,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
 /* ⭐ v2.44.0 — ชุบชีวิต presence (ผู้ใช้ออนไลน์ + เตะออก) จาก presence-hold v2.33.0 · Rules v2.1.5 เพิ่มโหนด presence */
-var APP_VERSION = '2.44.3';
+var APP_VERSION = '2.44.4';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -3697,7 +3697,7 @@ function cycleInfo(cid) { return (state.cycles[cid] || {}).info || {}; }
 function cycleMigrated(cid) { return Number(cycleInfo(cid).schema) >= 1; }
 
 /* ⭐ v2.11.1 — ย้ายข้อมูลขึ้นรอบนับได้เฉพาะรอบที่ยัง "นับอยู่" เท่านั้น
-   ตาม stocktake-rules-v2.1.5.json:
+   ตาม stocktake-rules-v2.1.6.json:
      cycles/$cid/systemQty  เขียนได้เมื่อ status ยังไม่มี หรือเป็น counting
      cycles/$cid/info       เขียนได้เมื่อ status ไม่ใช่ closed
    รอบที่ปิดหรือกำลังตรวจจึงถูกปฏิเสธ แล้วมันจะไม่ถูกทำเครื่องหมายว่าย้ายแล้ว
@@ -10513,20 +10513,40 @@ function renderSummary() {
 function loadReportRechecks() {
   var ids = cycleScope().multi ? jobsInCycle(cycleOf(currentJob())) : [state.roundId];
   state.reportRechecks = {};
-  state.reportRecheckMeta = {};   /* ⭐ v2.44.1 เก็บผู้รีเช็ค+เวลา (by/at) สำหรับคอลัมน์ "ผู้รีเช็ค" + ชีต "ประวัติการรีเช็ค" */
+  state.reportRecheckMeta = {};   /* ⭐ v2.44.1 ผู้รีเช็ค+เวลา (ล่าสุด) สำหรับคอลัมน์ "ผู้รีเช็ค" ในชีตรายสินค้า */
   state.reportRecheckRows = [];
   return Promise.all(ids.filter(Boolean).map(function (id) {
     var jobCode = (state.roundIndex[id] || {}).jobCode || id;
-    return db.getQuiet('rounds/' + id + '/rechecks').then(function (rc) {
-      if (!rc) return;
+    return Promise.all([
+      db.getQuiet('rounds/' + id + '/rechecks'),
+      db.getQuiet('rounds/' + id + '/recheckLog')   /* ⭐ v2.44.4 ประวัติทุกรอบ (append-only) */
+    ]).then(function (res) {
+      var rc = res[0] || {}, log = res[1] || {};
+      /* ค่าล่าสุดต่อ SKU (ยอดที่ยึด + คนล่าสุด) */
       Object.keys(rc).forEach(function (k) {
         var it = rc[k]; if (!it) return;
         var q = it.qty;
         if (q != null && q !== '') {
           state.reportRechecks[k] = Number(q);
           state.reportRecheckMeta[k] = { by: it.by || '', at: it.at || 0 };
-          state.reportRecheckRows.push({ key: k, job: jobCode, qty: Number(q), by: it.by || '', at: it.at || 0, applied: !!it.applied });
         }
+      });
+      /* ⭐ v2.44.4 ชีตประวัติ = ทุกรอบจาก recheckLog (แถว at == rechecks ล่าสุด = ยอดที่ยึด) */
+      Object.keys(log).forEach(function (k) {
+        var entries = log[k]; if (!entries || typeof entries !== 'object') return;
+        var rcLast = rc[k] || {};
+        Object.keys(entries).forEach(function (lid) {
+          var e = entries[lid]; if (!e || e.qty == null) return;
+          var isLast = (rcLast.at != null && Number(e.at) === Number(rcLast.at));
+          state.reportRecheckRows.push({ key: k, job: jobCode, qty: Number(e.qty), by: e.by || '', at: e.at || 0,
+            applied: isLast ? !!rcLast.applied : false, current: isLast });
+        });
+      });
+      /* SKU เก่าที่ไม่มี log (รีเช็คก่อน v2.44.4) → fallback 1 แถวจาก rechecks ล่าสุด */
+      Object.keys(rc).forEach(function (k) {
+        var it = rc[k]; if (!it || it.qty == null || it.qty === '') return;
+        if (log[k]) return;
+        state.reportRecheckRows.push({ key: k, job: jobCode, qty: Number(it.qty), by: it.by || '', at: it.at || 0, applied: !!it.applied, current: true });
       });
     }).catch(function () {});
   }));
@@ -10711,12 +10731,16 @@ function buildSummaryExcel(data) {
   /* ⭐ v2.44.1 ชีต "ประวัติการรีเช็ค" — ใครรีเช็ค SKU ไหน เมื่อไหร่ ได้เท่าไหร่ ใช้ยอดหรือยัง (ตรวจย้อนหลังได้) */
   var _rcByKey = {}; data.rows.forEach(function (r) { _rcByKey[r.key] = r; });
   var s5 = [['วันเวลา', 'Job', 'รหัสสินค้า', 'ชื่อสินค้า', 'ผู้รีเช็ค', 'รีเช็คได้', 'ควรเหลือ (ระบบ)', 'ผลต่าง', 'สถานะ']];
-  (state.reportRecheckRows || []).slice().sort(function (a, b) { return (b.at || 0) - (a.at || 0); }).forEach(function (rr) {
+  (state.reportRecheckRows || []).slice().sort(function (a, b) {
+    if ((a.key || '') !== (b.key || '')) return (a.key || '') < (b.key || '') ? -1 : 1;
+    return (b.at || 0) - (a.at || 0);   /* กลุ่ม SKU เดียวกัน: ล่าสุดอยู่บน */
+  }).forEach(function (rr) {
     var r = _rcByKey[rr.key] || {};
     var sys = (r.sys != null) ? r.sys : '';
     var diff = (r.sys != null) ? (rr.qty - r.sys) : '';
+    var stat = (rr.current === false) ? 'รอบก่อน (ถูกแทน)' : (rr.applied ? 'ใช้ยอดแล้ว' : 'รอใช้ยอด');
     s5.push([fmtTime(rr.at), rr.job, r.code || rr.key, r.name || '', rr.by || '-',
-             rr.qty, sys, diff, rr.applied ? 'ใช้ยอดแล้ว' : 'รอใช้ยอด']);
+             rr.qty, sys, diff, stat]);
   });
   if (s5.length === 1) s5.push(['— ยังไม่มีการรีเช็คในรอบนี้ —']);
 
@@ -15574,7 +15598,8 @@ function rcAdminCard(r, it, canManage) {
       rcThumb(k, it.at),
       el('div', {}, [
         el('div', {}, ['✅ เด็กนับรีเช็คได้ ', el('b', { style: 'font-size:17px', text: fmtNum(q) }), ' ชิ้น ',
-          el('span', { class: 'muted', style: 'font-size:12px', text: 'โดย ' + (it.by || '-') + (it.at ? ' · 🕐 ' + timeHM(it.at) + ' น.' : '') })]),
+          el('span', { class: 'muted', style: 'font-size:12px', text: 'โดย ' + (it.by || '-') + (it.at ? ' · 🕐 ' + timeHM(it.at) + ' น.' : '') }),
+          el('a', { class: 'muted', style: 'font-size:12px;margin-left:8px;color:#2563eb;cursor:pointer;text-decoration:underline', text: '📋 ดูประวัติรีเช็ค', onclick: function () { showRecheckHistory(k, r); } })]),
         el('div', { class: 'muted', style: 'font-size:13px' + (match ? ';color:#059669' : ';color:#dc2626'),
           text: 'เทียบใหม่: ' + fmtNum(q) + ' vs ควรเหลือ ' + fmtNum(r.sys) + ' → ' + (match ? 'ตรงแล้ว' : 'ยังต่าง ' + (q - r.sys > 0 ? '+' : '') + fmtNum(q - r.sys)) })])]));
     if (it.applied) {
@@ -16020,6 +16045,41 @@ function openResendForm(k, r, btn) {
   row.appendChild(box);
 }
 
+/* ⭐ v2.44.4 ดูประวัติรีเช็คทุกรอบของ SKU (lazy โหลดตอนกด) — เห็นทุกคนทุกรอบที่ส่งยอด · ยอดยึดล่าสุด */
+function rcModal(title, bodyEl) {
+  var ov = el('div', { style: 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:14px' });
+  ov.onclick = function (e) { if (e.target === ov && ov.parentNode) ov.parentNode.removeChild(ov); };
+  var box = el('div', { style: 'background:#fff;border-radius:14px;max-width:460px;width:100%;padding:16px;box-shadow:0 12px 40px rgba(0,0,0,.25)' }, [
+    el('div', { class: 'row', style: 'justify-content:space-between;align-items:center;margin-bottom:8px;gap:10px' }, [
+      el('div', { style: 'font-weight:800;font-size:16px', text: title }),
+      el('button', { class: 'btn sm grey', text: '✕', onclick: function () { if (ov.parentNode) ov.parentNode.removeChild(ov); } })]),
+    bodyEl]);
+  ov.appendChild(box); document.body.appendChild(ov);
+}
+function showRecheckHistory(k, r) {
+  db.getQuiet('rounds/' + state.roundId + '/recheckLog/' + k).then(function (log) {
+    var rows = [];
+    if (log) Object.keys(log).forEach(function (id) { var e = log[id]; if (e && e.qty != null) rows.push(e); });
+    rows.sort(function (a, b) { return (a.at || 0) - (b.at || 0); });
+    var body = el('div', { style: 'max-height:62vh;overflow:auto' });
+    if (!rows.length) {
+      body.appendChild(el('div', { class: 'muted', style: 'padding:14px;text-align:center;font-size:13px', text: 'ยังไม่มีประวัติบันทึกไว้ (ของที่รีเช็คก่อนอัปเดต v2.44.4 จะไม่มีประวัติย้อนหลัง — เก็บครบตั้งแต่รอบนี้เป็นต้นไป)' }));
+    } else {
+      rows.forEach(function (e, i) {
+        var last = (i === rows.length - 1);
+        body.appendChild(el('div', { class: 'row', style: 'gap:10px;padding:8px 2px;border-bottom:1px solid #f1f5f9;align-items:center' }, [
+          el('span', { style: 'font-weight:800;color:#94a3b8;width:26px;text-align:center', text: '#' + (i + 1) }),
+          el('div', { style: 'flex:1' }, [
+            el('div', {}, [el('b', { style: 'font-size:16px', text: fmtNum(e.qty) + ' ชิ้น' }),
+              last ? el('span', { style: 'margin-left:8px;font-size:11px;font-weight:800;color:#059669', text: '● ล่าสุด (ยึดยอดนี้)' })
+                   : el('span', { style: 'margin-left:8px;font-size:11px;color:#94a3b8', text: 'รอบก่อน' })]),
+            el('div', { class: 'muted', style: 'font-size:12px', text: 'โดย ' + (e.by || '-') + ' · ' + fmtTime(e.at) })])]));
+      });
+    }
+    rcModal('📋 ประวัติรีเช็ค ' + ((r && r.code) || k), body);
+  }).catch(function () { toast('โหลดประวัติไม่สำเร็จ', true); });
+}
+
 function resendRecheck(k) {
   if (!requirePerm('adjustCount', 'ส่งรีเช็คใหม่ไม่ได้')) return;
   if (!rcRoundCounting()) { toast('รอบนี้ปิดแล้ว ส่งรีเช็คใหม่ไม่ได้', true); return; }
@@ -16062,6 +16122,10 @@ function submitRecheck(k) {
     var p = {}; p[k + '/qty'] = qn; p[k + '/by'] = state.counter || 'ไม่ระบุ'; p[k + '/at'] = now; p[k + '/applied'] = false;
     p[k + '/reopenOk'] = false; p[k + '/reopenReq'] = false;   /* ส่งใหม่ = ล็อกกลับ ต้องขออนุมัติใหม่ถ้าจะแก้อีก */
     enqueueWrite('rounds/' + rid + '/rechecks', p);
+    /* ⭐ v2.44.4 บันทึกประวัติรีเช็คทุกรอบ (append-only ไม่ทับ) — ยอด rechecks.qty ยังยึดล่าสุด · log เก็บครบทุกคนทุกรอบไว้ดูย้อนหลัง */
+    var _lid = String(now) + '_' + Math.random().toString(36).slice(2, 6);
+    var _lg = {}; _lg[k + '/' + _lid] = { by: state.counter || 'ไม่ระบุ', at: now, qty: qn };
+    enqueueWrite('rounds/' + rid + '/recheckLog', _lg);
     if (state.recheckDraft) delete state.recheckDraft[k];
     toast('ส่งคืนรีเช็คแล้ว ✓');
     if (state.roundId !== rid) return;   /* เปลี่ยน Job แล้ว — ยอดลงแล้ว แค่ไม่แตะ cache/จอของ Job อื่น */
@@ -21612,7 +21676,7 @@ init();
            ทางแก้จริงอยู่นอกแอป — ไม่เดาต่อ
 
     Database Rules: ต้องวางใหม่ เพราะมี node cycles เพิ่ม ถ้าไม่วางจะนำเข้ายอดระบบไม่ได้
-    ไฟล์พร้อมก๊อปอยู่ที่ stocktake-rules-v2.1.5.json ที่รากโปรเจกต์ (ตรงกับบล็อกท้ายไฟล์นี้)
+    ไฟล์พร้อมก๊อปอยู่ที่ stocktake-rules-v2.1.6.json ที่รากโปรเจกต์ (ตรงกับบล็อกท้ายไฟล์นี้)
 
   v2.1.0 — Master ทั้งบริษัท · พิมพ์เร็วขึ้น · Export หลาย Job · role scanner
 

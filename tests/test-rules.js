@@ -27,7 +27,7 @@ function check(name, ok, got) {
   else { fail++; console.log('  FAIL  ' + name + '  ->  ' + JSON.stringify(got)); }
 }
 
-const RULES_FILE = path.join(__dirname, '..', 'stocktake-rules-v2.1.5.json');
+const RULES_FILE = path.join(__dirname, '..', 'stocktake-rules-v2.1.6.json');
 const rules = JSON.parse(fs.readFileSync(RULES_FILE, 'utf8'));
 
 /* ---------- จำลองฐานข้อมูลเท่าที่กฎอ้างถึง ---------- */
@@ -193,6 +193,14 @@ const MATRIX = [
     want: function (st) { return st === 'counting' ? A_C_S : []; },
     extra: { incoming: 'data:image/jpeg;base64,/9j/x' } },
 
+  /* ---- ⭐ v2.44.4 recheckLog: ประวัติรีเช็ค append-only (เขียนเพิ่มได้ · แก้/ลบไม่ได้) ---- */
+  { path: 'rounds/$id/recheckLog/$sku/$id (เขียนประวัติใหม่)', rule: R.recheckLog.$sku.$id['.write'],
+    want: function (st) { return st === 'counting' ? A_C_S : []; },
+    extra: { existing: undefined, incoming: { by: 'เด็ก', at: 1, qty: 5 } } },
+  { path: 'rounds/$id/recheckLog/$sku/$id (แก้ทับประวัติ = ห้ามทุกคน)', rule: R.recheckLog.$sku.$id['.write'],
+    want: function () { return []; },
+    extra: { existing: { by: 'เด็ก', at: 1, qty: 5 }, incoming: { by: 'เด็ก', at: 1, qty: 9 } } },
+
   /* ---- ของเก่าที่เลิกใช้แล้ว: ห้ามเขียนถาวร ---- */
   { path: 'rounds/$id/counts', rule: String(R.counts['.write']),
     want: function () { return []; } },
@@ -234,10 +242,10 @@ MATRIX.forEach(function (row) {
 /* v2.10.0 — stat/skuQty เข้ามาอยู่ในลิสต์นี้ด้วยโดยตั้งใจ
    scanner ยิงบาร์โค้ดได้ ก็ต้องอัปเดตยอดสรุปของรอบได้ ไม่งั้นเด็กหน้าร้านยิงไปทั้งวัน
    แล้วยอดสรุปไม่ขยับเลย (ยอดนับถูก แต่ตัวเลขบนการ์ดค้าง) */
-check('ตอนนับ scanner เขียนได้แค่ scans · unknown · reasons · stat · skuQty · rechecks/qty · รูปรีเช็ค',
+check('ตอนนับ scanner เขียนได้แค่ scans · unknown · reasons · stat · skuQty · rechecks/qty · recheckLog · รูปรีเช็ค',
       JSON.stringify(scannerOk.sort()) === JSON.stringify(
         ['recheckPhotos/$rid/$sku (เด็กแนบรูป)',
-         'rounds/$id/reasons', 'rounds/$id/rechecks/$sku/qty (เด็กกรอกผล)',
+         'rounds/$id/reasons', 'rounds/$id/recheckLog/$sku/$id (เขียนประวัติใหม่)', 'rounds/$id/rechecks/$sku/qty (เด็กกรอกผล)',
          'rounds/$id/scans/$scanId', 'rounds/$id/skuQty',
          'rounds/$id/stat', 'rounds/$id/unknown/$id']),
       scannerOk);

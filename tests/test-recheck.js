@@ -117,6 +117,21 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
   check('รูปสำเร็จแล้วค่อยบันทึกยอด (qty/by/at/applied=false ผ่าน enqueue · รูปไม่ปนใน meta)', meta5['A001/qty'] === 12 && !!meta5['A001/by'] && meta5['A001/applied'] === false && meta5['A001/photo'] === undefined, meta5);
   check('อัปเดต cache + ล้าง draft', await page.evaluate(() => state.rechecks.A001.qty === 12 && !state.recheckDraft.A001));
 
+  // ---------- [RL] v2.44.4 submitRecheck เขียน recheckLog (ประวัติ append) ----------
+  console.log('\n[RL] recheckLog บันทึกประวัติรีเช็คทุกรอบ');
+  const rRL = await page.evaluate(async () => {
+    var orig = db.update; db.update = function () { return Promise.resolve(); };
+    __calls.enqueue = []; state.rechecks = {}; state.recheckDraft = { A001: { qty: 5, photo: 'data:image/jpeg;base64,/9j/zzzz' } };
+    submitRecheck('A001'); await new Promise(r => setTimeout(r, 50));
+    db.update = orig;
+    return __calls.enqueue.filter(function (x) { return x.path === 'rounds/R1/recheckLog'; });
+  });
+  const _logEnq = rRL[0] || {};
+  const _logKeys = Object.keys(_logEnq.patch || {});
+  const _logRec = _logKeys.length ? _logEnq.patch[_logKeys[0]] : null;
+  check('submitRecheck เขียน rounds/R1/recheckLog 1 รายการ (append)', rRL.length === 1 && _logKeys.length === 1, rRL);
+  check('log record ครบ by/at/qty · key = เวลา+rand (ไม่ทับรอบก่อน)', !!_logRec && _logRec.qty === 5 && typeof _logRec.by === 'string' && typeof _logRec.at === 'number' && /^A001\/.*_/.test(_logKeys[0]), { rec: _logRec, key: _logKeys[0] });
+
   // ---------- [5b] รูปส่งไม่สำเร็จ → ยอดไม่ขึ้น (กัน orphan) + เตือน ----------
   console.log('\n[5b] รูปส่งไม่สำเร็จ → ยอดไม่ขึ้น');
   const r5b = await page.evaluate(async () => {

@@ -270,6 +270,17 @@
               }
             }
           },
+          "recheckLog": {
+            "$sku": {
+              "$id": {
+                ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && (root.child('stocktake2026/users').child(auth.uid).child('role').val().matches(/^(admin|counter|scanner)$/) || root.child('stocktake2026/users').child(auth.uid).child('perms/scan').val() === true) && root.child('stocktake2026/roundIndex').child($roundId).child('status').val() === 'counting' && !data.exists() && newData.exists()",
+                ".validate": "newData.hasChildren(['by','at','qty'])",
+                "by": { ".validate": "newData.isString()" },
+                "at": { ".validate": "newData.isNumber()" },
+                "qty": { ".validate": "newData.isNumber() && newData.val() >= 0" }
+              }
+            }
+          },
           "items": {
             ".write": false
           },
