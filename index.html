@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.44.2">
+<meta name="version" content="2.44.3">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.44.2</title>
+<title>ISRD Stocktake v2.44.3</title>
 
 <style>
 :root{
@@ -2064,7 +2064,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
 /* ⭐ v2.44.0 — ชุบชีวิต presence (ผู้ใช้ออนไลน์ + เตะออก) จาก presence-hold v2.33.0 · Rules v2.1.5 เพิ่มโหนด presence */
-var APP_VERSION = '2.44.2';
+var APP_VERSION = '2.44.3';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -6084,7 +6084,7 @@ var THUMB_TIMEOUT_MS = 15000;         // ดาวน์โหลด + decode + 
 var THUMB_STORE_KEY = 'isrd_thumbs_v3';
 var THUMB_STORE_OLD = ['isrd_thumbs', 'isrd_thumbs_v2'];   // ⭐ v2.44.2 รุ่นเก่า — ลบทิ้งกัน localStorage เต็ม (คิวยอดยิงใช้ที่เดียวกัน)
 var THUMB_STORE_CAP = 2500000;        // ~2.5 MB ใน localStorage
-var IMAGE_PROXY = 'https://inspiration-dashboard.netlify.app/api/image-proxy?w=240&q=60&url=';
+var IMAGE_PROXY = 'https://inspiration-dashboard.netlify.app/api/image-proxy?v=2&w=240&q=60&url=';
 
 var thumbCache = Object.create(null);      // url -> data:image/jpeg;base64,...
 var thumbDirty = false;
@@ -6139,13 +6139,13 @@ var corsProbe = null;
 
 function fetchImageBlob(url) {
   function direct() {
-    return fetch(url, { cache: 'reload' }).then(function (r) {
+    return fetch(url, { cache: 'force-cache' }).then(function (r) {
       if (!r.ok) throw new Error('CDN_' + r.status);
       return r.blob();
     });
   }
   function viaProxy() {
-    return fetch(IMAGE_PROXY + encodeURIComponent(url), { cache: 'reload' })
+    return fetch(IMAGE_PROXY + encodeURIComponent(url), { cache: 'force-cache' })
       .then(function (r) {
         if (!r.ok) throw new Error('PROXY_' + r.status);
         return r.blob();
