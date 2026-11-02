@@ -313,9 +313,9 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
     localStorage.removeItem = function (k) { removed.push(k); return origRem(k); };
     var ok = queueSave([{ path: 'x', patch: { a: 1 } }]);
     localStorage.setItem = origSet; localStorage.removeItem = origRem;
-    return { ok: ok, removedThumb: removed.indexOf('isrd_thumbs_v2') >= 0, saved: JSON.parse(localStorage.getItem('isrd_write_queue') || '[]').length };
+    return { ok: ok, removedThumb: removed.indexOf(THUMB_STORE_KEY) >= 0, saved: JSON.parse(localStorage.getItem('isrd_write_queue') || '[]').length };
   });
-  check('queueSave เต็ม → ลบแคชรูปสินค้า (isrd_thumbs_v2) แล้วเขียนคิวสำเร็จ (ยอดไม่หาย)', rq.ok && rq.removedThumb && rq.saved === 1, rq);
+  check('queueSave เต็ม → ลบแคชรูปย่อ แล้วเขียนคิวสำเร็จ (ยอดไม่หาย)', rq.ok && rq.removedThumb && rq.saved === 1, rq);
 
   // ---------- [10] no page errors ----------
   console.log('\n[11] cut-off: ขอแก้ / อนุมัติ');

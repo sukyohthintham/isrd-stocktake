@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.44.1">
+<meta name="version" content="2.44.2">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.44.1</title>
+<title>ISRD Stocktake v2.44.2</title>
 
 <style>
 :root{
@@ -2064,7 +2064,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
 /* ⭐ v2.44.0 — ชุบชีวิต presence (ผู้ใช้ออนไลน์ + เตะออก) จาก presence-hold v2.33.0 · Rules v2.1.5 เพิ่มโหนด presence */
-var APP_VERSION = '2.44.1';
+var APP_VERSION = '2.44.2';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -4773,8 +4773,8 @@ function queueSave(q) {
   try { localStorage.setItem(QUEUE_KEY, JSON.stringify(q)); return true; }
   catch (e) {
     /* ⭐ v2.37.1 localStorage เต็ม — คิวเขียนไม่ลง = ยอดยิง/รูปหายเงียบ (ขัดกฎ "ห้ามทำยอดหาย")
-       ล้างแคชรูปสินค้า (isrd_thumbs_v2 สร้างใหม่ได้) เปิดที่ให้คิวก่อน แล้วลองใหม่ — ยอดยิงสำคัญกว่า thumbnail */
-    try { localStorage.removeItem(THUMB_STORE_KEY); thumbCache = Object.create(null); thumbDirty = false; } catch (e2) {}
+       ล้างแคชรูปย่อ (THUMB_STORE_KEY + รุ่นเก่า สร้างใหม่ได้) เปิดที่ให้คิวก่อน แล้วลองใหม่ — ยอดยิงสำคัญกว่า thumbnail */
+    try { localStorage.removeItem(THUMB_STORE_KEY); THUMB_STORE_OLD.forEach(function (k) { try { localStorage.removeItem(k); } catch (e4) {} }); thumbCache = Object.create(null); thumbDirty = false; } catch (e2) {}
     try { localStorage.setItem(QUEUE_KEY, JSON.stringify(q)); return true; }
     catch (e3) { toast('⚠️ พื้นที่เครื่องเต็ม บันทึกยอดลงคิวไม่ได้ — ปิดแท็บอื่น/ล้างข้อมูลเว็บแล้วลองใหม่', true); return false; }
   }
@@ -6081,7 +6081,8 @@ var THUMB_QUALITY = 0.5;              // วัดจากรูปจริง
 var THUMB_TIMEOUT_MS = 15000;         // ดาวน์โหลด + decode + encode ใช้เวลากว่าโหลดรูปเฉย ๆ
 /* ขึ้นรุ่นคีย์เมื่อวิธีย่อรูปเปลี่ยน — v2 = ย่อทั้งรูปแทนการครอปกลาง
    ถ้าใช้คีย์เดิมเครื่องที่เคยพิมพ์ไว้จะหยิบรูปที่ครอปแล้วมาใช้ต่อไม่รู้จบ */
-var THUMB_STORE_KEY = 'isrd_thumbs_v2';
+var THUMB_STORE_KEY = 'isrd_thumbs_v3';
+var THUMB_STORE_OLD = ['isrd_thumbs', 'isrd_thumbs_v2'];   // ⭐ v2.44.2 รุ่นเก่า — ลบทิ้งกัน localStorage เต็ม (คิวยอดยิงใช้ที่เดียวกัน)
 var THUMB_STORE_CAP = 2500000;        // ~2.5 MB ใน localStorage
 var IMAGE_PROXY = 'https://inspiration-dashboard.netlify.app/api/image-proxy?w=240&q=60&url=';
 
@@ -6091,6 +6092,8 @@ var corsDirect = null;                     // null ยังไม่รู้ �
 var thumbFailed = 0;                       // ย่อไม่สำเร็จกี่รูปในการพิมพ์รอบนี้
 
 function loadThumbStore() {
+  /* ⭐ v2.44.2 ลบแคชรูปย่อรุ่นเก่าครั้งเดียว — กันกินที่ localStorage ซ้ำซ้อน (v2 ~2.5MB + v3 ~2.5MB = เสี่ยงคิวยอดยิงเขียนไม่ลง) */
+  THUMB_STORE_OLD.forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
   try {
     var raw = localStorage.getItem(THUMB_STORE_KEY);
     if (!raw) return;
@@ -6136,13 +6139,13 @@ var corsProbe = null;
 
 function fetchImageBlob(url) {
   function direct() {
-    return fetch(url, { cache: 'force-cache' }).then(function (r) {
+    return fetch(url, { cache: 'reload' }).then(function (r) {
       if (!r.ok) throw new Error('CDN_' + r.status);
       return r.blob();
     });
   }
   function viaProxy() {
-    return fetch(IMAGE_PROXY + encodeURIComponent(url), { cache: 'force-cache' })
+    return fetch(IMAGE_PROXY + encodeURIComponent(url), { cache: 'reload' })
       .then(function (r) {
         if (!r.ok) throw new Error('PROXY_' + r.status);
         return r.blob();
