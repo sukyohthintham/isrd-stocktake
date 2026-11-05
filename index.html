@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.44.5">
+<meta name="version" content="2.44.7">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.44.5</title>
+<title>ISRD Stocktake v2.44.7</title>
 
 <style>
 :root{
@@ -2064,7 +2064,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
 /* ⭐ v2.44.0 — ชุบชีวิต presence (ผู้ใช้ออนไลน์ + เตะออก) จาก presence-hold v2.33.0 · Rules v2.1.5 เพิ่มโหนด presence */
-var APP_VERSION = '2.44.5';
+var APP_VERSION = '2.44.7';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -15574,10 +15574,9 @@ function rcZortCard() {
 function rcAppendGrouped(body, arr, rc, canManage) {
   var prod = [], np = [];
   arr.forEach(function (r) { (r.type === 'notProduct' ? np : prod).push(r); });
-  var both = prod.length && np.length;
   function grp(items, label, color) {
     if (!items.length) return;
-    if (both) body.appendChild(el('div', { style: 'font-weight:800;font-size:12.5px;margin:10px 2px 6px;color:' + color, text: label + ' (' + fmtNum(items.length) + ' SKU)' }));
+    body.appendChild(el('div', { style: 'font-weight:800;font-size:13px;margin:12px 2px 7px;padding:6px 10px;border-radius:8px;color:' + color + ';background:' + (color === '#9333ea' ? '#faf5ff' : '#ecfdf5'), text: label + ' (' + fmtNum(items.length) + ' SKU)' }));
     items.forEach(function (r) { body.appendChild(rcAdminCard(r, rc[r.key], canManage)); });
   }
   grp(prod, '📦 Product', '#0f766e');
@@ -15778,7 +15777,18 @@ function renderRecheckScanner(admin) {
     }
     return;
   }
-  show.forEach(function (k) { body.appendChild(rcScannerCard(k, rc[k], draft[k], hasPerm('seeSystemQty') ? _sumRows[k] : undefined)); });
+  /* ⭐ v2.44.6 แยกการ์ดเด็กหน้าร้านเป็นกลุ่ม Product / Not Product (type จาก summaryData หรือ products master) */
+  var _scanIsNP = function (k) {
+    var t = (_sumRows[k] && _sumRows[k].type) || ((state.products || {})[k] && state.products[k].type) || 'product';
+    return t === 'notProduct';
+  };
+  var _emitScan = function (k) { body.appendChild(rcScannerCard(k, rc[k], draft[k], hasPerm('seeSystemQty') ? _sumRows[k] : undefined)); };
+  var _prodShow = show.filter(function (k) { return !_scanIsNP(k); });
+  var _npShow = show.filter(_scanIsNP);
+  if (_prodShow.length) body.appendChild(el('div', { style: 'font-weight:800;font-size:13px;margin:12px 2px 7px;padding:6px 10px;border-radius:8px;background:#ecfdf5;color:#0f766e', text: '📦 Product (' + fmtNum(_prodShow.length) + ' SKU)' }));
+  _prodShow.forEach(_emitScan);
+  if (_npShow.length) body.appendChild(el('div', { style: 'font-weight:800;font-size:13px;margin:12px 2px 7px;padding:6px 10px;border-radius:8px;background:#faf5ff;color:#9333ea', text: '🏷 Not Product (' + fmtNum(_npShow.length) + ' SKU)' }));
+  _npShow.forEach(_emitScan);
   /* ⭐ v2.43.6 กลุ่ม "ตรงแล้ว ไม่ต้องรีเช็ค" — เด็กเห็นว่าข้ามได้ (ยอดกลับมาตรงแล้ว) · ไม่ลบข้อมูล เผื่อผลต่างกลับมาก็เด้งกลับเป็นงานเอง */
   if (filter === 'pending' && okKeys.length) {
     var _okOpen = !!state.rcOkOpen;
