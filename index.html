@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.44.4">
+<meta name="version" content="2.44.5">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.44.4</title>
+<title>ISRD Stocktake v2.44.5</title>
 
 <style>
 :root{
@@ -2064,7 +2064,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
 /* ⭐ v2.44.0 — ชุบชีวิต presence (ผู้ใช้ออนไลน์ + เตะออก) จาก presence-hold v2.33.0 · Rules v2.1.5 เพิ่มโหนด presence */
-var APP_VERSION = '2.44.4';
+var APP_VERSION = '2.44.5';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -15399,7 +15399,7 @@ function renderRecheckAdmin() {
     var returned = it.qty != null && it.qty !== '';
     var asking = !!(it.reopenReq || it.reopenOk);   /* ⭐ v2.43.18 reopen = แท็บขอแก้เสมอ (รวม applied+reopenReq) */
     if (!returned && !asking) return;   /* ยังไม่นับ + ไม่ขอแก้ = คงซ่อน (ขยะหลุดรอบ) */
-    var stub = { key: k, code: k, name: it.name || k, sys: 0, act: Number(it.qty) || 0, diff: Number(it.qty) || 0, actRaw: Number(it.qty) || 0, _ghost: false, adj: null, location: locationText(k), assignTo: it.assignTo };
+    var stub = { key: k, code: k, name: it.name || k, type: ((state.products[k] && state.products[k].type === 'notProduct') ? 'notProduct' : 'product'), sys: 0, act: Number(it.qty) || 0, diff: Number(it.qty) || 0, actRaw: Number(it.qty) || 0, _ghost: false, adj: null, location: locationText(k), assignTo: it.assignTo };   /* ⭐ v2.44.5 เติม type ให้ stub จัดกลุ่ม Product/Not Product ถูก (CC ชี้) */
     if (asking) reopenReqList.push(stub);
     else if (!it.applied) pendingUse.push(stub);
     else doneUsed.push(stub);
@@ -15445,12 +15445,12 @@ function renderRecheckAdmin() {
   if (state.rcAdminTab === 'reopen' && reopenReqList.length) {
     body.appendChild(el('div', { style: 'font-weight:800;font-size:14px;margin:4px 0 8px;color:#dc2626', text: '🙋 เด็กขอแก้ไขยอด — รออนุมัติ (' + fmtNum(reopenReqList.length) + ' SKU)' }));
     body.appendChild(el('div', { class: 'muted', style: 'font-size:12.5px;margin:-2px 0 8px', text: 'กด "🔓 อนุญาตให้แก้" ในการ์ด เด็กจะส่งยอดใหม่ได้ (ต้องมีสิทธิ์อนุมัติรีเช็ค)' }));
-    reopenReqList.forEach(function (r) { body.appendChild(rcAdminCard(r, rc[r.key], canManage)); });
+    rcAppendGrouped(body, reopenReqList, rc, canManage);
   }
 
   if (state.rcAdminTab === 'notyet' && notYet.length) {
     body.appendChild(el('div', { style: 'font-weight:800;font-size:14px;margin:4px 0 8px;color:#b45309', text: '⏳ ยังไม่รีเช็ค (เหลือ ' + fmtNum(notYet.length) + ' SKU)' }));
-    notYet.forEach(function (r) { body.appendChild(rcAdminCard(r, rc[r.key], canManage)); });
+    rcAppendGrouped(body, notYet, rc, canManage);
   }
 
   if (state.rcAdminTab === 'pending' && pendingUse.length) {
@@ -15465,12 +15465,12 @@ function renderRecheckAdmin() {
       };
       body.appendChild(_applyAll);
     }
-    pendingUse.forEach(function (r) { body.appendChild(rcAdminCard(r, rc[r.key], canManage)); });
+    rcAppendGrouped(body, pendingUse, rc, canManage);
   }
 
   if (state.rcAdminTab === 'done' && doneUsed.length) {
     body.appendChild(el('div', { style: 'font-weight:800;font-size:14px;margin:4px 0 8px;color:#6b7280', text: '✅ ใช้ยอดแล้ว (' + fmtNum(doneUsed.length) + ' SKU) — ยอดที่เด็กนับ + รูป' }));
-    doneUsed.forEach(function (r) { body.appendChild(rcAdminCard(r, rc[r.key], canManage)); });
+    rcAppendGrouped(body, doneUsed, rc, canManage);
   }
 
   if (canManage) body.appendChild(rcZortCard());
@@ -15567,6 +15567,21 @@ function rcZortCard() {
   btn.addEventListener('click', function () { exportZortAdjust(); });
   card.appendChild(btn);
   return card;
+}
+
+/* ⭐ v2.44.5 แยกการ์ดรีเช็คเป็นกลุ่ม Product / Not Product (เหมือนหน้าสรุป)
+   ของใช้ร้าน/ทรัพย์สิน (Not Product) ปนสินค้าจริงทำให้ไล่งานยาก */
+function rcAppendGrouped(body, arr, rc, canManage) {
+  var prod = [], np = [];
+  arr.forEach(function (r) { (r.type === 'notProduct' ? np : prod).push(r); });
+  var both = prod.length && np.length;
+  function grp(items, label, color) {
+    if (!items.length) return;
+    if (both) body.appendChild(el('div', { style: 'font-weight:800;font-size:12.5px;margin:10px 2px 6px;color:' + color, text: label + ' (' + fmtNum(items.length) + ' SKU)' }));
+    items.forEach(function (r) { body.appendChild(rcAdminCard(r, rc[r.key], canManage)); });
+  }
+  grp(prod, '📦 Product', '#0f766e');
+  grp(np, '🏷 Not Product', '#9333ea');
 }
 
 function rcAdminCard(r, it, canManage) {
