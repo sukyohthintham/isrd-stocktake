@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.47.2">
+<meta name="version" content="2.47.3">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.47.2</title>
+<title>ISRD Stocktake v2.47.3</title>
 
 <style>
 :root{
@@ -2080,7 +2080,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
 /* ⭐ v2.44.0 — ชุบชีวิต presence (ผู้ใช้ออนไลน์ + เตะออก) จาก presence-hold v2.33.0 · Rules v2.1.5 เพิ่มโหนด presence */
-var APP_VERSION = '2.47.2';
+var APP_VERSION = '2.47.3';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -13667,7 +13667,8 @@ function sdAllLoad() {
         rows.push({ cid: cid, code: b.branchCode || '-', name: b.branchName || b.branch || '-',
                     count: r.count, riskValue: r.riskValue, error: !!r.error });
       }).catch(function () {
-        rows.push({ cid: cid, code: '-', name: '-', count: 0, riskValue: 0, error: true });
+        var eb = {}; try { eb = cycleBranch(cid) || {}; } catch (e) {}   // โชว์สาขาที่พลาด ให้รู้ว่าต้องไปลองสาขาไหน
+        rows.push({ cid: cid, code: eb.branchCode || '-', name: eb.branchName || eb.branch || '-', count: 0, riskValue: 0, error: true });
       }).then(function () {
         if (state.sdAllProgress) state.sdAllProgress.done++;
         try { renderSdAll(); } catch (e) {}
