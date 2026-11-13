@@ -879,6 +879,61 @@ function check(name, ok, got) {
         r8c.searched);
   check('การ์ดเป็น <button> จริง กดด้วยคีย์บอร์ดได้', r8c.tag === 'BUTTON', r8c.tag);
 
+  /* ---------- [15] v2.47.0 ภาพรวมทุกสาขา: sdCountFromJobs ---------- */
+  console.log('\n[15] ⭐ ภาพรวมทุกสาขา: นับมีสต็อกไม่มีโชว์ + มูลค่าจม');
+  const r15 = await page.evaluate(() => {
+    state.products = {
+      S1: { code: 'S1', name: 'เสื้อ', type: 'product', costPrice: 100 },
+      D1: { code: 'D1', name: 'โชว์อย่างเดียว', type: 'product', costPrice: 100 },
+      B1: { code: 'B1', name: 'มีทั้งคู่', type: 'product', costPrice: 100 },
+      NP1:{ code: 'NP1', name: 'ถุง', type: 'notProduct', costPrice: 100 },
+      NEG:{ code: 'NEG', name: 'หักลบ', type: 'product', costPrice: 100 }
+    };
+    state.priceField = 'costPrice';
+    const jobs = [{ id: 'j1', scans: {
+      a1: { code: 'S1',  delta: 5,  stockType: 'stock',   foundZone: 'SA-1' },
+      a2: { code: 'D1',  delta: 3,  stockType: 'display', foundZone: 'DA-1' },
+      a3: { code: 'B1',  delta: 2,  stockType: 'stock',   foundZone: 'SA-1' },
+      a4: { code: 'B1',  delta: 2,  stockType: 'display', foundZone: 'DA-1' },
+      a5: { code: 'NP1', delta: 4,  stockType: 'stock',   foundZone: 'SA-1' },
+      a6: { code: 'NEG', delta: 3,  stockType: 'stock',   foundZone: 'SA-1' },
+      a7: { code: 'NEG', delta: -5, stockType: 'other',   foundZone: '' },
+      a8: { code: 'U1',  delta: 7,  stockType: 'stock',   foundZone: 'SA-1' }
+    }}];
+    const r = sdCountFromJobs(jobs);
+    const jobs2 = [
+      { id: 'j1', scans: { a: { code: 'S1', delta: 3, stockType: 'stock', foundZone: 'SA-1' } } },
+      { id: 'j2', scans: { b: { code: 'S1', delta: 4, stockType: 'stock', foundZone: 'SB-2' } } }
+    ];
+    const r2 = sdCountFromJobs(jobs2);
+    const r0 = sdCountFromJobs([]);
+    return { count: r.count, risk: r.riskValue, count2: r2.count, risk2: r2.riskValue,
+             count0: r0.count, risk0: r0.riskValue };
+  });
+  check('⭐ นับเฉพาะมีสต็อกไม่มีโชว์ (ตัด disp-only/both/notProduct/act<=0) + ของไม่มีใน master ยังนับ',
+        r15.count === 2 && r15.risk === 500, r15);
+  check('⭐ รวมสต็อกข้ามหลาย Job ของ SKU เดียวกันก่อนตัดสิน',
+        r15.count2 === 1 && r15.risk2 === 700, r15);
+  check('ไม่มี job → ศูนย์ ไม่ error', r15.count0 === 0 && r15.risk0 === 0, r15);
+
+  /* ---------- [16] v2.47.1 ภาพรวมทุกสาขา = 1 รอบล่าสุด/สาขา ---------- */
+  console.log('\n[16] ⭐ sdLatestPerBranch: สาขาเดียวหลายรอบ → เอารอบล่าสุด');
+  const r16 = await page.evaluate(() => {
+    const real = window.cycleBranch;
+    const MAP = {
+      c1: { branchCode: 'AYT-02', createdAt: 100 },
+      c2: { branchCode: 'AYT-02', createdAt: 300 },
+      c3: { branchCode: 'CM-01',  createdAt: 200 },
+      c4: { branchCode: '',       createdAt: 50 }
+    };
+    window.cycleBranch = function (cid) { return MAP[cid] || {}; };
+    const out = sdLatestPerBranch(['c1', 'c2', 'c3', 'c4']).slice().sort();
+    window.cycleBranch = real;
+    return out;
+  });
+  check('⭐ 1 รอบล่าสุด/สาขา (AYT-02 เอา c2 ไม่นับซ้ำ) + ไม่มีรหัสแยกตาม cid',
+        r16.join(',') === 'c2,c3,c4', r16);
+
   console.log('\n--- console/page errors ---');
   console.log(errors.slice(0, 10).join('\n') || '(none)');
   check('ไม่มี error ในคอนโซลเลยสักข้อ', errors.length === 0, errors.slice(0, 3));

@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.46.1">
+<meta name="version" content="2.47.1">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.46.1</title>
+<title>ISRD Stocktake v2.47.1</title>
 
 <style>
 :root{
@@ -1692,6 +1692,11 @@ body.no-doc-images .doc .imgbox{display:none}
       </table>
     </div>
     <div class="muted" style="margin-top:10px">แตะแถวไหนเพื่อเข้าไปดูสรุปของสาขานั้น</div>
+    <!-- ⭐ v2.47.0 — ภาพรวมทุกสาขา: มีสต็อกไม่มีโชว์ + มูลค่าจม (Phase 3A) -->
+    <div class="card" id="sdAllCard" style="margin-top:12px">
+      <h3>📦 มีสต็อกไม่มีโชว์ · ภาพรวมทุกสาขา</h3>
+      <div id="sdAllBody"></div>
+    </div>
   </div>
 
  <div id="sumJob">
@@ -2075,7 +2080,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
 /* ⭐ v2.44.0 — ชุบชีวิต presence (ผู้ใช้ออนไลน์ + เตะออก) จาก presence-hold v2.33.0 · Rules v2.1.5 เพิ่มโหนด presence */
-var APP_VERSION = '2.46.1';
+var APP_VERSION = '2.47.1';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -13586,6 +13591,140 @@ function renderTypeZonePanel() {
     '<th>ประเภทที่เลือก</th><th>โซน</th><th>ที่ถูก</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
 }
 
+/* ============================================================
+   v2.47.0 — ภาพรวมทุกสาขา: มีสต็อกไม่มีโชว์ (Phase 3A)
+   รวมของทุกสาขาที่มีสต็อกแต่ไม่โชว์ + มูลค่าจม เรียงสาขาน่าห่วงสุดก่อน
+   โหลดเมื่อกดปุ่ม (ไม่ auto) · ทีละสาขาต่อคิว กัน Firebase Spark 100
+   ============================================================ */
+/* นับ "มีสต็อกไม่มีโชว์" จาก jobs (raw scans) — เกณฑ์เดียวกับ stockDisplayReport เป๊ะ */
+function sdCountFromJobs(jobs) {
+  var per = {};
+  (jobs || []).forEach(function (j) {
+    var sc = (j && j.scans) || {};
+    Object.keys(sc).forEach(function (sid) {
+      var rec = sc[sid]; if (!rec) return;
+      var k = safeKey(rec.code);
+      var e = per[k] || (per[k] = { disp: 0, stock: 0, other: 0 });
+      var t = stockTypeOfScan(rec), d = Number(rec.delta) || 0;
+      if (t === 'display') e.disp += d;
+      else if (t === 'stock') e.stock += d;
+      else e.other += d;
+    });
+  });
+  var count = 0, riskValue = 0;
+  Object.keys(per).forEach(function (k) {
+    var e = per[k];
+    if ((e.disp + e.stock + e.other) <= 0) return;       // หักคืนจนหมด/ติดลบ = ไม่มีของจริง
+    if (!(e.stock > 0 && e.disp === 0)) return;           // เงื่อนไข stock_no_display
+    var p = state.products[k] || {};
+    if (p.type === 'notProduct') return;                 // ตัด Not Product เหมือนรายงานหลัก
+    var price = Number(p[state.priceField]) || 0;
+    count++;
+    riskValue += Math.round(e.stock * price * 100) / 100;
+  });
+  return { count: count, riskValue: Math.round(riskValue * 100) / 100 };
+}
+function sdBranchSummary(cid) {
+  if (!state.sdAllCache) state.sdAllCache = {};
+  if (state.sdAllCache[cid]) return Promise.resolve(state.sdAllCache[cid]);
+  /* รอบที่เปิดอยู่ + โหลด raw ไว้แล้ว → ใช้ของในมือ ไม่อ่านซ้ำ */
+  if (state.cycleData && state.cycleData.cid === cid && state.cycleData.raw && state.cycleData.raw.jobs) {
+    var s0 = sdCountFromJobs(state.cycleData.raw.jobs);
+    return Promise.resolve(state.sdAllCache[cid] = { cid: cid, count: s0.count, riskValue: s0.riskValue });
+  }
+  return onceInflight('sdall:' + cid, function () {
+    return loadCycleRaw(cid).then(function (raw) {
+      var s = sdCountFromJobs(raw.jobs);
+      return (state.sdAllCache[cid] = { cid: cid, count: s.count, riskValue: s.riskValue });
+    }, function () { return { cid: cid, count: 0, riskValue: 0, error: true }; });
+  });
+}
+/* ทุกสาขา = รอบล่าสุดของแต่ละสาขา (1 แถว/สาขา) — overviewCycles() คืนรายรอบ สาขาเดียวโผล่หลายรอบได้
+   ถ้าเอาทุกรอบจะนับมูลค่าจมซ้ำ + "N สาขา" กลายเป็น N รอบ + อ่าน Firebase ทุกรอบในประวัติ */
+function sdLatestPerBranch(cids) {
+  var best = {};
+  (cids || []).forEach(function (cid) {
+    var b = cycleBranch(cid) || {};
+    var key = b.branchCode || ('__' + cid);        // ไม่มีรหัสสาขา = แยกตาม cid กันยุบผิด
+    var at = b.createdAt || 0;
+    if (!best[key] || at > best[key].at) best[key] = { cid: cid, at: at };
+  });
+  return Object.keys(best).map(function (k) { return best[k].cid; });
+}
+function sdAllLoad() {
+  /* ราคาเปลี่ยน (ทุน/ขาย) = มูลค่าจมเปลี่ยน → ล้างแคชก่อน ไม่งั้นค่าค้างราคาเดิม */
+  if (state.sdAllPf !== state.priceField) { state.sdAllCache = {}; state.sdAllPf = state.priceField; }
+  var cids = sdLatestPerBranch(overviewCycles());
+  state.sdAllStatus = 'loading';
+  state.sdAllProgress = { done: 0, total: cids.length };
+  renderSdAll();
+  var rows = [], chain = Promise.resolve();
+  cids.forEach(function (cid) {
+    chain = chain.then(function () {
+      return sdBranchSummary(cid).then(function (r) {
+        var b = cycleBranch(cid) || {};
+        rows.push({ cid: cid, code: b.branchCode || '-', name: b.branchName || b.branch || '-',
+                    count: r.count, riskValue: r.riskValue, error: !!r.error });
+        if (state.sdAllProgress) state.sdAllProgress.done++;
+        renderSdAll();
+      });
+    });
+  });
+  var finish = function () {
+    rows.sort(function (a, b) { return (b.riskValue - a.riskValue) || (b.count - a.count); });
+    state.sdAllRows = rows;
+    state.sdAllStatus = 'done';
+    renderSdAll();
+  };
+  /* ⭐ ไม่ว่าสาขาไหน throw ก็ต้องจบที่หน้าผล ไม่ค้าง "กำลังโหลด" ถาวร (ปุ่มรีเฟรชอยู่หน้าผล) */
+  chain.then(finish, function () { finish(); if (typeof toast === 'function') toast('โหลดภาพรวมบางสาขาไม่สำเร็จ', true); });
+}
+function renderSdAll() {
+  var host = $('sdAllBody'); if (!host) return;
+  var st = state.sdAllStatus || 'idle';
+  if (st === 'idle') {
+    host.innerHTML = '<button class="btn block" id="btnSdAllLoad">📦 โหลดภาพรวมทุกสาขา</button>' +
+      '<div class="muted" style="margin-top:8px">รวมสินค้าที่ <b>มีสต็อกแต่ไม่โชว์</b> ของทุกสาขา + มูลค่าจม ' +
+      'เรียงสาขาที่น่าห่วงสุดขึ้นก่อน · โหลดจากทุกรอบนับ อาจใช้เวลาสักครู่ (กดเองเมื่อต้องการ)</div>';
+    var btn = $('btnSdAllLoad'); if (btn) btn.onclick = sdAllLoad;
+    return;
+  }
+  if (st === 'loading') {
+    var pg = state.sdAllProgress || { done: 0, total: 0 };
+    host.innerHTML = '<div class="muted" style="padding:10px 2px">กำลังโหลด <b>' + fmtNum(pg.done) + '/' + fmtNum(pg.total) + '</b> สาขา ...</div>';
+    return;
+  }
+  var rows = state.sdAllRows || [];
+  var tc = rows.reduce(function (a, r) { return a + (r.error ? 0 : r.count); }, 0);
+  var trisk = rows.reduce(function (a, r) { return a + (r.error ? 0 : r.riskValue); }, 0);
+  var nErr = rows.filter(function (r) { return r.error; }).length;
+  var body = rows.map(function (r, i) {
+    if (r.error) {
+      return '<tr data-sdallcid="' + srEsc(r.cid) + '" style="cursor:pointer;color:#b45309">' +
+        '<td>' + srEsc(r.code) + '</td><td>' + srEsc(r.name) + '</td>' +
+        '<td colspan="2" style="text-align:right">โหลดไม่สำเร็จ · แตะลองเข้าสาขา</td></tr>';
+    }
+    var hot = (i === 0 && r.riskValue > 0) ? ';color:#dc2626;font-weight:700' : '';
+    return '<tr data-sdallcid="' + srEsc(r.cid) + '" style="cursor:pointer' + hot + '">' +
+      '<td>' + srEsc(r.code) + '</td><td>' + srEsc(r.name) + '</td>' +
+      '<td style="text-align:right">' + fmtNum(r.count) + '</td>' +
+      '<td style="text-align:right">' + fmtMoney(r.riskValue) + '</td></tr>';
+  }).join('');
+  host.innerHTML =
+    '<button class="btn grey sm block" id="btnSdAllReload" style="margin-bottom:10px">🔄 รีเฟรช</button>' +
+    '<div class="muted" style="margin-bottom:8px">รวม <b>' + fmtNum(tc) + '</b> รายการมีสต็อกไม่มีโชว์ · มูลค่าจม <b>' + fmtMoney(trisk) + '</b> บาท · ' + fmtNum(rows.length) + ' สาขา' + (nErr ? ' · โหลดไม่สำเร็จ ' + fmtNum(nErr) + ' สาขา' : '') + '</div>' +
+    '<div class="tablewrap"><table class="grid"><thead><tr><th>รหัสสาขา</th><th>ชื่อสาขา</th>' +
+    '<th style="text-align:right">#SKU ไม่มีโชว์</th><th style="text-align:right">มูลค่าจม</th></tr></thead><tbody>' + body + '</tbody></table></div>' +
+    '<div class="muted" style="margin-top:8px">แตะแถวเพื่อเข้าไปดูรายตัว + อันดับขายดีแต่ไม่โชว์ของสาขานั้น</div>';
+  var rl = $('btnSdAllReload'); if (rl) rl.onclick = function () { state.sdAllCache = {}; sdAllLoad(); };
+  host.querySelectorAll('[data-sdallcid]').forEach(function (tr) {
+    tr.onclick = function () {
+      var cid = tr.getAttribute('data-sdallcid'), jobs = jobsInCycle(cid);
+      if (jobs[0]) { openJob(jobs[0]); showPage('summary'); setSummaryTab('sd'); }
+    };
+  });
+}
+
 function renderSrPanel(rep) {
   var panel = $('srPanel'); if (!panel) return;
   rep = rep || stockDisplayReport();
@@ -14201,7 +14340,7 @@ function setSummaryTab(tab) {
   $('sumLive').style.display = tab === 'live' ? 'block' : 'none';
   $('sumStaff').style.display = tab === 'staff' ? 'block' : 'none';
   if (tab !== 'live') stopLiveTimer();            // ออกจากแท็บ = หยุดยิงอ่านเบื้องหลัง
-  if (tab === 'overview') renderOverview();
+  if (tab === 'overview') { renderOverview(); try { renderSdAll(); } catch (e) {} }
   else if (tab === 'sd') renderStockDisplay();
   else if (tab === 'live') startLiveTimer();
   else if (tab === 'staff') renderStaffReport();
