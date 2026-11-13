@@ -259,7 +259,7 @@ function check(name, ok, got) {
         r5.display.n === 90 && r5.display.allD && r5.display.first === 'DA-1', r5.display);
   check('ปุ่ม 📦 สต็อก → เฉพาะรหัส S 90 รหัส',
         r5.stock.n === 90 && r5.stock.allS && r5.stock.first === 'SA-1', r5.stock);
-  check('ปุ่ม 🔧 Asset → เห็นทั้ง 180 ไม่บังคับฝั่ง', r5.asset.n === 180, r5.asset);
+  check('ปุ่ม 🔧 Asset → ไม่เสนอโซนโชว์/สต็อก (ผัง built-in ไม่มี A = ว่าง ให้พิมพ์เอง)', r5.asset.n === 0, r5.asset);
   check('Job ชนิด STOCK แต่กดปุ่มโชว์ → ได้ D (นี่คือบั๊ก v2.17.0 ที่แก้)',
         r5.jobStockButDisplay.allD && r5.jobStockButDisplay.first === 'DA-1', r5.jobStockButDisplay);
 
@@ -320,7 +320,7 @@ function check(name, ok, got) {
         r6.showN === 90 && r6.showFirst === 'DA-1' && r6.showAllD, r6);
   check('กดปุ่มสต็อก → กลับเป็น 90 รหัส S',
         r6.stockN === 90 && r6.stockFirst === 'SA-1' && r6.stockAllS, r6);
-  check('กดปุ่ม Asset → เห็นทั้ง 180', r6.assetN === 180, r6.assetN);
+  check('กดปุ่ม Asset → ไม่เสนอ D/S (ผัง built-in = ว่าง)', r6.assetN === 0, r6.assetN);
   check('วาดซ้ำไม่สะสม option เก่า', r6.redrawN === 90, r6.redrawN);
   check('กดปุ่มตอนไม่ได้อยู่หน้ายิง = ไม่วาดใหม่ ไม่ error', r6.offPageN === 90, r6.offPageN);
   check('รหัสนอกลิสต์ยังใช้ได้ และถูก uppercase ตามกติกาเดิม',
@@ -431,6 +431,10 @@ function check(name, ok, got) {
     state.scanType = 'stock';  renderZoneDatalist(); out.stock = opts();
     state.scanType = 'display'; renderZoneDatalist(); out.display = opts();
     state.scanType = 'asset';  renderZoneDatalist(); out.asset = opts();
+    /* ⭐ v2.46.0: ผังที่มีโซน A → Asset เห็นเฉพาะ A ไม่ปน D/S */
+    state.customShopZones = ['AA-1', 'AB-2', 'SA-1', 'DA-1'];
+    renderZoneDatalist(); out.assetA = opts();
+    state.customShopZones = ['SA-1', 'SB-2', 'DA-1', 'ZZ-9'];
 
     /* หน้าจัดการ: กล่องข้อความต้อง seed ด้วยผังที่ใช้อยู่ + นับแยก D/S ให้ถูก */
     state.page = 'master'; state.masterTab = 'shopzones';
@@ -461,8 +465,10 @@ function check(name, ok, got) {
         JSON.stringify(r9.stock) === JSON.stringify(['SA-1', 'SB-2']), r9.stock);
   check('ปุ่มโชว์ → เห็นเฉพาะ D ของผังนั้น',
         JSON.stringify(r9.display) === JSON.stringify(['DA-1']), r9.display);
-  check('ปุ่ม Asset → เห็นทั้งผัง รวมรหัสที่ไม่ใช่ D/S',
-        JSON.stringify(r9.asset) === JSON.stringify(['SA-1', 'SB-2', 'DA-1', 'ZZ-9']), r9.asset);
+  check('ปุ่ม Asset → ไม่เสนอโซนโชว์(D)/สต็อก(S) จากผังนี้ (ไม่มี A = ว่าง)',
+        JSON.stringify(r9.asset) === JSON.stringify([]), r9.asset);
+  check('ปุ่ม Asset + ผังมีโซน A → เห็นเฉพาะ A (ไม่ปน D/S)',
+        JSON.stringify(r9.assetA) === JSON.stringify(['AA-1', 'AB-2']), r9.assetA);
   check('กล่องข้อความโชว์ผังที่ใช้อยู่ บรรทัดละรหัส',
         r9.boxCustom === 'SA-1\nSB-2\nDA-1\nZZ-9', r9.boxCustom);
   check('บอกจำนวน + แยก D / S / อื่น และบอกว่าเป็นผังที่ตั้งเอง',
@@ -559,6 +565,7 @@ function check(name, ok, got) {
     $('pageScan').classList.add('active');
     setZoneFilter('SA-1');
     renderScanPage();
+    setScanType('stock');   /* ⭐ v2.46.1 ประเภทให้ตรงโซน SA-1 (สต็อก) — วัดเลย์เอาต์ปกติ ป้ายเตือนต้องไม่โผล่ */
 
     /* ความสูงของบล็อกเลือก (ปุ่มประเภท → ช่องยิง) คือสิ่งที่ v2.18.1 ไปบีบ
        วัดเป็นตัวเลขไว้เลย ไม่งั้นใครเผลอต่อข้อความ label ยาว ๆ กลับมาจะไม่มีอะไรร้อง */
@@ -639,6 +646,33 @@ function check(name, ok, got) {
         r11.typeOn === true && r11.dlFirst === 'DA-1', r11);
   check('ช่องโซนยังรับค่าและ uppercase ตามเดิม', r11.zone === 'SB-2', r11.zone);
   check('ไม่มีสกรอลล์แนวนอนบนจอ 390px', r11.noSideScroll === true, r11.noSideScroll);
+
+  /* ⭐ v2.46.1 — ป้ายเตือนประเภท≠โซนโผล่ได้ แต่การ์ดสินค้าต้องถูกเลื่อนเข้าจอ 667px */
+  const r11w = await page.evaluate(() => {
+    window.__seed('STOCK');
+    state.page = 'scan';
+    state.products.A1.barcode = '111';
+    state.scanIndex = null;
+    document.querySelectorAll('.page').forEach(function (p) { p.classList.remove('active'); });
+    $('pageScan').classList.add('active');
+    setZoneFilter('SA-1');            // โซนสต็อก
+    renderScanPage();
+    setScanType('asset');             // Asset ไม่ตรงโซนสต็อก → ป้ายเตือนโผล่ (หลัง render กัน loadScanType ทับ)
+    const warnShown = document.getElementById('typeZoneWarn').style.display !== 'none';
+    $('scanInput').focus();
+    $('scanInput').value = '111';
+    $('scanInput').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    return { warnShown: warnShown };
+  });
+  await new Promise(r => setTimeout(r, 900));
+  const r11wCard = await page.evaluate(() => {
+    const b = $('scanLast').getBoundingClientRect();
+    return { top: Math.round(b.top), vh: window.innerHeight,
+             navTop: Math.round(document.querySelector('.nav').getBoundingClientRect().top) };
+  });
+  check('⭐ ป้ายเตือนโผล่จริงเมื่อ Asset+โซนสต็อก', r11w.warnShown === true, r11w);
+  check('⭐ ถึงป้ายเตือนโผล่ การ์ดสินค้ายังถูกเลื่อนเข้าจอ 667px',
+        r11wCard.top < r11wCard.vh && r11wCard.top < r11wCard.navTop, r11wCard);
   await page.setViewport({ width: 1280, height: 900 });
 
   /* ---------- 12. งานหน้าร้านไม่เห็น Location คลัง WH (v2.20.0) ----------
@@ -787,6 +821,76 @@ function check(name, ok, got) {
         r13.whMiss === 'ไม่พบสินค้าที่ Location ขึ้นต้นด้วย "B4" ในชุด offline', r13.whMiss);
   check('ไม่เลือกโซน → ข้อความเดิม',
         /ปล่อยว่าง = นับทั้งรอบ|ยังไม่มีข้อมูล Location/.test(r13.blank), r13.blank);
+
+  /* ---------- [14] v2.46.0 ประเภท(โชว์/สต็อก/Asset) ต้องตรงกับโซน ---------- */
+  console.log('\n[14] ⭐ ประเภทกับโซนไม่ตรง');
+  const r14 = await page.evaluate(() => {
+    const out = {};
+    out.mm = {
+      assetD: typeZoneMismatch('asset', 'DD-5'),
+      assetS: typeZoneMismatch('asset', 'SA-1'),
+      assetA: typeZoneMismatch('asset', 'AA-1'),
+      dispS:  typeZoneMismatch('display', 'SA-1'),
+      stockD: typeZoneMismatch('stock', 'DA-1'),
+      dispD:  typeZoneMismatch('display', 'DA-1'),
+      stockS: typeZoneMismatch('stock', 'SB-2'),
+      noZone: typeZoneMismatch('asset', ''),
+      noType: typeZoneMismatch('', 'DD-5'),
+      oddZone: typeZoneMismatch('asset', 'ZZ-9')
+    };
+    const warn = function (t, z) {
+      state.scanType = t; state.locationFilter = z; updateTypeZoneWarn();
+      const el = document.getElementById('typeZoneWarn');
+      return { shown: el.style.display !== 'none', html: el.innerHTML };
+    };
+    out.warnAssetD = warn('asset', 'DD-5');
+    out.warnOk = warn('display', 'DA-1');
+    out.warnNoZone = warn('stock', '');
+    out.warnAssetA = warn('asset', 'AA-1');
+    window.__seed('STOCK');
+    state.scanLog = [
+      { id: 's1', rec: { code: 'A1', delta: 1,  stockType: 'asset',   foundZone: 'DD-5' } },
+      { id: 's2', rec: { code: 'A2', delta: 2,  stockType: 'display', foundZone: 'SA-1' } },
+      { id: 's3', rec: { code: 'A3', delta: 1,  stockType: 'stock',   foundZone: 'SB-2' } },
+      { id: 's4', rec: { code: 'A1', delta: 1,  stockType: 'asset',   foundZone: 'DD-5' } },
+      { id: 's5', rec: { code: 'A1', delta: -1, stockType: 'asset',   foundZone: 'DD-5' } },
+      { id: 's6', rec: { code: 'A2', delta: 1,  stockType: 'asset',   foundZone: 'AA-1' } },
+      { id: 's7', rec: { code: 'A3', delta: 1,  stockType: 'asset',   foundZone: 'DD-5' } },
+      { id: 's8', rec: { code: 'A3', delta: -1, stockType: 'asset',   foundZone: 'DD-5' } }
+    ];
+    const iss = typeZoneIssues();
+    out.issues = iss.map(function (x) { return x.code + ':' + x.type + ':' + x.zone + ':' + x.should; });
+    renderTypeZonePanel();
+    out.tzShown = document.getElementById('tzCard').style.display !== 'none';
+    out.tzChip = document.getElementById('tzChip').textContent;
+    out.tzRows = document.querySelectorAll('#tzPanel tbody tr').length;
+    state.scanLog = [{ id: 'q1', rec: { code: 'A3', delta: 1, stockType: 'stock', foundZone: 'SB-2' } }];
+    renderTypeZonePanel();
+    out.tzHidden = document.getElementById('tzCard').style.display === 'none';
+    out.tzChip0 = document.getElementById('tzChip').textContent;
+    return out;
+  });
+  check('mismatch: Asset+โซนโชว์(D)=ผิด · Asset+สต็อก(S)=ผิด',
+        r14.mm.assetD === true && r14.mm.assetS === true, r14.mm);
+  check('mismatch: โชว์+S=ผิด · สต็อก+D=ผิด',
+        r14.mm.dispS === true && r14.mm.stockD === true, r14.mm);
+  check('ตรง: โชว์+D · สต็อก+S · Asset+A = ไม่ผิด',
+        r14.mm.dispD === false && r14.mm.stockS === false && r14.mm.assetA === false, r14.mm);
+  check('ข้อมูลไม่พอ/โซนเดาไม่ได้ = ไม่ตัดสินว่าผิด',
+        r14.mm.noZone === false && r14.mm.noType === false && r14.mm.oddZone === false, r14.mm);
+  check('⭐ เตือนสด: Asset แต่โซนโชว์ → ขึ้นป้ายเตือน',
+        r14.warnAssetD.shown === true && /ชั้นโชว์/.test(r14.warnAssetD.html), r14.warnAssetD);
+  check('ประเภทตรงโซน → ไม่ขึ้นเตือน', r14.warnOk.shown === false, r14.warnOk);
+  check('ยังไม่ตั้งโซน → ไม่ขึ้นเตือน', r14.warnNoZone.shown === false, r14.warnNoZone);
+  check('Asset + โซน A → ไม่ขึ้นเตือน', r14.warnAssetA.shown === false, r14.warnAssetA);
+  check('⭐ cleanup: ยุบซ้ำ + ตัด delta<=0 + Asset+A ไม่เข้าข่าย → เหลือ A1,A2',
+        r14.issues.join(' | ') === 'A1:asset:DD-5:display | A2:display:SA-1:stock', r14.issues);
+  check('⭐ ยิงผิดแล้วยกเลิก (สุทธิ 0) → ไม่ขึ้นเตือน (A3 หักกลบหมด)',
+        r14.issues.indexOf('A3:asset:DD-5:display') < 0 && r14.issues.length === 2, r14.issues);
+  check('การ์ด cleanup โชว์ + chip = 2 + 2 แถว',
+        r14.tzShown === true && r14.tzChip === '2' && r14.tzRows === 2, r14);
+  check('ไม่มี mismatch → การ์ดซ่อน + chip = 0',
+        r14.tzHidden === true && r14.tzChip0 === '0', r14);
 
   console.log('\n--- console/page errors ---');
   console.log(errors.slice(0, 10).join('\n') || '(none)');

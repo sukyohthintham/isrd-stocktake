@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.45.4">
+<meta name="version" content="2.46.1">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.45.4</title>
+<title>ISRD Stocktake v2.46.1</title>
 
 <style>
 :root{
@@ -1093,6 +1093,8 @@ body.no-doc-images .doc .imgbox{display:none}
         <datalist id="locZones"></datalist>
       </label>
       <div class="muted" id="locFilterInfo"></div>
+      <!-- ⭐ v2.46.0 — เตือนสดเมื่อประเภท(โชว์/สต็อก/Asset)ไม่ตรงกับโซนที่ตั้ง กันของไปผิดฝั่งตั้งแต่ยังไม่ยิง -->
+      <div id="typeZoneWarn" style="display:none;margin:4px 0 2px;padding:6px 10px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;color:#b91c1c;font-size:13px;line-height:1.5"></div>
 
       <input type="text" id="scanInput" inputmode="none" autocomplete="off"
              autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="ยิงบาร์โค้ดได้เลย">
@@ -1637,6 +1639,11 @@ body.no-doc-images .doc .imgbox{display:none}
       <h3>🔥 ขายดีแต่ไม่โชว์ — ต้องดันขึ้นโชว์ <span class="muted" style="font-size:12px;font-weight:400">(อันดับขาย 90 วัน · หน้าร้าน · จาก ISRD)</span></h3>
       <div id="srPanel"><div class="muted" style="padding:8px">—</div></div>
     </div>
+    <!-- ⭐ v2.46.0 — ประเภทกับโซนไม่ตรง: ของ Asset ไปติดโซนโชว์/สต็อก ฯลฯ ให้ admin ตรวจก่อนปิดรอบ -->
+    <div class="card" id="tzCard" style="display:none;border:1px solid #fecaca;background:#fef2f2">
+      <h3>⚠️ ประเภทกับโซนไม่ตรง <span class="chip" id="tzChip">0</span></h3>
+      <div id="tzPanel"></div>
+    </div>
     <div class="card">
       <h3><span id="sdTableTitle">มีสต็อก ไม่มีโชว์</span> <span class="chip" id="sdChip">0</span></h3>
       <input type="text" id="sdSearch" placeholder="🔍 ค้นหารหัส ชื่อ หรือกลุ่ม" autocomplete="off">
@@ -2068,7 +2075,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
 /* ⭐ v2.44.0 — ชุบชีวิต presence (ผู้ใช้ออนไลน์ + เตะออก) จาก presence-hold v2.33.0 · Rules v2.1.5 เพิ่มโหนด presence */
-var APP_VERSION = '2.45.4';
+var APP_VERSION = '2.46.1';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -3626,8 +3633,10 @@ function shopZonesAll() {
 function shopZonesFor() {
   var all = shopZonesAll();
   if (state.scanType === 'display') return all.filter(function (z) { return z.charAt(0) === 'D'; });
-  if (state.scanType === 'stock') return all.filter(function (z) { return z.charAt(0) === 'S'; });
-  return all.slice();
+  if (state.scanType === 'stock')   return all.filter(function (z) { return z.charAt(0) === 'S'; });
+  /* ⭐ v2.46.0 — Asset: เลิกเสนอโซนโชว์(D*)/สต็อก(S*) เพราะเด็กเผลอเลือกให้ของ Asset ไปติดผิดฝั่ง
+     เสนอเฉพาะโซนที่ขึ้นต้น A (ถ้าสาขาตั้งผัง Asset ไว้) ไม่งั้นว่าง = พิมพ์ที่เก็บเอง */
+  return all.filter(function (z) { return z.charAt(0) === 'A'; });
 }
 
 /* ---------- รอบนับของสาขา (cycle) ----------
@@ -5382,6 +5391,7 @@ function setScanType(v) {
   /* ⭐ v2.18.0 — ผังโซนผูกกับปุ่มนี้ กดโชว์แล้วรายการต้องเป็นรหัส D ทันที
      ไม่ใช่ต้องออกจากหน้าแล้วเข้าใหม่ถึงจะเปลี่ยน */
   if (state.page === 'scan') renderZoneDatalist();
+  updateTypeZoneWarn();
   focusScan();
 }
 
@@ -7340,6 +7350,7 @@ function renderZoneDatalist() {
 
 /* ตัวกรอง Location — ให้คนนับไล่เก็บทีละโซนโดยรู้ว่าเหลืออีกกี่ตัวในโซนนั้น */
 function renderLocFilter() {
+  updateTypeZoneWarn();
   var term = String(state.locationFilter || '').trim().toUpperCase();
   var info = $('locFilterInfo');
   if (!term) {
@@ -13504,6 +13515,77 @@ function srStat(label, val, color) {
     '<div style="font-size:11px;color:#64748b">'+label+'</div>' +
     '<div style="font-size:20px;font-weight:800;color:'+color+'">'+val+'</div></div>';
 }
+/* ============================================================
+   v2.46.0 — ประเภท(โชว์/สต็อก/Asset) ต้องตรงกับโซน
+   โซน: D*=ชั้นโชว์ · S*=ชั้นสต็อก · A*=Asset · อื่น/ว่าง=เดาไม่ได้ (ไม่ตัดสิน)
+   ============================================================ */
+var SCAN_TYPE_TH = { display:'🖼 โชว์', stock:'📦 สต็อก', asset:'🔧 Asset' };
+var ZONE_KIND_TH = { display:'โชว์', stock:'สต็อก', asset:'Asset' };
+function zoneTypeHint(fz) {
+  var z = String(fz == null ? '' : fz).trim().toUpperCase();
+  /* ต้องเป็นรหัสโซนจริงแบบผัง (DD-5 · SA-1 · AA-2) ไม่ใช่คำที่พิมพ์เอง (STORE/DESK) ที่บังเอิญขึ้นต้น D/S/A */
+  if (!/^[DSA][A-Z]-\d/.test(z)) return '';
+  var c = z.charAt(0);
+  return c === 'D' ? 'display' : c === 'S' ? 'stock' : 'asset';
+}
+function typeZoneMismatch(stype, fz) {
+  if (!stype || !fz) return false;          // ข้อมูลไม่พอ = ไม่ตัดสิน
+  var h = zoneTypeHint(fz);
+  return h !== '' && h !== stype;           // โซนสื่อประเภทได้ แต่ไม่ตรงกับที่เลือก
+}
+/* เตือนสดบนหน้ายิง — ประเภทที่กดอยู่ vs โซนที่ตั้งในช่อง "โซนที่เก็บ" */
+function updateTypeZoneWarn() {
+  var el = $('typeZoneWarn'); if (!el) return;
+  var fz = String(state.locationFilter || '').trim().toUpperCase();
+  if (typeZoneMismatch(state.scanType, fz)) {
+    el.style.display = '';
+    el.innerHTML = '⚠️ ประเภท <b>' + SCAN_TYPE_TH[state.scanType] + '</b> แต่โซน <b>' + srEsc(fz) +
+      '</b> เป็นชั้น' + ZONE_KIND_TH[zoneTypeHint(fz)] + ' — ตรวจประเภทหรือโซนอีกที ก่อนยิง';
+  } else { el.style.display = 'none'; el.innerHTML = ''; }
+}
+/* รวมรายการประเภท≠โซน ของรอบนี้ (จาก scanLog · เฉพาะยอดบวก · ยุบรหัส+โซน+ประเภทซ้ำ) */
+function typeZoneIssues() {
+  /* รวมยอดสุทธิต่อ (รหัส|โซน|ประเภท) ก่อน — ยิงผิดแล้วกดยกเลิก (ยิงลบแถวประเภท+โซนเดิม)
+     ยอดสุทธิ <= 0 = หักกลบหมด ไม่ต้องเตือนอีก (กันการ์ดค้างทั้งที่แก้แล้ว) */
+  var agg = {}, order = [];
+  (state.scanLog || []).forEach(function (s) {
+    var r = s.rec; if (!r) return;
+    if (!typeZoneMismatch(r.stockType, r.foundZone)) return;
+    var zone = String(r.foundZone).toUpperCase();
+    var k = safeKey(r.code) + '|' + zone + '|' + r.stockType;
+    if (!agg[k]) { agg[k] = { code: r.code, zone: zone, type: r.stockType, net: 0 }; order.push(k); }
+    agg[k].net += (r.delta || 0);
+  });
+  var out = [];
+  order.forEach(function (k) {
+    var a = agg[k]; if (a.net <= 0) return;
+    var p = state.products[safeKey(a.code)] || {};
+    out.push({ code: a.code, name: p.name || a.code, type: a.type, zone: a.zone, should: zoneTypeHint(a.zone) });
+  });
+  out.sort(function (a, b) { return String(a.code).localeCompare(String(b.code), 'th'); });
+  return out;
+}
+function renderTypeZonePanel() {
+  var panel = $('tzPanel'); if (!panel) return;
+  var card = $('tzCard'), chip = $('tzChip');
+  var issues = typeZoneIssues();
+  if (chip) chip.textContent = fmtNum(issues.length);
+  if (!issues.length) { if (card) card.style.display = 'none'; return; }
+  if (card) card.style.display = '';
+  var rows = issues.map(function (x) {
+    return '<tr><td>' + srEsc(x.code) + '</td><td>' + srEsc(x.name) + '</td>' +
+      '<td style="text-align:center">' + SCAN_TYPE_TH[x.type] + '</td>' +
+      '<td style="text-align:center">' + srEsc(x.zone) + '</td>' +
+      '<td style="text-align:center;color:#dc2626;font-weight:700">ควรเป็น ' + SCAN_TYPE_TH[x.should] + '</td></tr>';
+  }).join('');
+  panel.innerHTML =
+    '<div class="muted" style="padding:2px 0 8px">พบ ' + fmtNum(issues.length) +
+    ' รายการที่ประเภทไม่ตรงกับโซน — แก้โดย <b>ยกเลิก/ยิงลบแถวนี้ด้วยประเภท+โซนเดิมก่อน</b> ' +
+    'แล้วค่อยยิงใหม่ด้วยประเภทที่ถูก (ห้ามยิงใหม่เฉย ๆ จะนับซ้ำ) หรือย้ายของให้ตรงโซน · แก้ไม่ได้แจ้งแอดมิน</div>' +
+    '<div class="tablewrap"><table class="grid"><thead><tr><th>รหัส</th><th>ชื่อสินค้า</th>' +
+    '<th>ประเภทที่เลือก</th><th>โซน</th><th>ที่ถูก</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+}
+
 function renderSrPanel(rep) {
   var panel = $('srPanel'); if (!panel) return;
   rep = rep || stockDisplayReport();
@@ -13561,6 +13643,7 @@ function renderSrPanel(rep) {
 function renderStockDisplay() {
   var rep = stockDisplayReport();
   try { enrichSdRanks(rep); renderSrPanel(rep); } catch(e){}
+  try { renderTypeZonePanel(); } catch(e){}
   var round = state.roundIndex[state.roundId] || { name: '-' };
   $('sdBranchLine').textContent = 'สาขา: ' + jobBranchLabel(round);
   $('sdAuditDate').textContent = 'วันที่ Audit: ' + thaiDate(Date.now());
