@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.47.1">
+<meta name="version" content="2.47.2">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.47.1</title>
+<title>ISRD Stocktake v2.47.2</title>
 
 <style>
 :root{
@@ -2080,7 +2080,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
 /* ⭐ v2.44.0 — ชุบชีวิต presence (ผู้ใช้ออนไลน์ + เตะออก) จาก presence-hold v2.33.0 · Rules v2.1.5 เพิ่มโหนด presence */
-var APP_VERSION = '2.47.1';
+var APP_VERSION = '2.47.2';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -13661,12 +13661,16 @@ function sdAllLoad() {
   var rows = [], chain = Promise.resolve();
   cids.forEach(function (cid) {
     chain = chain.then(function () {
+      /* .catch ต่อสาขา — สาขาเดียว throw (cycleBranch/render) ต้องไม่ทำให้สาขาที่เหลือถูกข้ามเงียบ ๆ */
       return sdBranchSummary(cid).then(function (r) {
         var b = cycleBranch(cid) || {};
         rows.push({ cid: cid, code: b.branchCode || '-', name: b.branchName || b.branch || '-',
                     count: r.count, riskValue: r.riskValue, error: !!r.error });
+      }).catch(function () {
+        rows.push({ cid: cid, code: '-', name: '-', count: 0, riskValue: 0, error: true });
+      }).then(function () {
         if (state.sdAllProgress) state.sdAllProgress.done++;
-        renderSdAll();
+        try { renderSdAll(); } catch (e) {}
       });
     });
   });
@@ -13685,7 +13689,7 @@ function renderSdAll() {
   if (st === 'idle') {
     host.innerHTML = '<button class="btn block" id="btnSdAllLoad">📦 โหลดภาพรวมทุกสาขา</button>' +
       '<div class="muted" style="margin-top:8px">รวมสินค้าที่ <b>มีสต็อกแต่ไม่โชว์</b> ของทุกสาขา + มูลค่าจม ' +
-      'เรียงสาขาที่น่าห่วงสุดขึ้นก่อน · โหลดจากทุกรอบนับ อาจใช้เวลาสักครู่ (กดเองเมื่อต้องการ)</div>';
+      'เรียงสาขาที่น่าห่วงสุดขึ้นก่อน · โหลดรอบล่าสุดของแต่ละสาขา อาจใช้เวลาสักครู่ (กดเองเมื่อต้องการ)</div>';
     var btn = $('btnSdAllLoad'); if (btn) btn.onclick = sdAllLoad;
     return;
   }
