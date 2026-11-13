@@ -836,7 +836,10 @@ function check(name, ok, got) {
       stockS: typeZoneMismatch('stock', 'SB-2'),
       noZone: typeZoneMismatch('asset', ''),
       noType: typeZoneMismatch('', 'DD-5'),
-      oddZone: typeZoneMismatch('asset', 'ZZ-9')
+      oddZone: typeZoneMismatch('asset', 'ZZ-9'),
+      storeWord: typeZoneMismatch('asset', 'STORE'),
+      deskWord: typeZoneMismatch('stock', 'DESK'),
+      aWord: typeZoneMismatch('display', 'AREA')
     };
     const warn = function (t, z) {
       state.scanType = t; state.locationFilter = z; updateTypeZoneWarn();
@@ -878,6 +881,8 @@ function check(name, ok, got) {
         r14.mm.dispD === false && r14.mm.stockS === false && r14.mm.assetA === false, r14.mm);
   check('ข้อมูลไม่พอ/โซนเดาไม่ได้ = ไม่ตัดสินว่าผิด',
         r14.mm.noZone === false && r14.mm.noType === false && r14.mm.oddZone === false, r14.mm);
+  check('⭐ คำพิมพ์เอง (STORE/DESK/AREA) ขึ้นต้น D/S/A แต่ไม่ใช่รหัสโซน → ไม่เตือนผิด',
+        r14.mm.storeWord === false && r14.mm.deskWord === false && r14.mm.aWord === false, r14.mm);
   check('⭐ เตือนสด: Asset แต่โซนโชว์ → ขึ้นป้ายเตือน',
         r14.warnAssetD.shown === true && /ชั้นโชว์/.test(r14.warnAssetD.html), r14.warnAssetD);
   check('ประเภทตรงโซน → ไม่ขึ้นเตือน', r14.warnOk.shown === false, r14.warnOk);
