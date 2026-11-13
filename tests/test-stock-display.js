@@ -38,6 +38,18 @@ function check(name, ok, got) {
   await page.goto(APP_URL, { waitUntil: 'load' });
   await new Promise(r => setTimeout(r, 1200));
 
+  /* สตับอันดับขาย (get_sku_sales_rank) ทั้งไฟล์เทส — กัน enrichSdRanks ยิง Supabase จริงตอนเรนเดอร์
+     เทสที่ต้องการค่าเฉพาะ override เพิ่มได้เอง */
+  await page.evaluate(() => {
+    window.fetchSalesRank = function(skus){
+      return Promise.resolve((skus||[]).map(function(sku,i){
+        return { sku:sku, excluded:false, qty_company:10, value_company:100,
+                 rank_qty_company:i+1, rank_value_company:i+1, total_sku_company:1205,
+                 qty_store:5, value_store:50, rank_qty_store:i+1, rank_value_store:i+1, total_sku_store:418 };
+      }));
+    };
+  });
+
   /* ---------- [1] โหมดทดสอบ ---------- */
   console.log('\n[1] ⭐ เปิดจากไฟล์ในเครื่อง = ห้ามแตะ production');
   const r1 = await page.evaluate(() => ({
@@ -325,8 +337,12 @@ function check(name, ok, got) {
 
   /* ---------- [4] Excel 4 ชีท ---------- */
   console.log('\n[4] ไฟล์ Excel 4 ชีท');
-  const r4 = await page.evaluate(() => {
+  const r4 = await page.evaluate(async () => {
     window.__seed(window.__SCANS);
+    /* โหลดอันดับเข้า state ก่อน (เหมือนผู้ใช้เปิดแท็บ) — Export อ่านจาก state เอง ไม่ยิงเน็ต (option ก) */
+    state.sdRankKey = ''; state.sdRankStatus = 'idle';
+    enrichSdRanks(stockDisplayReport());
+    for (let i = 0; i < 100 && state.sdRankStatus !== 'ok'; i++) { await new Promise(function (res) { setTimeout(res, 5); }); }
     let sheets = null, fileName = null;
     const realBuild = window.buildXlsx;
     const realCreate = URL.createObjectURL;
@@ -335,11 +351,12 @@ function check(name, ok, got) {
     URL.createObjectURL = function () { return 'blob:fake'; };
     URL.revokeObjectURL = function () {};
     HTMLAnchorElement.prototype.click = function () { fileName = this.download; };
-    exportStockDisplayExcel();
+    await exportStockDisplayExcel();
     window.buildXlsx = realBuild;
     URL.createObjectURL = realCreate;
     HTMLAnchorElement.prototype.click = realClick;
     return {
+      rankOk: state.sdRankStatus,
       names: sheets.map(function (s) { return s.name; }),
       head2: sheets[1].rows[0],
       head3: sheets[2].rows[0],
@@ -350,14 +367,17 @@ function check(name, ok, got) {
       summary: sheets[0].rows.filter(function (r) { return r.length === 4 && r[0] !== 'สถานะ'; }),
       widths: sheets.map(function (s) { return s.widths.length; }),
       fileName: fileName,
+      s2sev: (sheets[1].rows[1] || [])[7],
       toast: (window.__toasts[0] || {}).m
     };
   });
   check('ได้ 4 ชีทตามที่ตกลง',
         r4.names.join(',') === 'สรุป,มีสต็อกไม่มีโชว์,มีโชว์ไม่มีสต็อก,ทั้งหมด-จำแนก', r4.names);
-  check('ชีท 2 หัวครบ 7 ช่อง',
-        r4.head2.join(',') === 'รหัสสินค้า,ชื่อสินค้า,กลุ่ม,Stock (ชิ้น),โซน,ราคาต้นทุน,มูลค่า',
+  check('ชีท 2 หัวครบ 11 ช่อง (รวมคอลัมน์อันดับ)',
+        r4.head2.join(',') === 'รหัสสินค้า,ชื่อสินค้า,กลุ่ม,Stock (ชิ้น),โซน,ราคาต้นทุน,มูลค่า,ระดับ,อันดับบริษัท(ชิ้น),อันดับบริษัท(฿),อันดับสาขา(ชิ้น)',
         r4.head2);
+  check('⭐ ชีท 2 คอลัมน์ "ระดับ" มีค่า', ['เร่งด่วน','เฝ้าระวัง','Dead/ไม่ขาย','ไม่นับอันดับ'].indexOf(r4.s2sev) >= 0, r4.s2sev);
+  check('อันดับโหลดเข้า state ก่อน Export (option ก)', r4.rankOk === 'ok', r4.rankOk);
   check('ชีท 3 หัวครบ 5 ช่อง',
         r4.head3.join(',') === 'รหัสสินค้า,ชื่อสินค้า,กลุ่ม,โชว์ (ชิ้น),โซน', r4.head3);
   check('ชีท 4 หัวครบ 8 ช่อง',
@@ -371,7 +391,28 @@ function check(name, ok, got) {
         r4.summary.length === 4 && r4.summary.every(function (r) { return typeof r[2] === 'number'; }),
         r4.summary);
   check('ความกว้างคอลัมน์ครบทุกชีท',
-        r4.widths.join(',') === '4,7,5,8', r4.widths);
+        r4.widths.join(',') === '4,11,5,8', r4.widths);
+
+  /* ---------- [4b] ISRD ล่ม = คอลัมน์ระดับต้องว่าง (CC review [B]) ---------- */
+  const r4b = await page.evaluate(async () => {
+    window.__seed(window.__SCANS);
+    /* อันดับยังไม่พร้อม + แกล้งใส่ค่าเก่าจาก Job อื่นไว้ใน state — ต้องไม่หลุดลงไฟล์ */
+    state.sdRank = { ZZZOLD: { sku:'ZZZOLD', excluded:false, rank_qty_company:1, rank_value_company:1, rank_qty_store:1 } };
+    state.sdRankStatus = 'idle'; state.sdRankKey = 'OTHER|zzz';
+    let sheets = null;
+    const realBuild = window.buildXlsx;
+    const rc = URL.createObjectURL, rv = URL.revokeObjectURL, rcl = HTMLAnchorElement.prototype.click;
+    window.buildXlsx = function (s) { sheets = s; return realBuild(s); };
+    URL.createObjectURL = function(){ return 'blob:fake'; }; URL.revokeObjectURL = function(){};
+    HTMLAnchorElement.prototype.click = function(){};
+    await exportStockDisplayExcel();
+    window.buildXlsx = realBuild; URL.createObjectURL = rc; URL.revokeObjectURL = rv; HTMLAnchorElement.prototype.click = rcl;
+    var row = sheets[1].rows[1] || [];
+    return { sev: row[7], c8: row[8], c9: row[9], c10: row[10] };
+  });
+  check('⭐ ISRD ไม่พร้อม = คอลัมน์ "ระดับ" ว่าง (ไม่เขียน Dead มั่ว)', r4b.sev === '', r4b.sev);
+  check('⭐ ISRD ไม่พร้อม = คอลัมน์อันดับว่างทุกช่อง (ไม่หลงค่าเก่าจาก Job อื่น)',
+        r4b.c8 === '' && r4b.c9 === '' && r4b.c10 === '', r4b);
   check('ชื่อไฟล์บอก Job', /^stock-no-display-STOCK-01-/.test(r4.fileName || ''), r4.fileName);
   check('นามสกุล .xlsx', /\.xlsx$/.test(r4.fileName || ''), r4.fileName);
   /* เคยพลาดมาแล้ว: เอา thaiDate() มาแทนอักษรไทยด้วยขีด ได้ชื่อ 18---------2569

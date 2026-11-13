@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.45.0">
+<meta name="version" content="2.45.3">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.45.0</title>
+<title>ISRD Stocktake v2.45.3</title>
 
 <style>
 :root{
@@ -2068,7 +2068,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
 /* ⭐ v2.44.0 — ชุบชีวิต presence (ผู้ใช้ออนไลน์ + เตะออก) จาก presence-hold v2.33.0 · Rules v2.1.5 เพิ่มโหนด presence */
-var APP_VERSION = '2.45.0';
+var APP_VERSION = '2.45.3';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -13451,9 +13451,11 @@ window.sdRankRetry = function(){ state.sdRankKey=''; state.sdRankStatus='idle'; 
 var SR_SEV = {
   urgent: { t:'🔴 เร่งด่วน', c:'#dc2626', bg:'#fee2e2' },
   watch:  { t:'🟡 เฝ้าระวัง', c:'#b45309', bg:'#fef3c7' },
-  dead:   { t:'⚫ Dead/ไม่ขาย', c:'#334155', bg:'#e2e8f0' }
+  dead:   { t:'⚫ Dead/ไม่ขาย', c:'#334155', bg:'#e2e8f0' },
+  skip:   { t:'⚪ ไม่นับอันดับ', c:'#94a3b8', bg:'#f1f5f9' }
 };
 function sdSeverity(rk) {
+  if (rk && rk.excluded) return 'skip';   // accessory/non-sale (ตัดหมวดเหมือน Top Sale) — ไม่นับอันดับ
   if (!rk || (rk.rank_qty_company == null && rk.rank_qty_store == null)) return 'dead';
   if ((rk.rank_qty_company != null && rk.rank_qty_company <= 100) ||
       (rk.rank_value_company != null && rk.rank_value_company <= 100) ||
@@ -13468,6 +13470,7 @@ function fetchSalesRank(skus, storeCode) {
     body: JSON.stringify({ p_skus: skus, p_store_code: storeCode || null })
   }).then(function(r){ if(!r.ok) throw new Error('rank '+r.status); return r.json(); });
 }
+/* (ยกเลิก ensureSdRanksForExport v2.45.3 — Export ไม่ยิงเน็ตแล้ว อ่านอันดับจาก state ที่พาเนลโหลดไว้) */
 function sdNoDisplaySkus(rep) {
   return rep.rows.filter(function(r){ return r.status === 'stock_no_display'; })
                  .map(function(r){ return r.code; });
@@ -13522,18 +13525,21 @@ function renderSrPanel(rep) {
     return { r:r, rk:rk, sev: sdSeverity(rk),
              best: (rk && rk.rank_qty_company != null) ? rk.rank_qty_company : 9e9 };
   });
-  var order = { urgent:0, watch:1, dead:2 };
+  var order = { urgent:0, watch:1, dead:2, skip:3 };
   items.sort(function(a,b){ return (order[a.sev]-order[b.sev]) || (a.best-b.best); });
-  var nU=0,nW=0,nD=0,riskVal=0;
+  var nU=0,nW=0,nD=0,nX=0,riskVal=0;
   items.forEach(function(x){
-    if (x.sev==='urgent') { nU++; }
-    else { if (x.sev==='watch') nW++; else nD++; riskVal += (x.r.value||0); }  // จมเสี่ยง = watch+dead (ไม่รวม urgent ที่ขายดี)
+    if (x.sev==='urgent') nU++;
+    else if (x.sev==='watch') { nW++; riskVal += (x.r.value||0); }
+    else if (x.sev==='dead')  { nD++; riskVal += (x.r.value||0); }  // จมเสี่ยง = watch+dead
+    else nX++;   // skip = accessory/non-sale ไม่นับอันดับ ไม่คิดจมเสี่ยง
   });
   var warn = store ? '' : '<div style="font-size:11px;color:#b45309;margin-bottom:6px">\u26a0 \u0e44\u0e21\u0e48\u0e1e\u0e1a\u0e23\u0e2b\u0e31\u0e2a\u0e2a\u0e32\u0e02\u0e32 \u2014 \u0e2d\u0e31\u0e19\u0e14\u0e31\u0e1a\u0e2a\u0e32\u0e02\u0e32\u0e08\u0e30\u0e27\u0e48\u0e32\u0e07 (\u0e42\u0e0a\u0e27\u0e4c\u0e40\u0e09\u0e1e\u0e32\u0e30\u0e2d\u0e31\u0e19\u0e14\u0e31\u0e1a\u0e1a\u0e23\u0e34\u0e29\u0e31\u0e17)</div>';
   var head = '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">' +
     srStat(SR_SEV.urgent.t, nU, '#dc2626') + srStat(SR_SEV.watch.t, nW, '#b45309') +
     srStat(SR_SEV.dead.t, nD, '#334155') +
-    srStat('\ud83d\udcb0 \u0e21\u0e39\u0e25\u0e04\u0e48\u0e32\u0e08\u0e21\u0e40\u0e2a\u0e35\u0e48\u0e22\u0e07 (\u0e40\u0e1d\u0e49\u0e32\u0e23\u0e30\u0e27\u0e31\u0e07+Dead)', fmtMoney(riskVal), '#0f766e') + '</div>';
+    srStat('\ud83d\udcb0 \u0e21\u0e39\u0e25\u0e04\u0e48\u0e32\u0e08\u0e21\u0e40\u0e2a\u0e35\u0e48\u0e22\u0e07 (\u0e40\u0e1d\u0e49\u0e32\u0e23\u0e30\u0e27\u0e31\u0e07+Dead)', fmtMoney(riskVal), '#0f766e') + '</div>' +
+    (nX ? '<div style="font-size:11px;color:#94a3b8;margin-bottom:6px">\u26aa \u0e21\u0e35 ' + fmtNum(nX) + ' \u0e15\u0e31\u0e27\u0e44\u0e21\u0e48\u0e19\u0e31\u0e1a\u0e2d\u0e31\u0e19\u0e14\u0e31\u0e1a (accessory/non-sale \u0e15\u0e31\u0e14\u0e2b\u0e21\u0e27\u0e14\u0e40\u0e2b\u0e21\u0e37\u0e2d\u0e19 Top Sale)</div>' : '');
   var list = items.slice(0, 60).map(function(x){
     var rk = x.rk, sev = SR_SEV[x.sev];
     var cQ = (rk && rk.rank_qty_company   != null) ? ('#'+rk.rank_qty_company+'/'+rk.total_sku_company) : '\u2014';
@@ -13740,6 +13746,8 @@ function renderSdTable(rep) {
    รอบใบเดียว (หรือรวมยอดไว้แล้ว) ทำงานทันทีแบบเดิม ไม่แตะเน็ต ไม่เปลี่ยนพฤติกรรมเดิม
    รอบหลายใบที่ยังไม่รวม ต้องรอให้ครบก่อน ไม่งั้นได้ไฟล์ที่ both = 0 ทั้งใบ */
 function exportStockDisplayExcel() {
+  /* Export อ่านอันดับจาก state ที่พาเนลโหลดไว้แล้วแบบ sync — ไม่ยิงเน็ตเอง (กฎเดิม v2.7.x)
+     ยังไม่มีอันดับ → สร้างไฟล์ทันทีโดยเว้นคอลัมน์อันดับ + เตือนใน toast */
   if (cycleScope().multi && !cycleDataReady()) {
     toast('กำลังรวมยอดทุก Job ในรอบก่อนสร้างไฟล์ ...');
     return ensureCycleData().then(buildStockDisplayExcel, function () {
@@ -13766,10 +13774,22 @@ function buildStockDisplayExcel() {
   });
 
   var pick = function (st) { return rep.rows.filter(function (r) { return r.status === st; }); };
-  var s2 = [['รหัสสินค้า', 'ชื่อสินค้า', 'กลุ่ม', 'Stock (ชิ้น)', 'โซน', priceLabel, 'มูลค่า']];
+  /* อันดับขายใช้ได้ต่อเมื่อพาเนลโหลดเสร็จ (ok) และชุด SKU/สาขา "ตรงกับไฟล์ที่กำลังออก"
+     ไม่ตรง = หลง Job/สาขาเก่า → เว้นทุกคอลัมน์อันดับ ไม่เขียนค่าเก่าลงไฟล์ */
+  var store = jobBranchCode(round);
+  var curKey = store + '|' + sdNoDisplaySkus(rep).slice().sort().join(',');
+  var hasRank = state.sdRankStatus === 'ok' && state.sdRankKey === curKey;
+  var s2 = [['รหัสสินค้า', 'ชื่อสินค้า', 'กลุ่ม', 'Stock (ชิ้น)', 'โซน', priceLabel, 'มูลค่า',
+             'ระดับ', 'อันดับบริษัท(ชิ้น)', 'อันดับบริษัท(฿)', 'อันดับสาขา(ชิ้น)']];
   pick('stock_no_display').sort(function (a, b) { return b.value - a.value; })
     .forEach(function (r) {
-      s2.push([r.code, r.name, r.group, r.stockQty, r.zones, r.price, r.value]);
+      var rk = hasRank ? (state.sdRank[r.code] || null) : null;
+      var sev = !hasRank ? '' : ({ urgent:'เร่งด่วน', watch:'เฝ้าระวัง', dead:'Dead/ไม่ขาย', skip:'ไม่นับอันดับ' })[sdSeverity(rk)];
+      s2.push([r.code, r.name, r.group, r.stockQty, r.zones, r.price, r.value,
+               sev,
+               (rk && rk.rank_qty_company   != null) ? rk.rank_qty_company   : '',
+               (rk && rk.rank_value_company != null) ? rk.rank_value_company : '',
+               (rk && rk.rank_qty_store     != null) ? rk.rank_qty_store     : '']);
     });
 
   var s3 = [['รหัสสินค้า', 'ชื่อสินค้า', 'กลุ่ม', 'โชว์ (ชิ้น)', 'โซน']];
@@ -13785,7 +13805,7 @@ function buildStockDisplayExcel() {
 
   var blob = buildXlsx([
     { name: 'สรุป', rows: s1, widths: [26, 14, 12, 16] },
-    { name: 'มีสต็อกไม่มีโชว์', rows: s2, widths: [18, 34, 10, 12, 26, 12, 14] },
+    { name: 'มีสต็อกไม่มีโชว์', rows: s2, widths: [18, 34, 10, 12, 26, 12, 14, 12, 15, 14, 14] },
     { name: 'มีโชว์ไม่มีสต็อก', rows: s3, widths: [18, 34, 10, 12, 26] },
     { name: 'ทั้งหมด-จำแนก', rows: s4, widths: [18, 34, 10, 20, 12, 12, 12, 26] }
   ]);
@@ -13802,7 +13822,9 @@ function buildStockDisplayExcel() {
   document.body.appendChild(a);
   a.click();
   setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
-  toast('ดาวน์โหลดไฟล์แล้ว · ' + fmtNum(rep.counts.stock_no_display) + ' รายการที่มีสต็อกไม่มีโชว์');
+  toast(hasRank
+    ? ('ดาวน์โหลดไฟล์แล้ว · ' + fmtNum(rep.counts.stock_no_display) + ' รายการที่มีสต็อกไม่มีโชว์')
+    : 'ดาวน์โหลดแล้ว — ยังไม่มีคอลัมน์อันดับขาย เปิดแท็บ “ขายดีแต่ไม่โชว์” ให้โหลดเสร็จก่อนแล้ว Export ซ้ำ');
 }
 
 /* เซลล์ %Success หน้าภาพรวม — โชว์ Product เป็นตัวหลัก (ตรงกับโดนัทไส้ใน) + รวมทั้งหมดเป็นตัวรอง */
