@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.44.7">
+<meta name="version" content="2.45.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.44.7</title>
+<title>ISRD Stocktake v2.45.0</title>
 
 <style>
 :root{
@@ -1633,6 +1633,10 @@ body.no-doc-images .doc .imgbox{display:none}
       <h3>กระจุกอยู่กลุ่มไหน</h3>
       <div class="clist" id="sdGroups"></div>
     </div>
+    <div class="card" id="srCard">
+      <h3>🔥 ขายดีแต่ไม่โชว์ — ต้องดันขึ้นโชว์ <span class="muted" style="font-size:12px;font-weight:400">(อันดับขาย 90 วัน · หน้าร้าน · จาก ISRD)</span></h3>
+      <div id="srPanel"><div class="muted" style="padding:8px">—</div></div>
+    </div>
     <div class="card">
       <h3><span id="sdTableTitle">มีสต็อก ไม่มีโชว์</span> <span class="chip" id="sdChip">0</span></h3>
       <input type="text" id="sdSearch" placeholder="🔍 ค้นหารหัส ชื่อ หรือกลุ่ม" autocomplete="off">
@@ -2064,7 +2068,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
 /* ⭐ v2.44.0 — ชุบชีวิต presence (ผู้ใช้ออนไลน์ + เตะออก) จาก presence-hold v2.33.0 · Rules v2.1.5 เพิ่มโหนด presence */
-var APP_VERSION = '2.44.7';
+var APP_VERSION = '2.45.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -13432,8 +13436,125 @@ function sdVisibleRows(rep) {
   });
 }
 
+/* ============================================================
+   v2.45.0 — ขายดีแต่ไม่โชว์ (Dead Stock early-warning)
+   ดึงอันดับขายจาก ISRD dashboard (Supabase RPC get_sku_sales_rank)
+   แสดงเฉพาะในแท็บ Stock vs Display · ไม่แตะตารางเดิม
+   ============================================================ */
+var SR_URL  = 'https://hndazricnxbqpchasqul.supabase.co';
+var SR_ANON = 'sb_publishable_2Nzf0guT42-ztdLo_IK81Q_t0V0jRXv';      // anon public key ของ project inspiration-dashboard
+if (!state.sdRank)       state.sdRank = {};
+if (!state.sdRankKey)    state.sdRankKey = '';
+if (!state.sdRankStatus) state.sdRankStatus = 'idle';   // idle | loading | ok | error
+function srEsc(s){ return String(s==null?'':s).replace(/[&<>"]/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); }
+window.sdRankRetry = function(){ state.sdRankKey=''; state.sdRankStatus='idle'; var rep=stockDisplayReport(); try { enrichSdRanks(rep); renderSrPanel(rep); } catch(e){} };
+var SR_SEV = {
+  urgent: { t:'🔴 เร่งด่วน', c:'#dc2626', bg:'#fee2e2' },
+  watch:  { t:'🟡 เฝ้าระวัง', c:'#b45309', bg:'#fef3c7' },
+  dead:   { t:'⚫ Dead/ไม่ขาย', c:'#334155', bg:'#e2e8f0' }
+};
+function sdSeverity(rk) {
+  if (!rk || (rk.rank_qty_company == null && rk.rank_qty_store == null)) return 'dead';
+  if ((rk.rank_qty_company != null && rk.rank_qty_company <= 100) ||
+      (rk.rank_value_company != null && rk.rank_value_company <= 100) ||
+      (rk.rank_qty_store != null && rk.rank_qty_store <= 20)) return 'urgent';
+  return 'watch';
+}
+function fetchSalesRank(skus, storeCode) {
+  if (!SR_ANON || SR_ANON.length < 10) return Promise.reject(new Error('ยังไม่ได้ใส่ key'));
+  return fetch(SR_URL + '/rest/v1/rpc/get_sku_sales_rank', {
+    method: 'POST',
+    headers: { 'Content-Type':'application/json', 'apikey': SR_ANON, 'Authorization': 'Bearer ' + SR_ANON },
+    body: JSON.stringify({ p_skus: skus, p_store_code: storeCode || null })
+  }).then(function(r){ if(!r.ok) throw new Error('rank '+r.status); return r.json(); });
+}
+function sdNoDisplaySkus(rep) {
+  return rep.rows.filter(function(r){ return r.status === 'stock_no_display'; })
+                 .map(function(r){ return r.code; });
+}
+function enrichSdRanks(rep) {
+  var round = state.roundIndex[state.roundId] || {};
+  var store = jobBranchCode(round);
+  var skus = sdNoDisplaySkus(rep);
+  if (!skus.length) { state.sdRank = {}; state.sdRankKey = ''; state.sdRankStatus = 'idle'; return; }
+  var key = store + '|' + skus.slice().sort().join(',');
+  /* key เดิม + (โหลดเสร็จ/กำลังโหลด/เพิ่ง error) = ไม่ยิงซ้ำ — error รอผู้ใช้กด "ลองใหม่" เอง (กัน storm) */
+  if (key === state.sdRankKey &&
+      (state.sdRankStatus === 'ok' || state.sdRankStatus === 'loading' || state.sdRankStatus === 'error')) return;
+  state.sdRankKey = key;
+  state.sdRankStatus = 'loading';
+  state.sdRank = {};
+  fetchSalesRank(skus, store).then(function(rows){
+    if (key !== state.sdRankKey) return;            // ผู้ใช้สลับรอบ/Job ระหว่างรอ → ทิ้งผลเก่า (กัน race)
+    var m = {}; (rows||[]).forEach(function(x){ m[x.sku] = x; });
+    state.sdRank = m; state.sdRankStatus = 'ok';
+    renderSrPanel(rep);
+  }, function(e){
+    if (key !== state.sdRankKey) return;
+    state.sdRankErr = (e && e.message) || String(e);
+    state.sdRankStatus = 'error';
+    renderSrPanel(rep);
+  });
+}
+function srStat(label, val, color) {
+  return '<div style="flex:1;min-width:120px;background:#fff;border:1px solid '+color+'33;border-left:3px solid '+color+';border-radius:8px;padding:8px 10px">' +
+    '<div style="font-size:11px;color:#64748b">'+label+'</div>' +
+    '<div style="font-size:20px;font-weight:800;color:'+color+'">'+val+'</div></div>';
+}
+function renderSrPanel(rep) {
+  var panel = $('srPanel'); if (!panel) return;
+  rep = rep || stockDisplayReport();
+  var round = state.roundIndex[state.roundId] || {};
+  var store = jobBranchCode(round);
+  var noDisp = rep.rows.filter(function(r){ return r.status === 'stock_no_display'; });
+  if (!noDisp.length) { panel.innerHTML = '<div class="muted" style="padding:8px">ไม่มีสินค้ามีสต็อกไม่โชว์</div>'; return; }
+  if (state.sdRankStatus === 'error') {
+    panel.innerHTML = '<div style="padding:10px">ดึงอันดับขายไม่ได้: <b>' + srEsc(state.sdRankErr) + '</b> ' +
+      '<a href="javascript:void(0)" onclick="sdRankRetry()" style="color:#2563eb;font-weight:700">แตะเพื่อลองใหม่</a></div>';
+    return;
+  }
+  if (state.sdRankStatus !== 'ok') {   // idle/loading — ยังไม่มีอันดับ ห้ามจัดระดับ Dead (กันโชว์ข้อมูลผิด)
+    panel.innerHTML = '<div class="muted" style="padding:10px">กำลังดึงอันดับขายจาก ISRD ... (' + fmtNum(noDisp.length) + ' SKU)</div>';
+    return;
+  }
+  var items = noDisp.map(function(r){
+    var rk = state.sdRank[r.code] || null;
+    return { r:r, rk:rk, sev: sdSeverity(rk),
+             best: (rk && rk.rank_qty_company != null) ? rk.rank_qty_company : 9e9 };
+  });
+  var order = { urgent:0, watch:1, dead:2 };
+  items.sort(function(a,b){ return (order[a.sev]-order[b.sev]) || (a.best-b.best); });
+  var nU=0,nW=0,nD=0,riskVal=0;
+  items.forEach(function(x){
+    if (x.sev==='urgent') { nU++; }
+    else { if (x.sev==='watch') nW++; else nD++; riskVal += (x.r.value||0); }  // จมเสี่ยง = watch+dead (ไม่รวม urgent ที่ขายดี)
+  });
+  var warn = store ? '' : '<div style="font-size:11px;color:#b45309;margin-bottom:6px">\u26a0 \u0e44\u0e21\u0e48\u0e1e\u0e1a\u0e23\u0e2b\u0e31\u0e2a\u0e2a\u0e32\u0e02\u0e32 \u2014 \u0e2d\u0e31\u0e19\u0e14\u0e31\u0e1a\u0e2a\u0e32\u0e02\u0e32\u0e08\u0e30\u0e27\u0e48\u0e32\u0e07 (\u0e42\u0e0a\u0e27\u0e4c\u0e40\u0e09\u0e1e\u0e32\u0e30\u0e2d\u0e31\u0e19\u0e14\u0e31\u0e1a\u0e1a\u0e23\u0e34\u0e29\u0e31\u0e17)</div>';
+  var head = '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">' +
+    srStat(SR_SEV.urgent.t, nU, '#dc2626') + srStat(SR_SEV.watch.t, nW, '#b45309') +
+    srStat(SR_SEV.dead.t, nD, '#334155') +
+    srStat('\ud83d\udcb0 \u0e21\u0e39\u0e25\u0e04\u0e48\u0e32\u0e08\u0e21\u0e40\u0e2a\u0e35\u0e48\u0e22\u0e07 (\u0e40\u0e1d\u0e49\u0e32\u0e23\u0e30\u0e27\u0e31\u0e07+Dead)', fmtMoney(riskVal), '#0f766e') + '</div>';
+  var list = items.slice(0, 60).map(function(x){
+    var rk = x.rk, sev = SR_SEV[x.sev];
+    var cQ = (rk && rk.rank_qty_company   != null) ? ('#'+rk.rank_qty_company+'/'+rk.total_sku_company) : '\u2014';
+    var cV = (rk && rk.rank_value_company != null) ? ('#'+rk.rank_value_company) : '\u2014';
+    var sQ = (rk && rk.rank_qty_store     != null) ? ('#'+rk.rank_qty_store+'/'+rk.total_sku_store) : '\u2014';
+    return '<div style="display:flex;align-items:center;gap:8px;padding:7px 8px;border-bottom:1px solid #eee;flex-wrap:wrap">' +
+      '<span style="font-size:11px;font-weight:700;color:'+sev.c+';background:'+sev.bg+';padding:1px 6px;border-radius:5px;white-space:nowrap">'+sev.t+'</span>' +
+      '<span style="font-family:monospace;font-size:12px;color:#334155">'+srEsc(x.r.code)+'</span>' +
+      '<span style="flex:1;min-width:120px;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+srEsc(x.r.name)+'</span>' +
+      '<span style="font-size:11px;color:#64748b">\u0e2a\u0e15\u0e47\u0e2d\u0e01 '+fmtNum(x.r.stockQty)+'</span>' +
+      '<span style="font-size:11px">\u0e1a.\u0e0a\u0e34\u0e49\u0e19 <b>'+cQ+'</b></span>' +
+      '<span style="font-size:11px">\u0e1a.\u0e3f <b>'+cV+'</b></span>' +
+      '<span style="font-size:11px">\u0e2a\u0e32\u0e02\u0e32 <b>'+sQ+'</b></span>' +
+    '</div>';
+  }).join('');
+  panel.innerHTML = warn + head +
+    '<div style="font-size:11px;color:#94a3b8;margin-bottom:4px">\u0e40\u0e23\u0e35\u0e22\u0e07\u0e04\u0e27\u0e32\u0e21\u0e40\u0e23\u0e48\u0e07\u0e14\u0e48\u0e27\u0e19 \u2192 \u0e02\u0e32\u0e22\u0e14\u0e35\u0e2a\u0e38\u0e14\u0e01\u0e48\u0e2d\u0e19 (\u0e1a.=\u0e1a\u0e23\u0e34\u0e29\u0e31\u0e17 / \u0e2a\u0e32\u0e02\u0e32=\u0e2a\u0e32\u0e02\u0e32\u0e19\u0e35\u0e49) \u00b7 \u0e02\u0e32\u0e22 90 \u0e27\u0e31\u0e19 \u0e2b\u0e19\u0e49\u0e32\u0e23\u0e49\u0e32\u0e19</div>' + list;
+}
 function renderStockDisplay() {
   var rep = stockDisplayReport();
+  try { enrichSdRanks(rep); renderSrPanel(rep); } catch(e){}
   var round = state.roundIndex[state.roundId] || { name: '-' };
   $('sdBranchLine').textContent = 'สาขา: ' + jobBranchLabel(round);
   $('sdAuditDate').textContent = 'วันที่ Audit: ' + thaiDate(Date.now());
