@@ -396,9 +396,10 @@ function check(name, ok, got) {
   /* ---------- [4b] ISRD ล่ม = คอลัมน์ระดับต้องว่าง (CC review [B]) ---------- */
   const r4b = await page.evaluate(async () => {
     window.__seed(window.__SCANS);
-    /* อันดับยังไม่พร้อม + แกล้งใส่ค่าเก่าจาก Job อื่นไว้ใน state — ต้องไม่หลุดลงไฟล์ */
-    state.sdRank = { ZZZOLD: { sku:'ZZZOLD', excluded:false, rank_qty_company:1, rank_value_company:1, rank_qty_store:1 } };
-    state.sdRankStatus = 'idle'; state.sdRankKey = 'OTHER|zzz';
+    /* อันดับ "ok" แต่เป็นของ Job/สาขาอื่น (key ไม่ตรง) + ค่าเก่าใต้ "รหัสจริงที่อยู่ในชีท" (NTBG001 = แถวแรก)
+       โค้ดต้องมองว่าใช้ไม่ได้ → เว้นทุกคอลัมน์อันดับ ถ้า guard พลาดจะเห็น 1/1/1 โผล่ทันที */
+    state.sdRank = { NTBG001: { sku:'NTBG001', excluded:false, rank_qty_company:1, rank_value_company:1, rank_qty_store:1 } };
+    state.sdRankStatus = 'ok'; state.sdRankKey = 'OTHER|zzz';
     let sheets = null;
     const realBuild = window.buildXlsx;
     const rc = URL.createObjectURL, rv = URL.revokeObjectURL, rcl = HTMLAnchorElement.prototype.click;
@@ -408,8 +409,9 @@ function check(name, ok, got) {
     await exportStockDisplayExcel();
     window.buildXlsx = realBuild; URL.createObjectURL = rc; URL.revokeObjectURL = rv; HTMLAnchorElement.prototype.click = rcl;
     var row = sheets[1].rows[1] || [];
-    return { sev: row[7], c8: row[8], c9: row[9], c10: row[10] };
+    return { code: row[0], sev: row[7], c8: row[8], c9: row[9], c10: row[10] };
   });
+  check('[4b] แถวแรกคือ NTBG001 (รหัสที่ฝังค่าเก่าไว้ทดสอบ guard)', r4b.code === 'NTBG001', r4b.code);
   check('⭐ ISRD ไม่พร้อม = คอลัมน์ "ระดับ" ว่าง (ไม่เขียน Dead มั่ว)', r4b.sev === '', r4b.sev);
   check('⭐ ISRD ไม่พร้อม = คอลัมน์อันดับว่างทุกช่อง (ไม่หลงค่าเก่าจาก Job อื่น)',
         r4b.c8 === '' && r4b.c9 === '' && r4b.c10 === '', r4b);

@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.45.3">
+<meta name="version" content="2.45.4">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.45.3</title>
+<title>ISRD Stocktake v2.45.4</title>
 
 <style>
 :root{
@@ -2068,7 +2068,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
 /* ⭐ v2.44.0 — ชุบชีวิต presence (ผู้ใช้ออนไลน์ + เตะออก) จาก presence-hold v2.33.0 · Rules v2.1.5 เพิ่มโหนด presence */
-var APP_VERSION = '2.45.3';
+var APP_VERSION = '2.45.4';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -13822,9 +13822,9 @@ function buildStockDisplayExcel() {
   document.body.appendChild(a);
   a.click();
   setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
-  toast(hasRank
+  toast((hasRank || rep.counts.stock_no_display === 0)
     ? ('ดาวน์โหลดไฟล์แล้ว · ' + fmtNum(rep.counts.stock_no_display) + ' รายการที่มีสต็อกไม่มีโชว์')
-    : 'ดาวน์โหลดแล้ว — ยังไม่มีคอลัมน์อันดับขาย เปิดแท็บ “ขายดีแต่ไม่โชว์” ให้โหลดเสร็จก่อนแล้ว Export ซ้ำ');
+    : 'ดาวน์โหลดแล้ว — ยังไม่มีคอลัมน์อันดับขาย เปิดพาเนล “ขายดีแต่ไม่โชว์” (ในแท็บ Stock vs Display) ให้โหลดอันดับเสร็จก่อนแล้ว Export ซ้ำ');
 }
 
 /* เซลล์ %Success หน้าภาพรวม — โชว์ Product เป็นตัวหลัก (ตรงกับโดนัทไส้ใน) + รวมทั้งหมดเป็นตัวรอง */
