@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.47.3">
+<meta name="version" content="2.47.5">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.47.3</title>
+<title>ISRD Stocktake v2.47.5</title>
 
 <style>
 :root{
@@ -965,6 +965,10 @@ body.no-doc-images .doc .imgbox{display:none}
       <input type="text" id="newJobAbbr" placeholder="อักษรย่อสาขา">
       <input type="text" id="newRoundName" placeholder="ชื่อรอบ เช่น รอบนับ ก.ค. 2569">
     </div>
+    <label class="fld" style="margin-bottom:8px">
+      <span>วันที่นับ <span class="muted" style="font-weight:400">(เลือกได้ — เช่น สร้างคืนนี้ให้ลงวันพรุ่งนี้)</span></span>
+      <input type="date" id="newJobDate">
+    </label>
     <label class="fld" style="margin-bottom:8px">
       <span>ประเภทคลังย่อย</span>
       <select id="newJobStoreType"></select>
@@ -2080,7 +2084,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
 /* ⭐ v2.44.0 — ชุบชีวิต presence (ผู้ใช้ออนไลน์ + เตะออก) จาก presence-hold v2.33.0 · Rules v2.1.5 เพิ่มโหนด presence */
-var APP_VERSION = '2.47.3';
+var APP_VERSION = '2.47.5';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -5028,9 +5032,9 @@ function makeJobCode(abbr, when, storeType) {
 }
 
 /* cid = รอบนับที่ผู้ใช้เลือกไว้แล้ว (เข้ารอบเดิม หรือเปิดรอบใหม่) — ดูข้อ F3 */
-function createRound(name, branch, abbr, locationSet, storeType, cid) {
+function createRound(name, branch, abbr, locationSet, storeType, cid, at) {
   var id = db.newKey();
-  var now = Date.now();
+  var now = at || Date.now();   // ⭐ v2.47.4 วันที่ที่เลือก (ว่าง = วันนี้)
   var st = String(storeType || DEFAULT_STORE_TYPE).toUpperCase();
   cid = cid || makeCycleId(branch.code, now, nextCycleSeq(branch.code, now));
   var patch = {};
@@ -5065,9 +5069,9 @@ function requireOpenCycle() {
 /* ข้อ F3 — สาขานี้มีรอบนับค้างอยู่ไหม ถ้ามีต้องให้เลือกเอง ห้ามเดาแทน
    เข้ารอบเดิม = สืบทอดยอดระบบ ไม่ต้องอัปโหลดซ้ำ
    เปิดรอบใหม่ = เลขรัน +1 ยอดระบบแยกขาดจากรอบก่อน ต้องนำเข้าไฟล์ใหม่ */
-function pickCycleForNewJob(branch) {
+function pickCycleForNewJob(branch, at) {
   var open = openCycleFor(branch.code);
-  var fresh = makeCycleId(branch.code, null, nextCycleSeq(branch.code));
+  var fresh = makeCycleId(branch.code, at, nextCycleSeq(branch.code, at));
   if (!open) return Promise.resolve(fresh);
 
   var jobs = jobsInCycle(open);
@@ -15073,6 +15077,16 @@ function renderStoreTypePicker() {
   sel.value = keep && keep !== '__add__' ? keep : DEFAULT_STORE_TYPE;
 }
 
+/* ⭐ v2.47.4 — วันที่ที่เลือกในฟอร์มสร้าง Job → timestamp (วันที่เลือก + เวลาปัจจุบัน)
+   ว่าง/วันนี้ = Date.now() เดิมเป๊ะ · เลือกพรุ่งนี้ = Job ลงวันพรุ่งนี้ (ขับ cycleId เดือน/jobCode วันที่/createdAt) */
+function jobPickedAt() {
+  var s = ($('newJobDate') && $('newJobDate').value) || '';
+  if (!s) return Date.now();
+  var p = s.split('-'); if (p.length !== 3) return Date.now();
+  var nd = new Date();
+  var d = new Date(+p[0], (+p[1]) - 1, +p[2], nd.getHours(), nd.getMinutes(), nd.getSeconds());
+  return isNaN(d.getTime()) ? Date.now() : d.getTime();
+}
 function previewJobCode() {
   var box = $('jobCodePreview');
   if (!state.newBranch) { box.style.display = 'none'; return; }
@@ -15080,10 +15094,11 @@ function previewJobCode() {
   var st = $('newJobStoreType').value;
   box.style.display = 'block';
   var open = openCycleFor(state.newBranch.code);
-  box.textContent = 'รหัส Job ที่จะได้: ' + makeJobCode(abbr, null, st) + ' · ' +
+  var at = jobPickedAt();
+  box.textContent = 'รหัส Job ที่จะได้: ' + makeJobCode(abbr, at, st) + ' · ' +
     (open ? 'สาขานี้มีรอบนับ ' + open + ' เปิดค้างอยู่ — กดสร้างแล้วจะให้เลือกว่าจะเข้ารอบเดิมหรือเปิดรอบใหม่'
           : 'จะเปิดรอบนับใหม่: ' +
-            makeCycleId(state.newBranch.code, null, nextCycleSeq(state.newBranch.code)));
+            makeCycleId(state.newBranch.code, at, nextCycleSeq(state.newBranch.code, at)));
 }
 
 /* ---------- ปิด / เปิดรอบนับ ---------- */
@@ -15322,6 +15337,16 @@ function setJobView(v) {
   var C = document.getElementById('jobViewCreate');
   if (L) L.style.display = (v === 'create') ? 'none' : '';
   if (C) C.style.display = (v === 'create') ? '' : 'none';
+  if (v === 'create') {
+    var _d = $('newJobDate');
+    if (_d) {
+      var _fmt = function (dt) { return dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0'); };
+      var _t = new Date(), _mx = new Date(); _mx.setDate(_mx.getDate() + 7);
+      _d.min = _fmt(_t);                 // v2.47.5 กันเลือกย้อนหลัง/ผิดเดือน
+      _d.max = _fmt(_mx);                // สร้างล่วงหน้าได้ถึง +7 วัน
+      if (!_d.value) _d.value = _fmt(_t);
+    }
+  }
   document.querySelectorAll('#jobViewTabs [data-jobview]').forEach(function (b) {
     b.classList.toggle('grey', b.getAttribute('data-jobview') !== v);
   });
@@ -20959,6 +20984,7 @@ function init() {
     previewJobCode();
   });
 
+  var _njd = $('newJobDate'); if (_njd) _njd.addEventListener('change', function () { try { previewJobCode(); } catch (e) {} });
   $('btnAddRound').onclick = function () {
     var name = $('newRoundName').value.trim();
     var abbr = $('newJobAbbr').value.trim();
@@ -20967,12 +20993,14 @@ function init() {
     if (!name) { toast('ตั้งชื่อรอบนับก่อน', true); return; }
 
     var branch = state.newBranch;
-    pickCycleForNewJob(branch).then(function (cid) {
+    var at = jobPickedAt();
+    pickCycleForNewJob(branch, at).then(function (cid) {
       if (!cid) return;                    // กดยกเลิก
       return createRound(name, branch, abbr, $('newJobLocSet').value,
-                         $('newJobStoreType').value, cid).then(function (id) {
+                         $('newJobStoreType').value, cid, at).then(function (id) {
         $('newRoundName').value = '';
         $('newJobAbbr').value = '';
+        $('newJobDate').value = '';          // v2.47.5 รีเซ็ตวันที่ Job ถัดไปกลับเป็นวันนี้
         $('branchSearch').value = '';
         state.newBranch = null;
         $('jobCodePreview').style.display = 'none';
