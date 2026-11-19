@@ -1,10 +1,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.47.5">
+<meta name="version" content="2.47.6">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.47.5</title>
+<title>ISRD Stocktake v2.47.6</title>
 
 <style>
+/* v2.47.6 perf: ข้ามการวาดการ์ดรีเช็คที่ยังไม่เลื่อนไปเห็น (ลด jank list ยาวบนมือถือ) */
+.rc-card{content-visibility:auto;contain-intrinsic-size:auto 280px}
 :root{
   --brand:#0f766e; --brand-dark:#115e59; --brand-light:#ccfbf1;
   --bg:#f1f5f9; --card:#ffffff; --line:#cbd5e1; --line-soft:#e2e8f0;
@@ -2084,7 +2086,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
 /* ⭐ v2.44.0 — ชุบชีวิต presence (ผู้ใช้ออนไลน์ + เตะออก) จาก presence-hold v2.33.0 · Rules v2.1.5 เพิ่มโหนด presence */
-var APP_VERSION = '2.47.5';
+var APP_VERSION = '2.47.6';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -16206,7 +16208,7 @@ function renderRecheckScanner(admin) {
 function rcScannerCard(k, it, dr, r) {
   var editing = dr || !(it.qty != null && it.qty !== '');
   dr = dr || {};
-  var card = el('div', { class: 'card', style: 'margin-bottom:10px' });
+  var card = el('div', { class: 'card rc-card', style: 'margin-bottom:10px' });
   card.setAttribute('data-sku', k); card.setAttribute('data-name', it.name || '');
   /* ⭐ v2.43.0 รูปสินค้าในการ์ดเด็ก — ช่วยหาของง่าย · แตะรูปเพื่อซูมขยาย (imageBox lazy + showRecheckImg) */
   var _prod = (state.products || {})[k] || {}, _pthumb = null;
