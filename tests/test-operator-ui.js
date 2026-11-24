@@ -462,19 +462,213 @@ const HARNESS = `
   check('ยิง signInWithPassword · returnSecureToken:false (ไม่แตะ session)',
         /signInWithPassword/.test(r8.url || '') && r8.body && r8.body.returnSecureToken === false && r8.tokSame, r8);
 
-  /* ---------- 9. ปุ่ม ⚙️ ในการ์ดบัญชี ---------- */
-  console.log('\n[9] ปุ่ม ⚙️ จัดการผู้นับ ในการ์ดบัญชี');
+  /* ---------- 9. ปุ่ม ⚙️ จัดการผู้นับ — ใครเห็น ----------
+     ⭐ v2.50.0 (รีวิว Jarvis) โชว์เฉพาะ admin หรือบัญชีที่มีผู้นับใช้งานอยู่ ≥ 1 (และต้องยิงได้)
+     บัญชีรายคนเดิมที่ไม่มีผู้นับ = ไม่เห็นปุ่มเลยทุกหน้า (กันงง)
+     + บั๊กเดิม: counter เข้าหน้า Master ได้ → การ์ดบัญชีบนหน้า Job ถูกซ่อน ปุ่มต้องมีบนหน้า Job อีกปุ่ม
+     เช็ค "เห็นจริงบนจอ" ด้วย offsetParent ไม่ใช่แค่มีใน DOM */
+  console.log('\n[9] ปุ่ม ⚙️ — admin เห็นเสมอ · บัญชีที่มีผู้นับเห็น · ไม่มีผู้นับ/viewer ไม่เห็น · ทุกสถานะ Job');
   await page.evaluate(HARNESS);
-  const r9 = await page.evaluate(() => {
-    window.__ops = {};
-    window.__seed('scanner'); renderAccount();
-    const scanner = { b1: !!document.getElementById('btnOpManage'), b2: !!document.getElementById('btnOpManage2') };
-    window.__seed('viewer'); renderAccount();
-    const viewer = { b1: !!document.getElementById('btnOpManage'), b2: !!document.getElementById('btnOpManage2') };
-    return { scanner, viewer };
+  const r9 = await page.evaluate(async (OPS) => {
+    const seenJobs = () => ['btnOpManage2', 'btnOpManage3'].some(id => {
+      const e = document.getElementById(id); return !!e && e.offsetParent !== null;
+    });
+    const any = () => ['btnOpManage', 'btnOpManage2', 'btnOpManage3'].some(id => !!document.getElementById(id));
+    async function as(role, withOps, rec) {
+      window.__seed(role);
+      if (rec) setMe({ uid: 'u1', email: 'u1@x' }, rec);
+      state.operators = {}; state.currentOp = null;
+      window.__ops = { u1: withOps ? JSON.parse(JSON.stringify(OPS)) : {} };
+      await loadOperators(); opAfterLoad();
+      renderAccount(); showPage('jobs');
+      return { jobs: seenJobs(), any: any(),
+               master: (function () { const e = document.getElementById('btnOpManage'); return !!e; })() };
+    }
+    const out = {};
+    for (const role of ['admin', 'counter', 'scanner', 'viewer']) {
+      out[role + '0'] = await as(role, false);
+      out[role + '1'] = await as(role, true);
+    }
+    out.counterPerms = await as('counter', true, { name: 'PKL-05', role: 'counter', active: true, perms: permsFromRole('counter') });
+    out.customNoScan = await as('custom', true, { name: 'X', role: 'custom', active: true, perms: { docs: true } });
+    /* ผู้นับที่ปิดแล้วไม่นับ */
+    const offOps = JSON.parse(JSON.stringify(OPS)); offOps.op1.active = false; offOps.op2.active = false;
+    window.__seed('counter'); state.operators = {}; window.__ops = { u1: offOps };
+    await loadOperators(); opAfterLoad(); showPage('jobs'); out.allOff = any();
+    /* Job ปิด / กำลังตรวจ / ไม่เลือก Job → ยังเห็น (ไม่ผูกสถานะ Job) */
+    await as('counter', true);
+    /* showPage('jobs') ใน LITE_MODE ดึง roundIndex แบบ async มาทับ — รอให้จบก่อนแล้วค่อย seed Job ใหม่ */
+    await new Promise(r => setTimeout(r, 150));
+    window.__seed('counter');
+    state.roundIndex.R1.status = 'closed'; refreshNav(); out.closed = seenJobs();
+    state.roundIndex.R1.status = 'reviewing'; refreshNav(); out.reviewing = seenJobs();
+    state.roundId = null; refreshNav(); out.noJob = seenJobs();
+    /* ปุ่มตามจำนวนผู้นับสด: ไม่มี → โหลดเจอ → มี · ปิดคนสุดท้าย → หาย */
+    await as('scanner', false); const before = any();
+    window.__ops = { u1: { op1: JSON.parse(JSON.stringify(OPS.op1)) } };
+    await loadOperators(); opAfterLoad(); const afterLoad = any();
+    opUi.manage = true; await deactivateOperator('op1'); refreshNav(); opUi.manage = false;
+    out.live = { before, afterLoad, afterOff: any() };
+    return out;
+  }, OPS);
+  check('counter ไม่มีผู้นับ → ไม่เห็นปุ่มทุกหน้า (บัญชีรายคนเดิม)', r9.counter0.any === false, r9.counter0);
+  check('scanner ไม่มีผู้นับ → ไม่เห็นปุ่มทุกหน้า', r9.scanner0.any === false, r9.scanner0);
+  check('counter มีผู้นับ → เห็นปุ่มบนหน้า Job (บั๊กที่แจ้ง) + หน้า Master', r9.counter1.jobs && r9.counter1.master, r9.counter1);
+  check('scanner มีผู้นับ → เห็นปุ่มบนหน้า Job', r9.scanner1.jobs, r9.scanner1);
+  check('admin → เห็นเสมอ แม้ไม่มีผู้นับ', r9.admin0.jobs && r9.admin0.master && r9.admin1.jobs, { a0: r9.admin0, a1: r9.admin1 });
+  check('viewer → ไม่เห็นเลย (มีผู้นับก็ไม่เห็น เพราะยิงไม่ได้)', r9.viewer0.any === false && r9.viewer1.any === false, { v0: r9.viewer0, v1: r9.viewer1 });
+  check('counter ที่มี perms node ในฐาน + มีผู้นับ → เห็น', r9.counterPerms.jobs, r9.counterPerms);
+  check('custom ที่ไม่มี scan → ไม่มีปุ่ม', r9.customNoScan.any === false, r9.customNoScan);
+  check('ผู้นับถูกปิดหมดทุกคน → ไม่เห็น (นับเฉพาะ active)', r9.allOff === false, r9.allOff);
+  check('Job ปิด / กำลังตรวจ / ไม่ได้เลือก Job → ยังเห็น', r9.closed && r9.reviewing && r9.noJob, r9);
+  check('ปุ่มตามผู้นับสด: ไม่มี→ไม่เห็น · โหลดเจอ→เห็น · ปิดคนสุดท้าย→หาย',
+        r9.live.before === false && r9.live.afterLoad === true && r9.live.afterOff === false, r9.live);
+
+  /* ---------- 10. ⭐ v2.50.0 admin จัดการผู้นับทุกสาขา ---------- */
+  console.log('\n[10] admin จัดการผู้นับของสาขาอื่นจากที่เดียว');
+  const OPS_A = { a1: { name: 'เอ', pinHash: sha('uA|a1|1111'), fresh: false, active: true, createdAt: 1 } };
+  await page.evaluate((OPS_A) => {
+    window.__users = {
+      u1: { name: 'สมชาย', role: 'admin', active: true },
+      uA: { name: 'สาขาA', role: 'counter', active: true, email: 'a@x' },
+      uB: { name: 'สาขาB', role: 'scanner', active: true },
+      uC: { name: 'สาขาC', role: 'custom', active: true, perms: { scan: true } },
+      uV: { name: 'ดูอย่างเดียว', role: 'viewer', active: true },
+      uX: { name: 'ปิดแล้ว', role: 'counter', active: false }
+    };
+    window.__ops = { u1: {}, uA: OPS_A, uB: {} };
+    window.session.verifyPassword = function (e, pw) { return Promise.resolve(pw === 'right'); };
+    window.__seed('admin');
+    return loadOperators();
+  }, OPS_A);
+  await page.evaluate(() => { window.__reset(); opUi.gate = false; opOpenManage(); }); await wait(80);
+  await page.evaluate(() => window.__answer({ pw: 'right' })); await wait(200);
+  const r10a = await page.evaluate(() => ({
+    manage: opUi.manage, sel: !!document.getElementById('opTarget'),
+    opts: Array.from(document.querySelectorAll('#opTarget option')).map(o => o.value)
+  }));
+  check('admin → มี dropdown เลือกบัญชี', r10a.manage && r10a.sel, r10a);
+  check('รายการ = บัญชีที่ยิงได้และใช้งานอยู่ (ไม่มี viewer/ปิดแล้ว/ตัวเอง)',
+        JSON.stringify(r10a.opts.slice().sort()) === JSON.stringify(['', 'uA', 'uB', 'uC']), r10a.opts);
+
+  const r10b = await page.evaluate(async () => {
+    const sel = document.getElementById('opTarget'); sel.value = 'uA'; sel.dispatchEvent(new Event('change'));
+    await new Promise(r => setTimeout(r, 100));
+    return { target: opUi.targetUid, rows: Array.from(document.querySelectorAll('#opPick [data-oprow]')).map(e => e.getAttribute('data-oprow')),
+             label: (document.querySelector('[data-optargetname]') || {}).textContent || '' };
   });
-  check('บัญชีที่ยิงได้ → มีปุ่ม ⚙️ ทั้งสองการ์ด', r9.scanner.b1 && r9.scanner.b2, r9);
-  check('viewer (ยิงไม่ได้) → ไม่มีปุ่ม', !r9.viewer.b1 && !r9.viewer.b2, r9);
+  check('เลือกสาขา A → โหลดผู้นับของ A มาแสดง', r10b.target === 'uA' && JSON.stringify(r10b.rows) === '["a1"]' && /สาขาA/.test(r10b.label), r10b);
+
+  async function adminAdd(name) {
+    await page.evaluate(() => window.__reset());
+    await clickSel('#opPick [data-opact="add"]'); await wait(80);
+    await page.evaluate(n => window.__answer({ name: n }), name); await wait(150);
+    return page.evaluate(async () => {
+      const pin = (document.querySelector('#modalDetail [data-oppin]') || {}).textContent || '';
+      if (window.__modalOpen()) { window.__answer({}); await new Promise(r => setTimeout(r, 50)); }
+      return { pin, toast: window.__lastToast(), upd: window.__upd.slice() };
+    });
+  }
+  const dupA = await adminAdd('เอ');
+  check('ชื่อซ้ำผู้นับของสาขา A → ปฏิเสธ', /มีอยู่แล้วในผู้นับ/.test(dupA.toast) && dupA.upd.length === 0, dupA);
+  const dupU = await adminAdd('สาขาB');
+  check('ชื่อซ้ำชื่อบัญชีในทะเบียน → ปฏิเสธ', /ซ้ำกับชื่อบัญชีผู้ใช้/.test(dupU.toast) && dupU.upd.length === 0, dupU);
+  const addA = await adminAdd('โอ');
+  const wA = addA.upd[0] || {}, opIdA = Object.keys(wA.patch || {})[0], recA = (wA.patch || {})[opIdA] || {};
+  check('admin เพิ่มให้ A → เขียน operators/uA จริง', wA.path === 'operators/uA' && recA.name === 'โอ' && /^[0-9]{4}$/.test(addA.pin), { wA, pin: addA.pin });
+  check('pinHash ใช้ uid ของสาขา A (ไม่ใช่ uid admin)',
+        recA.pinHash === sha('uA|' + opIdA + '|' + addA.pin) && recA.pinHash !== sha('u1|' + opIdA + '|' + addA.pin), recA);
+  const r10c = await page.evaluate(() => ({ mine: Object.keys(state.operators).length,
+    a: Object.keys(opUi.otherOps.uA || {}).sort(), rows: document.querySelectorAll('#opPick [data-oprow]').length }));
+  check('ผู้นับของ admin เอง (state.operators) ไม่ถูกแตะ', r10c.mine === 0, r10c);
+  check('รายการของ A อัปเดตเป็น 2 คน', r10c.a.length === 2 && r10c.rows === 2, r10c);
+
+  await page.evaluate(() => window.__reset());
+  await clickSel('#opPick [data-opreset="a1"]'); await wait(150);
+  const r10d = await page.evaluate(async () => {
+    const pin = (document.querySelector('#modalDetail [data-oppin]') || {}).textContent || '';
+    window.__answer({}); await new Promise(r => setTimeout(r, 50));
+    return { pin, u: window.__upd[0] || {} };
+  });
+  check('admin สุ่ม PIN ของ A → operators/uA/a1 + hash ด้วย uA',
+        r10d.u.path === 'operators/uA/a1' && r10d.u.patch.pinHash === sha('uA|a1|' + r10d.pin) && r10d.u.patch.fresh === true, r10d);
+
+  await page.evaluate(() => { window.__reset(); state.currentOp = null; });
+  await clickSel('#opPick [data-opoff="a1"]'); await wait(80);
+  await page.evaluate(() => window.__answer({})); await wait(120);
+  const r10e = await page.evaluate(() => ({ u: window.__upd[0] || {}, a1: (opUi.otherOps.uA || {}).a1 }));
+  check('admin ปิดใช้งาน a1 ของ A → update {active:false} ที่ operators/uA/a1',
+        r10e.u.path === 'operators/uA/a1' && JSON.stringify(r10e.u.patch) === '{"active":false}' && r10e.a1.active === false, r10e);
+
+  const r10f = await page.evaluate(async () => {
+    const sel = document.getElementById('opTarget'); sel.value = 'uB'; sel.dispatchEvent(new Event('change'));
+    await new Promise(r => setTimeout(r, 100));
+    return { target: opUi.targetUid, rows: document.querySelectorAll('#opPick [data-oprow]').length,
+             text: document.getElementById('opPick').textContent };
+  });
+  check('สลับไปสาขา B → ไม่เห็นผู้นับของ A ปน (B ยังไม่มีใคร)', r10f.target === 'uB' && r10f.rows === 0, r10f);
+  const addB = await adminAdd('โอ');
+  check('ชื่อเดียวกันคนละสาขาเพิ่มได้ (rec.user ต่อท้ายชื่อบัญชีอยู่แล้ว) → เขียน operators/uB',
+        (addB.upd[0] || {}).path === 'operators/uB', addB.upd);
+
+  const r10g = await page.evaluate(async () => {
+    const sel = document.getElementById('opTarget'); sel.value = ''; sel.dispatchEvent(new Event('change'));
+    await new Promise(r => setTimeout(r, 50));
+    const self = { target: opUi.targetUid, rows: document.querySelectorAll('#opPick [data-oprow]').length };
+    document.querySelector('#opPick [data-opact="done"]').click();
+    return { self, after: { manage: opUi.manage, target: opUi.targetUid, other: Object.keys(opUi.otherOps).length, acc: opUi.accounts } };
+  });
+  check('กลับ "บัญชีนี้" → เห็นของตัวเอง (ว่าง)', r10g.self.target === null && r10g.self.rows === 0, r10g.self);
+  check('เสร็จ → ล็อก + ลืมสาขาที่เลือก/ข้อมูลที่โหลด', !r10g.after.manage && r10g.after.target === null &&
+        r10g.after.other === 0 && r10g.after.acc === null, r10g.after);
+
+  /* end-to-end: เครื่องสาขา A ใส่ PIN ที่ admin สุ่มให้ แล้วเข้าได้จริง */
+  const r10h = await page.evaluate(async (args) => {
+    window.__ops.uA = { [args.id]: Object.assign({}, args.rec) };
+    setMe({ uid: 'uA', email: 'a@x' }, { name: 'สาขาA', role: 'counter', active: true });
+    await loadOperators();
+    const ok = await setCurrentOp(args.id, args.pin);
+    const out = { ok, counter: state.counter };
+    clearCurrentOp();
+    return out;
+  }, { id: opIdA, rec: recA, pin: addA.pin });
+  check('เครื่องสาขา A ใช้ PIN ที่ admin สร้าง → เข้าได้ ชื่อ "โอ · สาขาA"', r10h.ok === true && r10h.counter === 'โอ · สาขาA', r10h);
+
+  /* ---------- 11. non-admin ---------- */
+  console.log('\n[11] non-admin — ไม่มี dropdown · จัดการได้เฉพาะของตัวเอง');
+  const r11 = await page.evaluate(async (OPS_A) => {
+    window.__ops = { u1: {}, uA: OPS_A };
+    window.__seed('counter');
+    await loadOperators();
+    window.__reset();
+    /* จำลองคนแก้จาก Console: ยัดข้อมูลสาขาอื่นเข้า otherOps เอง แล้วเรียกฟังก์ชันตรง ๆ */
+    opUi.otherOps.uA = JSON.parse(JSON.stringify(OPS_A));
+    const add = await addOperator('แฮก', 'uA').then(() => 'ok', e => e.userMessage);
+    const reset = await resetOperatorPin('a1', 'uA').then(() => 'ok', e => e.userMessage);
+    const off = await deactivateOperator('a1', 'uA').then(() => 'ok', e => e.userMessage);
+    const load = await opLoadOpsFor('uA').then(() => 'ok', e => e.userMessage);
+    const updOther = window.__upd.length;
+    opResetManageTarget();
+    const own = await addOperator('ซี').then(r => r, e => e.userMessage);
+    return { add, reset, off, load, updOther, ownPath: (window.__upd[0] || {}).path, own };
+  }, OPS_A);
+  check('non-admin addOperator(ชื่อ, uid คนอื่น) → ถูกปฏิเสธ', /เฉพาะผู้ดูแลระบบ/.test(r11.add), r11);
+  check('non-admin สุ่ม PIN / ปิดใช้งาน ของสาขาอื่น → ถูกปฏิเสธ', /เฉพาะผู้ดูแลระบบ/.test(r11.reset) && /เฉพาะผู้ดูแลระบบ/.test(r11.off), r11);
+  check('non-admin โหลดผู้นับสาขาอื่น → ถูกปฏิเสธ', /เฉพาะผู้ดูแลระบบ/.test(r11.load), r11);
+  check('ไม่มีการเขียนไปบัญชีอื่นเลย', r11.updOther === 0, r11);
+  check('ไม่ส่ง targetUid = ของตัวเอง (PR2 เดิม)', r11.ownPath === 'operators/u1' && r11.own && r11.own.uid === 'u1', r11);
+  await page.evaluate(() => { window.__reset(); opUi.gate = false; opOpenManage(); }); await wait(80);
+  await page.evaluate(() => window.__answer({ pw: 'right' })); await wait(150);
+  const r11b = await page.evaluate(async () => {
+    const out = { manage: opUi.manage, sel: !!document.getElementById('opTarget') };
+    window.__reset();
+    await opSelectTarget('uA');
+    out.target = opUi.targetUid; out.toast = window.__lastToast();
+    closeOpPick();
+    return out;
+  });
+  check('non-admin เปิดหน้าจัดการได้ แต่ไม่มี dropdown', r11b.manage && !r11b.sel, r11b);
+  check('non-admin เรียกเลือกสาขาจาก Console → ถูกปฏิเสธ', r11b.target === null && /เฉพาะผู้ดูแลระบบ/.test(r11b.toast), r11b);
 
   console.log('\n[errors] ' + (errors.length ? errors.join('\n') : 'ไม่มี'));
   check('ไม่มี error บนหน้า', errors.length === 0, errors);

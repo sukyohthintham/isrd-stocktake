@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.49.0">
+<meta name="version" content="2.50.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.49.0</title>
+<title>ISRD Stocktake v2.50.0</title>
 
 <style>
 /* v2.47.6 perf: ข้ามการวาดการ์ดรีเช็คที่ยังไม่เลื่อนไปเห็น (ลด jank list ยาวบนมือถือ) */
@@ -2128,7 +2128,8 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.44.0 — ชุบชีวิต presence (ผู้ใช้ออนไลน์ + เตะออก) จาก presence-hold v2.33.0 · Rules v2.1.5 เพิ่มโหนด presence */
 /* ⭐ v2.48.0 — ผู้นับ + PIN (PR1 ชั้นข้อมูล): operators/{uid} · counterName() · rec.op · Rules v2.1.7 เพิ่มโหนด operators */
 /* ⭐ v2.49.0 — ผู้นับ + PIN (PR2 หน้าจอ): #opPick คีย์แพด · แถบผู้นับ · ⚙️ จัดการ (reauth) · เสียบ requireOperator */
-var APP_VERSION = '2.49.0';
+/* ⭐ v2.50.0 — admin จัดการผู้นับทุกสาขาจากที่เดียว (targetUid) · แก้ปุ่ม ⚙️ ไม่โผล่บนหน้า Job ของ counter */
+var APP_VERSION = '2.50.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -16969,6 +16970,7 @@ function refreshNav() {
   $('navDoc').disabled = !state.roundId || !canSeeDoc();  // admin · counter · viewer (v2.9.0)
   $('navRecheck').disabled = !state.roundId;  // ⭐ v2.37.0 รีเช็คใช้ได้เมื่อมี Job เปิดอยู่
   renderOpBars();                             // ⭐ v2.49.0 แถบผู้นับ (ไม่มีผู้นับ = ไม่สร้าง DOM เลย)
+  renderOpManageButtons();                    // ⭐ v2.50.0 ปุ่ม ⚙️ ขึ้นกับจำนวนผู้นับ → ต้องตามทุกครั้งที่ผู้นับเปลี่ยน/โหลดเสร็จ
   renderJobBar();
 
   /* ล็อกหน้ายิงตามสถานะ Job — ปุ่มต้องกดไม่ได้ ไม่ใช่แค่แจ้งเตือนทีหลัง */
@@ -19241,52 +19243,85 @@ function opNormName(n) { return String(n || '').replace(/\s+/g, ' ').trim().toLo
 /* ชื่อซ้ำ = ปฏิเสธ · เทียบกับ (1) ชื่อบัญชีผู้ใช้ทุกคน (2) ผู้นับทุกคนของบัญชีนี้ "รวมคนที่ปิดแล้ว"
    เหตุผล: leaderboard/purge จับคู่ด้วยสตริงชื่อ ชื่อซ้ำ = เครดิตสองคนรวมเป็นก้อนเดียว
    คนที่ปิดใช้งานแล้วยังมีแถวเก่าในชื่อนั้นอยู่ ตั้งชื่อเดิมให้คนใหม่ = ยอดเก่าไหลมาปนกัน */
-function opNameClash(name, users) {
+function opNameClash(name, users, ops) {
   var n = opNormName(name);
   var hitUser = Object.keys(users || {}).some(function (k) { return opNormName((users[k] || {}).name) === n; }) ||
                 (state.me && opNormName(state.me.name) === n);
   if (hitUser) return 'ชื่อ "' + name + '" ซ้ำกับชื่อบัญชีผู้ใช้ในระบบ — ตั้งชื่ออื่น เช่น ชื่อเล่น + อักษรย่อ';
-  var hitOp = Object.keys(state.operators || {}).some(function (id) {
-    return opNormName((state.operators[id] || {}).name) === n;
+  ops = ops || state.operators || {};
+  var hitOp = Object.keys(ops).some(function (id) {
+    return opNormName((ops[id] || {}).name) === n;
   });
   if (hitOp) return 'ชื่อ "' + name + '" มีอยู่แล้วในผู้นับของบัญชีนี้ (รวมคนที่ปิดใช้งานแล้ว) — ตั้งชื่ออื่น';
   return '';
 }
 
-/* เพิ่มผู้นับ → คืน { opId, pin, name } · pin ดิบมีแค่ในค่าที่คืนนี้ (โชว์ครั้งเดียว) ฐานเก็บแค่ hash */
-function addOperator(name) {
+/* ⭐ v2.50.0 บัญชีเป้าหมายของงานจัดการผู้นับ
+   ไม่ส่ง / ส่ง uid ตัวเอง = บัญชีที่ล็อกอินอยู่ (พฤติกรรม PR2 เดิมเป๊ะ)
+   uid คนอื่น = admin เท่านั้น — ชั้นฟังก์ชันกันเอง ไม่พึ่งแค่การซ่อน dropdown
+   (Rules v2.1.7 กันซ้ำอีกชั้น: operators/$uid เขียนได้เมื่อ auth.uid === $uid || role admin)
+   ใช้ isAdmin() ไม่ใช่ hasPerm — เป็นเรื่องจัดการบัญชีคนอื่น เทียบเท่า manageUsers ที่เป็นของ admin เท่านั้น
+   คืน { uid, ops } หรือ { err } · ops ของบัญชีอื่นต้องโหลดผ่าน opLoadOpsFor() ไว้ก่อน */
+function opTargetOf(targetUid) {
+  if (!state.me) return { err: 'ยังไม่ได้ล็อกอิน' };
+  var uid = targetUid || state.me.uid;
+  if (uid === state.me.uid) return { uid: uid, ops: state.operators || (state.operators = {}), self: true };
+  if (!isAdmin()) return { err: 'จัดการผู้นับของบัญชีอื่นได้เฉพาะผู้ดูแลระบบ (admin)' };
+  var ops = opUi.otherOps[uid];
+  if (!ops) return { err: 'ยังไม่ได้โหลดรายชื่อผู้นับของบัญชีนั้น — เลือกบัญชีใหม่อีกครั้ง' };
+  return { uid: uid, ops: ops, self: false };
+}
+
+/* admin โหลดผู้นับของบัญชีอื่น (อ่านได้เพราะ stocktake2026/.read cascade) — เก็บแยกใน opUi.otherOps
+   ห้ามเอาไปทับ state.operators เด็ดขาด: นั่นคือผู้นับของ "เครื่องนี้" ที่ counterName()/gate ใช้ */
+function opLoadOpsFor(uid) {
+  if (!state.me || !uid || uid === state.me.uid) return Promise.resolve(state.operators);
+  if (!isAdmin()) return Promise.reject(opErr('จัดการผู้นับของบัญชีอื่นได้เฉพาะผู้ดูแลระบบ (admin)'));
+  return db.get('operators/' + uid).then(function (rec) {
+    opUi.otherOps[uid] = (rec && typeof rec === 'object') ? rec : {};
+    return opUi.otherOps[uid];
+  }, function () { throw opErr('โหลดรายชื่อผู้นับของบัญชีนั้นไม่ได้ — ตรวจสัญญาณอินเทอร์เน็ตแล้วลองใหม่'); });
+}
+
+/* เพิ่มผู้นับ → คืน { opId, pin, name } · pin ดิบมีแค่ในค่าที่คืนนี้ (โชว์ครั้งเดียว) ฐานเก็บแค่ hash
+   ⭐ v2.50.0 targetUid = admin เพิ่มให้บัญชีสาขาอื่น · hash ใช้ uid ของบัญชีเป้าหมาย
+   (เครื่องสาขาตรวจ PIN ด้วย opPinHash(uid ตัวเอง, opId, pin) — ต้องเป็น uid เดียวกัน ไม่งั้นเข้าไม่ได้เลย) */
+function addOperator(name, targetUid) {
   name = String(name || '').replace(/\s+/g, ' ').trim();
-  if (!state.me) return Promise.reject(opErr('ยังไม่ได้ล็อกอิน'));
+  var t = opTargetOf(targetUid);
+  if (t.err) return Promise.reject(opErr(t.err));
   if (!name) return Promise.reject(opErr('ใส่ชื่อผู้นับก่อน'));
   if (name.length >= 60) return Promise.reject(opErr('ชื่อยาวเกินไป — ไม่เกิน 59 ตัวอักษร'));
   if (!opCanHash()) return Promise.reject(opErr(OP_NO_SUBTLE_MSG));
-  var uid = state.me.uid;
+  var uid = t.uid, ops = t.ops;
   /* อ่านทะเบียนผู้ใช้สดทุกครั้ง — บัญชีสาขา (scanner) ไม่ได้โหลด state.users ไว้
      และ users/.read เปิดให้ทุกบัญชีที่ล็อกอินอยู่แล้วตาม Rules */
   return db.get('users').then(function (u) { return u || {}; }, function () {
     throw opErr('ตรวจชื่อซ้ำไม่ได้ — ตรวจสัญญาณอินเทอร์เน็ตแล้วลองใหม่');
   }).then(function (users) {
-    var clash = opNameClash(name, users);
+    var clash = opNameClash(name, users, ops);
     if (clash) throw opErr(clash);
     var opId = db.newKey(), pin = opRandomPin();
     return opHashOrFail(uid, opId, pin).then(function (h) {
       var rec = { name: name, pinHash: h, fresh: true, active: true, createdAt: Date.now() };
       var patch = {}; patch[opId] = rec;
       return opWrite('operators/' + uid, patch).then(function () {
-        state.operators[opId] = rec;
-        return { opId: opId, pin: pin, name: name };
+        ops[opId] = rec;
+        return { opId: opId, pin: pin, name: name, uid: uid };
       });
     });
   });
 }
 
-/* ลืม PIN → สุ่มใหม่ (fresh=true ชวนเด็กตั้งเองอีกรอบ) · PIN เก่าใช้ไม่ได้ทันทีเพราะ hash เปลี่ยน */
-function resetOperatorPin(opId) {
-  var op = (state.operators || {})[opId];
-  if (!state.me) return Promise.reject(opErr('ยังไม่ได้ล็อกอิน'));
+/* ลืม PIN → สุ่มใหม่ (fresh=true ชวนเด็กตั้งเองอีกรอบ) · PIN เก่าใช้ไม่ได้ทันทีเพราะ hash เปลี่ยน
+   ⭐ v2.50.0 targetUid เหมือน addOperator */
+function resetOperatorPin(opId, targetUid) {
+  var t = opTargetOf(targetUid);
+  if (t.err) return Promise.reject(opErr(t.err));
+  var op = t.ops[opId];
   if (!op) return Promise.reject(opErr('ไม่พบผู้นับคนนี้ — ปิดหน้าจัดการแล้วเปิดใหม่'));
   if (!opCanHash()) return Promise.reject(opErr(OP_NO_SUBTLE_MSG));
-  var uid = state.me.uid, pin = opRandomPin();
+  var uid = t.uid, pin = opRandomPin();
   return opHashOrFail(uid, opId, pin).then(function (h) {
     return opWrite('operators/' + uid + '/' + opId, { pinHash: h, fresh: true }).then(function () {
       op.pinHash = h; op.fresh = true;
@@ -19311,27 +19346,39 @@ function changeOwnPin(newPin) {
   });
 }
 
-/* ปิดใช้งาน = active:false ไม่ลบโหนด — แถว scan เก่ายังอ้างชื่อ/opId นี้อยู่ ต้องตรวจย้อนได้ */
-function deactivateOperator(opId) {
-  var op = (state.operators || {})[opId];
-  if (!state.me) return Promise.reject(opErr('ยังไม่ได้ล็อกอิน'));
+/* ปิดใช้งาน = active:false ไม่ลบโหนด — แถว scan เก่ายังอ้างชื่อ/opId นี้อยู่ ต้องตรวจย้อนได้
+   ⭐ v2.50.0 targetUid เหมือน addOperator */
+function deactivateOperator(opId, targetUid) {
+  var t = opTargetOf(targetUid);
+  if (t.err) return Promise.reject(opErr(t.err));
+  var op = t.ops[opId];
   if (!op) return Promise.reject(opErr('ไม่พบผู้นับคนนี้'));
-  return opWrite('operators/' + state.me.uid + '/' + opId, { active: false }).then(function () {
+  return opWrite('operators/' + t.uid + '/' + opId, { active: false }).then(function () {
     op.active = false;
-    if (state.currentOp === opId) { clearCurrentOp(); state.undoStack = []; }
+    /* ผู้นับที่เลือกอยู่บน "เครื่องนี้" เท่านั้นที่ต้องหลุด — ปิดของสาขาอื่นไม่แตะเครื่อง admin */
+    if (t.self && state.currentOp === opId) { clearCurrentOp(); state.undoStack = []; }
     return true;
   });
 }
 
 /* ---------- หน้าจอ ---------- */
 /* gate = เปิดมาเพราะต้องเลือกผู้นับ (target = หน้าที่จะไปต่อ) · manage = ผ่าน reauth แล้ว
-   ปิด overlay เมื่อไหร่ manage กลับเป็น false = เปิดครั้งหน้าต้องใส่รหัสบัญชีใหม่ */
-var opUi = { target: 'scan', view: 'cards', opId: null, pin: '', err: '', bad: false, manage: false, gate: false, busy: false };
+   ปิด overlay เมื่อไหร่ manage กลับเป็น false = เปิดครั้งหน้าต้องใส่รหัสบัญชีใหม่
+   ⭐ v2.50.0 targetUid = บัญชีที่ admin กำลังจัดการ (null = ตัวเอง) · otherOps = ผู้นับของบัญชีอื่นที่โหลดมา
+   accounts = รายการบัญชีให้ admin เลือก (null = ยังไม่โหลด) — ล้างทั้งหมดตอนปิดหน้าจัดการ */
+var opUi = { target: 'scan', view: 'cards', opId: null, pin: '', err: '', bad: false, manage: false, gate: false, busy: false,
+             targetUid: null, otherOps: {}, accounts: null, accErr: '' };
 
 function opInitial(name) { var a = Array.from(String(name || '?').trim()); return a[0] || '?'; }
 
-function opSortedIds(all) {
-  var ops = state.operators || {};
+/* ops ที่หน้าจัดการกำลังแสดง — ตัวเอง = state.operators · admin เลือกบัญชีอื่น = otherOps[uid] */
+function opManageOps() {
+  if (!opUi.targetUid || !state.me || opUi.targetUid === state.me.uid) return state.operators || {};
+  return opUi.otherOps[opUi.targetUid] || {};
+}
+
+function opSortedIds(all, src) {
+  var ops = src || state.operators || {};
   return Object.keys(ops).filter(function (id) { return all || opIsActive(ops[id]); }).sort(function (a, b) {
     var x = ops[a], y = ops[b];
     if (opIsActive(x) !== opIsActive(y)) return opIsActive(x) ? -1 : 1;
@@ -19360,6 +19407,12 @@ function closeOpPick() {
   var ov = $('opPick');
   if (ov) ov.remove();
   opUi.manage = false; opUi.gate = false; opUi.view = 'cards'; opUi.pin = ''; opUi.opId = null;
+  opResetManageTarget();
+}
+
+/* ⭐ v2.50.0 ล้างบัญชีเป้าหมาย/ข้อมูลสาขาอื่น — เปิดหน้าจัดการครั้งหน้าเริ่มที่ "บัญชีนี้" เสมอ */
+function opResetManageTarget() {
+  opUi.targetUid = null; opUi.otherOps = {}; opUi.accounts = null; opUi.accErr = '';
 }
 
 function renderOpPick() {
@@ -19395,12 +19448,19 @@ function renderOpPick() {
 
   if (opUi.view === 'manage') {
     inner.appendChild(el('div', { class: 'op-h', text: '⚙️ จัดการผู้นับ' }));
-    inner.appendChild(el('div', { class: 'op-s',
-      text: 'บัญชี ' + (me.name || '') + ' · ระบบไม่เก็บ PIN ตัวจริง (เก็บแบบเข้ารหัส) จึงดู PIN เดิมไม่ได้ — ลืมให้กด "สุ่ม PIN ใหม่"' }));
-    var ids = opSortedIds(true);
+    /* ⭐ v2.50.0 admin เลือกบัญชีสาขาที่จะจัดการได้ในหน้าเดียว · คนอื่นไม่มี dropdown (PR2 เดิม) */
+    if (isAdmin()) inner.appendChild(opAccountPicker());
+    inner.appendChild(el('div', { class: 'op-s', 'data-optargetname': '1',
+      text: 'บัญชี ' + opTargetLabel() + ' · ระบบไม่เก็บ PIN ตัวจริง (เก็บแบบเข้ารหัส) จึงดู PIN เดิมไม่ได้ — ลืมให้กด "สุ่ม PIN ใหม่"' }));
+    if (opUi.targetLoading) {
+      inner.appendChild(el('div', { class: 'op-s', text: 'กำลังโหลดรายชื่อผู้นับของบัญชีนี้…' }));
+      return;
+    }
+    var mops = opManageOps();
+    var ids = opSortedIds(true, mops);
     if (!ids.length) inner.appendChild(el('div', { class: 'op-s', text: 'ยังไม่มีผู้นับ — กด "➕ เพิ่มผู้นับ" ด้านล่าง' }));
     ids.forEach(function (id) {
-      var o = state.operators[id], on = opIsActive(o);
+      var o = mops[id], on = opIsActive(o);
       var row = el('div', { class: 'op-row' + (on ? '' : ' off'), 'data-oprow': id }, [
         el('div', { class: 'op-av', text: opInitial(o.name) }),
         el('div', { class: 'op-nm' }, [
@@ -19491,12 +19551,14 @@ function opOpenManage() {
   var me = state.me;
   if (!me) return Promise.resolve(false);
   return ask('ยืนยันรหัสผ่านบัญชีสาขา',
-    'หน้าจัดการผู้นับเปิดได้เฉพาะคนที่รู้รหัสผ่านบัญชี ' + (me.email || me.name) + ' (หัวหน้าสาขา)',
+    'หน้าจัดการผู้นับเปิดได้เฉพาะคนที่รู้รหัสผ่านบัญชี ' + (me.email || me.name) +
+      (isAdmin() ? ' · ผู้ดูแลระบบใส่ครั้งเดียว จัดการได้ทุกสาขาจนกด "เสร็จ"' : ' (หัวหน้าสาขา)'),
     'เปิดหน้าจัดการ', { fields: [{ key: 'pw', label: 'รหัสผ่านบัญชี', type: 'password' }] }).then(function (v) {
     if (!v) return false;
     return session.verifyPassword(me.email, v.pw, me.uid).then(function (ok) {
       if (!ok) { toast('รหัสผ่านไม่ถูกต้อง — เปิดหน้าจัดการผู้นับไม่ได้', true); return false; }
       opUi.manage = true;
+      opResetManageTarget();          // ⭐ v2.50.0 เปิดใหม่เริ่มที่บัญชีตัวเองเสมอ
       opUi.view = 'manage';
       opEnsureOverlay();
       renderOpPick();
@@ -19510,9 +19572,105 @@ function opOpenManage() {
   });
 }
 
+/* ---------- ⭐ v2.50.0 admin เลือกบัญชีสาขา ----------
+   reauth ครั้งเดียวตอนเปิดหน้าจัดการ ครอบทุกบัญชีจนกด "เสร็จ" (ไม่ต้องใส่รหัสรายสาขา)
+   รายการ = บัญชีที่ใช้งานอยู่และ "ยิงได้" (role counter/scanner หรือติ๊ก perms/scan)
+   เพราะผู้นับมีไว้แยกเครดิตงานยิงเท่านั้น · บัญชีที่ปิดใช้งานแล้วไม่โชว์ */
+function opAccountCanScan(u) {
+  if (!u || u.active === false) return false;
+  if (u.role === 'counter' || u.role === 'scanner') return true;
+  return !!(u.perms && u.perms.scan === true);
+}
+
+function opLoadAccounts() {
+  if (!isAdmin()) return Promise.resolve([]);
+  return db.get('users').then(function (all) {
+    all = all || {};
+    opUi.accounts = Object.keys(all).filter(function (uid) {
+      return uid !== (state.me && state.me.uid) && opAccountCanScan(all[uid]);
+    }).map(function (uid) {
+      return { uid: uid, name: String(all[uid].name || uid), email: String(all[uid].email || '') };
+    }).sort(function (a, b) { return a.name.localeCompare(b.name, 'th'); });
+    opUi.accErr = '';
+    return opUi.accounts;
+  }, function () {
+    opUi.accounts = null;
+    opUi.accErr = 'โหลดรายชื่อบัญชีไม่ได้ — ตรวจสัญญาณอินเทอร์เน็ตแล้วกดลองใหม่';
+    return [];
+  });
+}
+
+function opTargetLabel() {
+  var me = state.me || {};
+  if (!opUi.targetUid || opUi.targetUid === me.uid) return me.name || '';
+  var a = (opUi.accounts || []).filter(function (x) { return x.uid === opUi.targetUid; })[0];
+  return a ? a.name : opUi.targetUid;
+}
+
+function opAccountPicker() {
+  var box = el('label', { class: 'fld', style: 'display:block;margin:6px 0 10px' },
+    [el('span', { text: 'เลือกสาขา/บัญชีที่จะจัดการ (เฉพาะผู้ดูแลระบบ)' })]);
+  if (opUi.accErr) {
+    box.appendChild(el('div', { class: 'op-err', style: 'text-align:left', text: opUi.accErr }));
+    box.appendChild(el('button', { class: 'btn sm grey', 'data-opact': 'accretry', text: 'ลองใหม่',
+      onclick: function () { opUi.accErr = ''; renderOpPick(); } }));
+    return box;
+  }
+  if (!opUi.accounts) {
+    box.appendChild(el('div', { class: 'op-s', text: 'กำลังโหลดรายชื่อบัญชี…' }));
+    if (!opUi.accLoading) {
+      opUi.accLoading = true;
+      opLoadAccounts().then(function () {
+        opUi.accLoading = false;
+        if (opUi.view === 'manage' && $('opPick')) renderOpPick();
+      });
+    }
+    return box;
+  }
+  var me = state.me || {};
+  var sel = el('select', { id: 'opTarget', 'data-optarget': '1', style: 'width:100%;margin-top:6px' });
+  sel.appendChild(el('option', { value: '', text: 'บัญชีนี้ (ตัวเอง) — ' + (me.name || '') }));
+  opUi.accounts.forEach(function (a) {
+    sel.appendChild(el('option', { value: a.uid, text: a.name + (a.email ? ' · ' + a.email : '') }));
+  });
+  sel.value = (opUi.targetUid && opUi.targetUid !== me.uid) ? opUi.targetUid : '';
+  sel.addEventListener('change', function () { opSelectTarget(sel.value); });
+  box.appendChild(sel);
+  return box;
+}
+
+/* เลือกบัญชีเป้าหมาย → โหลดผู้นับของบัญชีนั้นสดทุกครั้ง (อาจเพิ่งถูกแก้จากเครื่องสาขา)
+   เลือกเร็ว ๆ หลายบัญชี: ผลที่มาช้าของบัญชีเก่าห้ามวาดทับ (เช็ค targetUid ซ้ำก่อนวาด) */
+function opSelectTarget(uid) {
+  if (!opManageGuard()) return Promise.resolve(false);
+  var me = state.me || {};
+  uid = uid || null;
+  if (uid && uid !== me.uid && !isAdmin()) {
+    toast('จัดการผู้นับของบัญชีอื่นได้เฉพาะผู้ดูแลระบบ (admin)', true);
+    return Promise.resolve(false);
+  }
+  opUi.targetUid = (uid && uid !== me.uid) ? uid : null;
+  if (!opUi.targetUid) { opUi.targetLoading = false; renderOpPick(); return Promise.resolve(true); }
+  opUi.targetLoading = true;
+  renderOpPick();
+  return opLoadOpsFor(uid).then(function () {
+    if (opUi.targetUid !== uid) return false;
+    opUi.targetLoading = false;
+    renderOpPick();
+    return true;
+  }, function (err) {
+    if (opUi.targetUid !== uid) return false;
+    opUi.targetLoading = false; opUi.targetUid = null;
+    toast(opMsg(err), true);
+    renderOpPick();
+    return false;
+  });
+}
+
 /* เสร็จ = ล็อกหน้าจัดการทันที · มาจากหน้าเลือกผู้นับและยังต้องเลือก → กลับไปการ์ดชื่อ */
 function opManageDone() {
   opUi.manage = false;
+  opResetManageTarget();            // ⭐ v2.50.0 ลืมบัญชีสาขาที่เลือก + ข้อมูลที่โหลดมา
   if (opUi.gate && opGateNeeded()) { opUi.view = 'cards'; renderOpPick(); }
   else closeOpPick();
   refreshNav();
@@ -19533,10 +19691,10 @@ function opShowPin(name, pin) {
 
 function opAddUi() {
   if (!opManageGuard()) return Promise.resolve(false);
-  return ask('➕ เพิ่มผู้นับ', 'ใส่ชื่อเล่นที่ใช้เรียกกันในสาขา ระบบจะสุ่ม PIN 4 หลักให้', 'เพิ่มผู้นับ',
+  return ask('➕ เพิ่มผู้นับ — ' + opTargetLabel(), 'ใส่ชื่อเล่นที่ใช้เรียกกันในสาขา ระบบจะสุ่ม PIN 4 หลักให้', 'เพิ่มผู้นับ',
     { fields: [{ key: 'name', label: 'ชื่อผู้นับ', placeholder: 'เช่น แนน' }] }).then(function (v) {
     if (!v) return false;
-    return addOperator(v.name).then(function (r) {
+    return addOperator(v.name, opUi.targetUid).then(function (r) {   // ⭐ v2.50.0 null = บัญชีตัวเอง
       renderOpPick(); refreshNav();
       return opShowPin(r.name, r.pin).then(function () { return true; });
     }, function (err) { toast(opMsg(err), true); return false; });
@@ -19545,7 +19703,7 @@ function opAddUi() {
 
 function opResetUi(id) {
   if (!opManageGuard()) return Promise.resolve(false);
-  return resetOperatorPin(id).then(function (r) {
+  return resetOperatorPin(id, opUi.targetUid).then(function (r) {
     renderOpPick(); renderOpBars();
     return opShowPin(r.name, r.pin).then(function () { return true; });
   }, function (err) { toast(opMsg(err), true); return false; });
@@ -19553,12 +19711,12 @@ function opResetUi(id) {
 
 function opOffUi(id) {
   if (!opManageGuard()) return Promise.resolve(false);
-  var o = (state.operators || {})[id] || {};
+  var o = opManageOps()[id] || {};
   return ask('ปิดใช้งาน ' + (o.name || '') + '?',
     'คนนี้จะเข้านับไม่ได้อีก แต่ยอดที่เคยนับยังอยู่ครบในชื่อเดิม (ไม่ลบประวัติ)', 'ปิดใช้งาน', { danger: true })
     .then(function (ok) {
       if (!ok) return false;
-      return deactivateOperator(id).then(function () {
+      return deactivateOperator(id, opUi.targetUid).then(function () {
         renderOpPick(); refreshNav();
         toast('ปิดใช้งาน ' + (o.name || '') + ' แล้ว');
         return true;
@@ -19620,17 +19778,30 @@ function opChangePinUi() {
 /* ปุ่ม ⚙️ ในการ์ดบัญชี — ทางเข้าเดียวของบัญชีที่ "ยังไม่มีผู้นับ" (ไม่มี #opPick ให้กด)
    โชว์เฉพาะบัญชีที่ยิงได้ เพราะผู้นับมีไว้แยกเครดิตงานนับเท่านั้น */
 function renderOpManageButtons() {
+  /* hasPerm ไล่ perms node ก่อน ไม่มีค่อยแปลงจาก role (counter ได้ scan จากแม่แบบ)
+     ⭐ v2.50.0 (รีวิว Jarvis) โชว์เฉพาะ admin (มี dropdown จัดการทุกสาขา) หรือบัญชีที่มีผู้นับใช้งานอยู่ ≥ 1
+     บัญชีรายคนเดิม ~15 คนไม่มีผู้นับ → ไม่เห็นปุ่มที่ไม่ได้ใช้ (กันงง) · เพิ่มผู้นับคนแรกให้สาขา = งานของ admin
+     ⚠ ปิดผู้นับครบทุกคน = ปุ่มหายจากบัญชีสาขา ต้องให้ admin เพิ่มให้ใหม่ (ตั้งใจ) */
+  var can = !!state.me && hasPerm('scan') && (isAdmin() || activeOperatorIds().length > 0);
+  function mk(id) {
+    return el('button', { class: 'btn grey block', id: id, style: 'margin-bottom:8px', text: '⚙️ จัดการผู้นับ (PIN)',
+      onclick: function () { opUi.gate = false; opOpenManage(); } });
+  }
   ['btnLogout', 'btnLogout2'].forEach(function (lid, i) {
     var lo = $(lid), id = 'btnOpManage' + (i ? '2' : '');
     var b = $(id);
     if (!lo) return;
-    if (!state.me || !hasPerm('scan')) { if (b) b.remove(); return; }
-    if (!b) {
-      b = el('button', { class: 'btn grey block', id: id, style: 'margin-bottom:8px', text: '⚙️ จัดการผู้นับ (PIN)',
-        onclick: function () { opUi.gate = false; opOpenManage(); } });
-      lo.parentNode.insertBefore(b, lo);
-    }
+    if (!can) { if (b) b.remove(); return; }
+    if (!b) lo.parentNode.insertBefore(mk(id), lo);
   });
+  /* ⭐ v2.50.0 แก้บั๊ก "counter ไม่เห็นปุ่ม" — การ์ดบัญชีบนหน้า Job ถูกซ่อนสำหรับคนที่เข้าหน้า Master ได้
+     (counter มี viewMasterLoc จากแม่แบบ) ปุ่มจึงไปอยู่แต่ในหน้า Master ซึ่งคนนับไม่ได้เปิด
+     ส่วน scanner เห็นบนหน้า Job เพราะการ์ดโชว์ · admin เห็นเพราะเข้าหน้า Master เป็นปกติ
+     → บัญชีที่การ์ดบนหน้า Job ถูกซ่อน ให้มีปุ่มเดี่ยวบนหน้า Job อีกปุ่ม (ไม่ผูกกับสถานะ Job ใด ๆ) */
+  var tabs = $('jobViewTabs'), b3 = $('btnOpManage3');
+  var need3 = can && !!tabs && canSeeMasterPage();
+  if (!need3) { if (b3) b3.remove(); }
+  else if (!b3) tabs.parentNode.insertBefore(mk('btnOpManage3'), tabs);
 }
 
 /* หลังโหลดผู้นับเสร็จ (startApp) — จอต้องตามทัน: แถบ/ด่าน/ปุ่มพาไปเลือก
