@@ -144,7 +144,7 @@ const HARNESS = `
   check('แถบบนหน้ายิงข้อความเดิม', r1.session === r1.expectSession, r1);
   check('requireOperator ผ่านเสมอ ไม่เด้ง toast', r1.req === true && r1.toasts === 0, r1);
   check('ไม่จำอะไรใน localStorage', r1.ls === null, r1);
-  check('PR1 ยังไม่เพิ่ม UI ใด ๆ', r1.newDom === false, r1);
+  check('บัญชีไม่มีผู้นับ ไม่มี #opBar/#opPick ใน DOM', r1.newDom === false, r1);
 
   /* ---------- 2. hash ---------- */
   console.log('\n[2] pinHash = SHA-256(uid|opId|pin)');

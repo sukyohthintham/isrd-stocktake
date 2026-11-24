@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.48.0">
+<meta name="version" content="2.49.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.48.0</title>
+<title>ISRD Stocktake v2.49.0</title>
 
 <style>
 /* v2.47.6 perf: ข้ามการวาดการ์ดรีเช็คที่ยังไม่เลื่อนไปเห็น (ลด jank list ยาวบนมือถือ) */
@@ -544,6 +544,46 @@ table.grid td.neg{color:var(--short);font-weight:700}
 .s-val.short{color:var(--short)}
 .s-zones{margin-top:10px;border-top:1px dashed var(--line);padding-top:8px;display:flex;flex-direction:column;gap:6px}
 .s-zones .z-item{font-size:13px;color:var(--muted);background:#f8fafc;border-radius:8px;padding:7px 10px}
+
+/* ---------- ⭐ v2.49.0 ผู้นับ + PIN — หน้าเลือกผู้นับ (#opPick) · แถบผู้นับ (.op-bar) ----------
+   z-index 55 = ทับหน้าแอป/แถบล่าง (40) แต่อยู่ใต้ modal (60) ที่ใช้ถามรหัสผ่าน/โชว์ PIN ใหม่
+   ทุกคลาสขึ้นต้น op- กันชนกับของเดิม · DOM ทั้งหมดสร้างเฉพาะบัญชีที่มีผู้นับ */
+#opPick{position:fixed;inset:0;z-index:55;background:var(--bg);overflow-y:auto;
+  padding:16px 16px calc(28px + env(safe-area-inset-bottom))}
+.op-in{max-width:430px;margin:0 auto}
+.op-h{font-size:19px;font-weight:800;margin:6px 0 2px}
+.op-s{font-size:13px;color:var(--muted,#64748b);margin-bottom:14px;line-height:1.5}
+.op-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.op-card{background:#fff;border:1px solid var(--line-soft);border-radius:16px;padding:16px 10px;
+  text-align:center;cursor:pointer;font:inherit;color:inherit;min-height:112px}
+.op-card:active{transform:scale(.96);border-color:var(--brand)}
+.op-av{width:54px;height:54px;border-radius:50%;margin:0 auto 8px;color:#fff;background:var(--brand);
+  display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800}
+.op-nm{font-size:15px;font-weight:700;word-break:break-word}
+.op-dots{display:flex;gap:16px;justify-content:center;margin:12px 0 6px}
+.op-dot{width:18px;height:18px;border-radius:50%;background:var(--line-soft)}
+.op-dot.f{background:var(--brand)}
+.op-dots.bad .op-dot{background:#fecaca;animation:opShake .35s}
+@keyframes opShake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+.op-err{text-align:center;color:#dc2626;font-size:13px;font-weight:600;min-height:20px;margin:4px 0 10px}
+.op-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.op-key{min-height:64px;font-size:26px;font-weight:700;border-radius:14px;border:1px solid var(--line-soft);
+  background:#fff;color:inherit;font-family:inherit;cursor:pointer}
+.op-key:active{background:var(--brand-light)}
+.op-key.del{font-size:17px;color:#dc2626}
+.op-row{display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--line-soft);flex-wrap:wrap}
+.op-row .op-av{width:40px;height:40px;font-size:17px;margin:0}
+.op-row .op-nm{flex:1 1 120px;text-align:left}
+.op-row.off{opacity:.55}
+.op-pinshow{font-size:44px;font-weight:800;letter-spacing:12px;text-align:center;margin:8px 0;
+  font-variant-numeric:tabular-nums;color:var(--brand-dark)}
+.op-bar{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--line-soft);
+  border-radius:14px;padding:8px 10px;margin-bottom:10px;flex-wrap:wrap}
+.op-bar .op-av{width:40px;height:40px;font-size:17px;margin:0}
+.op-who{flex:1 1 120px;min-width:0}
+.op-who .l{font-size:11px;color:var(--muted,#64748b)}
+.op-who .n{font-size:15px;font-weight:700;word-break:break-word}
+.op-warn{flex-basis:100%;background:#fef3c7;color:#92400e;border-radius:10px;padding:7px 10px;font-size:12.5px}
 
 /* ---------- modal + toast ---------- */
 .modal-bg{
@@ -2087,7 +2127,8 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
 /* ⭐ v2.44.0 — ชุบชีวิต presence (ผู้ใช้ออนไลน์ + เตะออก) จาก presence-hold v2.33.0 · Rules v2.1.5 เพิ่มโหนด presence */
 /* ⭐ v2.48.0 — ผู้นับ + PIN (PR1 ชั้นข้อมูล): operators/{uid} · counterName() · rec.op · Rules v2.1.7 เพิ่มโหนด operators */
-var APP_VERSION = '2.48.0';
+/* ⭐ v2.49.0 — ผู้นับ + PIN (PR2 หน้าจอ): #opPick คีย์แพด · แถบผู้นับ · ⚙️ จัดการ (reauth) · เสียบ requireOperator */
+var APP_VERSION = '2.49.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -2317,6 +2358,31 @@ var session = (function () {
         save();
         schedule(d.expiresIn);
         return user;
+      });
+    },
+
+    /* ⭐ v2.49.0 ยืนยันรหัสผ่านซ้ำ (reauth) ก่อนเปิด ⚙️ จัดการผู้นับ — คืน Promise<boolean>
+       แอปนี้คุย Firebase Auth ผ่าน REST ไม่ได้ใช้ SDK จึงไม่มี reauthenticateWithCredential
+       ทางเทียบเท่า = ยิง signInWithPassword ด้วยอีเมลบัญชีนี้ แล้วเทียบ localId กับ uid ที่ล็อกอินอยู่
+       "ไม่แตะ" token/session เดิมเลย (returnSecureToken:false) — แค่ตรวจว่ารู้รหัสจริง
+       รหัสผิด = false · เน็ตหลุด = throw NETWORK (ให้ผู้เรียกบอกเหตุผลต่างกัน)
+       โหมดทดสอบไม่มี Firebase ให้ตรวจ: ยอมเมื่อกรอกรหัสมา (เหมือน signIn ในโหมดทดสอบ) */
+    verifyPassword: function (email, password, uid) {
+      email = String(email || '').trim();
+      if (!email || !password) return Promise.resolve(false);
+      if (!REMOTE_MODE) return Promise.resolve(true);
+      return fetchAuthT(IDENTITY_SIGNIN + FIREBASE_CONFIG.apiKey, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email, password: password, returnSecureToken: false })
+      }, 15000).catch(function () { throw netError(); }).then(function (r) {
+        if (!r.ok) {
+          return fail(r).catch(function (err) {
+            if (/^(INVALID_PASSWORD|INVALID_LOGIN_CREDENTIALS|EMAIL_NOT_FOUND|MISSING_PASSWORD)$/.test(err.authCode)) return false;
+            throw err;   // TOO_MANY_ATTEMPTS_TRY_LATER ฯลฯ — ให้ผู้เรียกบอกตรง ๆ
+          });
+        }
+        return r.json().then(function (d) { return !!d && d.localId === uid; });
       });
     },
 
@@ -4521,7 +4587,8 @@ function ask(title, message, okLabel, opts) {
       var sp = document.createElement('span');
       sp.textContent = f.label;
       var inp = document.createElement('input');
-      inp.type = f.type === 'pin' ? 'password' : 'text';
+      /* ⭐ v2.49.0 'password' = ช่องรหัสผ่านบัญชี (ซ่อนตัวอักษร แต่ไม่บังคับแป้นตัวเลขแบบ 'pin') */
+      inp.type = (f.type === 'pin' || f.type === 'password') ? 'password' : 'text';
       if (f.type === 'pin') { inp.setAttribute('inputmode', 'numeric'); }
       inp.setAttribute('autocomplete', 'off');
       inp.setAttribute('data-field', f.key);
@@ -6988,6 +7055,8 @@ function handleScanValue(raw) {
     toast(blockedMessage(), true);
     return;
   }
+  /* ⭐ v2.49.0 บัญชีที่มีผู้นับ — ยังไม่เลือกผู้นับ = ยิงไม่ได้ (กันแถวลงชื่อบัญชีกลางเงียบ ๆ) */
+  if (!requireOperator('ยิงไม่ได้')) { flashStage('miss'); openOpPick('scan'); return; }
   if (!state.scanIndex) buildScanIndex();
 
   var key = state.scanIndex.get(value.toUpperCase());
@@ -7696,6 +7765,7 @@ function writeErrorReason(err) {
 
 function undoLastScan() {
   if (!canScan()) { toast(blockedMessage(), true); return; }
+  if (!requireOperator('ย้อนการยิงไม่ได้')) return;   // ⭐ v2.49.0
   var last = state.undoStack.pop();
   if (!last) { $('btnUndo').disabled = true; return; }
   var undoDelta = -(last.delta || 1);   // ⭐ manual qty>1 ย้อนเต็มจำนวน · scan เดิมไม่มี delta = ถือเป็น 1 (พฤติกรรมเดิม)
@@ -7905,6 +7975,7 @@ function closeManual() {
 
 function saveManual() {
   if (!canScan()) { toast(blockedMessage(), true); return; }
+  if (!requireOperator('บันทึกไม่ได้')) return;      // ⭐ v2.49.0
   if (!state.manualPicked) { toast('เลือกสินค้าก่อน', true); return; }
   var raw = String($('manualQty').value).trim().replace(/,/g, '');
   var qty = Number(raw);
@@ -15297,6 +15368,9 @@ function startBlockers() {
   if (state.roundId && !state.locationsLoaded) missing.push('กำลังโหลดข้อมูล Location — รอสักครู่แล้วลองใหม่');
   if (state.roundId && !Object.keys(state.systemQty).length) missing.push('ยังไม่ได้นำเข้ายอดระบบของ Job นี้');
   if (state.roundId && canScanRole() && !canScan()) missing.push(blockedMessage());
+  /* ⭐ v2.49.0 บัญชีที่มีผู้นับ — ต้องเลือกผู้นับ+PIN ก่อน ไม่งั้นแถวลงชื่อบัญชีกลางเงียบ ๆ
+     บัญชีไม่มีผู้นับ = เงื่อนไขนี้เป็นเท็จเสมอ (พฤติกรรมเดิม) · ปุ่มพาไปเลือกอยู่ใน appendFixButtons */
+  if (opGateNeeded()) missing.push('ยังไม่ได้เลือกผู้นับ — แตะ "👤 เลือกผู้นับ" แล้วใส่ PIN ของตัวเอง');
   return missing;
 }
 
@@ -16307,6 +16381,7 @@ function assignableUsers() {
    ปลดเฉพาะที่ยังไม่ส่งคืน (qty ว่าง) · ที่ส่งคืนแล้วคงป้ายเดิมไว้เป็นประวัติ */
 function unassignPending(name) {
   if (!requirePerm('adjustCount', 'คืนงานไม่ได้')) return;
+  if (!requireOperator('คืนงานไม่ได้')) return;   // ⭐ v2.49.0 บัญชีที่มีผู้นับ ต้องเลือกผู้นับก่อน
   if (!rcRoundCounting()) { toast('รอบนี้ปิดแล้ว', true); return; }
   var rid = state.roundId, rc = rcMap(), p = {}, n = 0;
   Object.keys(rc).forEach(function (k) {
@@ -16323,6 +16398,7 @@ function unassignPending(name) {
    assignee '' = ปลดการมอบ (คืนงานกลาง): แตะเฉพาะที่มอบไว้แล้ว+ยังไม่ส่งคืน ไม่ส่งรีเช็คใหม่ · เขียน admin เท่านั้นตาม Rules */
 function assignKeys(keys, assignee) {
   if (!requirePerm('adjustCount', 'มอบงานไม่ได้')) return;
+  if (!requireOperator('มอบงานไม่ได้')) return;   // ⭐ v2.49.0 บัญชีที่มีผู้นับ ต้องเลือกผู้นับก่อน
   if (!rcRoundCounting()) { toast('รอบนี้ปิดแล้ว มอบงานไม่ได้', true); return; }
   var rid = state.roundId, rc = rcMap(), rows = summaryData().rows, nameOf = {};
   rows.forEach(function (r) { nameOf[r.key] = r.name || r.key; });
@@ -16349,6 +16425,7 @@ function assignKeys(keys, assignee) {
    เช่น 117 SKU เลือก 3 คน → คนละ ~39 · ส่งรีเช็คให้ตัวที่ยังไม่ส่งด้วย (เหมือน assignKeys) */
 function assignKeysMulti(keys, assignees) {
   if (!requirePerm('adjustCount', 'มอบงานไม่ได้')) return;
+  if (!requireOperator('มอบงานไม่ได้')) return;   // ⭐ v2.49.0 บัญชีที่มีผู้นับ ต้องเลือกผู้นับก่อน
   if (!rcRoundCounting()) { toast('รอบนี้ปิดแล้ว มอบงานไม่ได้', true); return; }
   assignees = (assignees || []).filter(Boolean);
   if (!assignees.length) { toast('เลือกคนก่อน', true); return; }
@@ -16380,6 +16457,7 @@ function assignByRange(from, to, assignee) {
 /* ⭐ v2.38.2 ส่งรีเช็คทีเดียวหลาย SKU — เขียนรวดเดียว (enqueueWrite ก้อนเดียว) แล้ว render ครั้งเดียว */
 function sendRecheckBulk(keys) {
   if (!requirePerm('adjustCount', 'ส่งรีเช็คไม่ได้')) return;
+  if (!requireOperator('ส่งรีเช็คไม่ได้')) return;   // ⭐ v2.49.0 บัญชีที่มีผู้นับ ต้องเลือกผู้นับก่อน
   if (!rcRoundCounting()) { toast('รอบนี้ปิดแล้ว ส่งรีเช็คไม่ได้', true); return; }
   keys = (keys || []).filter(Boolean).filter(function (k) { return !rcDiscarded(k); });   /* v2.43.22 กันส่งของที่ลบทิ้ง */
   if (!keys.length) { toast('ไม่มี SKU ที่ต้องส่ง', true); return; }
@@ -16398,6 +16476,7 @@ function sendRecheckBulk(keys) {
 
 function sendRecheck(k) {
   if (!requirePerm('adjustCount', 'ส่งรีเช็คไม่ได้')) return;
+  if (!requireOperator('ส่งรีเช็คไม่ได้')) return;   // ⭐ v2.49.0 บัญชีที่มีผู้นับ ต้องเลือกผู้นับก่อน
   if (!rcRoundCounting()) { toast('รอบนี้ปิดแล้ว ส่งรีเช็คไม่ได้', true); return; }
   var rid = state.roundId, rows = summaryData().rows, name = k;
   for (var i = 0; i < rows.length; i++) { if (rows[i].key === k) { name = rows[i].name || k; break; } }
@@ -16412,6 +16491,7 @@ function sendRecheck(k) {
    ล้าง qty/applied/reopen + ส่งใหม่ (ทั้งตัวที่เคยส่งแล้วและยังไม่เคยส่ง) · ปลดล็อก adjust · ไม่แตะยอดนับ (เด็กนับทับใหม่) */
 function resendRecheckBulk(keys, assignees) {
   if (!requirePerm('adjustCount', 'ส่งรีเช็คไม่ได้')) return;
+  if (!requireOperator('ส่งรีเช็คไม่ได้')) return;   // ⭐ v2.49.0 บัญชีที่มีผู้นับ ต้องเลือกผู้นับก่อน
   if (!rcRoundCounting()) { toast('รอบนี้ปิดแล้ว ส่งรีเช็คไม่ได้', true); return; }
   var seen = {}, list = (keys || []).filter(function (k) { if (seen[k]) return false; seen[k] = 1; return true; });
   if (!list.length) { toast('ยังไม่ได้เลือก SKU', true); return; }
@@ -16514,6 +16594,7 @@ function showRecheckHistory(k, r) {
 
 function resendRecheck(k) {
   if (!requirePerm('adjustCount', 'ส่งรีเช็คใหม่ไม่ได้')) return;
+  if (!requireOperator('ส่งรีเช็คใหม่ไม่ได้')) return;   // ⭐ v2.49.0 บัญชีที่มีผู้นับ ต้องเลือกผู้นับก่อน
   if (!rcRoundCounting()) { toast('รอบนี้ปิดแล้ว ส่งรีเช็คใหม่ไม่ได้', true); return; }
   ask('ส่งรีเช็คใหม่อีกรอบ?', k + ' — ล้างยอดรีเช็คเดิม ส่งกลับให้เด็กนับใหม่ · ยอดนับที่ปรับไว้คงเดิมจนกว่าเด็กจะส่งยอดใหม่', 'ส่งใหม่').then(function (ok) {
     if (!ok) return;
@@ -16537,6 +16618,7 @@ function resendRecheck(k) {
 
 function submitRecheck(k) {
   if (!requirePerm('scan', 'ส่งผลรีเช็คไม่ได้')) return;
+  if (!requireOperator('ส่งผลรีเช็คไม่ได้')) return;   // ⭐ v2.49.0 บัญชีที่มีผู้นับ ต้องเลือกผู้นับก่อน
   if (!rcRoundCounting()) { toast('รอบนี้ปิดแล้ว ส่งคืนไม่ได้', true); return; }
   if (state.rcBusy) { toast('กำลังส่งอยู่ รอสักครู่', true); return; }
   var dr = (state.recheckDraft || {})[k] || {};
@@ -16584,6 +16666,7 @@ function reopenRecheck(k) {
 /* เด็กขอแก้ยอดรีเช็คที่ส่งคืนแล้ว — ตั้งธง reopenReq รอหัวหน้าอนุมัติ (ยังแก้ qty ไม่ได้จนกว่า reopenOk) */
 function requestReopen(k) {
   if (!requirePerm('scan', 'ขอแก้ไขไม่ได้')) return;
+  if (!requireOperator('ขอแก้ไขไม่ได้')) return;   // ⭐ v2.49.0 บัญชีที่มีผู้นับ ต้องเลือกผู้นับก่อน
   if (!rcRoundCounting()) { toast('รอบนี้ปิดแล้ว ขอแก้ไขไม่ได้', true); return; }
   var it = rcMap()[k]; if (!it || it.qty == null) { toast('ยังไม่ได้ส่งคืน ไม่ต้องขอแก้', true); return; }
   var rid = state.roundId, pr = {}; pr[k + '/reopenReq'] = true;
@@ -16597,6 +16680,7 @@ function requestReopen(k) {
    Rules ปล่อยให้เด็กเขียน qty ได้อีกครั้งเมื่อ reopenOk===true เท่านั้น (กันแก้พร่ำเพรื่อ) */
 function allowReopen(k) {
   if (!requirePerm('approveRecheck', 'อนุมัติขอแก้รีเช็คไม่ได้')) return;
+  if (!requireOperator('อนุมัติขอแก้รีเช็คไม่ได้')) return;   // ⭐ v2.49.0 บัญชีที่มีผู้นับ ต้องเลือกผู้นับก่อน
   if (!rcRoundCounting()) { toast('รอบนี้ปิดแล้ว อนุมัติไม่ได้', true); return; }
   var rid = state.roundId, pr = {}; pr[k + '/reopenOk'] = true;   /* ไม่เขียน reopenReq=false: ผู้มีแค่สิทธิ์ approveRecheck (ไม่มี scan) เขียน reopenReq ไม่ได้ จะทำให้ PATCH ตกทั้งก้อน · UI/Rules ดู reopenOk เป็นหลัก · submitRecheck ล้างทั้งคู่ตอนส่งใหม่ */
   /* ⭐ v2.43.17 เปิดให้แก้ → คง assignTo เดิม (งานกลางก็คงเป็นงานกลาง ใครก็หยิบแก้) · การนับเป็น "ต้องรีเช็ค" ทำที่ isPending (รวม reopenOk) → โผล่ใน scope เดิมของมัน */
@@ -16610,6 +16694,7 @@ function allowReopen(k) {
    ลบออกจากคิว rounds/{rid}/rechecks + รูป · ไม่แตะยอดนับ (ตรงอยู่แล้ว) · ปลดล็อก adjust ถ้ามี */
 function clearRecheckBulk(keys) {
   if (!requirePerm('adjustCount', 'เคลียร์รีเช็คไม่ได้')) return;
+  if (!requireOperator('เคลียร์รีเช็คไม่ได้')) return;   // ⭐ v2.49.0 บัญชีที่มีผู้นับ ต้องเลือกผู้นับก่อน
   if (!rcRoundCounting()) { toast('รอบนี้ปิดแล้ว เคลียร์ไม่ได้', true); return; }
   if (!keys || !keys.length) return;
   ask('เคลียร์ตัวที่กลับมาตรงแล้ว?', 'เอา ' + fmtNum(keys.length) + ' ตัวที่ผลต่างกลับมา 0 ออกจากคิวรีเช็ค · ยอดตรงอยู่แล้ว ไม่กระทบยอดจริง', 'เคลียร์').then(function (ok) {
@@ -16636,6 +16721,7 @@ function clearRecheckBulk(keys) {
 
 function cancelRecheck(k) {
   if (!requirePerm('adjustCount', 'ถอนรีเช็คไม่ได้')) return;
+  if (!requireOperator('ถอนรีเช็คไม่ได้')) return;   // ⭐ v2.49.0 บัญชีที่มีผู้นับ ต้องเลือกผู้นับก่อน
   if (!rcRoundCounting()) { toast('รอบนี้ปิดแล้ว ถอนรีเช็คไม่ได้', true); return; }
   ask('ถอนรีเช็ค', 'ถอนรายการ ' + k + ' ออกจากคิว?', 'ถอน').then(function (ok) {
     if (!ok) return;
@@ -16676,6 +16762,7 @@ function unlockRecheckAdjust(k) {
 
 function applyRecheck(k) {
   if (!requirePerm('adjustCount', 'ปรับยอดนับไม่ได้')) return;
+  if (!requireOperator('ปรับยอดนับไม่ได้')) return;   // ⭐ v2.49.0 บัญชีที่มีผู้นับ ต้องเลือกผู้นับก่อน
   if (!rcRoundCounting()) { toast('รอบนี้ปิดแล้ว ปรับยอดไม่ได้', true); return; }
   var it = rcMap()[k] || {}, qn = Number(it.qty);
   if (isNaN(qn)) { toast('ยังไม่มียอดรีเช็ค', true); return; }
@@ -16694,6 +16781,7 @@ function applyRecheck(k) {
 /* ⭐ v2.43.0 ใช้ยอดรีเช็ครวดเดียวหลายตัว — กดทีเดียวแทนไล่กดทีละ SKU · เฉพาะที่เด็กส่งคืนแล้ว+ยังไม่ใช้ยอด+ยังอยู่ในรอบ */
 function applyRecheckBulk(keys) {
   if (!requirePerm('adjustCount', 'ปรับยอดนับไม่ได้')) return;
+  if (!requireOperator('ปรับยอดนับไม่ได้')) return;   // ⭐ v2.49.0 บัญชีที่มีผู้นับ ต้องเลือกผู้นับก่อน
   if (!rcRoundCounting()) { toast('รอบนี้ปิดแล้ว ปรับยอดไม่ได้', true); return; }
   var rows = summaryData().rows, actBy = {};
   rows.forEach(function (r) { actBy[r.key] = r.act; });
@@ -16840,6 +16928,9 @@ function showPage(name) {
      ต้องใช้ firstAllowedPage() ไม่ใช่ 'summary' ลอย ๆ — ตั้งแต่ v2.9.0 viewer เข้า
      summary ไม่ได้แล้ว ถ้ายังเด้งไปที่นั่นจะกลายเป็นเด้งเข้าหน้าที่ไม่มีสิทธิ์ซ้ำอีกรอบ */
   if (!canSeePage(name)) name = firstAllowedPage();
+  /* ⭐ v2.49.0 หน้ายิง/รีเช็คของบัญชีที่มีผู้นับ — ยังไม่เลือกผู้นับ = เปิดหน้าเลือกแทน ไม่สลับหน้า
+     เลือกสำเร็จแล้ว openOpPick พาเข้าหน้าที่ตั้งใจไปต่อเอง · บัญชีไม่มีผู้นับไม่เข้าเงื่อนไขนี้ */
+  if ((name === 'scan' || name === 'recheck') && opGateNeeded()) { openOpPick(name); return; }
   state.page = name;
   ['Jobs', 'Start', 'Scan', 'Master', 'Summary', 'Doc', 'Recheck'].forEach(function (p) {
     var key = p.charAt(0).toLowerCase() + p.slice(1);
@@ -16877,6 +16968,7 @@ function refreshNav() {
   $('navSummary').disabled = !state.roundId;
   $('navDoc').disabled = !state.roundId || !canSeeDoc();  // admin · counter · viewer (v2.9.0)
   $('navRecheck').disabled = !state.roundId;  // ⭐ v2.37.0 รีเช็คใช้ได้เมื่อมี Job เปิดอยู่
+  renderOpBars();                             // ⭐ v2.49.0 แถบผู้นับ (ไม่มีผู้นับ = ไม่สร้าง DOM เลย)
   renderJobBar();
 
   /* ล็อกหน้ายิงตามสถานะ Job — ปุ่มต้องกดไม่ได้ ไม่ใช่แค่แจ้งเตือนทีหลัง */
@@ -17845,6 +17937,10 @@ function renderStatusLog(job) {
 function appendFixButtons(box) {
   var st = jobStatus();
   var acts = [];
+  /* ⭐ v2.49.0 ยังไม่เลือกผู้นับ = ปุ่มพาไปเลือก (ห้ามบอกเฉย ๆ แล้วปล่อยให้ตัน) */
+  if (opGateNeeded()) {
+    acts.push({ id: 'oppick', label: '👤 เลือกผู้นับ', cls: '', run: function () { openOpPick('scan'); } });
+  }
   if (!state.roundId) {
     acts.push({ id: 'gojobs', label: '→ ไปเลือก Job', cls: '', run: function () { showPage('jobs'); } });
   } else if (hasPerm('closeJob') && st === 'reviewing') {
@@ -19098,12 +19194,452 @@ function clearCurrentOp() {
 }
 
 /* ประตูชั้นฟังก์ชัน: บัญชีที่มีผู้นับ ต้องเลือกผู้นับก่อนเขียนงานนับ
-   PR1 นิยามไว้เฉย ๆ ยังไม่เสียบที่ไหน — เสียบพร้อมหน้าเลือกผู้นับใน PR2
-   (เสียบก่อนมี UI = บัญชีที่มีผู้นับจะติดล็อกโดยไม่มีทางเลือกคน) */
+   ⭐ v2.49.0 เสียบแล้วที่: handleScanValue · undoLastScan · saveManual · ฟังก์ชันเขียนรีเช็ค 14 ตัว
+   (ชั้นจอคือ startBlockers + showPage('scan'|'recheck') เปิด #opPick แทน) */
 function requireOperator(what) {
   if (!activeOperatorIds().length || currentOperator()) return true;
   toast((what || 'ทำรายการนี้ไม่ได้') + ' — ต้องเลือกผู้นับและใส่ PIN ก่อน', true);
   return false;
+}
+
+/* ============================================================
+   ⭐ v2.49.0 ผู้นับ + PIN — ฟังก์ชันเขียน + หน้าจอ (PR2)
+   ============================================================
+   เขียนด้วย db.update ราย operator เสมอ (กฎบ้านห้าม .set ทั้งก้อน)
+   Rules v2.1.7: operators/{uid} เขียนได้เฉพาะเจ้าของบัญชี (auth.uid === uid) หรือ admin
+   ⚠ PIN = soft identity แยกเครดิต ไม่ใช่กำแพงความปลอดภัย (ดูหัวข้อ PR1 ข้างบน)
+     ด่านหน้า ⚙️ จัดการผู้นับคือ "ใส่รหัสผ่านบัญชีซ้ำ" — เด็กที่ถือเครื่องแต่ไม่รู้รหัสบัญชี
+     จะสุ่ม PIN ของคนอื่นเพื่อสวมรอยไม่ได้ */
+
+var OP_NO_SUBTLE_MSG = 'อุปกรณ์นี้ไม่รองรับการตั้ง PIN — ใช้ Chrome/Safari รุ่นใหม่ และเปิดแอปผ่านลิงก์ https';
+
+/* มีผู้นับที่ใช้งานอยู่แต่ยังไม่เลือก = ต้องผ่านหน้าเลือกผู้นับก่อนยิง/รีเช็ค
+   บัญชีไม่มีผู้นับ = false เสมอ → ทุกจุดที่เช็คนี้ทำงานเหมือนก่อน v2.48.0 เป๊ะ */
+function opGateNeeded() { return !!state.me && activeOperatorIds().length > 0 && !currentOperator(); }
+
+function opErr(msg) { var e = new Error(msg); e.userMessage = msg; return e; }
+function opMsg(err, fallback) { return (err && err.userMessage) || fallback || 'ทำรายการไม่สำเร็จ ลองใหม่อีกครั้ง'; }
+function opCanHash() {
+  return !!(window.crypto && window.crypto.subtle && window.crypto.getRandomValues && window.TextEncoder);
+}
+/* สุ่มจาก crypto ไม่ใช่ Math.random — เดาลำดับเลขสุ่มไม่ได้ (2^32 mod 10000 เอียงน้อยมาก ไม่มีผล) */
+function opRandomPin() {
+  var a = new Uint32Array(1);
+  window.crypto.getRandomValues(a);
+  return String(a[0] % 10000).padStart(4, '0');
+}
+function opHashOrFail(uid, opId, pin) {
+  return opPinHash(uid, opId, pin).catch(function () { throw opErr(OP_NO_SUBTLE_MSG); });
+}
+function opWrite(path, patch) {
+  return db.update(path, patch).catch(function () {
+    throw opErr('บันทึกไม่สำเร็จ — ตรวจสัญญาณอินเทอร์เน็ตแล้วลองใหม่');
+  });
+}
+function opNormName(n) { return String(n || '').replace(/\s+/g, ' ').trim().toLowerCase(); }
+
+/* ชื่อซ้ำ = ปฏิเสธ · เทียบกับ (1) ชื่อบัญชีผู้ใช้ทุกคน (2) ผู้นับทุกคนของบัญชีนี้ "รวมคนที่ปิดแล้ว"
+   เหตุผล: leaderboard/purge จับคู่ด้วยสตริงชื่อ ชื่อซ้ำ = เครดิตสองคนรวมเป็นก้อนเดียว
+   คนที่ปิดใช้งานแล้วยังมีแถวเก่าในชื่อนั้นอยู่ ตั้งชื่อเดิมให้คนใหม่ = ยอดเก่าไหลมาปนกัน */
+function opNameClash(name, users) {
+  var n = opNormName(name);
+  var hitUser = Object.keys(users || {}).some(function (k) { return opNormName((users[k] || {}).name) === n; }) ||
+                (state.me && opNormName(state.me.name) === n);
+  if (hitUser) return 'ชื่อ "' + name + '" ซ้ำกับชื่อบัญชีผู้ใช้ในระบบ — ตั้งชื่ออื่น เช่น ชื่อเล่น + อักษรย่อ';
+  var hitOp = Object.keys(state.operators || {}).some(function (id) {
+    return opNormName((state.operators[id] || {}).name) === n;
+  });
+  if (hitOp) return 'ชื่อ "' + name + '" มีอยู่แล้วในผู้นับของบัญชีนี้ (รวมคนที่ปิดใช้งานแล้ว) — ตั้งชื่ออื่น';
+  return '';
+}
+
+/* เพิ่มผู้นับ → คืน { opId, pin, name } · pin ดิบมีแค่ในค่าที่คืนนี้ (โชว์ครั้งเดียว) ฐานเก็บแค่ hash */
+function addOperator(name) {
+  name = String(name || '').replace(/\s+/g, ' ').trim();
+  if (!state.me) return Promise.reject(opErr('ยังไม่ได้ล็อกอิน'));
+  if (!name) return Promise.reject(opErr('ใส่ชื่อผู้นับก่อน'));
+  if (name.length >= 60) return Promise.reject(opErr('ชื่อยาวเกินไป — ไม่เกิน 59 ตัวอักษร'));
+  if (!opCanHash()) return Promise.reject(opErr(OP_NO_SUBTLE_MSG));
+  var uid = state.me.uid;
+  /* อ่านทะเบียนผู้ใช้สดทุกครั้ง — บัญชีสาขา (scanner) ไม่ได้โหลด state.users ไว้
+     และ users/.read เปิดให้ทุกบัญชีที่ล็อกอินอยู่แล้วตาม Rules */
+  return db.get('users').then(function (u) { return u || {}; }, function () {
+    throw opErr('ตรวจชื่อซ้ำไม่ได้ — ตรวจสัญญาณอินเทอร์เน็ตแล้วลองใหม่');
+  }).then(function (users) {
+    var clash = opNameClash(name, users);
+    if (clash) throw opErr(clash);
+    var opId = db.newKey(), pin = opRandomPin();
+    return opHashOrFail(uid, opId, pin).then(function (h) {
+      var rec = { name: name, pinHash: h, fresh: true, active: true, createdAt: Date.now() };
+      var patch = {}; patch[opId] = rec;
+      return opWrite('operators/' + uid, patch).then(function () {
+        state.operators[opId] = rec;
+        return { opId: opId, pin: pin, name: name };
+      });
+    });
+  });
+}
+
+/* ลืม PIN → สุ่มใหม่ (fresh=true ชวนเด็กตั้งเองอีกรอบ) · PIN เก่าใช้ไม่ได้ทันทีเพราะ hash เปลี่ยน */
+function resetOperatorPin(opId) {
+  var op = (state.operators || {})[opId];
+  if (!state.me) return Promise.reject(opErr('ยังไม่ได้ล็อกอิน'));
+  if (!op) return Promise.reject(opErr('ไม่พบผู้นับคนนี้ — ปิดหน้าจัดการแล้วเปิดใหม่'));
+  if (!opCanHash()) return Promise.reject(opErr(OP_NO_SUBTLE_MSG));
+  var uid = state.me.uid, pin = opRandomPin();
+  return opHashOrFail(uid, opId, pin).then(function (h) {
+    return opWrite('operators/' + uid + '/' + opId, { pinHash: h, fresh: true }).then(function () {
+      op.pinHash = h; op.fresh = true;
+      return { opId: opId, pin: pin, name: op.name };
+    });
+  });
+}
+
+/* เด็กเปลี่ยน PIN ตัวเอง — เฉพาะผู้นับที่ใส่ PIN เข้ามาแล้ว (พิสูจน์ตัวแล้ว จึงไม่ต้องใส่รหัสบัญชี) */
+function changeOwnPin(newPin) {
+  var op = currentOperator();
+  if (!state.me || !op) return Promise.reject(opErr('ต้องเลือกผู้นับและใส่ PIN ก่อน'));
+  newPin = String(newPin || '');
+  if (!/^[0-9]{4}$/.test(newPin)) return Promise.reject(opErr('PIN ต้องเป็นตัวเลข 4 หลัก'));
+  if (!opCanHash()) return Promise.reject(opErr(OP_NO_SUBTLE_MSG));
+  var uid = state.me.uid, opId = state.currentOp;
+  return opHashOrFail(uid, opId, newPin).then(function (h) {
+    return opWrite('operators/' + uid + '/' + opId, { pinHash: h, fresh: false }).then(function () {
+      op.pinHash = h; op.fresh = false;
+      return true;
+    });
+  });
+}
+
+/* ปิดใช้งาน = active:false ไม่ลบโหนด — แถว scan เก่ายังอ้างชื่อ/opId นี้อยู่ ต้องตรวจย้อนได้ */
+function deactivateOperator(opId) {
+  var op = (state.operators || {})[opId];
+  if (!state.me) return Promise.reject(opErr('ยังไม่ได้ล็อกอิน'));
+  if (!op) return Promise.reject(opErr('ไม่พบผู้นับคนนี้'));
+  return opWrite('operators/' + state.me.uid + '/' + opId, { active: false }).then(function () {
+    op.active = false;
+    if (state.currentOp === opId) { clearCurrentOp(); state.undoStack = []; }
+    return true;
+  });
+}
+
+/* ---------- หน้าจอ ---------- */
+/* gate = เปิดมาเพราะต้องเลือกผู้นับ (target = หน้าที่จะไปต่อ) · manage = ผ่าน reauth แล้ว
+   ปิด overlay เมื่อไหร่ manage กลับเป็น false = เปิดครั้งหน้าต้องใส่รหัสบัญชีใหม่ */
+var opUi = { target: 'scan', view: 'cards', opId: null, pin: '', err: '', bad: false, manage: false, gate: false, busy: false };
+
+function opInitial(name) { var a = Array.from(String(name || '?').trim()); return a[0] || '?'; }
+
+function opSortedIds(all) {
+  var ops = state.operators || {};
+  return Object.keys(ops).filter(function (id) { return all || opIsActive(ops[id]); }).sort(function (a, b) {
+    var x = ops[a], y = ops[b];
+    if (opIsActive(x) !== opIsActive(y)) return opIsActive(x) ? -1 : 1;
+    return (Number(x.createdAt) || 0) - (Number(y.createdAt) || 0);
+  });
+}
+
+function openOpPick(target) {
+  opUi.target = target === 'recheck' ? 'recheck' : 'scan';
+  opUi.gate = true;
+  opUi.view = 'cards'; opUi.opId = null; opUi.pin = ''; opUi.err = ''; opUi.bad = false;
+  opEnsureOverlay();
+  renderOpPick();
+}
+
+function opEnsureOverlay() {
+  var ov = $('opPick');
+  if (!ov) {
+    ov = el('div', { id: 'opPick', role: 'dialog', 'aria-modal': 'true' });
+    document.body.appendChild(ov);
+  }
+  return ov;
+}
+
+function closeOpPick() {
+  var ov = $('opPick');
+  if (ov) ov.remove();
+  opUi.manage = false; opUi.gate = false; opUi.view = 'cards'; opUi.pin = ''; opUi.opId = null;
+}
+
+function renderOpPick() {
+  var ov = $('opPick');
+  if (!ov) return;
+  ov.innerHTML = '';
+  var me = state.me || {};
+  var inner = el('div', { class: 'op-in' });
+  ov.appendChild(inner);
+
+  if (opUi.view === 'pad') {
+    var op = (state.operators || {})[opUi.opId] || {};
+    inner.appendChild(el('button', { class: 'btn sm grey', 'data-opact': 'back', text: '← เลือกชื่ออื่น',
+      onclick: function () { opUi.view = 'cards'; opUi.pin = ''; opUi.err = ''; renderOpPick(); } }));
+    inner.appendChild(el('div', { style: 'text-align:center;margin-top:14px' }, [
+      el('div', { class: 'op-av', text: opInitial(op.name) }),
+      el('div', { class: 'op-nm', text: op.name || '' }),
+      el('div', { class: 'op-s', style: 'margin:4px 0 0', text: 'ใส่ PIN 4 หลักของตัวเอง' })
+    ]));
+    var dots = el('div', { class: 'op-dots' + (opUi.bad ? ' bad' : ''), id: 'opDots' });
+    for (var i = 0; i < 4; i++) dots.appendChild(el('div', { class: 'op-dot' + (i < opUi.pin.length ? ' f' : '') }));
+    inner.appendChild(dots);
+    inner.appendChild(el('div', { class: 'op-err', id: 'opErr', text: opUi.err }));
+    var pad = el('div', { class: 'op-pad' });
+    ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'del'].forEach(function (k) {
+      if (!k) { pad.appendChild(el('div')); return; }
+      pad.appendChild(el('button', { class: 'op-key' + (k === 'del' ? ' del' : ''), 'data-opkey': k,
+        text: k === 'del' ? '⌫ ลบ' : k, onclick: function () { opPadPress(k); } }));
+    });
+    inner.appendChild(pad);
+    return;
+  }
+
+  if (opUi.view === 'manage') {
+    inner.appendChild(el('div', { class: 'op-h', text: '⚙️ จัดการผู้นับ' }));
+    inner.appendChild(el('div', { class: 'op-s',
+      text: 'บัญชี ' + (me.name || '') + ' · ระบบไม่เก็บ PIN ตัวจริง (เก็บแบบเข้ารหัส) จึงดู PIN เดิมไม่ได้ — ลืมให้กด "สุ่ม PIN ใหม่"' }));
+    var ids = opSortedIds(true);
+    if (!ids.length) inner.appendChild(el('div', { class: 'op-s', text: 'ยังไม่มีผู้นับ — กด "➕ เพิ่มผู้นับ" ด้านล่าง' }));
+    ids.forEach(function (id) {
+      var o = state.operators[id], on = opIsActive(o);
+      var row = el('div', { class: 'op-row' + (on ? '' : ' off'), 'data-oprow': id }, [
+        el('div', { class: 'op-av', text: opInitial(o.name) }),
+        el('div', { class: 'op-nm' }, [
+          o.name || '',
+          el('div', { style: 'font-size:12px;font-weight:500;color:var(--muted,#64748b)',
+            text: on ? (o.fresh ? 'ใช้งาน · PIN สุ่ม ยังไม่ได้เปลี่ยนเอง' : 'ใช้งาน') : 'ปิดใช้งานแล้ว' })
+        ])
+      ]);
+      if (on) {
+        row.appendChild(el('button', { class: 'btn sm', 'data-opreset': id, text: '🔄 สุ่ม PIN ใหม่',
+          onclick: function () { opResetUi(id); } }));
+        row.appendChild(el('button', { class: 'btn sm grey', 'data-opoff': id, text: 'ปิดใช้งาน',
+          onclick: function () { opOffUi(id); } }));
+      }
+      inner.appendChild(row);
+    });
+    inner.appendChild(el('button', { class: 'btn block', style: 'margin-top:14px', 'data-opact': 'add',
+      text: '➕ เพิ่มผู้นับ', onclick: opAddUi }));
+    inner.appendChild(el('button', { class: 'btn block grey', style: 'margin-top:8px', 'data-opact': 'done',
+      text: 'เสร็จ (ล็อกหน้าจัดการ)', onclick: opManageDone }));
+    return;
+  }
+
+  /* cards */
+  inner.appendChild(el('div', { class: 'op-h', text: '👤 ใครกำลังนับ?' }));
+  inner.appendChild(el('div', { class: 'op-s',
+    text: 'บัญชี ' + (me.name || '') + ' · แตะชื่อตัวเอง แล้วใส่ PIN 4 หลัก — ยอดที่ยิงจะลงชื่อคุณ' }));
+  var grid = el('div', { class: 'op-grid' });
+  opSortedIds(false).forEach(function (id) {
+    var o = state.operators[id];
+    grid.appendChild(el('button', { class: 'op-card', 'data-opid': id,
+      onclick: function () { opUi.opId = id; opUi.view = 'pad'; opUi.pin = ''; opUi.err = ''; opUi.bad = false; renderOpPick(); } }, [
+      el('div', { class: 'op-av', text: opInitial(o.name) }),
+      el('div', { class: 'op-nm', text: o.name || '' })
+    ]));
+  });
+  inner.appendChild(grid);
+  inner.appendChild(el('button', { class: 'btn block grey', style: 'margin-top:16px', 'data-opact': 'manage',
+    text: '⚙️ จัดการผู้นับ (หัวหน้าสาขา)', onclick: opOpenManage }));
+  inner.appendChild(el('button', { class: 'btn block grey', style: 'margin-top:8px', 'data-opact': 'cancel',
+    text: 'ยกเลิก', onclick: opCancel }));
+}
+
+function opPadPress(k) {
+  if (opUi.busy) return;
+  opUi.bad = false; opUi.err = '';
+  if (k === 'del') opUi.pin = opUi.pin.slice(0, -1);
+  else if (opUi.pin.length < 4 && /^[0-9]$/.test(k)) opUi.pin += k;
+  renderOpPick();
+  if (opUi.pin.length === 4) opTryPin();
+}
+
+function opTryPin() {
+  var id = opUi.opId, pin = opUi.pin, target = opUi.target;
+  opUi.busy = true;
+  return setCurrentOp(id, pin).then(function (ok) {
+    opUi.busy = false;
+    if (!ok) {
+      /* ผิด = สั่น + เคลียร์ ให้ลองใหม่ทันที ไม่ต้องกดลบเอง */
+      opUi.pin = ''; opUi.bad = true; opUi.err = 'PIN ไม่ถูก ลองใหม่';
+      try { if (navigator.vibrate) navigator.vibrate(200); } catch (e) {}
+      renderOpPick();
+      return false;
+    }
+    /* undo ของคนก่อนห้ามติดมา — ย้อนแล้วแถวลบจะลงชื่อคนใหม่ เครดิตเพี้ยนทั้งสองคน */
+    state.undoStack = [];
+    closeOpPick();
+    toast('สวัสดี ' + ((currentOperator() || {}).name || '') + ' — ยอดที่ยิงจะลงชื่อคุณ');
+    refreshNav();
+    if (target === 'recheck' || sessionReady()) showPage(target);
+    return true;
+  }, function () {
+    opUi.busy = false; opUi.pin = ''; opUi.bad = true; opUi.err = OP_NO_SUBTLE_MSG;
+    renderOpPick();
+    return false;
+  });
+}
+
+/* ยกเลิกหน้าเลือก — ห้ามทิ้งคนไว้บนหน้ายิง/รีเช็คข้างหลัง overlay โดยไม่มีผู้นับ */
+function opCancel() {
+  closeOpPick();
+  if ((state.page === 'scan' || state.page === 'recheck') && opGateNeeded()) showPage('jobs');
+  else refreshNav();
+}
+
+/* ⚙️ ต้องใส่รหัสผ่านบัญชีซ้ำก่อนทุกครั้ง (reauth) — ไม่เพิ่ม cap ใหม่ในตาราง perms */
+function opOpenManage() {
+  var me = state.me;
+  if (!me) return Promise.resolve(false);
+  return ask('ยืนยันรหัสผ่านบัญชีสาขา',
+    'หน้าจัดการผู้นับเปิดได้เฉพาะคนที่รู้รหัสผ่านบัญชี ' + (me.email || me.name) + ' (หัวหน้าสาขา)',
+    'เปิดหน้าจัดการ', { fields: [{ key: 'pw', label: 'รหัสผ่านบัญชี', type: 'password' }] }).then(function (v) {
+    if (!v) return false;
+    return session.verifyPassword(me.email, v.pw, me.uid).then(function (ok) {
+      if (!ok) { toast('รหัสผ่านไม่ถูกต้อง — เปิดหน้าจัดการผู้นับไม่ได้', true); return false; }
+      opUi.manage = true;
+      opUi.view = 'manage';
+      opEnsureOverlay();
+      renderOpPick();
+      return true;
+    }, function (err) {
+      toast(err && err.authCode === 'NETWORK'
+        ? 'ตรวจรหัสผ่านไม่ได้ — ตรวจสัญญาณอินเทอร์เน็ตแล้วลองใหม่'
+        : 'ตรวจรหัสผ่านไม่ได้ตอนนี้ (' + ((err && err.authCode) || 'ERROR') + ') — รอสักครู่แล้วลองใหม่', true);
+      return false;
+    });
+  });
+}
+
+/* เสร็จ = ล็อกหน้าจัดการทันที · มาจากหน้าเลือกผู้นับและยังต้องเลือก → กลับไปการ์ดชื่อ */
+function opManageDone() {
+  opUi.manage = false;
+  if (opUi.gate && opGateNeeded()) { opUi.view = 'cards'; renderOpPick(); }
+  else closeOpPick();
+  refreshNav();
+}
+
+/* ทุกปุ่มในหน้าจัดการเช็ค opUi.manage ซ้ำ — กันเรียกจาก Console ข้ามขั้นใส่รหัสบัญชี */
+function opManageGuard() {
+  if (opUi.manage) return true;
+  toast('ต้องใส่รหัสผ่านบัญชีก่อน — กด "⚙️ จัดการผู้นับ" ใหม่', true);
+  return false;
+}
+
+function opShowPin(name, pin) {
+  return ask('PIN ของ ' + name,
+    'จดเลขนี้แล้วบอกน้องตรง ๆ — ปิดหน้านี้แล้วดูซ้ำไม่ได้ (ลืม = สุ่มใหม่) · แนะนำให้น้องกด "🔑 เปลี่ยน PIN" ตั้งเลขที่จำง่ายเอง',
+    'จดแล้ว', { hideCancel: true, detail: el('div', { class: 'op-pinshow', 'data-oppin': pin, text: pin }) });
+}
+
+function opAddUi() {
+  if (!opManageGuard()) return Promise.resolve(false);
+  return ask('➕ เพิ่มผู้นับ', 'ใส่ชื่อเล่นที่ใช้เรียกกันในสาขา ระบบจะสุ่ม PIN 4 หลักให้', 'เพิ่มผู้นับ',
+    { fields: [{ key: 'name', label: 'ชื่อผู้นับ', placeholder: 'เช่น แนน' }] }).then(function (v) {
+    if (!v) return false;
+    return addOperator(v.name).then(function (r) {
+      renderOpPick(); refreshNav();
+      return opShowPin(r.name, r.pin).then(function () { return true; });
+    }, function (err) { toast(opMsg(err), true); return false; });
+  });
+}
+
+function opResetUi(id) {
+  if (!opManageGuard()) return Promise.resolve(false);
+  return resetOperatorPin(id).then(function (r) {
+    renderOpPick(); renderOpBars();
+    return opShowPin(r.name, r.pin).then(function () { return true; });
+  }, function (err) { toast(opMsg(err), true); return false; });
+}
+
+function opOffUi(id) {
+  if (!opManageGuard()) return Promise.resolve(false);
+  var o = (state.operators || {})[id] || {};
+  return ask('ปิดใช้งาน ' + (o.name || '') + '?',
+    'คนนี้จะเข้านับไม่ได้อีก แต่ยอดที่เคยนับยังอยู่ครบในชื่อเดิม (ไม่ลบประวัติ)', 'ปิดใช้งาน', { danger: true })
+    .then(function (ok) {
+      if (!ok) return false;
+      return deactivateOperator(id).then(function () {
+        renderOpPick(); refreshNav();
+        toast('ปิดใช้งาน ' + (o.name || '') + ' แล้ว');
+        return true;
+      }, function (err) { toast(opMsg(err), true); return false; });
+    });
+}
+
+/* ---------- แถบผู้นับบนหน้ายิง + หน้ารีเช็ค ----------
+   ไม่มีผู้นับที่เลือกอยู่ = ถอด DOM ทิ้ง (ไม่ใช่แค่ซ่อน) → บัญชีไม่มีผู้นับหน้าตาเดิมทุก pixel */
+function renderOpBars() {
+  [['pageScan', 'opBar'], ['pageRecheck', 'opBarRc']].forEach(function (p) {
+    var page = $(p[0]), old = $(p[1]);
+    var op = currentOperator();
+    if (!page || !op) { if (old) old.remove(); return; }
+    var bar = el('div', { class: 'op-bar', id: p[1] }, [
+      el('div', { class: 'op-av', text: opInitial(op.name) }),
+      el('div', { class: 'op-who' }, [
+        el('div', { class: 'l', text: 'ผู้นับ' }),
+        el('div', { class: 'n', 'data-opname': '1', text: op.name || '' })
+      ]),
+      el('button', { class: 'btn sm grey', 'data-opbar': 'pin', text: '🔑 เปลี่ยน PIN', onclick: opChangePinUi }),
+      el('button', { class: 'btn sm grey', 'data-opbar': 'switch', text: '🔄 สลับคน', onclick: opSwitch })
+    ]);
+    if (op.fresh) {
+      bar.appendChild(el('div', { class: 'op-warn', 'data-opfresh': '1',
+        text: 'PIN นี้เป็นเลขสุ่ม — แตะ "🔑 เปลี่ยน PIN" ตั้งเลขที่จำง่ายของตัวเอง' }));
+    }
+    if (old) page.replaceChild(bar, old);
+    else page.insertBefore(bar, page.firstChild);
+  });
+}
+
+/* สลับคน = ลืมผู้นับ → ต้องใส่ PIN ใหม่ · undo ของคนก่อนทิ้งไปด้วย */
+function opSwitch() {
+  var back = state.page === 'recheck' ? 'recheck' : 'scan';
+  clearCurrentOp();
+  state.undoStack = [];
+  refreshNav();
+  openOpPick(back);
+}
+
+function opChangePinUi() {
+  var op = currentOperator();
+  if (!op) return Promise.resolve(false);
+  return ask('🔑 เปลี่ยน PIN ของ ' + op.name, 'ตั้งเลข 4 หลักที่จำง่าย และอย่าบอกคนอื่น', 'บันทึก PIN', {
+    fields: [{ key: 'a', label: 'PIN ใหม่ (ตัวเลข 4 หลัก)', type: 'pin' },
+             { key: 'b', label: 'ใส่ PIN ใหม่อีกครั้ง', type: 'pin' }]
+  }).then(function (v) {
+    if (!v) return false;
+    if (v.a !== v.b) { toast('PIN สองช่องไม่ตรงกัน — ลองใหม่', true); return false; }
+    return changeOwnPin(v.a).then(function () {
+      renderOpBars();
+      toast('เปลี่ยน PIN แล้ว — ครั้งหน้าใช้เลขใหม่');
+      return true;
+    }, function (err) { toast(opMsg(err), true); return false; });
+  });
+}
+
+/* ปุ่ม ⚙️ ในการ์ดบัญชี — ทางเข้าเดียวของบัญชีที่ "ยังไม่มีผู้นับ" (ไม่มี #opPick ให้กด)
+   โชว์เฉพาะบัญชีที่ยิงได้ เพราะผู้นับมีไว้แยกเครดิตงานนับเท่านั้น */
+function renderOpManageButtons() {
+  ['btnLogout', 'btnLogout2'].forEach(function (lid, i) {
+    var lo = $(lid), id = 'btnOpManage' + (i ? '2' : '');
+    var b = $(id);
+    if (!lo) return;
+    if (!state.me || !hasPerm('scan')) { if (b) b.remove(); return; }
+    if (!b) {
+      b = el('button', { class: 'btn grey block', id: id, style: 'margin-bottom:8px', text: '⚙️ จัดการผู้นับ (PIN)',
+        onclick: function () { opUi.gate = false; opOpenManage(); } });
+      lo.parentNode.insertBefore(b, lo);
+    }
+  });
+}
+
+/* หลังโหลดผู้นับเสร็จ (startApp) — จอต้องตามทัน: แถบ/ด่าน/ปุ่มพาไปเลือก
+   ถ้าค้างอยู่หน้ายิง/รีเช็คแล้วต้องเลือกผู้นับ (เช่น ผู้นับที่จำไว้ถูกปิดไปแล้ว) → เปิดหน้าเลือกเลย */
+function opAfterLoad() {
+  try {
+    refreshNav();
+    if ((state.page === 'scan' || state.page === 'recheck') && opGateNeeded()) openOpPick(state.page);
+  } catch (e) { /* จอยังไม่พร้อม — refreshNav รอบถัดไปจะวาดให้เอง */ }
 }
 
 function setMe(user, rec) {
@@ -19206,6 +19742,7 @@ function renderAccount() {
     $('meRole2').className = 'chip ' + (me.role === 'admin' ? 'ok' : (me.role === 'viewer' ? 'warn' : ''));
     $('jobsAccountCard').style.display = canSeeMasterPage() ? 'none' : '';
   }
+  renderOpManageButtons();          // ⭐ v2.49.0 ⚙️ จัดการผู้นับ ในการ์ดบัญชี
   $('tabUsers').style.display = isAdmin() ? '' : 'none';
   $('tabOnline').style.display = isAdmin() ? '' : 'none';
   $('tabNewcodes').style.display = hasPerm('editMaster') ? '' : 'none';
@@ -21708,7 +22245,7 @@ function startApp() {
   flushQueue();
   renderConnection();
   /* ⭐ v2.48.0 ผู้นับของบัญชีนี้ — ไม่มี = {} พฤติกรรมเดิม · ได้ข้อมูลแล้ว restoreCurrentOp ตั้งชื่อให้เอง */
-  loadOperators().then(function () { try { renderJobBar(); } catch (e) {} });
+  loadOperators().then(opAfterLoad);
 
   cacheFirstProducts();
   refreshBranches();
