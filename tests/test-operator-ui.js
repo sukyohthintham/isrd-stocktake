@@ -534,7 +534,12 @@ const HARNESS = `
       uB: { name: 'สาขาB', role: 'scanner', active: true },
       uC: { name: 'สาขาC', role: 'custom', active: true, perms: { scan: true } },
       uV: { name: 'ดูอย่างเดียว', role: 'viewer', active: true },
-      uX: { name: 'ปิดแล้ว', role: 'counter', active: false }
+      uX: { name: 'ปิดแล้ว', role: 'counter', active: false },
+      /* ⭐ v2.51.0 บัญชีชื่อแบบของจริง ไว้ทดสอบช่องค้นหา */
+      uP: { name: 'PKL-05', role: 'counter', active: true, email: 'pkl05@isrd.co' },
+      uH1: { name: 'HDY-01', role: 'scanner', active: true },
+      uH2: { name: 'HDY 02', role: 'counter', active: true, email: 'hatyai2@isrd.co' },
+      uHX: { name: 'HDY-99', role: 'viewer', active: true }
     };
     window.__ops = { u1: {}, uA: OPS_A, uB: {} };
     window.session.verifyPassword = function (e, pw) { return Promise.resolve(pw === 'right'); };
@@ -543,20 +548,50 @@ const HARNESS = `
   }, OPS_A);
   await page.evaluate(() => { window.__reset(); opUi.gate = false; opOpenManage(); }); await wait(80);
   await page.evaluate(() => window.__answer({ pw: 'right' })); await wait(200);
-  const r10a = await page.evaluate(() => ({
-    manage: opUi.manage, sel: !!document.getElementById('opTarget'),
-    opts: Array.from(document.querySelectorAll('#opTarget option')).map(o => o.value)
+  const items = () => page.evaluate(() => ({
+    keys: Array.from(document.querySelectorAll('#opTargetList [data-optarget-item]')).map(e => e.getAttribute('data-optarget-item')),
+    notFound: !!document.querySelector('#opTargetList [data-opnotfound]'),
+    focused: document.activeElement && document.activeElement.id
   }));
-  check('admin → มี dropdown เลือกบัญชี', r10a.manage && r10a.sel, r10a);
-  check('รายการ = บัญชีที่ยิงได้และใช้งานอยู่ (ไม่มี viewer/ปิดแล้ว/ตัวเอง)',
-        JSON.stringify(r10a.opts.slice().sort()) === JSON.stringify(['', 'uA', 'uB', 'uC']), r10a.opts);
+  const r10a = await page.evaluate(() => ({
+    manage: opUi.manage, search: !!document.getElementById('opTargetSearch'), select: !!document.getElementById('opTarget'),
+    type: (document.getElementById('opTargetSearch') || {}).type
+  }));
+  const all0 = await items();
+  check('admin → มีช่องค้นหาสาขา (ไม่ใช่ select เดิม)', r10a.manage && r10a.search && !r10a.select && r10a.type === 'search', r10a);
+  check('ช่องว่าง → โชว์ทุกบัญชีที่ยิงได้และใช้งานอยู่ (ไม่มี viewer/ปิดแล้ว) + บัญชีตัวเอง',
+        JSON.stringify(all0.keys.slice().sort()) === JSON.stringify(['self', 'uA', 'uB', 'uC', 'uH1', 'uH2', 'uP'].sort()), all0.keys);
 
-  const r10b = await page.evaluate(async () => {
-    const sel = document.getElementById('opTarget'); sel.value = 'uA'; sel.dispatchEvent(new Event('change'));
-    await new Promise(r => setTimeout(r, 100));
-    return { target: opUi.targetUid, rows: Array.from(document.querySelectorAll('#opPick [data-oprow]')).map(e => e.getAttribute('data-oprow')),
-             label: (document.querySelector('[data-optargetname]') || {}).textContent || '' };
-  });
+  /* พิมพ์จริงทีละตัวอักษร — ต้องกรองสดและช่องต้องไม่หลุดโฟกัส (คีย์บอร์ดมือถือไม่หุบ) */
+  async function search(q) {
+    await page.evaluate(() => { const i = document.getElementById('opTargetSearch'); i.value = ''; i.dispatchEvent(new Event('input')); i.focus(); });
+    if (q) await page.type('#opTargetSearch', q);
+    await wait(30);
+    return items();
+  }
+  const sPkl = await search('PKL');
+  check('พิมพ์ "PKL" → เหลือ PKL-05', JSON.stringify(sPkl.keys) === '["uP"]', sPkl);
+  check('พิมพ์แล้วช่องยังโฟกัสอยู่ (วาดใหม่เฉพาะรายการ)', sPkl.focused === 'opTargetSearch', sPkl);
+  const sHdy = await search('hdy');
+  check('"hdy" ตัวเล็ก → เหลือ HDY ที่ยิงได้ทั้งคู่ (ไม่สนตัวพิมพ์ · ไม่รวม viewer)',
+        JSON.stringify(sHdy.keys.slice().sort()) === '["uH1","uH2"]', sHdy);
+  const sSpace = await search('hdy02');
+  check('"hdy02" เจอ "HDY 02" (ไม่สนเว้นวรรค)', JSON.stringify(sSpace.keys) === '["uH2"]', sSpace);
+  const sMail = await search('hatyai');
+  check('ค้นด้วยอีเมลได้ ("hatyai" → HDY 02)', JSON.stringify(sMail.keys) === '["uH2"]', sMail);
+  const sJunk = await search('zzqq');
+  check('พิมพ์มั่ว → "ไม่พบสาขา"', sJunk.keys.length === 0 && sJunk.notFound, sJunk);
+  const sEmpty = await search('');
+  check('ล้างช่อง → กลับมาครบทุกบัญชี', sEmpty.keys.length === 7 && !sEmpty.notFound, sEmpty);
+
+  /* เลือกจากผลค้นหา → opSelectTarget เดิม */
+  await search('สาขาa');
+  await clickSel('#opTargetList [data-optarget-item="uA"]'); await wait(120);
+  const r10b = await page.evaluate(() => ({ target: opUi.targetUid, rows: Array.from(document.querySelectorAll('#opPick [data-oprow]')).map(e => e.getAttribute('data-oprow')),
+    label: (document.querySelector('[data-optargetname]') || {}).textContent || '',
+    query: (document.getElementById('opTargetSearch') || {}).value,
+    selected: (document.querySelector('#opTargetList [aria-selected="true"]') || {}).getAttribute ? document.querySelector('#opTargetList [aria-selected="true"]').getAttribute('data-optarget-item') : null }));
+  check('เลือกจากผลค้นหา → ล้างคำค้น + ไฮไลต์ที่เลือก', r10b.query === '' && r10b.selected === 'uA', r10b);
   check('เลือกสาขา A → โหลดผู้นับของ A มาแสดง', r10b.target === 'uA' && JSON.stringify(r10b.rows) === '["a1"]' && /สาขาA/.test(r10b.label), r10b);
 
   async function adminAdd(name) {
@@ -601,7 +636,7 @@ const HARNESS = `
         r10e.u.path === 'operators/uA/a1' && JSON.stringify(r10e.u.patch) === '{"active":false}' && r10e.a1.active === false, r10e);
 
   const r10f = await page.evaluate(async () => {
-    const sel = document.getElementById('opTarget'); sel.value = 'uB'; sel.dispatchEvent(new Event('change'));
+    document.querySelector('#opTargetList [data-optarget-item="uB"]').click();
     await new Promise(r => setTimeout(r, 100));
     return { target: opUi.targetUid, rows: document.querySelectorAll('#opPick [data-oprow]').length,
              text: document.getElementById('opPick').textContent };
@@ -612,7 +647,7 @@ const HARNESS = `
         (addB.upd[0] || {}).path === 'operators/uB', addB.upd);
 
   const r10g = await page.evaluate(async () => {
-    const sel = document.getElementById('opTarget'); sel.value = ''; sel.dispatchEvent(new Event('change'));
+    document.querySelector('#opTargetList [data-optarget-item="self"]').click();
     await new Promise(r => setTimeout(r, 50));
     const self = { target: opUi.targetUid, rows: document.querySelectorAll('#opPick [data-oprow]').length };
     document.querySelector('#opPick [data-opact="done"]').click();
@@ -635,7 +670,7 @@ const HARNESS = `
   check('เครื่องสาขา A ใช้ PIN ที่ admin สร้าง → เข้าได้ ชื่อ "โอ · สาขาA"', r10h.ok === true && r10h.counter === 'โอ · สาขาA', r10h);
 
   /* ---------- 11. non-admin ---------- */
-  console.log('\n[11] non-admin — ไม่มี dropdown · จัดการได้เฉพาะของตัวเอง');
+  console.log('\n[11] non-admin — ไม่มีช่องค้นหาสาขา · จัดการได้เฉพาะของตัวเอง');
   const r11 = await page.evaluate(async (OPS_A) => {
     window.__ops = { u1: {}, uA: OPS_A };
     window.__seed('counter');
@@ -660,14 +695,14 @@ const HARNESS = `
   await page.evaluate(() => { window.__reset(); opUi.gate = false; opOpenManage(); }); await wait(80);
   await page.evaluate(() => window.__answer({ pw: 'right' })); await wait(150);
   const r11b = await page.evaluate(async () => {
-    const out = { manage: opUi.manage, sel: !!document.getElementById('opTarget') };
+    const out = { manage: opUi.manage, sel: !!document.getElementById('opTarget') || !!document.getElementById('opTargetSearch') || !!document.getElementById('opTargetList') };
     window.__reset();
     await opSelectTarget('uA');
     out.target = opUi.targetUid; out.toast = window.__lastToast();
     closeOpPick();
     return out;
   });
-  check('non-admin เปิดหน้าจัดการได้ แต่ไม่มี dropdown', r11b.manage && !r11b.sel, r11b);
+  check('non-admin เปิดหน้าจัดการได้ แต่ไม่มีช่องค้นหา/รายการสาขา', r11b.manage && !r11b.sel, r11b);
   check('non-admin เรียกเลือกสาขาจาก Console → ถูกปฏิเสธ', r11b.target === null && /เฉพาะผู้ดูแลระบบ/.test(r11b.toast), r11b);
 
   console.log('\n[errors] ' + (errors.length ? errors.join('\n') : 'ไม่มี'));

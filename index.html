@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.50.0">
+<meta name="version" content="2.51.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.50.0</title>
+<title>ISRD Stocktake v2.51.0</title>
 
 <style>
 /* v2.47.6 perf: ข้ามการวาดการ์ดรีเช็คที่ยังไม่เลื่อนไปเห็น (ลด jank list ยาวบนมือถือ) */
@@ -2129,7 +2129,8 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.48.0 — ผู้นับ + PIN (PR1 ชั้นข้อมูล): operators/{uid} · counterName() · rec.op · Rules v2.1.7 เพิ่มโหนด operators */
 /* ⭐ v2.49.0 — ผู้นับ + PIN (PR2 หน้าจอ): #opPick คีย์แพด · แถบผู้นับ · ⚙️ จัดการ (reauth) · เสียบ requireOperator */
 /* ⭐ v2.50.0 — admin จัดการผู้นับทุกสาขาจากที่เดียว (targetUid) · แก้ปุ่ม ⚙️ ไม่โผล่บนหน้า Job ของ counter */
-var APP_VERSION = '2.50.0';
+/* ⭐ v2.51.0 — หน้าจัดการผู้นับ (admin): ช่องค้นหาสาขาแทน dropdown (กรองชื่อบัญชี+อีเมลสด) */
+var APP_VERSION = '2.51.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -19413,6 +19414,7 @@ function closeOpPick() {
 /* ⭐ v2.50.0 ล้างบัญชีเป้าหมาย/ข้อมูลสาขาอื่น — เปิดหน้าจัดการครั้งหน้าเริ่มที่ "บัญชีนี้" เสมอ */
 function opResetManageTarget() {
   opUi.targetUid = null; opUi.otherOps = {}; opUi.accounts = null; opUi.accErr = '';
+  opUi.accQuery = '';               // ⭐ v2.51.0 คำค้นสาขา
 }
 
 function renderOpPick() {
@@ -19608,8 +19610,9 @@ function opTargetLabel() {
 }
 
 function opAccountPicker() {
-  var box = el('label', { class: 'fld', style: 'display:block;margin:6px 0 10px' },
-    [el('span', { text: 'เลือกสาขา/บัญชีที่จะจัดการ (เฉพาะผู้ดูแลระบบ)' })]);
+  /* div ไม่ใช่ label — ใน label มีปุ่มหลายปุ่ม แตะแล้วเบราว์เซอร์อาจส่งคลิกไปที่ช่องแรกแทน */
+  var box = el('div', { class: 'fld', style: 'display:block;margin:6px 0 10px' },
+    [el('span', { text: 'ค้นหาสาขา/บัญชีที่จะจัดการ (เฉพาะผู้ดูแลระบบ)' })]);
   if (opUi.accErr) {
     box.appendChild(el('div', { class: 'op-err', style: 'text-align:left', text: opUi.accErr }));
     box.appendChild(el('button', { class: 'btn sm grey', 'data-opact': 'accretry', text: 'ลองใหม่',
@@ -19627,16 +19630,51 @@ function opAccountPicker() {
     }
     return box;
   }
-  var me = state.me || {};
-  var sel = el('select', { id: 'opTarget', 'data-optarget': '1', style: 'width:100%;margin-top:6px' });
-  sel.appendChild(el('option', { value: '', text: 'บัญชีนี้ (ตัวเอง) — ' + (me.name || '') }));
-  opUi.accounts.forEach(function (a) {
-    sel.appendChild(el('option', { value: a.uid, text: a.name + (a.email ? ' · ' + a.email : '') }));
-  });
-  sel.value = (opUi.targetUid && opUi.targetUid !== me.uid) ? opUi.targetUid : '';
-  sel.addEventListener('change', function () { opSelectTarget(sel.value); });
-  box.appendChild(sel);
+  /* ⭐ v2.51.0 ช่องค้นหาแทน <select> — บัญชี 20+ เลื่อนหาใน dropdown บนมือถือไม่ไหว
+     พิมพ์แล้วกรองสด (ชื่อบัญชี + อีเมล · ไม่สนตัวพิมพ์/เว้นวรรค) · ช่องว่าง = โชว์ทุกบัญชีเหมือน dropdown เดิม
+     พิมพ์แล้ววาดใหม่เฉพาะรายการ ไม่วาดทั้ง overlay — ไม่งั้นช่องหลุดโฟกัส คีย์บอร์ดมือถือหุบทุกตัวอักษร
+     ⚠ ชั้น UI อย่างเดียว: เลือกแล้วเรียก opSelectTarget เดิม · ฟังก์ชันจัดการ/สิทธิ์ admin ไม่เปลี่ยน */
+  var inp = el('input', { type: 'search', id: 'opTargetSearch', 'data-optarget': '1', autocomplete: 'off',
+    enterkeyhint: 'search', placeholder: 'ค้นหา เช่น PKL, HDY หรือชื่อ…',
+    style: 'width:100%;margin-top:6px;min-height:48px;font-size:16px' });   // 16px = iOS ไม่ซูมตอนโฟกัส
+  inp.value = opUi.accQuery || '';
+  var list = el('div', { id: 'opTargetList', role: 'listbox',
+    style: 'max-height:240px;overflow-y:auto;-webkit-overflow-scrolling:touch;margin-top:6px;' +
+           'border:1px solid var(--line-soft);border-radius:12px;background:#fff' });
+  inp.addEventListener('input', function () { opUi.accQuery = inp.value; opRenderTargetList(list); });
+  box.appendChild(inp);
+  box.appendChild(list);
+  opRenderTargetList(list);
   return box;
+}
+
+function opAccNorm(s) { return String(s || '').toLowerCase().replace(/\s+/g, ''); }
+
+/* รายการผลค้นหา · แถวแรก "บัญชีนี้ (ตัวเอง)" (ตรงกับตัวเลือกว่างของ dropdown เดิม) */
+function opRenderTargetList(list) {
+  var me = state.me || {};
+  var q = opAccNorm(opUi.accQuery);
+  var cur = (opUi.targetUid && opUi.targetUid !== me.uid) ? opUi.targetUid : '';
+  var rows = [{ uid: '', name: 'บัญชีนี้ (ตัวเอง) — ' + (me.name || ''), email: me.email || '' }].concat(opUi.accounts || []);
+  rows = rows.filter(function (a) { return !q || opAccNorm(a.name + ' ' + a.email).indexOf(q) >= 0; });
+  list.innerHTML = '';
+  if (!rows.length) {
+    list.appendChild(el('div', { class: 'op-s', 'data-opnotfound': '1', style: 'margin:0;padding:14px 12px',
+      text: 'ไม่พบสาขา/บัญชีที่ตรงกับ "' + (opUi.accQuery || '') + '"' }));
+    return;
+  }
+  rows.forEach(function (a) {
+    var on = a.uid === cur;
+    list.appendChild(el('button', { type: 'button', role: 'option', 'aria-selected': on ? 'true' : 'false',
+      'data-optarget-item': a.uid || 'self',
+      style: 'display:block;width:100%;min-height:48px;padding:10px 12px;text-align:left;font:inherit;color:inherit;' +
+             'border:0;border-bottom:1px solid var(--line-soft);cursor:pointer;' +
+             (on ? 'background:var(--brand-light);font-weight:700' : 'background:#fff'),
+      onclick: function () { opUi.accQuery = ''; opSelectTarget(a.uid); } }, [
+      el('div', { text: (on ? '✓ ' : '') + a.name }),
+      a.email ? el('div', { style: 'font-size:12px;font-weight:500;color:var(--muted,#64748b)', text: a.email }) : null
+    ]));
+  });
 }
 
 /* เลือกบัญชีเป้าหมาย → โหลดผู้นับของบัญชีนั้นสดทุกครั้ง (อาจเพิ่งถูกแก้จากเครื่องสาขา)
