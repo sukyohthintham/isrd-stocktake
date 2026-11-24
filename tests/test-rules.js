@@ -27,7 +27,7 @@ function check(name, ok, got) {
   else { fail++; console.log('  FAIL  ' + name + '  ->  ' + JSON.stringify(got)); }
 }
 
-const RULES_FILE = path.join(__dirname, '..', 'stocktake-rules-v2.1.6.json');
+const RULES_FILE = path.join(__dirname, '..', 'stocktake-rules-v2.1.7.json');
 const rules = JSON.parse(fs.readFileSync(RULES_FILE, 'utf8'));
 
 /* ---------- จำลองฐานข้อมูลเท่าที่กฎอ้างถึง ---------- */
@@ -891,6 +891,75 @@ check('ทุกฟิลด์ที่แอปเขียนมี rule ร�
 check('settings ไม่มีกฎลูก presence ที่หลอกตา', !(S.settings && S.settings.presence), S.settings);
 /* read ไหลลงลูกเหมือนกัน — stocktake2026/.read ให้ผู้ใช้ active อ่านได้ทั้งต้นอยู่แล้ว */
 check('presence ไม่มี .read ที่หลอกตาว่าจำกัดได้', !(S.presence && S.presence['.read']), S.presence);
+
+/* ============================================================
+   [14] ⭐ v2.48.0 (Rules v2.1.7) operators/$uid/$opId — ผู้นับ + PIN ใต้บัญชีสาขา
+   ============================================================
+   ผูกกับ "เป็นเจ้าของโหนด" แบบเดียวกับ presence ไม่ใช่ตาราง role จึงแยกข้อ ไม่ใส่ใน MATRIX
+   เก็บ pinHash (SHA-256 hex64) ไม่เก็บ PIN ดิบ — stocktake2026/.read ไหลลงทุกลูก หดไม่ได้
+   ใครที่ active ก็อ่านโหนดนี้ได้ จึงห้ามมี PIN ดิบอยู่ในฐานเด็ดขาด */
+console.log('\n[R1-R4] operators — เจ้าของบัญชีเขียนของตัวเองได้ · admin เขียนได้ทุกบัญชี');
+const O = S.operators && S.operators.$uid;
+check('มีโหนด operators/$uid ใน Rules', !!O, Object.keys(S));
+function canOps(role, targetUid, opts) {
+  opts = opts || {};
+  const db = makeDb(role, 'counting');
+  if (opts.inactive) db.stocktake2026.users.u_me.active = false;
+  const fn = new Function('root', 'auth', 'data', 'newData', '$uid', 'return (' + O['.write'] + ');');
+  return !!fn(snap(db), opts.anon ? null : { uid: 'u_me' }, snap(undefined),
+              snap({ op1: { name: 'แนน', pinHash: 'a'.repeat(64), createdAt: 1 } }), targetUid);
+}
+ROLES.concat(['custom']).forEach(function (role) {
+  check('[R1] ' + role + ' (บัญชีสาขา) เขียน operators ของตัวเองได้', canOps(role, 'u_me') === true, role);
+});
+['counter', 'scanner', 'viewer', 'custom'].forEach(function (role) {
+  check('[R2] ' + role + ' เขียน operators ของบัญชีอื่นไม่ได้', canOps(role, 'u_other') === false, role);
+});
+check('[R3] admin เขียน operators ของบัญชีอื่นได้ (สุ่ม PIN ให้สาขา)', canOps('admin', 'u_other') === true, 'admin');
+check('[R4] บัญชีถูกปิดใช้งาน เขียน operators ตัวเองไม่ได้', canOps('scanner', 'u_me', { inactive: true }) === false, 'inactive');
+check('[R4] admin ที่ถูกปิดใช้งาน เขียนของคนอื่นไม่ได้', canOps('admin', 'u_other', { inactive: true }) === false, 'inactive admin');
+check('[R4] ไม่ได้ล็อกอิน เขียนไม่ได้', (function () {
+  try { return canOps('admin', 'u_me', { anon: true }) === false; } catch (e) { return true; }
+})(), 'anon');
+
+console.log('\n[R5] operators — validate รับเฉพาะรูปที่แอปเขียน');
+const OP = O && O.$opId;
+function opValid(node) {
+  return !!new Function('newData', 'return (' + OP['.validate'] + ');')(snap(node));
+}
+function opField(f, v) {
+  const rule = (OP[f] || OP.$other)['.validate'];
+  if (rule === false) return false;
+  return !!new Function('newData', 'return (' + rule + ');')(snap(v));
+}
+const HEX = '0123456789abcdef'.repeat(4);
+check('[R5] ก้อนครบ name+pinHash+createdAt ผ่าน', opValid({ name: 'แนน', pinHash: HEX, createdAt: 1, fresh: true }), 'ok');
+check('[R5] ลบโหนดได้ (newData ไม่มี)', opValid(null), 'delete');
+check('[R5] ไม่มี name ไม่ผ่าน', opValid({ pinHash: HEX, createdAt: 1 }) === false, 'no name');
+check('[R5] ไม่มี pinHash ไม่ผ่าน', opValid({ name: 'แนน', createdAt: 1 }) === false, 'no hash');
+check('[R5] pinHash ต้องเป็น hex64 ตัวเล็ก', opField('pinHash', HEX) && !opField('pinHash', HEX.toUpperCase()) &&
+      !opField('pinHash', HEX.slice(1)) && !opField('pinHash', 'z' + HEX.slice(1)), 'hex64');
+check('[R5] PIN ดิบ 4 หลักใส่ช่อง pinHash ไม่ได้', opField('pinHash', '1234') === false, 'raw pin');
+check('[R5] ช่อง pin (ดิบ) ไม่มีที่ให้เขียน ตก $other', !OP.pin && opField('pin', '1234') === false, 'pin field');
+check('[R5] name ว่าง/ยาวเกินไม่ผ่าน', !opField('name', '') && !opField('name', 'ก'.repeat(60)) && opField('name', 'แนน'), 'name');
+check('[R5] fresh/active ต้องเป็น boolean', opField('fresh', true) && !opField('fresh', 'yes') &&
+      opField('active', false) && !opField('active', 0), 'bool');
+check('[R5] createdAt ต้องเป็นตัวเลข', opField('createdAt', 1) && !opField('createdAt', 'now'), 'createdAt');
+check('[R5] ฟิลด์แปลกปลอมเขียนไม่ได้', opField('hack', 'x') === false, '$other');
+check('[R5] operators ไม่มี .read ที่หลอกตาว่าจำกัดได้ (cascade)',
+      !(S.operators && S.operators['.read']) && !(O && O['.read']), S.operators);
+
+/* [R6] ต้องเป็น "เพิ่มโหนดใหม่อย่างเดียว" — กฎเดิมของ scans/users/settings/wms2026 ห้ามขยับ
+   ค่าลายนิ้วมือคำนวณจาก stocktake-rules-v2.1.6.json (ใบก่อนหน้า) ตรงกับ v2.1.7 ทุกตัวอักษร
+   ถ้าตั้งใจแก้กฎพวกนี้ในอนาคต ต้องอัปเดตค่านี้พร้อมเหตุผล ไม่ใช่แก้ให้เขียวเฉย ๆ */
+console.log('\n[R6] กฎเดิม (scans/users/settings/wms2026) ไม่เปลี่ยนจาก v2.1.6');
+const FP_V216 = 'aadb62ffdb1484ab28b8928eb465b862df2a608d5050f1956bdd0619eb591625';
+const fpNow = require('crypto').createHash('sha256').update(JSON.stringify({
+  wms2026: rules.rules.wms2026, users: S.users, settings: S.settings, scans: R.scans
+})).digest('hex');
+check('[R6] ลายนิ้วมือกฎเดิมตรงกับ v2.1.6', fpNow === FP_V216, fpNow);
+check('[R6] ยังมีบล็อก wms2026 เปิดอ่าน/เขียนเหมือนเดิม',
+      rules.rules.wms2026 && rules.rules.wms2026['.read'] === true && rules.rules.wms2026['.write'] === true, rules.rules.wms2026);
 
 console.log('\n==== ' + pass + ' passed, ' + fail + ' failed ====');
 process.exit(fail ? 1 : 0);

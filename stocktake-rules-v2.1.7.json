@@ -62,6 +62,20 @@
           "$other": { ".validate": false }
         }
       },
+      "operators": {
+        "$uid": {
+          ".write": "auth != null && root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && (auth.uid === $uid || root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin')",
+          "$opId": {
+            ".validate": "!newData.exists() || newData.hasChildren(['name','pinHash','createdAt'])",
+            "name": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length < 60" },
+            "pinHash": { ".validate": "newData.isString() && newData.val().matches(/^[0-9a-f]{64}$/)" },
+            "fresh": { ".validate": "newData.isBoolean()" },
+            "active": { ".validate": "newData.isBoolean()" },
+            "createdAt": { ".validate": "newData.isNumber()" },
+            "$other": { ".validate": false }
+          }
+        }
+      },
       "docCounters": {
         "$branch": {
           "$kind": {

@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.47.6">
+<meta name="version" content="2.48.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.47.6</title>
+<title>ISRD Stocktake v2.48.0</title>
 
 <style>
 /* v2.47.6 perf: ข้ามการวาดการ์ดรีเช็คที่ยังไม่เลื่อนไปเห็น (ลด jank list ยาวบนมือถือ) */
@@ -2086,7 +2086,8 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.37.3 — ย้ายหน้ารีเช็คเข้าใน .wrap (ก่อนอยู่นอกทำให้ยืดเต็มจอบน desktop) */
 /* ⭐ v2.37.4 — แคชรูปรีเช็คต่อ Job กันโหลดซ้ำทุก render (กินโควตา) */
 /* ⭐ v2.44.0 — ชุบชีวิต presence (ผู้ใช้ออนไลน์ + เตะออก) จาก presence-hold v2.33.0 · Rules v2.1.5 เพิ่มโหนด presence */
-var APP_VERSION = '2.47.6';
+/* ⭐ v2.48.0 — ผู้นับ + PIN (PR1 ชั้นข้อมูล): operators/{uid} · counterName() · rec.op · Rules v2.1.7 เพิ่มโหนด operators */
+var APP_VERSION = '2.48.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -3721,7 +3722,7 @@ function cycleInfo(cid) { return (state.cycles[cid] || {}).info || {}; }
 function cycleMigrated(cid) { return Number(cycleInfo(cid).schema) >= 1; }
 
 /* ⭐ v2.11.1 — ย้ายข้อมูลขึ้นรอบนับได้เฉพาะรอบที่ยัง "นับอยู่" เท่านั้น
-   ตาม stocktake-rules-v2.1.6.json:
+   ตาม stocktake-rules-v2.1.7.json:
      cycles/$cid/systemQty  เขียนได้เมื่อ status ยังไม่มี หรือเป็น counting
      cycles/$cid/info       เขียนได้เมื่อ status ไม่ใช่ closed
    รอบที่ปิดหรือกำลังตรวจจึงถูกปฏิเสธ แล้วมันจะไม่ถูกทำเครื่องหมายว่าย้ายแล้ว
@@ -4352,7 +4353,10 @@ var state = {
   zoneId: null,
   me: null,              // { uid, email, name, role } ของคนที่ล็อกอินอยู่
   users: {},             // ทะเบียนผู้ใช้ทั้งหมด (โหลดเฉพาะตอน admin เปิดหน้าจัดการ)
-  counter: '',           // ชื่อผู้นับ = ชื่อจากบัญชี ไม่ใช่ช่องให้พิมพ์เองแล้ว
+  counter: '',           // ชื่อผู้นับ = counterName() (ชื่อบัญชี หรือ "ผู้นับ · บัญชี" ถ้าเลือกผู้นับ+PIN แล้ว)
+  operators: {},         // ⭐ v2.48.0 ผู้นับใต้บัญชีนี้ operators/{uid} — {} = บัญชีไม่มีผู้นับ (พฤติกรรมเดิมเป๊ะ)
+  currentOp: null,       // ⭐ v2.48.0 opId ของผู้นับที่ใส่ PIN ผ่านแล้ว (จำใน localStorage ต่อ uid)
+  opsLoaded: false,      // ⭐ v2.48.0 โหลด operators/{uid} สำเร็จแล้วอย่างน้อยหนึ่งครั้ง
   page: 'jobs',          // ต้องตรงกับ section ที่ติด class active ไว้ใน HTML
   jobView: 'list',       // แท็บในหน้า Job: list (รายการ) / create (ฟอร์มสร้าง)
   recheckView: 'admin',  // ⭐ v2.37.0 แท็บรีเช็ค: admin (ส่ง/ดูผล) / scanner (เด็กนับคืน)
@@ -5462,6 +5466,10 @@ function writeScan(key, delta, mode, reason, extra) {
     delta: delta,
     mode: mode
   };
+  /* ⭐ v2.48.0 กุญแจถาวรของผู้นับ (uid:opId) — มีเฉพาะบัญชีที่เลือกผู้นับ+PIN แล้ว
+     บัญชีไม่มีผู้นับ = ไม่มีฟิลด์นี้ แถวหน้าตาเดิมเป๊ะ · Rules scans เช็คแค่ hasChildren ไม่ห้ามฟิลด์เพิ่ม */
+  var _op = operatorTag();
+  if (_op) rec.op = _op;
   state.lastZoneName = zn;                        // ตัวเลขกับตัวอักษรบนจอต้องตามของชิ้นล่าสุด
   if (reason) rec.reason = reason;
   /* v2.x — โซนที่ "เก็บทีละโซน" ถูกตั้งไว้ตอนยิง = ที่ที่ไปเจอ/นับจริง (ต่างจากโซนใน master) */
@@ -9867,6 +9875,8 @@ function adjustJobCount(roundId, key, delta, reason) {
     delta: delta,
     mode: 'scan'
   };
+  var _op = operatorTag();             // ⭐ v2.48.0 เหมือน writeScan เป๊ะ
+  if (_op) rec.op = _op;
   if (reason) rec.reason = reason;
   var patch = {};
   patch['scans/' + id] = rec;
@@ -17012,7 +17022,7 @@ function exportJobsExcel(ids, cycleLabel) {
 
     summary.push([]);
     summary.push(['ออกไฟล์เมื่อ', thaiDate(Date.now())]);
-    summary.push(['ออกโดย', state.counter || '-']);
+    summary.push(['ออกโดย', accountName() || '-']);   // ⭐ v2.48.0 เอกสารทางการ = ชื่อบัญชีสาขา ไม่ใช่ชื่อเล่นผู้นับ
     summary.push(['หมายเหตุ', 'ยอดระบบเป็นของรอบนับ ไม่ใช่ของ Job — นับครั้งเดียวต่อรอบ']);
 
     var blob = buildXlsx([{ name: 'สรุปรวม', rows: summary,
@@ -18567,6 +18577,8 @@ function forceSignOut() {
   stopPresence();             // ⭐ v2.33.0 กัน heartbeat ซ้อน/ยิงด้วย token ที่ล้างแล้ว
   try { session.signOut(); } catch (e) { /* ออกให้ได้ไม่ว่าอะไรจะเกิด */ }
   try { db.closeAll(); } catch (e) {}
+  clearCurrentOp();           // ⭐ v2.48.0 ต้องก่อน state.me = null (คีย์ในเครื่องผูกกับ uid)
+  state.operators = {};
   state.me = null;
   state.counter = '';
   /* หน่วงนิดให้ toast ทันขึ้นจอก่อนหน้าจะรีโหลด */
@@ -18968,7 +18980,137 @@ function permsForRecord(rec) {
   return Object.keys(p).length ? p : permsFromRole((rec && rec.role) || 'counter');
 }
 
+/* ============================================================
+   ⭐ v2.48.0 ผู้นับ + PIN — ชั้นข้อมูล (PR1 · ยังไม่มีหน้าเลือกผู้นับ/คีย์แพด)
+   ============================================================
+   1 บัญชี Firebase = 1 สาขา · เด็กหลายคนใช้บัญชีเดียวกันแต่แยกตัวตนด้วย PIN ส่วนตัว
+   เครดิตการนับยังแยกรายคนเพราะทุกอย่าง (leaderboard · purge · รายงานรายคน) อ่านจาก
+   rec.user ซึ่งมาจาก state.counter ที่เดียว → ให้ counterName() เป็นคนตัดสินชื่อที่เดียว
+
+   ⚠ PIN เป็น "soft identity" ไว้แยกเครดิต ไม่ใช่กำแพงความปลอดภัย
+     ด่านจริงคือ role/perms ของบัญชี Firebase ตาม Rules · PIN 4 หลักเดาได้ 10,000 แบบ
+     และ stocktake2026/.read เปิดให้ทุกบัญชี active อ่านได้ทั้งต้น (cascade ลงลูก หดไม่ได้)
+     จึงเก็บแค่ pinHash = SHA-256(uid|opId|pin) ไม่เก็บ PIN ดิบ — กันการเปิดดูตรง ๆ ได้เท่านั้น
+     ผลข้างเคียงที่ตั้งใจ: ดู PIN เดิมย้อนหลังไม่ได้ ลืม = สุ่มใหม่
+
+   ชื่อที่ลง rec.user = "ชื่อผู้นับ · ชื่อบัญชีสาขา" — กันชื่อเล่นซ้ำข้ามสาขา
+   (เช่น "แนน" สองสาขา) ไม่ให้ leaderboard รวมเป็นคนเดียว และ purgeUserScans ที่จับคู่ด้วยชื่อ
+   ไม่ลบแถวของอีกคน · rec.op = "uid:opId" เป็นกุญแจถาวรเผื่อเปลี่ยนชื่อภายหลัง
+
+   บัญชีที่ไม่มีผู้นับ (state.operators ว่าง) = counterName() คืน me.name เดิม และไม่มี rec.op
+   = พฤติกรรมก่อน v2.48.0 เป๊ะ (guard: tests/test-operator-pin.js ข้อ [1]) */
+var OP_LS_PREFIX = 'isrd_op_';
+
+function opStoreKey() { return OP_LS_PREFIX + ((state.me && state.me.uid) || ''); }
+
+/* คืน Promise<hex64> · crypto.subtle มีเฉพาะ secure context (https / localhost)
+   GitHub Pages เป็น https อยู่แล้ว — ไม่มี = ปฏิเสธ ห้ามถอยไปเทียบ PIN ดิบ */
+function opPinHash(uid, opId, pin) {
+  if (!(window.crypto && window.crypto.subtle && window.TextEncoder)) {
+    return Promise.reject(new Error('NO_SUBTLE'));
+  }
+  var bytes = new TextEncoder().encode(String(uid) + '|' + String(opId) + '|' + String(pin));
+  return window.crypto.subtle.digest('SHA-256', bytes).then(function (buf) {
+    return Array.prototype.map.call(new Uint8Array(buf), function (b) {
+      return ('0' + b.toString(16)).slice(-2);
+    }).join('');
+  });
+}
+
+/* ลบผู้นับ = active:false ไม่ลบโหนดจริง เพราะแถว scan เก่ายังอ้างชื่อ/opId อยู่ */
+function opIsActive(op) { return !!op && op.active !== false; }
+
+function activeOperatorIds() {
+  return Object.keys(state.operators || {}).filter(function (id) {
+    return opIsActive(state.operators[id]);
+  });
+}
+
+function currentOperator() {
+  var id = state.currentOp;
+  var op = id ? (state.operators || {})[id] : null;
+  return opIsActive(op) ? op : null;
+}
+
+/* ชื่อบัญชีสาขาเอง — ใช้กับเอกสารทางการที่พิมพ์ไปเซ็น (ไม่ใช่ชื่อเล่นผู้นับ) */
+function accountName() { return (state.me && state.me.name) || state.counter || ''; }
+
+/* จุดเดียวที่ตัดสินชื่อผู้นับ — setMe / แก้ชื่อตัวเอง / เลือก-สลับผู้นับ ต้องเรียกผ่านนี่
+   ⚠ setMe ถูกเรียกซ้ำทุกครั้งที่ role poll รีเฟรชสิทธิ์ ถ้าตั้ง me.name ตรง ๆ
+   ชื่อผู้นับจะเด้งกลับเป็นชื่อบัญชีกลางกะเงียบ ๆ (guard: test-operator-pin ข้อ [5]) */
+function counterName() {
+  if (!state.me) return '';
+  var op = currentOperator();
+  return op ? String(op.name || '').trim() + ' · ' + state.me.name : state.me.name;
+}
+
+function operatorTag() {
+  return (state.me && currentOperator()) ? state.me.uid + ':' + state.currentOp : null;
+}
+
+function syncCounter() { state.counter = counterName(); }
+
+/* opId ที่จำไว้ในเครื่องหาย/ถูกปิดไปแล้ว → ล้างทิ้ง ต้องเลือก+ใส่ PIN ใหม่ */
+function restoreCurrentOp() {
+  var saved = null;
+  try { saved = localStorage.getItem(opStoreKey()); } catch (e) {}
+  if (saved && opIsActive((state.operators || {})[saved])) state.currentOp = saved;
+  else {
+    state.currentOp = null;
+    try { localStorage.removeItem(opStoreKey()); } catch (e) {}
+  }
+  syncCounter();
+}
+
+/* โหลดผู้นับของบัญชีนี้ · อ่านไม่สำเร็จ (เน็ตหลุด) = คงของเดิมไว้ ไม่ล้าง
+   ไม่งั้นเน็ตกระตุกครั้งเดียวชื่อผู้นับจะหลุดกลางกะ */
+function loadOperators() {
+  if (!state.me) return Promise.resolve(state.operators);
+  var uid = state.me.uid;
+  return db.get('operators/' + uid).then(function (rec) {
+    if (!state.me || state.me.uid !== uid) return state.operators;   // สลับบัญชีระหว่างรอ
+    state.operators = (rec && typeof rec === 'object') ? rec : {};
+    state.opsLoaded = true;
+    restoreCurrentOp();
+    return state.operators;
+  }, function () { return state.operators; });
+}
+
+/* ใส่ PIN ถูก → ตั้งผู้นับ คืน Promise<boolean> · PIN ไม่ต้อง unique เพราะเลือกชื่อก่อนแล้วเทียบกับชื่อนั้น */
+function setCurrentOp(opId, pin) {
+  var op = (state.operators || {})[opId];
+  if (!state.me || !opIsActive(op) || !/^[0-9]{4}$/.test(String(pin))) return Promise.resolve(false);
+  var uid = state.me.uid;
+  return opPinHash(uid, opId, pin).then(function (h) {
+    if (!state.me || state.me.uid !== uid || h !== op.pinHash) return false;
+    state.currentOp = opId;
+    try { localStorage.setItem(opStoreKey(), opId); } catch (e) {}
+    syncCounter();
+    return true;
+  });
+}
+
+/* ปุ่ม "สลับคน" (PR2) / ออกจากระบบ */
+function clearCurrentOp() {
+  state.currentOp = null;
+  try { localStorage.removeItem(opStoreKey()); } catch (e) {}
+  syncCounter();
+}
+
+/* ประตูชั้นฟังก์ชัน: บัญชีที่มีผู้นับ ต้องเลือกผู้นับก่อนเขียนงานนับ
+   PR1 นิยามไว้เฉย ๆ ยังไม่เสียบที่ไหน — เสียบพร้อมหน้าเลือกผู้นับใน PR2
+   (เสียบก่อนมี UI = บัญชีที่มีผู้นับจะติดล็อกโดยไม่มีทางเลือกคน) */
+function requireOperator(what) {
+  if (!activeOperatorIds().length || currentOperator()) return true;
+  toast((what || 'ทำรายการนี้ไม่ได้') + ' — ต้องเลือกผู้นับและใส่ PIN ก่อน', true);
+  return false;
+}
+
 function setMe(user, rec) {
+  /* คนละบัญชีกับที่โหลดผู้นับไว้ = ทิ้งของบัญชีเก่าทั้งหมด */
+  if (state.me && state.me.uid !== user.uid) {
+    state.operators = {}; state.currentOp = null; state.opsLoaded = false;
+  }
   state.me = {
     uid: user.uid,
     email: rec.email || user.email || '',
@@ -18983,7 +19125,7 @@ function setMe(user, rec) {
     /* สาขาที่ดูแล — ว่าง = เห็นทุกสาขา (ดู canSeeBranch) */
     branches: normBranchCodes(rec.branches)
   };
-  state.counter = state.me.name;      // ผู้นับ = ชื่อจากบัญชี ไม่ให้พิมพ์เอง
+  syncCounter();                      // ผู้นับ = ชื่อจากบัญชี (หรือผู้นับที่ใส่ PIN แล้ว) ไม่ให้พิมพ์เอง
   return state.me;
 }
 
@@ -19037,6 +19179,8 @@ function doLogout() {
     return presenceMarkOffline().then(function () {
       session.signOut();
       db.closeAll();
+      clearCurrentOp();       // ⭐ v2.48.0 ออกจากระบบ = ลืมผู้นับในเครื่องด้วย (ต้องก่อน state.me = null)
+      state.operators = {};
       state.me = null;
       state.counter = '';
       state.roundId = null;
@@ -19740,7 +19884,7 @@ function saveUserFieldChecked(uid, patchFields, opts) {
     }
     if (state.me && state.me.uid === uid && patchFields.name) {
       state.me.name = patchFields.name;
-      state.counter = patchFields.name;
+      syncCounter();          // ⭐ v2.48.0 ผู้นับที่เลือกอยู่ต้องไม่หลุด (ชื่อบัญชีเป็นท่อนหลัง)
       renderAccount();
       refreshNav();
     }
@@ -21563,6 +21707,8 @@ function startApp() {
   }, 15000);
   flushQueue();
   renderConnection();
+  /* ⭐ v2.48.0 ผู้นับของบัญชีนี้ — ไม่มี = {} พฤติกรรมเดิม · ได้ข้อมูลแล้ว restoreCurrentOp ตั้งชื่อให้เอง */
+  loadOperators().then(function () { try { renderJobBar(); } catch (e) {} });
 
   cacheFirstProducts();
   refreshBranches();
@@ -22101,7 +22247,7 @@ init();
            ทางแก้จริงอยู่นอกแอป — ไม่เดาต่อ
 
     Database Rules: ต้องวางใหม่ เพราะมี node cycles เพิ่ม ถ้าไม่วางจะนำเข้ายอดระบบไม่ได้
-    ไฟล์พร้อมก๊อปอยู่ที่ stocktake-rules-v2.1.6.json ที่รากโปรเจกต์ (ตรงกับบล็อกท้ายไฟล์นี้)
+    ไฟล์พร้อมก๊อปอยู่ที่ stocktake-rules-v2.1.7.json ที่รากโปรเจกต์ (ตรงกับบล็อกท้ายไฟล์นี้)
 
   v2.1.0 — Master ทั้งบริษัท · พิมพ์เร็วขึ้น · Export หลาย Job · role scanner
 
