@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.52.0">
+<meta name="version" content="2.52.1">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.52.0</title>
+<title>ISRD Stocktake v2.52.1</title>
 
 <style>
 /* v2.47.6 perf: ข้ามการวาดการ์ดรีเช็คที่ยังไม่เลื่อนไปเห็น (ลด jank list ยาวบนมือถือ) */
@@ -2131,7 +2131,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.50.0 — admin จัดการผู้นับทุกสาขาจากที่เดียว (targetUid) · แก้ปุ่ม ⚙️ ไม่โผล่บนหน้า Job ของ counter */
 /* ⭐ v2.51.0 — หน้าจัดการผู้นับ (admin): ช่องค้นหาสาขาแทน dropdown (กรองชื่อบัญชี+อีเมลสด) */
 /* ⭐ v2.52.0 — สิทธิ์ manageStaff (จัดการผู้ใช้ทั่วไป ไม่ใช่ admin) · Rules v2.1.8 กันยกระดับ ก-ช + D13 */
-var APP_VERSION = '2.52.0';
+var APP_VERSION = '2.52.1';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -14778,6 +14778,9 @@ function renderJobBar() {
   var bar = $('jobBar');
   var job = currentJob();
   bar.innerHTML = '';
+  /* ⭐ v2.52.1 — หน้าจัดการ/ตั้งค่า (Master) เป็นงานทะเบียนกลางข้ามทุกรอบนับ
+     แถบ job ล่าสุดที่ค้างอยู่ทำให้เข้าใจผิดว่ากำลังตั้งค่าให้บัญชี/รอบนั้น จึงซ่อนทั้งหน้า */
+  if (state.page === 'master') { bar.className = 'jobbar'; renderReopenBanner(); return; }
   if (!job) { bar.className = 'jobbar'; renderReopenBanner(); return; }
 
   var st = job.status || 'counting';
@@ -17053,6 +17056,8 @@ function showPage(name) {
   if (name === 'scan') renderScanPage();
   if (name === 'doc') { renderDoc(); refreshDocMeta(); }
   if (name === 'recheck') { renderRecheck(); startRecheckPoll(); }
+  /* ⭐ v2.52.1 — sync แถบ job เมื่อเปลี่ยนหน้า (ซ่อนในหน้า Master · showPage ไม่ได้เรียก refreshNav เสมอ) */
+  renderJobBar();
 }
 
 function refreshNav() {
