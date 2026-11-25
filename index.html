@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.52.2">
+<meta name="version" content="2.52.3">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.52.2</title>
+<title>ISRD Stocktake v2.52.3</title>
 
 <style>
 /* v2.47.6 perf: ข้ามการวาดการ์ดรีเช็คที่ยังไม่เลื่อนไปเห็น (ลด jank list ยาวบนมือถือ) */
@@ -2131,7 +2131,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.50.0 — admin จัดการผู้นับทุกสาขาจากที่เดียว (targetUid) · แก้ปุ่ม ⚙️ ไม่โผล่บนหน้า Job ของ counter */
 /* ⭐ v2.51.0 — หน้าจัดการผู้นับ (admin): ช่องค้นหาสาขาแทน dropdown (กรองชื่อบัญชี+อีเมลสด) */
 /* ⭐ v2.52.0 — สิทธิ์ manageStaff (จัดการผู้ใช้ทั่วไป ไม่ใช่ admin) · Rules v2.1.8 กันยกระดับ ก-ช + D13 */
-var APP_VERSION = '2.52.2';
+var APP_VERSION = '2.52.3';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -14941,12 +14941,141 @@ function scheduleRenderJobs() {
   });
 }
 
+/* ⭐ v2.52.3 (B) — อัปเดตการ์ดหน้า Job แบบ in-place เมื่อโครงสร้างชุดการ์ดเท่าเดิม
+   ต้นตอกระพริบ: renderJobs ทำ list.innerHTML='' วาดการ์ดใหม่ทั้งก้อนทุกครั้งที่ถูกเรียก
+   (เข้าหน้า Job = showPage + LITE roundIndex/cycles async มาคนละจังหวะ → วาดหลายรอบ) · coalesce rAF รวมได้เฉพาะในเฟรมเดียว
+   B: ถ้าโครงสร้าง (ลำดับ cycle/job + สถานะ/เลือก/ค้างนาน/เปิดแก้ + ตัวกรอง) เท่าเดิม
+   → อัปเดตเลข/แถบในการ์ด DOM เดิม ไม่ล้างทิ้ง = ไม่กระพริบ · โครงเปลี่ยนจริง (สร้าง/ลบ Job · กดแท็บ/ตัวกรอง) → ล้าง+วาดใหม่เหมือนเดิม */
+var _jobsSig = null;
+
+function jobsComputeView() {
+  var ids = Object.keys(state.roundIndex).filter(function (id) {
+    return !!state.roundIndex[id] && canSeeJob(state.roundIndex[id]);
+  });
+  var branches = {};
+  ids.forEach(function (id) {
+    var j = state.roundIndex[id];
+    if (state.jobFilter !== 'all' && (j.status || 'counting') !== state.jobFilter) return;
+    var name = jobBranchName(j);
+    if (name && name !== '-') branches[name] = jobBranchLabel(j);
+  });
+  var shown = ids.filter(function (id) {
+    var j = state.roundIndex[id];
+    if (state.jobFilter !== 'all' && (j.status || 'counting') !== state.jobFilter) return false;
+    if (state.jobBranch !== 'all' && jobBranchName(j) !== state.jobBranch) return false;
+    return true;
+  }).sort(function (a, b) {
+    return (state.roundIndex[b].createdAt || 0) - (state.roundIndex[a].createdAt || 0);
+  });
+  var groups = cycleGroups();
+  var order = [], seen = {};
+  shown.forEach(function (id) {
+    var cid = cycleOf(state.roundIndex[id]);
+    if (seen[cid]) return; seen[cid] = 1; order.push(cid);
+  });
+  return { ids: ids, branches: branches, shown: shown, groups: groups, order: order };
+}
+
+function jobsViewSig(v) {
+  /* ⚠ ลายเซ็นต้องรวมทุกอย่างที่ทำให้ "การวาดการ์ด" ต่างออกไป — ตกหล่น in-place จะค้างของเก่า
+     สิทธิ์ (r/p): การ์ดมีปุ่มส่งตรวจ/เปิดแก้/ช่องติ๊ก+Excel ตาม hasPerm → สิทธิ์เปลี่ยนต้องวาดใหม่
+     สาขา (br): dropdown ตัวเลือกสาขาวาดเฉพาะทาง rebuild → สาขาใหม่ต้องเข้า rebuild
+     เผื่ออนาคต: ถ้าเพิ่มการ"แก้ชื่อรอบ/ประเภทคลัง"หลังสร้าง ต้องเติม field นั้นในลายเซ็นด้วย */
+  return JSON.stringify({
+    f: state.jobFilter, b: state.jobBranch,
+    r: myRole(), p: permsSig(myPerms()),
+    br: Object.keys(v.branches).sort().join('|'),
+    o: v.order.map(function (cid) {
+      var g = v.groups[cid] || {};
+      return {
+        c: cid, ac: !!g.allClosed, oc: g.openCount || 0, bc: g.branchCode || '', bn: g.branchName || '',
+        j: v.shown.filter(function (id) { return cycleOf(state.roundIndex[id]) === cid; }).map(function (id) {
+          var j = state.roundIndex[id];
+          return { i: id, s: j.status || 'counting', sel: id === state.roundId, st: isStaleJob(j), rp: reopenList(j).length };
+        })
+      };
+    })
+  });
+}
+
+function cycleProgText(st) {
+  if (!st) return 'อ่านยอดของรอบนี้ไม่ได้';
+  return !st.skuTotal
+    ? 'ยังไม่ได้นำเข้ายอดระบบของรอบนี้'
+    : ('ยิงแล้ว ' + fmtNum(st.skuScanned) + ' / ' + fmtNum(st.skuTotal) + ' SKU · ' +
+       fmtNum(st.pieces) + ' ชิ้น · %Success (ชิ้น) ' + fmtPercent(st.pctPieces) +
+       ' · (SKU) ' + fmtPercent(st.success));
+}
+
+function fillCycleProg(progEl, cid) {
+  if (!progEl) return;
+  loadCycleStats(cid).then(function (st) {
+    if (progEl.isConnected === false) return;
+    progEl.textContent = cycleProgText(st);
+  }).catch(function () {});
+}
+
+function fillJobCardStats(card, id) {
+  if (!card) return;
+  var j = state.roundIndex[id];
+  if (!j) return;
+  var fill = card.querySelector('.j-bar > i');
+  function applyStat(stat, cyc) {
+    if (!stat) return;
+    var e;
+    if ((e = card.querySelector('[data-prog=sku]'))) e.textContent = fmtNum(stat.skuScanned);
+    if ((e = card.querySelector('[data-prog=pieces]'))) e.textContent = fmtNum(stat.pieces);
+    if ((e = card.querySelector('[data-prog=success]'))) e.textContent = stat.lastTs ? fmtTime(stat.lastTs) : 'ยังไม่ได้ยิง';
+    var share = (cyc && cyc.pieces) ? Math.round(stat.pieces / cyc.pieces * 100) : 0;
+    if (fill) fill.style.width = Math.min(100, share) + '%';
+  }
+  var cachedStat = cachedJobStats(id);
+  if (cachedStat) applyStat(cachedStat, state.cycleStats[cycleOf(j)]);
+  var fresh = jobStatsFresh(id);
+  Promise.all([
+    fresh ? Promise.resolve(cachedStat) : refreshJobStats(id),
+    loadCycleStats(cycleOf(j))
+  ]).then(function (res) {
+    var stat = res[0], cyc = res[1];
+    if (stat) applyStat(stat, cyc);
+    else if (!cachedStat) {
+      ['sku', 'pieces', 'success'].forEach(function (pk) {
+        var el = card.querySelector('[data-prog=' + pk + ']');
+        if (el) el.textContent = '⟳';
+      });
+      card.title = 'โหลดสถิติไม่สำเร็จ — เปิดใบนี้แล้วกลับมา หรือรีเฟรชหน้าอีกครั้ง';
+    }
+  }).catch(function () {});
+}
+
+function _findJobNode(list, attr, val) {
+  var ns = list.querySelectorAll('[' + attr + ']');
+  for (var i = 0; i < ns.length; i++) if (ns[i].getAttribute(attr) === val) return ns[i];
+  return null;
+}
+
+function jobsUpdateInPlace(v) {
+  var list = $('jobList');
+  v.order.forEach(function (cid) { fillCycleProg(_findJobNode(list, 'data-cycleprog', cid), cid); });
+  v.shown.forEach(function (id) { fillJobCardStats(_findJobNode(list, 'data-job', id), id); });
+}
+
 function renderJobs() {
   applyJobsPermissions();
   renderExportBar();
   document.querySelectorAll('[data-jstatus]').forEach(function (b) {
     b.className = 'btn sm ' + (b.getAttribute('data-jstatus') === state.jobFilter ? '' : 'grey');
   });
+
+  /* ⭐ v2.52.3 (B) — โครงสร้างชุดการ์ดเท่าเดิม → อัปเดตในที่ ไม่ล้าง DOM = ไม่กระพริบ */
+  var _v = jobsComputeView();
+  var _sig = jobsViewSig(_v);
+  var _jlist = $('jobList');
+  if (_sig === _jobsSig && _jlist.children.length && _jlist.querySelector('[data-job]')) {
+    jobsUpdateInPlace(_v);
+    return;
+  }
+  _jobsSig = _sig;
 
   /* ข้ามเรคอร์ดว่างตั้งแต่ต้น — ถ้าปล่อยให้ไปพังตอนอ่าน .status ข้างล่าง
      ฟังก์ชันจะโยนก่อนถึงบรรทัดล้างลิสต์ แล้วลิสต์เก่าจะค้างบนจอทั้งดุ้น
@@ -15026,16 +15155,9 @@ function renderJobs() {
     var prog = document.createElement('div');
     prog.className = 'cy-sub';
     prog.setAttribute('data-cycleprog', cid);
-    prog.textContent = 'กำลังรวมยอดของรอบนี้...';
+    prog.textContent = state.cycleStats[cid] ? cycleProgText(state.cycleStats[cid]) : 'กำลังรวมยอดของรอบนี้...';
     left.appendChild(t); left.appendChild(s); left.appendChild(prog);
-    loadCycleStats(cid).then(function (st) {
-      if (!st) { prog.textContent = 'อ่านยอดของรอบนี้ไม่ได้'; return; }
-      prog.textContent = !st.skuTotal
-        ? 'ยังไม่ได้นำเข้ายอดระบบของรอบนี้'
-        : ('ยิงแล้ว ' + fmtNum(st.skuScanned) + ' / ' + fmtNum(st.skuTotal) + ' SKU · ' +
-           fmtNum(st.pieces) + ' ชิ้น · %Success (ชิ้น) ' + fmtPercent(st.pctPieces) +
-           ' · (SKU) ' + fmtPercent(st.success));
-    });
+    fillCycleProg(prog, cid);
     var right = document.createElement('div');
     right.style.cssText = 'display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end';
     var chip = document.createElement('span');
@@ -15219,34 +15341,7 @@ function renderJobCard(id, list) {
        ไม่ใช่เทียบกับยอดระบบ เพราะยอดระบบเป็นของทั้งรอบนับ ไม่ใช่ของใบนี้ */
     /* v2.7.x — การ์ดต้องไม่ค้าง "..." บนเน็ตช้า: โชว์ค่าจากแคชทันที แล้วรีเฟรชเบื้องหลัง
        รีเฟรชใช้ getQuiet (ไม่เด้ง banner ออฟไลน์) ถ้าโหลดไม่สำเร็จก็ยังเห็นค่าเดิม */
-    function applyStat(stat, cyc) {
-      if (!stat) return;
-      card.querySelector('[data-prog=sku]').textContent = fmtNum(stat.skuScanned);
-      card.querySelector('[data-prog=pieces]').textContent = fmtNum(stat.pieces);
-      card.querySelector('[data-prog=success]').textContent =
-        stat.lastTs ? fmtTime(stat.lastTs) : 'ยังไม่ได้ยิง';
-      var share = (cyc && cyc.pieces) ? Math.round(stat.pieces / cyc.pieces * 100) : 0;
-      fill.style.width = Math.min(100, share) + '%';
-    }
-    var cachedStat = cachedJobStats(id);
-    if (cachedStat) applyStat(cachedStat, state.cycleStats[cycleOf(j)]);
-    /* ⭐ แคชเพิ่งโหลดมาไม่ถึง 30 วิ = ไม่ต้องยิงใหม่ (v2.7.9)
-       เดิมบังคับ refresh ทุกครั้งที่วาดการ์ด ทั้งที่ renderJobs() ถูกเรียกรัวมาก */
-    var fresh = jobStatsFresh(id);
-    Promise.all([
-      fresh ? Promise.resolve(cachedStat) : refreshJobStats(id),
-      loadCycleStats(cycleOf(j))
-    ]).then(function (res) {
-      var stat = res[0], cyc = res[1];
-      if (stat) applyStat(stat, cyc);
-      else if (!cachedStat) {
-        ['sku', 'pieces', 'success'].forEach(function (pk) {
-          var el = card.querySelector('[data-prog=' + pk + ']');
-          if (el) el.textContent = '⟳';
-        });
-        card.title = 'โหลดสถิติไม่สำเร็จ — เปิดใบนี้แล้วกลับมา หรือรีเฟรชหน้าอีกครั้ง';
-      }
-    }).catch(function () {});
+    fillJobCardStats(card, id);
 
   });
 }
