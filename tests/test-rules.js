@@ -27,7 +27,7 @@ function check(name, ok, got) {
   else { fail++; console.log('  FAIL  ' + name + '  ->  ' + JSON.stringify(got)); }
 }
 
-const RULES_FILE = path.join(__dirname, '..', 'stocktake-rules-v2.1.7.json');
+const RULES_FILE = path.join(__dirname, '..', 'stocktake-rules-v2.1.8.json');
 const rules = JSON.parse(fs.readFileSync(RULES_FILE, 'utf8'));
 
 /* ---------- จำลองฐานข้อมูลเท่าที่กฎอ้างถึง ---------- */
@@ -459,16 +459,18 @@ check('⭐ ติ๊กครบทุก cap ก็ยังลบแถว sca
             incoming: null }) === false;
       }), 'delete outside counting');
 
-console.log('\n[8d] ทะเบียนผู้ใช้ — ไม่มี cap ไหนปลดล็อกได้ (admin เท่านั้น)');
-check('⭐ custom ที่ติ๊กครบทุกช่องก็เขียน users/ ไม่ได้',
+console.log('\n[8d] ทะเบียนผู้ใช้ — 16 cap เดิมไม่มีตัวไหนปลดล็อกได้ (เปิดเฉพาะ manageStaff ดูข้อ [15])');
+check('⭐ custom ที่ติ๊กครบ 16 ช่องเดิม (ไม่มี manageStaff) ก็เขียน users/ ไม่ได้',
       canWriteCaps(S.users.$uid['.write'], ALL_CAPS, 'counting',
         { incoming: { name: 'x', role: 'counter', active: true } }) === false, 'users');
-check('นิพจน์ users/ ไม่มีการอ้าง perms เลย', !/perms\//.test(S.users.$uid['.write']),
+/* ⭐ v2.52.0 tripwire เดิม "ไม่มีการอ้าง perms เลย" เปลี่ยนแบบตั้งใจ — ประตูเดียวคือ perms/manageStaff */
+check('นิพจน์ users/ เปิดให้ non-admin ผ่าน perms/manageStaff เท่านั้น',
+      /perms\/manageStaff'\)\.val\(\) === true && \$uid !== auth\.uid/.test(S.users.$uid['.write']),
       S.users.$uid['.write'].slice(0, 60));
 check("role/.validate ยอมรับ custom",
       /custom/.test(S.users.$uid.role['.validate']), S.users.$uid.role['.validate']);
-check('perms รับเฉพาะ boolean',
-      S.users.$uid.perms.$cap['.validate'] === 'newData.isBoolean()', S.users.$uid.perms);
+check('perms รับเฉพาะ boolean (+ whitelist · มอบได้เฉพาะที่ตัวเองถือ ดูข้อ [15])',
+      /^newData\.isBoolean\(\) && /.test(S.users.$uid.perms.$cap['.validate']), S.users.$uid.perms);
 
 console.log('\n[8e] custom ที่ไม่ติ๊กอะไรเลย = เขียนไม่ได้สักที่');
 const emptyLeaks = [];
@@ -949,17 +951,91 @@ check('[R5] ฟิลด์แปลกปลอมเขียนไม่ไ�
 check('[R5] operators ไม่มี .read ที่หลอกตาว่าจำกัดได้ (cascade)',
       !(S.operators && S.operators['.read']) && !(O && O['.read']), S.operators);
 
-/* [R6] ต้องเป็น "เพิ่มโหนดใหม่อย่างเดียว" — กฎเดิมของ scans/users/settings/wms2026 ห้ามขยับ
+/* ⭐ v2.52.0 (Rules v2.1.8) users/$uid เปลี่ยนแบบตั้งใจ (manageStaff) → ลายนิ้วมือข้างล่างไม่รวม users แล้ว
+   กติกา users ทั้งชุดคุมที่ข้อ [15] แทน · ส่วนอื่นยังต้องตรง v2.1.6 ทุกตัวอักษร
+   [R6] ต้องเป็น "เพิ่มโหนดใหม่อย่างเดียว" — กฎเดิมของ scans/settings/wms2026 ห้ามขยับ
    ค่าลายนิ้วมือคำนวณจาก stocktake-rules-v2.1.6.json (ใบก่อนหน้า) ตรงกับ v2.1.7 ทุกตัวอักษร
    ถ้าตั้งใจแก้กฎพวกนี้ในอนาคต ต้องอัปเดตค่านี้พร้อมเหตุผล ไม่ใช่แก้ให้เขียวเฉย ๆ */
-console.log('\n[R6] กฎเดิม (scans/users/settings/wms2026) ไม่เปลี่ยนจาก v2.1.6');
-const FP_V216 = 'aadb62ffdb1484ab28b8928eb465b862df2a608d5050f1956bdd0619eb591625';
+console.log('\n[R6] กฎเดิม (scans/settings/wms2026) ไม่เปลี่ยนจาก v2.1.6');
+const FP_V216 = '1fe8462a069aab10922312a26fecafb1e00e1a4a36101f71e0790d2360fac214';
 const fpNow = require('crypto').createHash('sha256').update(JSON.stringify({
-  wms2026: rules.rules.wms2026, users: S.users, settings: S.settings, scans: R.scans
+  wms2026: rules.rules.wms2026, settings: S.settings, scans: R.scans
 })).digest('hex');
 check('[R6] ลายนิ้วมือกฎเดิมตรงกับ v2.1.6', fpNow === FP_V216, fpNow);
 check('[R6] ยังมีบล็อก wms2026 เปิดอ่าน/เขียนเหมือนเดิม',
       rules.rules.wms2026 && rules.rules.wms2026['.read'] === true && rules.rules.wms2026['.write'] === true, rules.rules.wms2026);
+
+/* ============================================================
+   [15] ⭐ v2.52.0 (Rules v2.1.8) users/$uid — จัดการผู้ใช้แบบจำกัด (manageStaff)
+   ============================================================
+   ตารางเคสอยู่ที่ tests/_staff-cases.js ใช้ร่วมกับ test-perms (staffWriteCheck ในแอป)
+   ต้องตอบตรงกันทั้งสองฝั่งทุกเคส · ประเมิน .write ของ users/$uid + .validate ของทุก cap ที่เขียน true
+   + .validate ของเรคอร์ด (hasChildren) และ role — เหมือนที่ RTDB ทำจริงตอนเขียน */
+console.log('\n[15] users/$uid — manageStaff · ข้อห้าม ก-ช + D13 (ตารางเคสร่วม)');
+const STAFF = require('./_staff-cases');
+const UU = S.users.$uid;
+function staffRulesAllow(c) {
+  const db = { stocktake2026: { users: { u_me: c.me } } };
+  if (c.target !== 'u_me' && c.old) db.stocktake2026.users[c.target] = c.old;
+  const auth = { uid: 'u_me' };
+  const data = snap(c.old === null ? undefined : c.old);
+  const nd = snap(c.next === null ? undefined : c.next);
+  const w = new Function('root', 'auth', 'data', 'newData', '$uid', 'return (' + UU['.write'] + ');');
+  if (!w(snap(db), auth, data, nd, c.target)) return false;
+  if (c.next) {
+    if (!new Function('newData', 'return (' + UU['.validate'] + ');')(nd)) return false;
+    if (!new Function('newData', 'return (' + UU.role['.validate'] + ');')(snap(c.next.role))) return false;
+  }
+  const v = new Function('root', 'auth', 'newData', '$cap', 'return (' + UU.perms.$cap['.validate'] + ');');
+  return (c.granted || []).every(function (cap) { return !!v(snap(db), auth, snap(true), cap); });
+}
+STAFF.CASES.forEach(function (c) {
+  const got = staffRulesAllow(c);
+  check('[' + c.id + '] ' + c.name + ' → ' + (c.want ? 'อนุญาต' : 'ปฏิเสธ'), got === c.want, { got: got, want: c.want });
+});
+
+/* ชั้น validate ของ perms/$cap ต้องกันได้เอง (ไม่พึ่ง .write) — เผื่อวันหนึ่งมีคนเปิด .write ให้หลวมลง */
+console.log('\n[15b] perms/$cap .validate กันเองได้ทุกข้อ (ไม่พึ่ง .write)');
+const capV = new Function('root', 'auth', 'newData', '$cap', 'return (' + UU.perms.$cap['.validate'] + ');');
+const dbD = { stocktake2026: { users: { u_me: STAFF.ME.D } } };
+const dbA = { stocktake2026: { users: { u_me: STAFF.ME.admin } } };
+check('[15b] delegate เขียน perms/manageStaff = true → validate ปฏิเสธเอง', !capV(snap(dbD), { uid: 'u_me' }, snap(true), 'manageStaff'), 'ms');
+check('[15b] delegate เขียน cap ที่ไม่ถือ (deleteJob) → validate ปฏิเสธเอง', !capV(snap(dbD), { uid: 'u_me' }, snap(true), 'deleteJob'), 'del');
+check('[15b] delegate เขียน cap ที่ถือ (docs) → validate ผ่าน', !!capV(snap(dbD), { uid: 'u_me' }, snap(true), 'docs'), 'docs');
+check('[15b] เขียน false ได้เสมอ (ปลดสิทธิ์)', !!capV(snap(dbD), { uid: 'u_me' }, snap(false), 'deleteJob'), 'false');
+check('[15b] admin เขียน manageStaff ได้ · คีย์นอก whitelist ไม่ได้',
+      !!capV(snap(dbA), { uid: 'u_me' }, snap(true), 'manageStaff') && !capV(snap(dbA), { uid: 'u_me' }, snap(true), 'manageUsers'), 'admin');
+check('[15b] ค่าไม่ใช่ boolean ไม่ได้', !capV(snap(dbA), { uid: 'u_me' }, snap('true'), 'docs'), 'str');
+
+console.log('\n[R10] bootstrap เดิม + โหนดอื่นไม่เปลี่ยนจาก v2.1.7');
+check('[R10] bootstrap: ฐานยังไม่มีผู้ใช้ → คนแรกตั้งตัวเองเป็น admin ได้', (function () {
+  const w = new Function('root', 'auth', 'data', 'newData', '$uid', 'return (' + UU['.write'] + ');');
+  return !!w(snap({ stocktake2026: {} }), { uid: 'u_me' }, snap(undefined),
+             snap({ name: 'x', role: 'admin', active: true }), 'u_me');
+})(), 'bootstrap');
+check('[R10] bootstrap ตั้งคนอื่นเป็น admin ไม่ได้', (function () {
+  const w = new Function('root', 'auth', 'data', 'newData', '$uid', 'return (' + UU['.write'] + ');');
+  return !w(snap({ stocktake2026: {} }), { uid: 'u_me' }, snap(undefined),
+            snap({ name: 'x', role: 'admin', active: true }), 'u_other');
+})(), 'bootstrap other');
+check('[R10] ไม่ได้ล็อกอิน เขียน users ไม่ได้', (function () {
+  try {
+    const w = new Function('root', 'auth', 'data', 'newData', '$uid', 'return (' + UU['.write'] + ');');
+    return !w(snap({ stocktake2026: { users: { u_me: STAFF.ME.D } } }), null, snap(undefined), snap(STAFF.REC.viewer), 't1');
+  } catch (e) { return true; }
+})(), 'anon');
+/* ลายนิ้วมือของ Rules ทั้งไฟล์ "ยกเว้น users" ต้องเท่ากับ v2.1.7 (คำนวณจากไฟล์ v2.1.7 ก่อน rename)
+   = v2.1.8 แตะแค่ users/$uid จริง ไม่มีโหนดอื่นขยับ */
+const FP_NON_USERS_V217 = '307fe4ec29b501064960993eae1f7addaeb4672c0683945f6ad8b56080288f4e';
+const fpNonUsers = (function () {
+  const c = JSON.parse(JSON.stringify(rules.rules)); delete c.stocktake2026.users;
+  return require('crypto').createHash('sha256').update(JSON.stringify(c)).digest('hex');
+})();
+check('[R10] Rules ทั้งไฟล์ยกเว้น users ตรงกับ v2.1.7 ทุกตัวอักษร', fpNonUsers === FP_NON_USERS_V217, fpNonUsers);
+check('[R10] whitelist ใน perms/$cap ครบ 17 cap ของแอป (16 เดิม + manageStaff)', (function () {
+  const m = /\$cap\.matches\(\/\^\(([^)]+)\)\$\/\)/.exec(UU.perms.$cap['.validate']);
+  return !!m && m[1].split('|').sort().join() === ALL_CAPS.concat(['manageStaff']).sort().join();
+})(), UU.perms.$cap['.validate'].slice(0, 80));
 
 console.log('\n==== ' + pass + ' passed, ' + fail + ' failed ====');
 process.exit(fail ? 1 : 0);

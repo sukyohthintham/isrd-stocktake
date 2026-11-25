@@ -12,7 +12,7 @@
       "users": {
         ".read": "auth != null",
         "$uid": {
-          ".write": "auth != null && ((root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin') || (!root.child('stocktake2026/users').exists() && $uid === auth.uid && newData.child('role').val() === 'admin' && newData.child('active').val() === true))",
+          ".write": "auth != null && ((root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin') || (!root.child('stocktake2026/users').exists() && $uid === auth.uid && newData.child('role').val() === 'admin' && newData.child('active').val() === true) || (root.child('stocktake2026/users').child(auth.uid).child('active').val() === true && root.child('stocktake2026/users').child(auth.uid).child('perms/manageStaff').val() === true && $uid !== auth.uid && data.child('role').val() !== 'admin' && data.child('perms/manageStaff').val() !== true && newData.exists() && newData.child('role').val() !== 'admin' && newData.child('perms/manageStaff').val() !== true && (data.child('active').val() !== false || newData.child('active').val() === false) && (newData.child('role').val() !== 'counter' || (root.child('stocktake2026/users').child(auth.uid).child('perms/scan').val() === true && root.child('stocktake2026/users').child(auth.uid).child('perms/seeSystemQty').val() === true && root.child('stocktake2026/users').child(auth.uid).child('perms/createJob').val() === true && root.child('stocktake2026/users').child(auth.uid).child('perms/closeJob').val() === true && root.child('stocktake2026/users').child(auth.uid).child('perms/importSysQty').val() === true && root.child('stocktake2026/users').child(auth.uid).child('perms/viewSummary').val() === true && root.child('stocktake2026/users').child(auth.uid).child('perms/docs').val() === true && root.child('stocktake2026/users').child(auth.uid).child('perms/viewMasterLoc').val() === true && root.child('stocktake2026/users').child(auth.uid).child('perms/editDoc').val() === true && root.child('stocktake2026/users').child(auth.uid).child('perms/adjustCount').val() === true && root.child('stocktake2026/users').child(auth.uid).child('perms/approveRecheck').val() === true)) && (newData.child('role').val() !== 'scanner' || root.child('stocktake2026/users').child(auth.uid).child('perms/scan').val() === true)))",
           ".validate": "!newData.exists() || newData.hasChildren(['name','role','active'])",
           "name": {
             ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length < 120"
@@ -28,7 +28,7 @@
           },
           "perms": {
             "$cap": {
-              ".validate": "newData.isBoolean()"
+              ".validate": "newData.isBoolean() && $cap.matches(/^(scan|seeSystemQty|createJob|closeJob|approveRecheck|editMaster|editLocation|importSysQty|adjustCount|viewSummary|docs|editDoc|viewMasterLoc|deleteJob|reopenRound|purgeUser|manageStaff)$/) && (root.child('stocktake2026/users').child(auth.uid).child('role').val() === 'admin' || newData.val() === false || ($cap !== 'manageStaff' && root.child('stocktake2026/users').child(auth.uid).child('perms').child($cap).val() === true))"
             }
           }
         }

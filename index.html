@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.51.0">
+<meta name="version" content="2.52.0">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.51.0</title>
+<title>ISRD Stocktake v2.52.0</title>
 
 <style>
 /* v2.47.6 perf: ข้ามการวาดการ์ดรีเช็คที่ยังไม่เลื่อนไปเห็น (ลด jank list ยาวบนมือถือ) */
@@ -2130,7 +2130,8 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.49.0 — ผู้นับ + PIN (PR2 หน้าจอ): #opPick คีย์แพด · แถบผู้นับ · ⚙️ จัดการ (reauth) · เสียบ requireOperator */
 /* ⭐ v2.50.0 — admin จัดการผู้นับทุกสาขาจากที่เดียว (targetUid) · แก้ปุ่ม ⚙️ ไม่โผล่บนหน้า Job ของ counter */
 /* ⭐ v2.51.0 — หน้าจัดการผู้นับ (admin): ช่องค้นหาสาขาแทน dropdown (กรองชื่อบัญชี+อีเมลสด) */
-var APP_VERSION = '2.51.0';
+/* ⭐ v2.52.0 — สิทธิ์ manageStaff (จัดการผู้ใช้ทั่วไป ไม่ใช่ admin) · Rules v2.1.8 กันยกระดับ ก-ช + D13 */
+var APP_VERSION = '2.52.0';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -3790,7 +3791,7 @@ function cycleInfo(cid) { return (state.cycles[cid] || {}).info || {}; }
 function cycleMigrated(cid) { return Number(cycleInfo(cid).schema) >= 1; }
 
 /* ⭐ v2.11.1 — ย้ายข้อมูลขึ้นรอบนับได้เฉพาะรอบที่ยัง "นับอยู่" เท่านั้น
-   ตาม stocktake-rules-v2.1.7.json:
+   ตาม stocktake-rules-v2.1.8.json:
      cycles/$cid/systemQty  เขียนได้เมื่อ status ยังไม่มี หรือเป็น counting
      cycles/$cid/info       เขียนได้เมื่อ status ไม่ใช่ closed
    รอบที่ปิดหรือกำลังตรวจจึงถูกปฏิเสธ แล้วมันจะไม่ถูกทำเครื่องหมายว่าย้ายแล้ว
@@ -5297,7 +5298,11 @@ var CAP_GROUPS = [
   { label: 'ผู้ดูแล', caps: [
     { key: 'deleteJob',   label: 'ลบ Job',              help: 'ใช้ตอนสร้าง Job ผิดเท่านั้น' },
     { key: 'reopenRound', label: 'เปิดรอบที่ปิดแล้ว',     help: 'รวมถึงแก้ข้อมูลของรอบที่ปิดไปแล้ว' },
-    { key: 'purgeUser',   label: 'ล้างยอดของผู้ใช้ในรอบ',  help: 'ลบแถวการนับถาวร เก็บสำเนาไว้ที่ purgeLog' }
+    { key: 'purgeUser',   label: 'ล้างยอดของผู้ใช้ในรอบ',  help: 'ลบแถวการนับถาวร เก็บสำเนาไว้ที่ purgeLog' },
+    /* ⭐ v2.52.0 — มอบงานสร้าง/แก้ผู้ใช้ให้คนที่ไว้ใจ โดยกันการยกระดับ (ดู staffWriteCheck + Rules v2.1.8)
+       ไม่ใช่ manageUsers เดิม — manageUsers ยังเป็นของ admin เท่านั้นตลอดไป (hasPerm ลัดเป็น isAdmin) */
+    { key: 'manageStaff', label: 'จัดการผู้ใช้ทั่วไป (ไม่ใช่ admin)',
+      help: 'สร้าง/แก้/รีเซ็ตรหัส ผู้ใช้ที่ไม่ใช่ admin · มอบได้เฉพาะความสามารถที่ตัวเองมี · แก้บัญชีตัวเองไม่ได้' }
   ] }
 ];
 
@@ -5376,7 +5381,8 @@ function canSeeDoc() { return hasPerm('docs'); }
    ถ้าเช็คแค่ viewMasterLoc คนที่ติ๊กมาเฉพาะ editLocation จะเข้าหน้าไม่ได้เลย
    แล้วอัปโหลด Location ไม่ได้ทั้งที่ติ๊กให้แล้ว — แท็บย่อยเช็คสิทธิ์ของตัวเองอีกชั้น */
 function canSeeMasterPage() {
-  return hasPerm('viewMasterLoc') || hasPerm('editMaster') || hasPerm('editLocation') || isAdmin();
+  /* ⭐ v2.52.0 + canManageStaff — แท็บผู้ใช้อยู่ในหน้า Master (ข้อมูลอื่นซ่อนถ้าไม่มีสิทธิ์ดู ดู renderAccount) */
+  return canSeeMasterData() || canManageStaff();
 }
 
 /* หน้าแรกที่สิทธิ์นี้เข้าได้จริง — ใช้ตอนถูกเด้งออกจากหน้าที่ไม่มีสิทธิ์
@@ -5423,6 +5429,93 @@ function requireAdmin(what) {
   if (isAdmin()) return true;
   toast(roleBlockMessage(what), true);
   return false;
+}
+
+/* ============================================================
+   ⭐ v2.52.0 จัดการผู้ใช้แบบจำกัด (manageStaff)
+   ============================================================
+   ทำไมกฎบ้าน "manageUsers = admin เท่านั้น" ยังจริงอยู่ และ manageStaff ไม่ขัดกับมัน:
+   เหตุผลเดิมคือ "ใครแก้ทะเบียนผู้ใช้ได้ ก็ติ๊กทุกช่องให้ตัวเองได้" → manageStaff ปิดทางนั้นด้วย
+     (ฉ) แก้บัญชีตัวเองไม่ได้ · (ง) มอบได้เฉพาะความสามารถที่ตัวเองถืออยู่
+     (ก) ตั้ง admin ไม่ได้ · (ข) มอบ manageStaff ไม่ได้ · (ค) แตะบัญชี admin ไม่ได้
+     (ช) แตะคนที่ถือ manageStaff ไม่ได้ · ลบเรคอร์ดไม่ได้ · เปิดบัญชีที่ปิดไว้ไม่ได้ (D13)
+     (จ) role counter/scanner ให้สิทธิ์ผ่าน role.matches ใน Rules เอง → ต้องถือ cap ครบตามแม่แบบ
+   ⚠ staffWriteCheck ต้อง "ตรงกับ Rules v2.1.8 users/$uid เป๊ะ" — ตารางเคสเดียวกันป้อนทั้ง
+     tests/test-perms.js และ tests/test-rules.js · แก้ข้างหนึ่งต้องแก้อีกข้างเสมอ */
+function canManageStaff() { return isAdmin() || hasPerm('manageStaff'); }
+
+function requireStaffManager(what) {
+  touchRoleCheck();
+  if (canManageStaff()) return true;
+  toast(roleBlockMessage(what), true);
+  return false;
+}
+
+/* เรคอร์ดของผู้เขียน "ตามที่ Rules เห็น" — Rules อ่าน perms ที่เก็บจริงเท่านั้น ไม่แปลงจาก role
+   (delegate มี perms node แน่นอน เพราะ manageStaff ไม่อยู่ในแม่แบบ role ไหนเลย ต้องติ๊กเอง) */
+function staffMe() {
+  var me = state.me || {};
+  return { uid: me.uid, role: me.role, active: !!state.me, perms: me.perms || {} };
+}
+
+/* คืน '' = เขียนได้ · ไม่งั้นเหตุผลภาษาคน
+   oldRec = เรคอร์ดเดิมในฐาน (null = สร้างใหม่) · newRec = เรคอร์ดหลังเขียน (null = ลบ)
+   granted = cap ที่ "เขียนเป็น true ในคำขอนี้" — Rules .validate ตรวจเฉพาะเส้นทางที่เขียน
+   (cap เดิมที่ไม่ได้แตะ ไม่ถูกตรวจซ้ำ ต้องเลียนแบบให้ตรง ไม่งั้นจอกับฐานตอบไม่ตรงกัน) */
+function staffWriteCheck(targetUid, oldRec, newRec, granted, me) {
+  me = me || staffMe();
+  if (!me || !me.active) return 'บัญชีของคุณยังโหลดไม่เสร็จหรือถูกปิดใช้งาน';
+  var mp = me.perms || {};
+  var P = function (c) { return mp[c] === true; };
+  /* ชื่อ cap ต้องอยู่ในรายการเสมอ แม้เป็น admin (Rules whitelist ตรวจทุกคน) */
+  var unknown = (granted || []).filter(function (c) { return CAPS.indexOf(c) < 0; });
+  if (unknown.length) return 'ความสามารถที่ระบบไม่รู้จัก: ' + unknown.join(', ');
+  if (me.role === 'admin') return '';
+  if (!P('manageStaff')) return 'ต้องมีสิทธิ์ "จัดการผู้ใช้ทั่วไป" ก่อน — ให้ผู้ดูแลระบบติ๊กให้';
+  if (targetUid === me.uid) return 'แก้บัญชีตัวเองไม่ได้ — ให้ผู้ดูแลระบบแก้ให้';
+  var o = oldRec || {};
+  if (o.role === 'admin') return 'บัญชีผู้ดูแลระบบ (admin) แก้ได้เฉพาะผู้ดูแลระบบ';
+  if ((o.perms || {}).manageStaff === true) return 'บัญชีที่จัดการผู้ใช้ได้ แก้ได้เฉพาะผู้ดูแลระบบ';
+  if (!newRec) return 'ลบบัญชีไม่ได้ — ใช้ "ปิดการใช้งาน" แทน';
+  if (newRec.role === 'admin') return 'ตั้งเป็นผู้ดูแลระบบ (admin) ไม่ได้ — เฉพาะผู้ดูแลระบบ';
+  if ((newRec.perms || {}).manageStaff === true) return 'มอบสิทธิ์ "จัดการผู้ใช้ทั่วไป" ไม่ได้ — เฉพาะผู้ดูแลระบบ';
+  if (oldRec && o.active === false && newRec.active !== false) return 'เปิดบัญชีที่ปิดไว้ไม่ได้ — ให้ผู้ดูแลระบบเปิดให้';
+  if (newRec.role === 'counter' && !ROLE_PERMS.counter.every(P)) {
+    return 'ตั้ง/แก้ผู้นับสต๊อกไม่ได้ — คุณต้องมีความสามารถครบทุกข้อของแม่แบบผู้นับสต๊อกก่อน';
+  }
+  if (newRec.role === 'scanner' && !P('scan')) return 'ตั้ง/แก้พนักงานยิงไม่ได้ — คุณต้องมีความสามารถ "ยิงบาร์โค้ด" ก่อน';
+  var over = (granted || []).filter(function (c) { return c === 'manageStaff' || !P(c); });
+  if (over.length) {
+    return 'มอบความสามารถที่คุณไม่มีไม่ได้: ' + over.map(function (c) { return CAP_LABEL[c] || c; }).join(', ');
+  }
+  return '';
+}
+
+/* แก้แถวนี้ได้ไหม (ไม่เปลี่ยนอะไร) — ใช้ตัดสินว่าแถวในหน้าผู้ใช้เป็นอ่านอย่างเดียวหรือไม่ */
+function staffRowLock(uid, rec) { return staffWriteCheck(uid, rec || null, rec || {}, []); }
+
+/* role ที่ผู้ใช้คนนี้ตั้งได้ (ตามแม่แบบของ role นั้น) */
+function staffRoleAllowed(uid, oldRec, role) {
+  var tpl = permsFromRole(role);
+  var rec = Object.assign({}, oldRec || { active: true, name: 'x' }, { role: role, perms: tpl });
+  return staffWriteCheck(uid, oldRec || null, rec, Object.keys(tpl)) === '';
+}
+
+/* กรองตัวเลือก role ในฟอร์มสร้าง/เพิ่มด้วย UID — delegate ไม่เห็น admin และ role ที่ตัวเองตั้งไม่ได้ */
+function staffApplyRoleSelect(sel) {
+  if (!sel) return;
+  var firstOk = null;
+  Array.prototype.forEach.call(sel.options, function (o) {
+    var ok = isAdmin() || staffRoleAllowed('__new__', null, o.value);
+    o.disabled = !ok; o.hidden = !ok;
+    if (ok && firstOk === null) firstOk = o.value;
+  });
+  if (sel.selectedOptions && sel.selectedOptions[0] && sel.selectedOptions[0].disabled && firstOk) sel.value = firstOk;
+}
+
+/* ดูข้อมูลในหน้า Master (นอกจากแท็บผู้ใช้) ได้ไหม — delegate ที่ไม่มีสิทธิ์ดู Master เห็นแค่แท็บผู้ใช้ */
+function canSeeMasterData() {
+  return hasPerm('viewMasterLoc') || hasPerm('editMaster') || hasPerm('editLocation') || isAdmin();
 }
 
 function canScan() { return !!state.roundId && jobStatus() === 'counting' && hasPerm('scan'); }
@@ -19952,14 +20045,22 @@ function renderAccount() {
     $('jobsAccountCard').style.display = canSeeMasterPage() ? 'none' : '';
   }
   renderOpManageButtons();          // ⭐ v2.49.0 ⚙️ จัดการผู้นับ ในการ์ดบัญชี
-  $('tabUsers').style.display = isAdmin() ? '' : 'none';
+  $('tabUsers').style.display = canManageStaff() ? '' : 'none';   // ⭐ v2.52.0 admin + manageStaff
   $('tabOnline').style.display = isAdmin() ? '' : 'none';
   $('tabNewcodes').style.display = hasPerm('editMaster') ? '' : 'none';
-  /* แท็บย่อยคนละสิทธิ์กัน — ผู้ใช้เป็นของ admin เท่านั้น บาร์โค้ดใหม่ผูกกับ editMaster */
-  if (((state.masterTab === 'users' || state.masterTab === 'online') && !isAdmin()) ||
+  /* ⭐ v2.52.0 delegate ที่ไม่มีสิทธิ์ดู Master — ซ่อนแท็บข้อมูล เหลือแท็บผู้ใช้อย่างเดียว */
+  var _md = canSeeMasterData();
+  ['products', 'branches', 'locations', 'shopzones'].forEach(function (t) {
+    var b = document.querySelector('[data-mtab="' + t + '"]');
+    if (b) b.style.display = _md ? '' : 'none';
+  });
+  /* แท็บย่อยคนละสิทธิ์กัน — ผู้ใช้ = admin/manageStaff · ออนไลน์ = admin · บาร์โค้ดใหม่ผูกกับ editMaster */
+  if ((state.masterTab === 'users' && !canManageStaff()) ||
+      (state.masterTab === 'online' && !isAdmin()) ||
       (state.masterTab === 'newcodes' && !hasPerm('editMaster'))) {
     state.masterTab = 'products';
   }
+  if (!_md && canManageStaff() && state.masterTab !== 'users') state.masterTab = 'users';
 }
 
 /* ---------- หน้า Master Location ---------- */
@@ -20581,7 +20682,7 @@ function activeAdminCount(excludeUid) {
 
 function refreshUsers() {
   /* ⭐ v2.41.5 counter ที่มอบงานรีเช็คได้ (adjustCount) ต้องอ่านทะเบียนคนเพื่อเลือกมอบ — Rules /users .read = auth!=null เปิดให้อยู่แล้ว (เขียนยังจำกัด admin) */
-  if (!isAdmin() && !hasPerm('adjustCount')) return Promise.resolve({});
+  if (!isAdmin() && !hasPerm('adjustCount') && !canManageStaff()) return Promise.resolve({});   // ⭐ v2.52.0 + manageStaff
   return db.get('users').then(function (data) {
     state.users = data || {};
     return state.users;
@@ -20592,7 +20693,16 @@ function refreshUsers() {
    ใช้ตอนติ๊กสาขา เพราะการวาดใหม่จะล้างคำค้นในกล่องสาขาและเด้งสกอลล์กลับหัวลิสต์
    ทุกครั้งที่ติ๊ก ซึ่งกำหนดสาขาให้คนที่ดูแล 5 สาขาแทบไม่ได้ */
 function saveUserField(uid, patchFields, opts) {
-  if (!requireAdmin('แก้ไขผู้ใช้ไม่ได้')) return Promise.resolve();
+  if (!requireStaffManager('แก้ไขผู้ใช้ไม่ได้')) return Promise.resolve();
+  /* ⭐ v2.52.0 delegate: ตรวจทุกครั้ง (ยืนยันสิทธิ์สดก่อนเสมอ) ด้วยกติกาเดียวกับ Rules */
+  if (!isAdmin()) {
+    return ensureRoleFresh({ force: true }).then(function () {
+      if (!requireStaffManager('แก้ไขผู้ใช้ไม่ได้')) return;
+      var why = staffPatchCheck(uid, patchFields);
+      if (why) { toast(why, true); return; }
+      return saveUserFieldChecked(uid, patchFields, opts);
+    });
+  }
   /* ⭐ v2.11.0 — การแก้สิทธิ์คนอื่นคือการกระทำที่แรงที่สุดในแอป ยืนยันสิทธิ์สดก่อนเสมอ
      v2.12.0 นับการติ๊ก perms เป็นการแก้สิทธิ์ด้วย ไม่ใช่เฉพาะตอนเปลี่ยน role */
   var touchesPower = patchFields && (patchFields.role !== undefined ||
@@ -20604,6 +20714,18 @@ function saveUserField(uid, patchFields, opts) {
     });
   }
   return saveUserFieldChecked(uid, patchFields, opts);
+}
+
+/* ⭐ v2.52.0 patch แบบ 'perms/scan' → จำลองเรคอร์ดหลังเขียน แล้วตรวจด้วย staffWriteCheck */
+function staffPatchCheck(uid, patchFields) {
+  var oldRec = state.users[uid] || null;
+  var next = JSON.parse(JSON.stringify(oldRec || {}));
+  var granted = [];
+  Object.keys(patchFields || {}).forEach(function (f) {
+    setDeep(next, f, patchFields[f]);
+    if (f.indexOf('perms/') === 0 && patchFields[f] === true) granted.push(f.slice(6));
+  });
+  return staffWriteCheck(uid, oldRec, next, granted);
 }
 
 /* เซ็ตค่าตาม path แบบ 'perms/scan' ลงในออบเจ็กต์ · null = ลบคีย์ทิ้ง (ให้ตรงกับที่ RTDB ทำ) */
@@ -20661,6 +20783,11 @@ function writeUserRecord(uid, name, email, role, branches) {
      รวมเป็นเขียนเดียว → "สำเร็จหรือไม่ก็ทั้งคู่" · ไม่ส่งมา (เพิ่มเดี่ยว/UID) = เหมือนเดิมเป๊ะ */
   var br = normBranchCodes(branches);
   if (br.length) rec.branches = br;
+  /* ⭐ v2.52.0 delegate: เรคอร์ดใหม่ทั้งก้อนต้องผ่านกติกาเดียวกับ Rules (ทุก cap ใน perms ถูกเขียน) */
+  if (!isAdmin()) {
+    var why = staffWriteCheck(uid, state.users[uid] || null, rec, Object.keys(rec.perms));
+    if (why) { toast(why, true); return Promise.reject(new Error('STAFF_DENIED')); }
+  }
   var patch = {};
   patch[uid] = rec;
   return db.update('users', patch).then(function () {
@@ -20672,11 +20799,17 @@ function writeUserRecord(uid, name, email, role, branches) {
 
 /* ---------- สร้างบัญชีใหม่จากในแอป ---------- */
 function createUserAccount() {
-  if (!requireAdmin('สร้างบัญชีผู้ใช้ไม่ได้')) return;
+  if (!requireStaffManager('สร้างบัญชีผู้ใช้ไม่ได้')) return;
   var name = $('newUserName').value.trim();
   var email = $('newUserMail').value.trim();
   var pass = $('newUserPass').value.trim();
   var role = $('newUserRole').value;
+  /* ⭐ v2.52.0 ตรวจ role ก่อนสร้างบัญชี Auth — ไม่งั้นได้บัญชีค้างครึ่งทางที่เขียนสิทธิ์ไม่ผ่าน */
+  if (!isAdmin() && !staffRoleAllowed('__new__', null, role)) {
+    toast(staffWriteCheck('__new__', null, { role: role, perms: permsFromRole(role), active: true }, Object.keys(permsFromRole(role))) ||
+          'ตั้งสิทธิ์นี้ไม่ได้', true);
+    return;
+  }
 
   if (!name) { toast('ใส่ชื่อ-นามสกุลก่อน', true); return; }
   if (!email) { toast('ใส่อีเมลสำหรับเข้าระบบก่อน', true); return; }
@@ -21018,7 +21151,12 @@ function renderBulkPreview() {
 /* สร้างจริง — ทีละคนเรียงกันไป (ไม่ยิงพร้อมกันเพื่อไม่ให้ Identity API รับไม่ไหว)
    เก็บผลไว้โชว์รหัสผ่านครั้งเดียวตอนจบ เพราะระบบไม่เก็บรหัสผ่านไว้ที่ไหน */
 function bulkUserCreate() {
-  if (!requireAdmin('สร้างบัญชีผู้ใช้ไม่ได้')) return;
+  if (!requireStaffManager('สร้างบัญชีผู้ใช้ไม่ได้')) return;
+  /* ⭐ v2.52.0 สร้างหมู่ = พนักงานยิง (scanner) เสมอ → delegate ต้องถือ "ยิงบาร์โค้ด" */
+  if (!isAdmin() && !staffRoleAllowed('__new__', null, 'scanner')) {
+    toast('สร้างพนักงานยิงไม่ได้ — คุณต้องมีความสามารถ "ยิงบาร์โค้ด" ก่อน', true);
+    return;
+  }
   var parsed = bulkParseRows($('bulkUserInput').value);
   if (!parsed.rows.length) { toast('ยังไม่มีข้อมูล วางจาก Excel ก่อน', true); return; }
   if (parsed.errCount) {
@@ -21160,7 +21298,7 @@ function showBulkResults(okR, failR) {
 
 /* ---------- เพิ่มด้วย UID (บัญชีที่มีอยู่แล้วใน Console) ---------- */
 function linkExistingUser() {
-  if (!requireAdmin('เพิ่มผู้ใช้ไม่ได้')) return;
+  if (!requireStaffManager('เพิ่มผู้ใช้ไม่ได้')) return;
   var uid = $('linkUserUid').value.trim();
   var name = $('linkUserName').value.trim();
   var email = $('linkUserMail').value.trim();
@@ -21176,14 +21314,20 @@ function linkExistingUser() {
     $('linkUserMail').value = '';
     toast('เพิ่ม ' + name + ' เป็น' + ROLE_LABEL[role] + 'แล้ว');
   }).catch(function () {
-    toast('เพิ่มผู้ใช้ไม่สำเร็จ ฐานข้อมูลปฏิเสธการเขียน — ตรวจว่าบัญชีคุณเป็น admin จริง', true);
+    toast('เพิ่มผู้ใช้ไม่สำเร็จ ฐานข้อมูลปฏิเสธการเขียน — ตรวจว่าบัญชีคุณมีสิทธิ์จัดการผู้ใช้ และสิทธิ์ที่เลือกไม่เกินของตัวเอง', true);
   });
 }
 
 /* ---------- รีเซ็ตรหัสผ่าน ---------- */
 function resetUserPassword(uid) {
-  if (!requireAdmin('รีเซ็ตรหัสผ่านไม่ได้')) return;
+  if (!requireStaffManager('รีเซ็ตรหัสผ่านไม่ได้')) return;
   var u = state.users[uid] || {};
+  /* ⭐ v2.52.0 delegate รีเซ็ตได้เฉพาะคนที่ตัวเองแก้ได้ (ไม่ใช่ admin / ไม่ใช่ตัวเอง / ไม่ใช่ delegate อื่น)
+     ลิงก์ไปที่อีเมลเจ้าของบัญชีเสมอ จึงไม่ใช่ช่องยกระดับ แต่กันให้ตรงขอบเขต "จัดการผู้ใช้ทั่วไป" */
+  if (!isAdmin()) {
+    var whyR = staffRowLock(uid, state.users[uid]);
+    if (whyR) { toast(whyR, true); return; }
+  }
   var email = String(u.email || '').trim();
 
   if (!email) {
@@ -21278,7 +21422,10 @@ function applyUserFilter() {
 }
 
 function renderUsers() {
-  if (!isAdmin()) return;
+  if (!canManageStaff()) return;                 // ⭐ v2.52.0 admin + manageStaff
+  var staffMode = !isAdmin();
+  staffApplyRoleSelect($('newUserRole'));
+  staffApplyRoleSelect($('linkUserRole'));
   var host = $('userList');
   host.innerHTML = '';
   var empty = document.createElement('div');
@@ -21357,6 +21504,18 @@ function renderUsers() {
     var ml = document.createElement('div'); ml.className = 'u-mail'; ml.textContent = u.email || '(ไม่ได้ใส่อีเมล)';
     var ui = document.createElement('div'); ui.className = 'u-uid'; ui.textContent = uid;
     body.appendChild(ml); body.appendChild(ui);
+    /* ⭐ v2.52.0 delegate: แถวที่แก้ไม่ได้ (admin / ตัวเอง / delegate อื่น / role ที่ตั้งไม่ได้) = อ่านอย่างเดียวทั้งแถว
+       ปิดทุกช่องบนจอ + บอกเหตุผล · ชั้นฟังก์ชัน (saveUserField) และ Rules กันซ้ำอีกสองชั้น */
+    var rowLock = staffMode ? staffRowLock(uid, u) : '';
+    if (rowLock) {
+      row.setAttribute('data-userlocked', '1');
+      var lockNote = document.createElement('div');
+      lockNote.className = 'banner';
+      lockNote.style.marginTop = '8px';
+      lockNote.setAttribute('data-userlock', uid);
+      lockNote.textContent = '🔒 ' + rowLock;
+      body.appendChild(lockNote);
+    }
 
     var nameLab = document.createElement('label');
     nameLab.className = 'fld';
@@ -21365,6 +21524,7 @@ function renderUsers() {
     var nameIn = document.createElement('input');
     nameIn.type = 'text'; nameIn.value = u.name || '';
     nameIn.setAttribute('data-action', 'name');
+    nameIn.disabled = !!rowLock;
     nameIn.onchange = function () {
       var v = this.value.trim();
       if (!v) { this.value = u.name || ''; toast('ชื่อว่างไม่ได้', true); return; }
@@ -21379,11 +21539,15 @@ function renderUsers() {
     var sel = document.createElement('select');
     sel.setAttribute('data-action', 'role');
     ['admin', 'counter', 'scanner', 'viewer', 'custom'].forEach(function (r) {
+      var cur = (u.role || 'counter') === r;
+      /* ⭐ v2.52.0 delegate: ซ่อน role ที่ตั้งไม่ได้ (admin เสมอ · counter/scanner ถ้าสิทธิ์ไม่ครบ) */
+      if (staffMode && !cur && !staffRoleAllowed(uid, u, r)) return;
       var o = document.createElement('option');
       o.value = r; o.textContent = ROLE_LABEL[r] + ' — ' + ROLE_HELP[r];
-      if ((u.role || 'counter') === r) o.selected = true;
+      if (cur) o.selected = true;
       sel.appendChild(o);
     });
+    sel.disabled = !!rowLock;
     sel.onchange = function () {
       if (me && this.value !== 'admin') {
         this.value = 'admin';
@@ -21463,7 +21627,11 @@ function renderUsers() {
         cb.type = 'checkbox';
         cb.setAttribute('data-permpick', c.key);
         cb.checked = permAdmin || live[c.key] === true;
-        cb.disabled = permAdmin;
+        /* ⭐ v2.52.0 delegate ติ๊กได้เฉพาะ cap ที่ตัวเองถือ · ช่อง manageStaff เป็นของ admin เท่านั้น */
+        var staffNo = staffMode && (c.key === 'manageStaff' || !hasPerm(c.key));
+        cb.disabled = permAdmin || !!rowLock || staffNo;
+        if (staffMode && c.key === 'manageStaff') lab.style.display = 'none';
+        if (staffNo && c.key !== 'manageStaff') lab.title = 'คุณไม่มีความสามารถนี้ จึงมอบให้คนอื่นไม่ได้';
         cb.onchange = function () {
           if (cb.checked) live[c.key] = true; else delete live[c.key];
           permHint.textContent = describePerms();
@@ -21486,8 +21654,10 @@ function renderUsers() {
     var permNote = document.createElement('div');
     permNote.className = 'muted';
     permNote.style.marginTop = '6px';
-    permNote.textContent = 'หมายเหตุ: การจัดการผู้ใช้และสิทธิ์เป็นของผู้ดูแลระบบเท่านั้น ' +
-                           'ไม่มีช่องให้ติ๊ก เพราะใครแก้ทะเบียนนี้ได้ก็เปิดสิทธิ์ทุกข้อให้ตัวเองได้อยู่ดี';
+    permNote.textContent = staffMode
+      ? 'หมายเหตุ: คุณมอบได้เฉพาะความสามารถที่ตัวเองมี · ตั้งเป็นผู้ดูแลระบบและมอบ "จัดการผู้ใช้ทั่วไป" ได้เฉพาะ admin'
+      : 'หมายเหตุ: "จัดการผู้ใช้ทั่วไป" มอบงานสร้าง/แก้ผู้ใช้ที่ไม่ใช่ admin ได้ — ผู้ถือแก้ตัวเองไม่ได้ ' +
+        'ตั้ง admin ไม่ได้ และมอบได้เฉพาะความสามารถที่ตัวเองมี (ตั้ง admin ยังเป็นของผู้ดูแลระบบเท่านั้น)';
 
     /* ---------- สาขาที่ดูแล ----------
        ไม่ติ๊กเลย = เห็นทุกสาขา (เท่ากับพฤติกรรมเดิมก่อนมีฟิลด์นี้)
@@ -21519,6 +21689,7 @@ function renderUsers() {
     brSearch.setAttribute('data-action', 'branchsearch');
     brSearch.setAttribute('autocomplete', 'off');
     brSearch.placeholder = 'ค้นหาสาขา (รหัสหรือชื่อ)';
+    brSearch.disabled = !!rowLock;            // ⭐ v2.52.0 แถวอ่านอย่างเดียว = ปิดทุกช่อง (ช่องค้นหาไม่เขียนอะไร แต่ให้ดูไม่หลอกตา)
     brBox.appendChild(brSearch);
 
     var brList = document.createElement('div');
@@ -21551,6 +21722,7 @@ function renderUsers() {
         cb.type = 'checkbox';
         cb.setAttribute('data-branchpick', o.code);
         cb.checked = picked.indexOf(o.code) >= 0;
+        cb.disabled = !!rowLock;
         cb.onchange = function () {
           var i = picked.indexOf(o.code);
           if (cb.checked && i < 0) picked.push(o.code);
@@ -21586,6 +21758,7 @@ function renderUsers() {
     rst.setAttribute('data-action', 'reset');
     rst.textContent = '🔑 รีเซ็ตรหัสผ่าน';
     rst.onclick = function () { resetUserPassword(uid); };
+    rst.disabled = !!rowLock;
     body.appendChild(rst);
 
     /* บัญชีตัวเองไม่ต้องมีปุ่มปิด — กดไปก็โดนปฏิเสธ และเป็นทางที่ล็อกตัวเองออกได้ */
@@ -21595,6 +21768,9 @@ function renderUsers() {
       act.style.marginTop = '8px';
       act.setAttribute('data-action', 'active');
       act.textContent = u.active === false ? 'เปิดใช้งานบัญชีนี้' : 'ปิดการใช้งานบัญชีนี้';
+      /* ⭐ v2.52.0 delegate เปิดบัญชีที่ปิดไว้ไม่ได้ (D13 — admin ปิดด้วยเหตุผล) */
+      act.disabled = !!rowLock || (staffMode && u.active === false);
+      if (staffMode && u.active === false) act.textContent = 'ปิดใช้งานอยู่ — เปิดคืนได้เฉพาะผู้ดูแลระบบ';
       act.onclick = function () {
         var turningOff = u.active !== false;
         if (turningOff && u.role === 'admin' && activeAdminCount(uid) === 0) {
@@ -21812,7 +21988,7 @@ function init() {
 
   /* ---- สร้าง/จัดการผู้ใช้ ---- */
   $('btnNewUser').onclick = function () {
-    if (!requireAdmin('สร้างบัญชีผู้ใช้ไม่ได้')) return;
+    if (!requireStaffManager('สร้างบัญชีผู้ใช้ไม่ได้')) return;
     var form = $('newUserForm');
     var opening = form.style.display === 'none';
     form.style.display = opening ? 'block' : 'none';
@@ -22993,7 +23169,7 @@ init();
            ทางแก้จริงอยู่นอกแอป — ไม่เดาต่อ
 
     Database Rules: ต้องวางใหม่ เพราะมี node cycles เพิ่ม ถ้าไม่วางจะนำเข้ายอดระบบไม่ได้
-    ไฟล์พร้อมก๊อปอยู่ที่ stocktake-rules-v2.1.7.json ที่รากโปรเจกต์ (ตรงกับบล็อกท้ายไฟล์นี้)
+    ไฟล์พร้อมก๊อปอยู่ที่ stocktake-rules-v2.1.8.json ที่รากโปรเจกต์ (ตรงกับบล็อกท้ายไฟล์นี้)
 
   v2.1.0 — Master ทั้งบริษัท · พิมพ์เร็วขึ้น · Export หลาย Job · role scanner
 

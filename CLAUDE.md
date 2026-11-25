@@ -67,18 +67,27 @@ guard ด้วย `tests/test-doc-groups.js` ข้อ [4] (0/0 ต้องห
 เหตุผลที่เลิกใช้ role ตายตัว: จะให้ใครอัปโหลด Location สักคนต้องตั้งเป็น admin เต็มใบ
 ซึ่งพ่วงลบ Job · จัดการผู้ใช้ · ล้างยอด ไปให้ทั้งชุด = เปิดสิทธิ์เกินความจำเป็น
 
-### 15 ช่องที่ติ๊กได้ + manageUsers ที่ติ๊กไม่ได้
+### 17 ช่องที่ติ๊กได้ + manageUsers ที่ติ๊กไม่ได้
 
 | กลุ่ม | cap |
 |---|---|
-| งานนับ | `scan` · `seeSystemQty` · `createJob` · `closeJob` |
+| งานนับ | `scan` · `seeSystemQty` · `createJob` · `closeJob` · `approveRecheck` |
 | จัดการข้อมูล | `editMaster` · `editLocation` · `importSysQty` · `adjustCount` |
 | ดู / เอกสาร | `viewSummary` · `docs` · `editDoc` · `viewMasterLoc` |
-| ผู้ดูแล | `deleteJob` · `reopenRound` · `purgeUser` |
+| ผู้ดูแล | `deleteJob` · `reopenRound` · `purgeUser` · `manageStaff` (v2.52.0) |
 
 - **`manageUsers` ไม่ใช่ช่องติ๊ก** — เป็นของ `role === 'admin'` เท่านั้นตลอดไป
-  เหตุผล: ใครแก้ทะเบียนผู้ใช้ได้ ก็ติ๊กทุกช่องให้ตัวเองได้อยู่ดี มันจึงเท่ากับ admin
-  การทำเป็นช่องติ๊กจะหลอกตาว่าเป็นสิทธิ์ย่อยที่ปลอดภัยกว่า ทั้งที่ไม่ใช่
+  เหตุผล: ใครแก้ทะเบียนผู้ใช้ได้ "แบบไม่มีข้อจำกัด" ก็ติ๊กทุกช่องให้ตัวเองได้อยู่ดี มันจึงเท่ากับ admin
+  `hasPerm('manageUsers')` ลัดเป็น `isAdmin()` เสมอ — ห้ามเอาชื่อนี้ไปทำเป็นช่องติ๊ก
+- **`manageStaff` (v2.52.0) = จัดการผู้ใช้ "แบบจำกัด"** — มอบงานสร้าง/แก้/รีเซ็ตรหัส ผู้ใช้ที่ไม่ใช่ admin
+  ให้คนที่ไว้ใจ ไม่ขัดกับข้อบน เพราะปิดทางยกระดับครบทั้งชั้นจอ ชั้นฟังก์ชัน และ Rules v2.1.8:
+  (ก) ตั้ง role admin ไม่ได้ · (ข) มอบ manageStaff ไม่ได้ · (ค) แตะบัญชี admin ไม่ได้ ·
+  (ง) มอบได้เฉพาะ cap ที่ตัวเองถือ · (จ) role counter ต้องถือครบ 11 cap แม่แบบ / scanner ต้องถือ scan
+  (เพราะ Rules ให้สิทธิ์ผ่าน `role.matches` เอง) · (ฉ) แก้ตัวเองไม่ได้ · (ช) แตะ delegate อื่นไม่ได้ ·
+  ลบเรคอร์ดไม่ได้ (ใช้ปิดแทน) · เปิดบัญชีที่ปิดไว้ไม่ได้ (D13)
+  **กติกามีสองที่ที่ต้องตรงกันเป๊ะ**: `staffWriteCheck()` ในแอป กับ `users/$uid` ใน Rules
+  ตารางเคสเดียว `tests/_staff-cases.js` ป้อนทั้ง `test-rules.js [15]` และ `test-perms.js [15]`
+  แก้ข้างหนึ่งต้องแก้อีกข้าง + เพิ่มเคสในตารางเสมอ · ชั้นจอคุมด้วย `tests/test-staff-manager.js`
 - **`adjustCount` = แก้ยอดที่นับไปแล้ว** — เอาของออกจากสรุป · ลบบาร์โค้ดขยะ ·
   นำเข้ายอดนับจากไฟล์ · กรอกจำนวนเองมากกว่า 1 ชิ้น (ไม่ติ๊ก = ล็อกที่ 1 ชิ้นตาม v2.7.3)
 - **`editDoc` = แก้หมายเหตุ / ออกเลขที่เอกสาร** แยกจาก `docs` ที่เป็นแค่ดู + สั่งพิมพ์
@@ -89,8 +98,8 @@ guard ด้วย `tests/test-doc-groups.js` ข้อ [4] (0/0 ต้องห
 
 | role | perms |
 |---|---|
-| `admin` | ทุก cap (+ manageUsers) |
-| `counter` | scan · seeSystemQty · createJob · closeJob · importSysQty · viewSummary · docs · editDoc · viewMasterLoc · adjustCount |
+| `admin` | ทุก cap รวม manageStaff (+ manageUsers) |
+| `counter` | scan · seeSystemQty · createJob · closeJob · importSysQty · viewSummary · docs · editDoc · viewMasterLoc · adjustCount · approveRecheck |
 | `scanner` | scan |
 | `viewer` | docs |
 | `custom` | ว่าง — ติ๊กเอาเอง |
@@ -121,7 +130,7 @@ guard ด้วย `tests/test-doc-groups.js` ข้อ [4] (0/0 ต้องห
 ไม่งั้นคนที่แค่ยังไม่ได้ติ๊ก `editDoc` จะได้ข้อความเรื่องสถานะรอบ แล้วไปงมหาว่ารอบผิดตรงไหน
 
 ### Rules ต้องตรงกับ UI เสมอ
-สิทธิ์จริงบังคับที่ `stocktake-rules-v2.1.7.json` (Firebase Console → Realtime Database → Rules)
+สิทธิ์จริงบังคับที่ `stocktake-rules-v2.1.8.json` (Firebase Console → Realtime Database → Rules)
 **มีไฟล์ Rules ใบเดียวในรีโป** — ถ้าวันไหนต้องออกเวอร์ชันใหม่ ให้เปลี่ยนชื่อไฟล์เดิม
 อย่าสร้างใบใหม่ทิ้งใบเก่าไว้ เคยมีสองใบพร้อมกันแล้วเทสไปอ่านใบที่ไม่ได้ Publish (ผ่านหมดแต่ตรวจผิดใบ)
 แก้สิทธิ์ใน index.html แล้วต้องเช็ค Rules ทุกครั้ง ไม่ตรงกันเจ็บสองแบบ:
@@ -143,7 +152,8 @@ guard ด้วย `tests/test-doc-groups.js` ข้อ [4] (0/0 ต้องห
 `tests/test-rules.js` ข้อ `[9]` คุมกติกานี้ทั้งตาราง role × cap ให้อัตโนมัติแล้ว
 
 cap ฝั่งแสดงผล (`viewSummary` · `docs` · `viewMasterLoc` · `seeSystemQty`) คุมที่ UI พอ
-ห้ามเอาไปใส่ในนิพจน์ `.write` · `users/` ยังเป็น admin เท่านั้น ห้ามให้ perms ใดเขียนได้
+ห้ามเอาไปใส่ในนิพจน์ `.write` · `users/` เปิดให้ cap เดียวคือ `perms/manageStaff` พร้อมข้อห้ามครบ (ดูหัวข้อ manageStaff)
+ห้ามให้ cap อื่นใดเขียน `users/` ได้
 
 `tests/test-rules.js` ประเมินนิพจน์ `.write` ตัวจริงทุก path × role × สถานะ Job
 และทุก path × cap (ข้อ [8]) · `tests/test-role-matrix.js` คุมตารางสิทธิ์ 4 role เดิมฝั่ง UI

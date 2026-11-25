@@ -32,7 +32,7 @@ function check(name, ok, got) {
 const TEMPLATE = {
   admin: ['scan', 'seeSystemQty', 'createJob', 'closeJob', 'approveRecheck', 'editMaster', 'editLocation',
           'importSysQty', 'adjustCount', 'viewSummary', 'docs', 'editDoc', 'viewMasterLoc',
-          'deleteJob', 'reopenRound', 'purgeUser'],
+          'deleteJob', 'reopenRound', 'purgeUser', 'manageStaff'],   // ⭐ v2.52.0 admin ได้ manageStaff ด้วย
   counter: ['scan', 'seeSystemQty', 'createJob', 'closeJob', 'approveRecheck', 'importSysQty',
             'viewSummary', 'docs', 'editDoc', 'viewMasterLoc', 'adjustCount'],
   scanner: ['scan'],
@@ -126,12 +126,17 @@ const HARNESS = `
 
   console.log('\n[0b] Rules ต้องรู้จัก custom + perms');
   const rules = JSON.parse(fs.readFileSync(
-    require('path').join(__dirname, '..', 'stocktake-rules-v2.1.7.json'), 'utf8'));
+    require('path').join(__dirname, '..', 'stocktake-rules-v2.1.8.json'), 'utf8'));
   const RU = rules.rules.stocktake2026.users.$uid;
   check('role/.validate ยอมรับ custom', /custom/.test(RU.role['.validate']), RU.role['.validate']);
-  check('perms รับเฉพาะ boolean', RU.perms.$cap['.validate'] === 'newData.isBoolean()', RU.perms);
-  check('users/ ยังเป็น admin เท่านั้น ไม่เปิดให้ perms ใดเขียน',
-        !/perms\//.test(RU['.write']), RU['.write'].slice(0, 80));
+  /* ⭐ v2.52.0 (Rules v2.1.8) — tripwire เดิม "users/ admin เท่านั้น" เปลี่ยนแบบตั้งใจ:
+     เปิดให้ผู้ถือ perms/manageStaff เท่านั้น พร้อมข้อห้ามครบ (ก-ช + D13) · ตัวกติกาจริงคุมที่ test-rules [15] */
+  check('perms รับเฉพาะ boolean + whitelist ชื่อ cap', /^newData\.isBoolean\(\) && \$cap\.matches\(/.test(RU.perms.$cap['.validate']), RU.perms);
+  check('users/ เปิดให้ non-admin เฉพาะผ่าน perms/manageStaff (+ ข้อห้ามครบ)',
+        /perms\/manageStaff'\)\.val\(\) === true && \$uid !== auth\.uid/.test(RU['.write']) &&
+        ["data.child('role').val() !== 'admin'", "newData.child('role').val() !== 'admin'",
+         "newData.child('perms/manageStaff').val() !== true", "data.child('perms/manageStaff').val() !== true",
+         'newData.exists()'].every(function (x) { return RU['.write'].indexOf(x) >= 0; }), RU['.write'].slice(0, 80));
   check('ยังมีบล็อก wms2026 ติดไปด้วย', !!rules.rules.wms2026, 'wms2026');
 
   console.log('\n[0c] ห้ามเพิ่มสายค้าง — ต้องเป็น 4 สายเท่าเดิม');
@@ -181,14 +186,14 @@ const HARNESS = `
      เหตุผลเดียวกับ manageUsers: ใครเตะคนอื่นได้ก็ไล่ admin ออกได้ จึงไม่ทำเป็นช่องติ๊ก
      ⭐ v2.48.0 operators/$uid เหตุผลเดียวกับ presence — ผูกกับเจ้าของบัญชี (auth.uid === $uid ทุก role)
      + admin · ไม่มี cap manageOperators ตามที่ตกลง (ด่านหน้า ⚙️ คือใส่รหัสบัญชีซ้ำ ใน PR2) */
-  check('มีเฉพาะ users/$uid + presence/$uid + operators/$uid + สามโหนดที่แช่แข็งที่ไม่มีทางเลือก perms',
+  check('มีเฉพาะ presence/$uid + operators/$uid + สามโหนดที่แช่แข็งที่ไม่มีทางเลือก perms',
         noPerm.slice().sort().join('\n') === [
           '/stocktake2026/cycles/$cycleId/deductTransfer',
           '/stocktake2026/operators/$uid',
           '/stocktake2026/presence/$uid',
           '/stocktake2026/rounds/$roundId/deductTransfer',
-          '/stocktake2026/rounds/$roundId/zones',
-          '/stocktake2026/users/$uid'
+          '/stocktake2026/rounds/$roundId/zones'
+          /* ⭐ v2.52.0 users/$uid หลุดจากรายการนี้แบบตั้งใจ — มีทางเลือก perms/manageStaff แล้ว */
         ].join('\n'), noPerm);
 
   const browser = await puppeteer.launch({
@@ -215,7 +220,7 @@ const HARNESS = `
     out.__unknown = CAPS.filter(function (c) { return permsFromRole('ไม่รู้จัก')[c] === true; });
     return out;
   });
-  check('มีช่องติ๊กครบ 16 ช่อง', tpl.__caps.length === 16, tpl.__caps);
+  check('มีช่องติ๊กครบ 17 ช่อง (v2.52.0 + manageStaff)', tpl.__caps.length === 17, tpl.__caps);
   check('manageUsers ไม่อยู่ในช่องติ๊ก', tpl.__caps.indexOf('manageUsers') < 0, tpl.__caps);
   Object.keys(TEMPLATE).forEach(function (r) {
     check(r + ': แม่แบบตรงที่ตกลงไว้',
@@ -453,7 +458,7 @@ const HARNESS = `
                                               function (b) { return b.disabled && b.checked; })
     };
   });
-  check('มีช่องติ๊กครบ 16 ช่อง', ui.count === 16, ui.count);
+  check('มีช่องติ๊กครบ 17 ช่อง (v2.52.0 + manageStaff)', ui.count === 17, ui.count);
   check('ดรอปดาวน์มีตัวเลือก custom', ui.opts.indexOf('custom') >= 0, ui.opts);
   check('counter ถูกติ๊กตามแม่แบบ',
         ui.checked.slice().sort().join(',') === TEMPLATE.counter.slice().sort().join(','), ui.checked);
@@ -601,7 +606,7 @@ const HARNESS = `
   }, SEED_USERS);
   check('ค่าเริ่มต้นพับทุกคน', fold.before.hidden === true, fold.before);
   check('ลูกศรพับเป็น ▸', fold.before.arrow === '▸', fold.before);
-  check('editor ยังอยู่ใน DOM ตอนพับ (ไม่ได้ถอดทิ้ง)', fold.before.inDom === 16, fold.before);
+  check('editor ยังอยู่ใน DOM ตอนพับ (ไม่ได้ถอดทิ้ง)', fold.before.inDom === 17, fold.before);
   check('คลิกหัวแถวแล้วกาง', fold.after.hidden === false, fold.after);
   check('ลูกศรกางเป็น ▾', fold.after.arrow === '▾', fold.after);
   check('หัวแถวเป็นปุ่มจริง (คีย์บอร์ดใช้ได้)', fold.tag === 'BUTTON', fold.tag);
@@ -628,12 +633,12 @@ const HARNESS = `
     return out;
   }, SEED_USERS);
   check('admin โชว์ "ทุกสิทธิ์" ไม่ใช่ตัวเลข', /ทุกสิทธิ์/.test(summary.admin.count), summary.admin);
-  check('counter โชว์ ติ๊ก 11/16', /ติ๊ก 11\/16/.test(summary.counter.count), summary.counter);
-  check('scanner โชว์ ติ๊ก 1/16', /ติ๊ก 1\/16/.test(summary.scanner.count), summary.scanner);
-  check('custom โชว์ ติ๊ก 3/16', /ติ๊ก 3\/16/.test(summary.custom.count), summary.custom);
+  check('counter โชว์ ติ๊ก 11/17', /ติ๊ก 11\/17/.test(summary.counter.count), summary.counter);
+  check('scanner โชว์ ติ๊ก 1/17', /ติ๊ก 1\/17/.test(summary.scanner.count), summary.scanner);
+  check('custom โชว์ ติ๊ก 3/17', /ติ๊ก 3\/17/.test(summary.custom.count), summary.custom);
   check('ป้ายสิทธิ์ใช้ ROLE_LABEL', summary.counter.role === 'ผู้นับสต๊อก' &&
         summary.custom.role === 'กำหนดเอง', summary.counter);
-  check('⭐ ติ๊กแล้วตัวเลขบนหัวแถวขยับทันที', /ติ๊ก 4\/16/.test(summary.afterTick), summary.afterTick);
+  check('⭐ ติ๊กแล้วตัวเลขบนหัวแถวขยับทันที', /ติ๊ก 4\/17/.test(summary.afterTick), summary.afterTick);
 
   console.log('\n[9c] ช่องค้นหา');
   const search = await page.evaluate((seed) => {
@@ -825,6 +830,46 @@ const HARNESS = `
   });
   check('admin: ซ่อนอยู่', escLive.before === 'none', escLive);
   check('⭐ ถูกลดเป็น scanner แล้วการ์ดโผล่ทันที ไม่ต้องล็อกอินใหม่', escLive.after === '', escLive);
+
+  /* ---------- [15] ⭐ v2.52.0 manageStaff — staffWriteCheck ต้องตอบตรงกับ Rules ทุกเคส ----------
+     ตารางเดียวกับ test-rules [15] (tests/_staff-cases.js) · me ส่งเข้าไปตรง ๆ = "เรคอร์ดที่ Rules เห็น" */
+  console.log('\n[15] staffWriteCheck ตรงกับ Rules v2.1.8 (ตารางเคสร่วม)');
+  const STAFF = require('./_staff-cases');
+  const parity = await page.evaluate(function (cases) {
+    return cases.map(function (c) {
+      var me = { uid: 'u_me', role: c.me.role, active: c.me.active === true, perms: c.me.perms || {} };
+      var why = staffWriteCheck(c.target, c.old, c.next, c.granted, me);
+      return { id: c.id, ok: why === '', why: why };
+    });
+  }, STAFF.CASES);
+  parity.forEach(function (r, i) {
+    const c = STAFF.CASES[i];
+    check('[' + c.id + '] ' + c.name + ' → ' + (c.want ? 'อนุญาต' : 'ปฏิเสธ'), r.ok === c.want, r);
+  });
+  check('ทุกเคสที่ปฏิเสธมีเหตุผลภาษาไทยให้คนอ่าน', parity.every(function (r) { return r.ok || /[ก-๙]/.test(r.why); }),
+        parity.filter(function (r) { return !r.ok; }).map(function (r) { return r.why; }).slice(0, 3));
+
+  console.log('\n[15b] cap manageStaff + hasPerm(manageUsers) เดิม');
+  const ms = await page.evaluate(function () {
+    var g = CAP_GROUPS.filter(function (x) { return x.label === 'ผู้ดูแล'; })[0];
+    var out = { inAdminGroup: !!g && g.caps.some(function (c) { return c.key === 'manageStaff'; }),
+                tpl: {} };
+    ['admin', 'counter', 'scanner', 'viewer', 'custom'].forEach(function (r) { out.tpl[r] = permsFromRole(r).manageStaff === true; });
+    var saveMe = state.me;
+    state.me = { uid: 'd', name: 'd', role: 'custom', perms: { manageStaff: true, docs: true }, branches: [] };
+    out.delegate = { manageUsers: hasPerm('manageUsers'), manageStaff: hasPerm('manageStaff'), can: canManageStaff(),
+                     master: canSeeMasterPage(), data: canSeeMasterData() };
+    state.me = { uid: 'c', name: 'c', role: 'counter', branches: [] };
+    out.counter = { can: canManageStaff() };
+    state.me = saveMe;
+    return out;
+  });
+  check('manageStaff อยู่กลุ่ม "ผู้ดูแล"', ms.inAdminGroup, ms);
+  check('แม่แบบ: admin ได้ · counter/scanner/viewer/custom ไม่ได้',
+        ms.tpl.admin && !ms.tpl.counter && !ms.tpl.scanner && !ms.tpl.viewer && !ms.tpl.custom, ms.tpl);
+  check('hasPerm("manageUsers") ยังเป็น admin เท่านั้น (delegate ได้ false)', ms.delegate.manageUsers === false && ms.delegate.manageStaff === true, ms.delegate);
+  check('delegate เข้าหน้า Master ได้ (แท็บผู้ใช้) แต่ไม่เห็นข้อมูล Master ถ้าไม่มีสิทธิ์ดู', ms.delegate.master && !ms.delegate.data, ms.delegate);
+  check('counter ปกติ (ไม่มี manageStaff) จัดการผู้ใช้ไม่ได้', ms.counter.can === false, ms.counter);
 
   check('ไม่มี error ในคอนโซล', errors.length === 0, errors.slice(0, 3));
 
