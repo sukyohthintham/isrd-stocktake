@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.52.1">
+<meta name="version" content="2.52.2">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.52.1</title>
+<title>ISRD Stocktake v2.52.2</title>
 
 <style>
 /* v2.47.6 perf: ข้ามการวาดการ์ดรีเช็คที่ยังไม่เลื่อนไปเห็น (ลด jank list ยาวบนมือถือ) */
@@ -2131,7 +2131,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.50.0 — admin จัดการผู้นับทุกสาขาจากที่เดียว (targetUid) · แก้ปุ่ม ⚙️ ไม่โผล่บนหน้า Job ของ counter */
 /* ⭐ v2.51.0 — หน้าจัดการผู้นับ (admin): ช่องค้นหาสาขาแทน dropdown (กรองชื่อบัญชี+อีเมลสด) */
 /* ⭐ v2.52.0 — สิทธิ์ manageStaff (จัดการผู้ใช้ทั่วไป ไม่ใช่ admin) · Rules v2.1.8 กันยกระดับ ก-ช + D13 */
-var APP_VERSION = '2.52.1';
+var APP_VERSION = '2.52.2';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -7775,7 +7775,7 @@ function reloadCurrentPage() {
 
   /* ก้อนที่มาทางสาย SSE (cycles / roundIndex / scans) ส่งกลับมาเองตอนเปิดสายใหม่
      ที่ต้องสั่งเองคือหน้าที่วาดจากคำขอครั้งเดียว ซึ่งไม่มีใครไปยิงให้ */
-  if (state.page === 'jobs') renderJobs();
+  if (state.page === 'jobs') scheduleRenderJobs();
   else if (state.page === 'summary') renderSummary();
   else if (state.page === 'doc') renderDoc();
   else if (state.page === 'master') renderMaster();
@@ -14924,6 +14924,23 @@ function applyJobsPermissions() {
   if (!staff) setJobView('list');
 }
 
+/* ⭐ v2.52.2 — รวมการวาดหน้า Job ให้เหลือครั้งเดียวต่อเฟรม (coalesce)
+   เข้าหน้า Job ที = showPage วาด 1 + LITE ดึง roundIndex/cycles (async คนละจังหวะ)
+   เรียก renderJobs ~3 รอบใน 1 วิ → list.innerHTML='' ล้างแล้ววาดการ์ดใหม่ซ้ำ ๆ = กระพริบ
+   scheduleRenderJobs บีบทุกคำขอใน 1 เฟรมให้วาดจริงครั้งเดียว · ตัวที่มาจาก
+   SSE/async/เปลี่ยนหน้า เรียกตัวนี้ · user กดแท็บ/ตัวกรอง เรียก renderJobs() ตรงได้เหมือนเดิม */
+var _renderJobsScheduled = false;
+function scheduleRenderJobs() {
+  if (_renderJobsScheduled) return;
+  _renderJobsScheduled = true;
+  var raf = (typeof requestAnimationFrame === 'function')
+    ? requestAnimationFrame : function (fn) { return setTimeout(fn, 16); };
+  raf(function () {
+    _renderJobsScheduled = false;
+    if (state.page === 'jobs') renderJobs();
+  });
+}
+
 function renderJobs() {
   applyJobsPermissions();
   renderExportBar();
@@ -15546,7 +15563,7 @@ function applyCyclesData(data) {
     var c = next[cid] || {};
     state.cycles[cid] = { status: c.status, info: c.info || {} };
   });
-  if (state.page === 'jobs') renderJobs();
+  if (state.page === 'jobs') scheduleRenderJobs();
 }
 function applyRoundIndexData(data) {
   var first = !startApp._gotJobs;
@@ -15554,7 +15571,7 @@ function applyRoundIndexData(data) {
   startApp._gotJobs = true;
   renderStart();
   renderJobBar();
-  if (state.page === 'jobs') renderJobs();
+  if (state.page === 'jobs') scheduleRenderJobs();
   if (state.page === 'summary') renderSummary();
   /* ⭐ v2.27.2 — เติมมอนิเตอร์เฉพาะตอนจอยังว่าง + มีข้อมูลรอบแล้ว (เติมครั้งเดียวพอ) */
   if (state.page === 'summary' && state.summaryTab === 'live'
@@ -15568,7 +15585,7 @@ function applyRoundIndexData(data) {
       dropAllCycleStats();
       showCycleMigrationReport(report);
       if (state.roundId) refreshSystemQty();
-      if (state.page === 'jobs') renderJobs();
+      if (state.page === 'jobs') scheduleRenderJobs();
     });
   }
 }
@@ -17039,7 +17056,7 @@ function showPage(name) {
   /* เข้าหน้า Job ทีไรเริ่มที่รายการเสมอ — คนเข้ามาเพื่อเลือกงานที่ค้าง ไม่ใช่สร้างใหม่
      ถ้าค้างที่แท็บฟอร์มไว้ คนที่เพิ่งสร้าง Job เสร็จจะกลับมาเจอฟอร์มเปล่าแล้วงงว่ารายการหาย */
   if (name === 'jobs') setJobView('list');
-  if (name === 'jobs') renderJobs();
+  if (name === 'jobs') scheduleRenderJobs();
   /* ⭐ v2.32.0 LITE_MODE: เข้าหน้า Job/สรุป = ดึง roundIndex+cycles สดครั้งเดียว (แทน EventSource เปิดค้าง)
      async — ได้ข้อมูลแล้ว _apply* จะสั่งวาดใหม่เอง · guard เผื่อ showPage ถูกเรียกก่อน startApp ตั้ง handler */
   if (LITE_MODE && (name === 'jobs' || name === 'summary')) {
@@ -20765,7 +20782,7 @@ function saveUserFieldChecked(uid, patchFields, opts) {
        (undefined = ไม่ได้แตะฟิลด์นี้ · null = สั่งให้กลับไปเห็นทุกสาขา) */
     if (state.me && state.me.uid === uid && patchFields.branches !== undefined) {
       state.me.branches = normBranchCodes(patchFields.branches);
-      if (state.page === 'jobs') renderJobs();
+      if (state.page === 'jobs') scheduleRenderJobs();
     }
     if (!(opts && opts.keepUi)) renderUsers();
   }).catch(function () {
