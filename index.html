@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.52.4">
+<meta name="version" content="2.52.5">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.52.4</title>
+<title>ISRD Stocktake v2.52.5</title>
 
 <style>
 /* v2.47.6 perf: ข้ามการวาดการ์ดรีเช็คที่ยังไม่เลื่อนไปเห็น (ลด jank list ยาวบนมือถือ) */
@@ -2131,7 +2131,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.50.0 — admin จัดการผู้นับทุกสาขาจากที่เดียว (targetUid) · แก้ปุ่ม ⚙️ ไม่โผล่บนหน้า Job ของ counter */
 /* ⭐ v2.51.0 — หน้าจัดการผู้นับ (admin): ช่องค้นหาสาขาแทน dropdown (กรองชื่อบัญชี+อีเมลสด) */
 /* ⭐ v2.52.0 — สิทธิ์ manageStaff (จัดการผู้ใช้ทั่วไป ไม่ใช่ admin) · Rules v2.1.8 กันยกระดับ ก-ช + D13 */
-var APP_VERSION = '2.52.4';
+var APP_VERSION = '2.52.5';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -16367,14 +16367,21 @@ function rcAdminCard(r, it, canManage) {
 
   if (it && it.qty != null && it.qty !== '') {
     var q = Number(it.qty), match = (q === r.sys);
-    card.appendChild(el('div', { class: 'row', style: 'align-items:center;gap:10px;margin:4px 0' }, [
+    card.appendChild(el('div', { class: 'row', style: 'align-items:center;gap:10px;margin:6px 0' }, [
       rcThumb(k, it.at),
-      el('div', {}, [
-        el('div', {}, ['✅ เด็กนับรีเช็คได้ ', el('b', { style: 'font-size:17px', text: fmtNum(q) }), ' ชิ้น ',
-          el('span', { class: 'muted', style: 'font-size:12px', text: 'โดย ' + (it.by || '-') + (it.at ? ' · 🕐 ' + timeHM(it.at) + ' น.' : '') }),
-          el('a', { class: 'muted', style: 'font-size:12px;margin-left:8px;color:#2563eb;cursor:pointer;text-decoration:underline', text: '📋 ดูประวัติรีเช็ค', onclick: function () { showRecheckHistory(k, r); } })]),
-        el('div', { class: 'muted', style: 'font-size:13px' + (match ? ';color:#059669' : ';color:#dc2626'),
-          text: 'เทียบใหม่: ' + fmtNum(q) + ' vs ควรเหลือ ' + fmtNum(r.sys) + ' → ' + (match ? 'ตรงแล้ว' : 'ยังต่าง ' + (q - r.sys > 0 ? '+' : '') + fmtNum(q - r.sys)) })])]));
+      el('div', { style: 'flex:1;min-width:0' }, [
+        /* ⭐ v2.52.5 ผลรีเช็คเด่นขึ้น — เลขที่นับได้ตัวโต + ป้ายผล ตรง/ยังต่าง ตัวใหญ่มีสีพื้น (เดิมเล็กกว่า badge ขาด ดูยาก) */
+        el('div', { style: 'font-size:14px' }, ['เด็กนับรีเช็คได้ ',
+          el('b', { style: 'font-size:23px;line-height:1;color:' + (match ? '#15803d' : '#b45309'), text: fmtNum(q) }),
+          el('span', { text: ' ชิ้น' })]),
+        el('div', {
+          style: 'display:inline-block;margin:6px 0 3px;font-size:15px;font-weight:800;padding:5px 13px;border-radius:999px;' +
+            (match ? 'background:#dcfce7;color:#15803d;border:1.5px solid #86efac'
+                   : 'background:#fee2e2;color:#b91c1c;border:1.5px solid #fca5a5'),
+          text: match ? '✅ ตรงแล้ว  (' + fmtNum(q) + ' = ควรเหลือ ' + fmtNum(r.sys) + ')'
+                      : '⚠️ ยังต่าง ' + (q - r.sys > 0 ? '+' : '') + fmtNum(q - r.sys) + '  (รีเช็ค ' + fmtNum(q) + ' · ควรเหลือ ' + fmtNum(r.sys) + ')' }),
+        el('div', { class: 'muted', style: 'font-size:11.5px;margin-top:2px' }, ['โดย ' + (it.by || '-') + (it.at ? ' · 🕐 ' + timeHM(it.at) + ' น.  ' : '  '),
+          el('a', { style: 'color:#2563eb;cursor:pointer;text-decoration:underline', text: '📋 ดูประวัติรีเช็ค', onclick: function () { showRecheckHistory(k, r); } })])])]));
     if (it.applied) {
       /* ⭐ v2.43.11 ใช้ยอดแล้ว = ล็อกยอด (adjust src=recheck) · ae=q เสมอ ไม่ถูกยอดดิบทับ */
       card.appendChild(el('div', { class: 'badge ok', style: 'margin-top:4px', text: '✓ ปรับยอดนับเป็น ' + fmtNum(q) + ' แล้ว (ล็อกยอดไว้)' }));
