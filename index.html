@@ -1,8 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="version" content="2.52.3">
+<meta name="version" content="2.52.4">
 <meta name="theme-color" content="#0f766e">
-<title>ISRD Stocktake v2.52.3</title>
+<title>ISRD Stocktake v2.52.4</title>
 
 <style>
 /* v2.47.6 perf: ข้ามการวาดการ์ดรีเช็คที่ยังไม่เลื่อนไปเห็น (ลด jank list ยาวบนมือถือ) */
@@ -2131,7 +2131,7 @@ body.no-doc-images .doc .imgbox{display:none}
 /* ⭐ v2.50.0 — admin จัดการผู้นับทุกสาขาจากที่เดียว (targetUid) · แก้ปุ่ม ⚙️ ไม่โผล่บนหน้า Job ของ counter */
 /* ⭐ v2.51.0 — หน้าจัดการผู้นับ (admin): ช่องค้นหาสาขาแทน dropdown (กรองชื่อบัญชี+อีเมลสด) */
 /* ⭐ v2.52.0 — สิทธิ์ manageStaff (จัดการผู้ใช้ทั่วไป ไม่ใช่ admin) · Rules v2.1.8 กันยกระดับ ก-ช + D13 */
-var APP_VERSION = '2.52.3';
+var APP_VERSION = '2.52.4';
 
 /* ------------------------------------------------------------
    FIREBASE CONFIG
@@ -4720,6 +4720,8 @@ function applyScanRecord(id, rec) {
       };
     }
     u.qty += delta;
+    if (rec.discard && delta < 0) u.discardedQty = (u.discardedQty || 0) + (-delta);  /* ยอดที่ถูกลบทิ้งจริง ใช้กู้คืนตัวที่เผลอลบ */
+    if (rec.recovered) u.recovered = true;                      /* กู้คืนแล้ว กันกู้ซ้ำ */
     if (rec.ts && rec.ts < u.firstTs) {
       u.firstTs = rec.ts;
       u.zone = rec.zoneName || rec.zone || '';
@@ -4756,6 +4758,7 @@ function applyScanRecord(id, rec) {
 /* บาร์โค้ดที่ยังไม่ถูกจัดการ = ยังไม่มีสินค้าที่ผูกกับค่านี้ และยอดยังเหลืออยู่
    ผูกกับสินค้าอื่นแล้วยอดจะถูกย้ายจนเหลือ 0 · สร้างเป็นสินค้าใหม่แล้ว products จะมีคีย์นี้ */
 function unknownResolved(u) {
+  if (u.recovered) return true;
   if (state.products[u.key]) return true;
   if (state.scanIndex && state.scanIndex.get(String(u.value).toUpperCase())) return true;
   return u.qty <= 0;
@@ -4767,7 +4770,8 @@ function unknownRows(includeResolved) {
     return {
       key: u.key, value: u.value, qty: u.qty, note: u.note || '',
       firstTs: u.firstTs, zone: u.zone, user: u.user,
-      resolved: unknownResolved(u), legacy: false, discarded: !!u.discarded
+      resolved: unknownResolved(u), legacy: false, discarded: !!u.discarded,
+      discardedQty: u.discardedQty || 0, recovered: !!u.recovered
     };
   });
   /* รอบเก่าก่อน v1.9.3 เก็บไว้ที่ unknown/ โดยไม่มียอด — ยังต้องเห็นในรายงาน */
@@ -4837,6 +4841,50 @@ function altBarcodes(p) {
   return Object.keys(raw).map(function (k) { return raw[k]; });   // Firebase คืน object ได้
 }
 
+/* ============================================================
+   KEYBOARD แป้นไทยค้าง (Kedmanee) v2.52.4
+   เครื่องยิงเป็น keyboard wedge: แป้นไทยค้าง -> ได้ตัวไทยตามตำแหน่งปุ่ม
+   วิธีจับที่ทนลำดับอักขระประสม (ฺ ุ ฯลฯ ถูก normalize สลับได้):
+     แปลงรหัสใน Master -> ไทย (ตามปุ่ม) แล้ว normalize('NFC') เป็นดัชนี
+     เทียบกับค่าที่ยิง (normalize เหมือนกัน) -> gate ด้วย Master เสมอ ไม่เดา
+   ============================================================ */
+var KB_EN2TH = {
+  'q':'ๆ','w':'ไ','e':'ำ','r':'พ','t':'ะ','y':'ั','u':'ี','i':'ร','o':'น','p':'ย',
+  'a':'ฟ','s':'ห','d':'ก','f':'ด','g':'เ','h':'้','j':'่','k':'า','l':'ส',
+  'z':'ผ','x':'ป','c':'แ','v':'อ','b':'ิ','n':'ื','m':'ท',
+  '1':'ๅ','2':'/','3':'-','4':'ภ','5':'ถ','6':'ุ','7':'ึ','8':'ค','9':'ต','0':'จ',
+  '-':'ข','=':'ช','[':'บ',']':'ล',';':'ว',"'":'ง',',':'ม','.':'ใ','/':'ฝ','`':'_',
+  'Q':'๐','W':'"','E':'ฎ','R':'ฑ','T':'ธ','Y':'ํ','U':'๊','I':'ณ','O':'ฯ','P':'ญ',
+  'A':'ฤ','S':'ฆ','D':'ฏ','F':'โ','G':'ฌ','H':'็','J':'๋','K':'ษ','L':'ศ',
+  'Z':'(','X':')','C':'ฉ','V':'ฮ','B':'ฺ','N':'์','M':'?',
+  '!':'+','@':'๑','#':'๒','$':'๓','%':'๔','^':'ู','&':'฿','*':'๕','(':'๖',')':'๗',
+  '_':'๘','+':'๙','{':'ฐ','}':',',':':'ซ','"':'.','<':'ฒ','>':'ฬ','?':'ฦ','~':'%'
+};
+function hasThai(s) { return /[฀-๿]/.test(String(s || '')); }
+function enToThai(s) {
+  s = String(s || '');
+  var out = '';
+  for (var i = 0; i < s.length; i++) { var c = s[i]; out += (KB_EN2TH[c] !== undefined ? KB_EN2TH[c] : c); }
+  return out;
+}
+function normThai(s) { s = String(s || ''); try { return s.normalize('NFC'); } catch (e) { return s; } }
+function ensureThaiIndex() {
+  if (state.thaiIndex) return state.thaiIndex;
+  if (!state.scanIndex) buildScanIndex();
+  var m = new Map();
+  state.scanIndex.forEach(function (key, codeUpper) {
+    var th = normThai(enToThai(codeUpper));
+    if (!m.has(th)) m.set(th, key);
+  });
+  state.thaiIndex = m;
+  return m;
+}
+function resolveThaiScan(value) {
+  if (!hasThai(value)) return null;
+  var idx = ensureThaiIndex();
+  return idx.get(normThai(value)) || null;
+}
+
 function buildScanIndex() {
   var map = new Map();
   Object.keys(state.products).forEach(function (key) {
@@ -4853,6 +4901,7 @@ function buildScanIndex() {
     var code = String(state.products[key].code || '').trim().toUpperCase();
     if (code) map.set(code, key);
   });
+  state.thaiIndex = null;
   state.scanIndex = map;
 }
 
@@ -7155,6 +7204,23 @@ function handleScanValue(raw) {
   if (!state.scanIndex) buildScanIndex();
 
   var key = state.scanIndex.get(value.toUpperCase());
+  /* KEYBOARD v2.52.4 แป้นไทยค้าง: เครื่องยิงส่งตัวไทยตามตำแหน่งปุ่ม
+     แปลงกลับแล้วลองใหม่ เจอใน Master = นับเป็น SKU จริงให้เลย (ไม่ต้องยิงใหม่)
+     แปลงแล้วยังไม่เจอ = เตือนให้เปลี่ยนแป้น ไม่เขียนบาร์โค้ดขยะทิ้งไว้ */
+  if (!key && hasThai(value)) {
+    var _rk = resolveThaiScan(value);
+    if (_rk) {
+      key = _rk;
+      toast('⌨️ แป้นเป็นภาษาไทย — นับเป็น ' + ((state.products[_rk] || {}).code || _rk) + ' ให้อัตโนมัติ');
+    } else {
+      flashStage('miss');
+      beep(180, 260, 'sawtooth');
+      speak('เปลี่ยนแป้นเป็นภาษาอังกฤษ');
+      vibrate([80, 60, 80]);
+      toast('⚠️ แป้นพิมพ์เป็นภาษาไทย! กดเปลี่ยนเป็น EN ก่อนยิง — ยังไม่ได้บันทึก', true);
+      return;
+    }
+  }
   if (!key) {
     /* ของจริงที่เจอบนชั้นแต่ไม่มีในระบบ — นับเข้าไปเหมือนสินค้าปกติ
        ไม่ใช่ error จึงใช้สีส้มกับเสียงคนละแบบ แล้วไปตรวจสอบทีหลัง */
@@ -10636,6 +10702,8 @@ function renderSummary() {
   if (!pendingUnknown.length) {
     ul.innerHTML = '<div class="empty">ไม่มีบาร์โค้ดที่ไม่มีในระบบค้างอยู่</div>';
   } else {
+    var _bulk = unknownBulkBar();
+    if (_bulk) ul.appendChild(_bulk);
     pendingUnknown.forEach(function (u) {
       var d = document.createElement('div');
       d.className = 'rep-line';
@@ -20510,6 +20578,114 @@ function createProductFromUnknown(u, name, sellPrice) {
   });
 }
 
+/* ============================================================
+   RECOVER กู้คืน/ลบ บาร์โค้ดแป้นไทยเป็นชุด (v2.52.4)
+   recover = หักยอดขยะ (ถ้ายังค้าง) + เพิ่มยอดให้ SKU จริง
+   ครอบคลุมทั้งตัวที่ยังค้าง (state.counts) และตัวที่เผลอลบไปแล้ว (u.discardedQty)
+   ============================================================ */
+function thaiRecoverList() {
+  if (!state.scanIndex) buildScanIndex();
+  var out = [];
+  unknownRows(true).forEach(function (u) {
+    if (u.legacy || u.recovered) return;
+    if (!hasThai(u.value)) return;
+    /* ข้ามตัวที่ถูกผูก/สร้างเป็นสินค้าแล้ว ยอดนับเข้าที่อื่นแล้ว กันนับซ้ำ */
+    if (state.products[u.key]) return;
+    if (state.scanIndex.get(String(u.value).toUpperCase())) return;
+    var rk = resolveThaiScan(u.value);
+    if (!rk) return;
+    var cur = state.counts[u.key] || 0;      /* ยอดสุทธิที่ยังค้าง (หัก undo/discard แล้ว) */
+    var disc = u.discardedQty || 0;          /* ยอดที่เผลอลบทิ้งไป ขอคืน */
+    var q = (cur > 0 ? cur : 0) + disc;      /* ยอดจริงที่ควรกู้ */
+    if (q <= 0) return;
+    out.push({ u: u, realKey: rk, code: (state.products[rk] || {}).code || rk, cur: cur, q: q });
+  });
+  return out;
+}
+function recoverThaiUnknowns() {
+  if (!hasPerm('adjustCount')) { toast(roleBlockMessage('กู้คืนยอดไม่ได้'), true); return; }
+  if (!canScan()) { toast(blockedMessage() + ' — กู้คืนไม่ได้', true); return; }
+  var list = thaiRecoverList();
+  if (!list.length) { toast('ไม่พบบาร์โค้ดแป้นไทยที่ตรงกับ Master'); return; }
+  var pieces = list.reduce(function (s, x) { return s + x.q; }, 0);
+  var preview = list.slice(0, 6).map(function (x) {
+    return '• ' + x.u.value + '  →  ' + x.code + '  (' + fmtNum(x.q) + ')';
+  }).join('\n');
+  ask('กู้คืนยอดจากแป้นไทย?',
+      'พบ ' + fmtNum(list.length) + ' บาร์โค้ด (รวม ' + fmtNum(pieces) + ' ชิ้น) ที่ยิงด้วยแป้นภาษาไทย\n' +
+      'จะแปลงกลับเป็น SKU จริง แล้วย้ายยอดไปให้สินค้าที่ถูกต้อง (รวมตัวที่เผลอลบไปแล้วด้วย):\n\n' +
+      preview + (list.length > 6 ? '\n… และอีก ' + fmtNum(list.length - 6) + ' รายการ' : '') +
+      '\n\n⚠️ ของพวกนี้จะถูกนับครบแล้ว — อย่ายิงซ้ำอีก',
+      'กู้คืนทั้งหมด').then(function (ok) {
+    if (!ok) return;
+    list.forEach(function (x) {
+      if (x.cur > 0) {
+        writeScan(x.u.key, -x.cur, 'resolve', 'แปลงแป้นไทย → ' + x.code,
+                  { unknown: true, raw: x.u.value, discard: true, recovered: true, remapTo: x.code });
+      } else {
+        writeScan(x.u.key, 0, 'resolve', 'แปลงแป้นไทย → ' + x.code,
+                  { unknown: true, raw: x.u.value, recovered: true, remapTo: x.code });
+      }
+      writeScan(x.realKey, x.q, 'scan', null, { remapFrom: x.u.value, recovered: true });
+    });
+    toast('✅ กู้คืน ' + fmtNum(list.length) + ' SKU (' + fmtNum(pieces) + ' ชิ้น) เข้าสินค้าจริงแล้ว');
+    refreshUnknownViews();
+  });
+}
+function discardAllUnknown() {
+  if (!hasPerm('adjustCount')) { toast(roleBlockMessage('ลบบาร์โค้ดไม่ได้'), true); return; }
+  if (!canScan()) { toast(blockedMessage() + ' — ลบไม่ได้', true); return; }
+  var rows = unknownRows(false).filter(function (u) { return !u.legacy && u.qty > 0; });
+  if (!rows.length) { toast('ไม่มีบาร์โค้ดค้างให้ลบ'); return; }
+  var pieces = rows.reduce(function (s, r) { return s + r.qty; }, 0);
+  ask('ลบบาร์โค้ดที่ค้างทั้งหมด?',
+      'ลบ ' + fmtNum(rows.length) + ' บาร์โค้ด (รวม ' + fmtNum(pieces) + ' ชิ้น) ออกจากรายการที่ต้องจัดการ\n' +
+      'ใช้กับของที่ยิงหลุด/บาร์โค้ดขยะเท่านั้น ไม่ใช่สินค้าจริง\n\n' +
+      'ยอดจะถูกหักให้เหลือ 0 · บันทึกเป็นประวัติไว้ ไม่ได้ลบยอดเดิมทิ้ง',
+      'ลบทั้งหมด', { danger: true }).then(function (ok) {
+    if (!ok) return;
+    rows.forEach(function (u) {
+      writeScan(u.key, -u.qty, 'resolve', 'ลบทิ้ง (ยิงหลุด)', { unknown: true, raw: u.value, discard: true });
+    });
+    toast('ลบ ' + fmtNum(rows.length) + ' บาร์โค้ดแล้ว — บันทึกเป็นประวัติไว้');
+    refreshUnknownViews();
+  });
+}
+function refreshUnknownViews() {
+  if (state.page === 'summary') renderSummary();
+  if (state.page === 'doc') renderDoc();
+  if (state.page === 'master') renderNewCodes();
+}
+function unknownBulkBar() {
+  if (!hasPerm('adjustCount')) return null;
+  var pend = unknownRows(false).filter(function (u) { return !u.legacy && u.qty > 0; });
+  var rec = thaiRecoverList();
+  if (!pend.length && !rec.length) return null;
+  var bar = document.createElement('div');
+  bar.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px';
+  if (rec.length) {
+    var br = document.createElement('button');
+    br.className = 'btn block sm';
+    br.style.cssText = 'flex:1;min-width:170px;background:#0a7a5c';
+    br.textContent = '🔤 แปลงแป้นไทย → กู้คืน ' + fmtNum(rec.length) + ' SKU';
+    br.disabled = !canScan();
+    if (br.disabled) br.title = blockedMessage();
+    br.onclick = recoverThaiUnknowns;
+    bar.appendChild(br);
+  }
+  if (pend.length) {
+    var bd = document.createElement('button');
+    bd.className = 'btn grey block sm';
+    bd.style.cssText = 'flex:1;min-width:130px';
+    bd.textContent = '🗑 ลบทั้งหมด (' + fmtNum(pend.length) + ')';
+    bd.disabled = !canScan();
+    if (bd.disabled) bd.title = blockedMessage();
+    bd.onclick = discardAllUnknown;
+    bar.appendChild(bd);
+  }
+  return bar;
+}
+
 function renderNewCodes() {
   if (!hasPerm('editMaster')) return;
   var host = $('ncList');
@@ -20534,6 +20710,9 @@ function renderNewCodes() {
     host.innerHTML = '<div class="empty">ไม่มีรายการ</div>';
     return;
   }
+
+  var _ncBulk = unknownBulkBar();
+  if (_ncBulk) host.appendChild(_ncBulk);
 
   rows.forEach(function (u) {
     var card = document.createElement('div');
